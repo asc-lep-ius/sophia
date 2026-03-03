@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import contextlib
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
+from sophia.adapters.moodle import MoodleAdapter
 from sophia.config import Settings
 
 if TYPE_CHECKING:
@@ -22,7 +23,7 @@ class AppContainer:
     settings: Settings
     http: httpx.AsyncClient
     db: aiosqlite.Connection
-    moodle: Any = field(default=None)  # TODO: MoodleAdapter (Phase 0.2)
+    moodle: MoodleAdapter
 
 
 @contextlib.asynccontextmanager
@@ -41,8 +42,15 @@ async def create_app(settings: Settings | None = None):
         stack.push_async_callback(db.close)
         await run_migrations(db)
 
+        moodle = MoodleAdapter(
+            http=http,
+            token=settings.tuwel_token,
+            host=settings.tuwel_host,
+        )
+
         yield AppContainer(
             settings=settings,
             http=http,
             db=db,
+            moodle=moodle,
         )

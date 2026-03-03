@@ -5,9 +5,9 @@ RUN pip install uv
 
 FROM base AS builder
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN uv sync --no-dev --frozen
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
+RUN uv sync --no-dev --frozen
 
 FROM base AS runtime
 WORKDIR /app
