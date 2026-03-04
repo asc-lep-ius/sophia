@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 import re
-import secrets
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
-from urllib.parse import unquote
 
 import httpx
 import structlog
@@ -29,7 +25,6 @@ _SESSKEY_RE = re.compile(r'"sesskey"\s*:\s*"([a-zA-Z0-9]+)"')
 # TU Wien SSO entry point parameters
 _SSO_IDP_ENTITY = "7bdd808f9f4da82bfe7992e779794b9a"
 _SSO_LOGIN_PATH = "/auth/saml2/login.php"
-_LAUNCH_PATH = "/admin/tool/mobile/launch.php"
 
 
 @dataclass(frozen=True)
@@ -41,7 +36,6 @@ class SessionCredentials:
     host: str
     created_at: str
     cookie_name: str = "MoodleSession"
-    ws_token: str | None = None
 
 
 def session_path(config_dir: Path) -> Path:
@@ -63,7 +57,8 @@ def load_session(path: Path) -> SessionCredentials | None:
         return None
     try:
         data = json.loads(path.read_text())
-        return SessionCredentials(**data)
+        valid = {f.name for f in fields(SessionCredentials)}
+        return SessionCredentials(**{k: v for k, v in data.items() if k in valid})
     except (json.JSONDecodeError, TypeError, KeyError) as exc:
         log.warning("session_load_failed", path=str(path), error=str(exc))
         return None
@@ -76,69 +71,18 @@ def clear_session(path: Path) -> None:
         log.info("session_cleared", path=str(path))
 
 
-async def acquire_ws_token(
-    client: httpx.AsyncClient,
-    base: str,
-    cookie_name: str,
-    moodle_session: str,
-) -> str:
-    """Obtain a WS token from Moodle's mobile launch endpoint.
-
-    GETs launch.php with the session cookie (no redirect following),
-    captures the ``moodlemobile://token=BASE64`` Location header,
-    decodes the ``PASSPORT:::TOKEN:::PRIVATETOKEN`` payload.
-    """
-    passport = secrets.token_hex(8)
-    url = f"{base}{_LAUNCH_PATH}"
-    params = {"service": "moodle_mobile_app", "passport": passport}
-
-    log.info("ws_token_acquire", url=url)
-    resp = await client.get(
-        url,
-        params=params,
-        cookies={cookie_name: moodle_session},
-        follow_redirects=False,
-    )
-
-    location = resp.headers.get("location")
-    if not location or "token=" not in location:
-        raise AuthError("WS token acquisition failed — no redirect from launch.php")
-
-    try:
-        raw = location.split("token=", 1)[1]
-        raw = unquote(raw)
-        decoded = base64.b64decode(raw).decode("ascii")
-    except (binascii.Error, UnicodeDecodeError) as exc:
-        raise AuthError("WS token acquisition failed — invalid token payload") from exc
-
-    parts = decoded.split(":::")
-    if len(parts) < 2 or not parts[1]:
-        raise AuthError("WS token acquisition failed — token not found in payload")
-
-    log.info("ws_token_acquired")
-    return parts[1]
-
-
 async def login_with_credentials(host: str, username: str, password: str) -> SessionCredentials:
     """Authenticate via TU Wien SSO and return session credentials.
 
     Performs the full SAML SSO dance: initiate login -> submit credentials
     to the IdP -> relay SAML response back to TUWEL -> extract session.
-    Then acquires a WS token for REST API access.
     """
     base = host.rstrip("/")
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         idp_resp = await _initiate_sso(client, base)
         saml_resp = await _submit_credentials(client, idp_resp, username, password)
         dashboard_resp = await _relay_saml_response(client, saml_resp)
-        creds = _build_credentials(client, dashboard_resp, base)
-
-        try:
-            ws_token = await acquire_ws_token(client, base, creds.cookie_name, creds.moodle_session)
-            return replace(creds, ws_token=ws_token)
-        except AuthError:
-            log.warning("ws_token_acquisition_failed", host=base)
-            return creds
+        return _build_credentials(client, dashboard_resp, base)
 
 
 async def _initiate_sso(client: httpx.AsyncClient, base: str) -> httpx.Response:

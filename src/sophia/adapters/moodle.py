@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import re
-from typing import Any, cast
+from typing import Any
 
 import httpx
 import structlog
@@ -55,7 +55,6 @@ class MoodleAdapter:
         moodle_session: str,
         host: str,
         cookie_name: str = "MoodleSession",
-        ws_token: str | None = None,
     ) -> None:
         self._http = http
         self._sesskey = sesskey
@@ -63,7 +62,6 @@ class MoodleAdapter:
         self._cookie_name = cookie_name
         self._host = host.rstrip("/")
         self._ajax_endpoint = f"{self._host}/lib/ajax/service.php"
-        self._ws_token = ws_token
 
     # ------------------------------------------------------------------
     # Low-level transport
@@ -108,44 +106,6 @@ class MoodleAdapter:
             raise MoodleError(f"[{errorcode}] {message}")
 
         return result["data"]
-
-    async def _call_ws(self, function: str, params: dict[str, Any] | None = None) -> Any:
-        """POST to the Moodle WS REST API and return parsed JSON.
-
-        Uses webservice/rest/server.php with WS token authentication.
-        Raises AuthError if no WS token is available.
-        """
-        if self._ws_token is None:
-            raise AuthError("No WS token \u2014 re-login required")
-
-        data: dict[str, str] = {
-            "wstoken": self._ws_token,
-            "wsfunction": function,
-            "moodlewsrestformat": "json",
-        }
-        if params:
-            data.update(_flatten_params(params))
-
-        response = await self._http.post(
-            f"{self._host}/webservice/rest/server.php",
-            data=data,
-        )
-        try:
-            response.raise_for_status()
-        except httpx.HTTPStatusError as exc:
-            raise MoodleError(f"HTTP {exc.response.status_code} from Moodle WS API") from exc
-
-        body: Any = response.json()
-
-        if isinstance(body, dict) and "exception" in body:
-            err = cast("dict[str, str]", body)
-            errorcode = err.get("errorcode", "")
-            message = err.get("message", str(err))
-            if errorcode in _AUTH_ERROR_CODES:
-                raise AuthError(message)
-            raise MoodleError(f"[{errorcode}] {message}")
-
-        return body  # type: ignore[reportUnknownVariableType]
 
     # ------------------------------------------------------------------
     # Session validation
@@ -203,94 +163,32 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_course_books(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call_ws("mod_book_get_books_by_courses", {"courseids": course_ids})
-        return [_parse_module(b, modname="book") for b in data["books"]]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_course_pages(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call_ws("mod_page_get_pages_by_courses", {"courseids": course_ids})
-        return [_parse_module(p, modname="page") for p in data["pages"]]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_course_resources(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call_ws(
-            "mod_resource_get_resources_by_courses", {"courseids": course_ids}
-        )
-        return [_parse_module(r, modname="resource") for r in data["resources"]]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_course_urls(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call_ws("mod_url_get_urls_by_courses", {"courseids": course_ids})
-        return [_parse_module(u, modname="url") for u in data["urls"]]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     # ------------------------------------------------------------------
     # AssignmentProvider
     # ------------------------------------------------------------------
 
     async def get_assignments(self, course_ids: list[int]) -> list[AssignmentInfo]:
-        data = await self._call_ws("mod_assign_get_assignments", {"courseids": course_ids})
-        return [
-            AssignmentInfo(
-                id=a["id"],
-                name=a["name"],
-                course_id=c["id"],
-                due_date=str(a["duedate"]) if a.get("duedate") else None,
-            )
-            for c in data["courses"]
-            for a in c["assignments"]
-        ]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_quizzes(self, course_ids: list[int]) -> list[QuizInfo]:
-        data = await self._call_ws("mod_quiz_get_quizzes_by_courses", {"courseids": course_ids})
-        return [
-            QuizInfo(id=q["id"], name=q["name"], course_id=q["course"]) for q in data["quizzes"]
-        ]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_checkmarks(self, course_ids: list[int]) -> list[CheckmarkInfo]:
-        data = await self._call_ws(
-            "mod_checkmark_get_checkmarks_by_courses", {"courseids": course_ids}
-        )
-        return [
-            CheckmarkInfo(
-                id=cm["id"],
-                name=cm["name"],
-                course_id=cm["course"],
-                completed=bool(cm.get("completed", False)),
-            )
-            for cm in data["checkmarks"]
-        ]
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_grade_items(self, course_id: int) -> list[GradeItem]:
-        data = await self._call_ws("gradereport_user_get_grade_items", {"courseid": course_id})
-        user_grades = data.get("usergrades", [])
-        if not user_grades:
-            return []
-        return [
-            GradeItem(
-                id=gi["id"],
-                name=gi.get("itemname", ""),
-                grade=gi.get("graderaw"),
-                max_grade=gi.get("grademax"),
-            )
-            for gi in user_grades[0]["gradeitems"]
-        ]
-
-
-# ------------------------------------------------------------------
-# Parameter encoding
-# ------------------------------------------------------------------
-
-
-def _flatten_params(params: dict[str, Any]) -> dict[str, str]:
-    """Flatten list values into Moodle's indexed parameter format.
-
-    Converts ``{"courseids": [1, 2]}`` → ``{"courseids[0]": "1", "courseids[1]": "2"}``.
-    """
-    flat: dict[str, str] = {}
-    for key, val in params.items():
-        if isinstance(val, list):
-            for i, item in enumerate(cast("list[Any]", val)):
-                flat[f"{key}[{i}]"] = str(item)
-        else:
-            flat[key] = str(val)
-    return flat
+        raise NotImplementedError("WS transport removed; scraping replacement pending")
 
 
 # ------------------------------------------------------------------
@@ -367,18 +265,3 @@ def _extract_trailing_int(value: str, *, default: int = 0) -> int:
     if len(parts) == 2 and parts[1].isdigit():
         return int(parts[1])
     return default
-
-
-# ------------------------------------------------------------------
-# Response-parsing helpers (WS REST API)
-# ------------------------------------------------------------------
-
-
-def _parse_module(raw: dict[str, Any], *, modname: str) -> ModuleInfo:
-    """Parse a flat resource/book/page/url response into ModuleInfo."""
-    return ModuleInfo(
-        id=raw["id"],
-        name=raw["name"],
-        modname=modname,
-        url=raw.get("url"),
-    )

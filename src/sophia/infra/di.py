@@ -52,16 +52,12 @@ async def create_app(settings: Settings | None = None):
         stack.push_async_callback(db.close)
         await run_migrations(db)
 
-        if creds.ws_token is None:
-            log.warning("no_ws_token", hint="re-login for full API access")
-
         moodle = MoodleAdapter(
             http=http,
             sesskey=creds.sesskey,
             moodle_session=creds.moodle_session,
             host=settings.tuwel_host,
             cookie_name=creds.cookie_name,
-            ws_token=creds.ws_token,
         )
 
         yield AppContainer(
