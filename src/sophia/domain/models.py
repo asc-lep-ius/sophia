@@ -99,6 +99,7 @@ class ModuleInfo(BaseModel):
     name: str
     modname: str
     url: str | None = None
+    description: str = ""
     contents: list[ContentInfo] = []
 
 

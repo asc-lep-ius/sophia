@@ -24,9 +24,51 @@ log = structlog.get_logger()
 
 
 @books_app.command
-def discover() -> None:
+async def discover() -> None:
     """Discover book references from enrolled TUWEL courses."""
-    log.info("books_discover_not_implemented", msg="Not yet implemented")
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.pipeline import discover_books
+    from sophia.services.reference_extractor import RegexReferenceExtractor
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            extractor = RegexReferenceExtractor()
+            refs = await discover_books(
+                courses=container.moodle,
+                resources=container.moodle,
+                extractor=extractor,
+            )
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+
+    if not refs:
+        console.print("[yellow]No book references found in enrolled courses.[/yellow]")
+        return
+
+    table = Table(title="Discovered Book References")
+    table.add_column("Title", style="cyan", no_wrap=False)
+    table.add_column("Author(s)", style="green")
+    table.add_column("ISBN", style="magenta")
+    table.add_column("Source", style="blue")
+    table.add_column("Course", style="yellow", no_wrap=False)
+
+    for ref in refs:
+        table.add_row(
+            ref.title or "—",
+            ", ".join(ref.authors) if ref.authors else "—",
+            ref.isbn or "—",
+            ref.source.value,
+            ref.course_name or "—",
+        )
+
+    console.print(table)
 
 
 @auth_app.command
