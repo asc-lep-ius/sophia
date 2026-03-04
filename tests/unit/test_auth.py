@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64 as _b64
 import json
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,7 @@ if TYPE_CHECKING:
 
 from sophia.adapters.auth import (
     SessionCredentials,
+    acquire_ws_token,
     clear_session,
     load_session,
     login_with_credentials,
@@ -25,6 +27,20 @@ from sophia.domain.errors import AuthError
 HOST = "https://tuwel.tuwien.ac.at"
 IDP_URL = "https://idp.zid.tuwien.ac.at/simplesaml/module.php/core/loginuserpass.php"
 ACS_URL = f"{HOST}/auth/saml2/sp/saml2-acs.php/tuwel.tuwien.ac.at"
+
+# WS token acquisition test data
+LAUNCH_PATH = "/admin/tool/mobile/launch.php"
+_WS_TOKEN = "test_ws_token_value"
+_TOKEN_PAYLOAD = _b64.b64encode(f"testpassport:::{_WS_TOKEN}:::privatetok".encode()).decode()
+_MOBILE_REDIRECT = f"moodlemobile://token={_TOKEN_PAYLOAD}"
+
+
+def _mock_launch_php() -> None:
+    """Register a respx mock for launch.php that returns a valid WS token redirect."""
+    respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+        return_value=httpx.Response(303, headers={"location": _MOBILE_REDIRECT})
+    )
+
 
 # --- HTML fixtures for mocking the SSO flow ---
 
@@ -109,6 +125,35 @@ class TestSaveAndLoadSession:
         result = load_session(path)
         assert result is None
 
+    def test_roundtrip_preserves_ws_token(self, tmp_path: Path):
+        creds_with_token = SessionCredentials(
+            moodle_session="abc123cookie",
+            sesskey="xyz789key",
+            host="https://tuwel.tuwien.ac.at",
+            created_at="2026-03-04T12:00:00+00:00",
+            ws_token="my_ws_token",
+        )
+        path = session_path(tmp_path)
+        save_session(creds_with_token, path)
+        loaded = load_session(path)
+        assert loaded is not None
+        assert loaded.ws_token == "my_ws_token"
+
+    def test_load_old_session_without_ws_token(self, tmp_path: Path):
+        """Sessions saved before ws_token was added load with ws_token=None."""
+        path = tmp_path / "old_session.json"
+        old_data = {
+            "moodle_session": "abc123cookie",
+            "sesskey": "xyz789key",
+            "host": "https://tuwel.tuwien.ac.at",
+            "created_at": "2026-03-04T12:00:00+00:00",
+            "cookie_name": "MoodleSession",
+        }
+        path.write_text(json.dumps(old_data))
+        loaded = load_session(path)
+        assert loaded is not None
+        assert loaded.ws_token is None
+
 
 class TestClearSession:
     def test_removes_file(self, tmp_path: Path, creds: SessionCredentials):
@@ -134,9 +179,7 @@ class TestLoginWithCredentials:
         )
 
         # 2. Submit credentials — returns SAML auto-submit form
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=SAML_RESPONSE_HTML)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
 
         # 3. Relay SAML response — returns dashboard with MoodleSession cookie
         respx.post(ACS_URL).mock(
@@ -147,12 +190,16 @@ class TestLoginWithCredentials:
             )
         )
 
+        # 4. WS token acquisition via launch.php
+        _mock_launch_php()
+
         result = await login_with_credentials(HOST, "testuser", "testpass")
 
         assert result.moodle_session == "test-moodle-session"
         assert result.sesskey == "abc123sesskey"
         assert result.host == HOST
         assert result.cookie_name == "MoodleSession"
+        assert result.ws_token == _WS_TOKEN
 
     @respx.mock
     async def test_custom_cookie_name(self):
@@ -160,9 +207,7 @@ class TestLoginWithCredentials:
         respx.get(f"{HOST}/auth/saml2/login.php").mock(
             return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
         )
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=SAML_RESPONSE_HTML)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
         respx.post(ACS_URL).mock(
             return_value=httpx.Response(
                 200,
@@ -170,6 +215,7 @@ class TestLoginWithCredentials:
                 headers={"set-cookie": "MoodleSessiontuwel=custom-cookie-val; path=/"},
             )
         )
+        _mock_launch_php()
 
         result = await login_with_credentials(HOST, "testuser", "testpass")
 
@@ -184,9 +230,7 @@ class TestLoginWithCredentials:
         )
 
         # IdP echoes back the login form (bad credentials)
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML))
 
         with pytest.raises(AuthError, match="invalid username or password"):
             await login_with_credentials(HOST, "baduser", "badpass")
@@ -200,9 +244,7 @@ class TestLoginWithCredentials:
 
         # After credential submit, no SAML response — just some unrelated page
         no_saml_html = "<html><body><p>Something went wrong.</p></body></html>"
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=no_saml_html)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=no_saml_html))
 
         with pytest.raises(AuthError, match="no SAML response"):
             await login_with_credentials(HOST, "testuser", "testpass")
@@ -223,13 +265,9 @@ class TestLoginWithCredentials:
         respx.get(f"{HOST}/auth/saml2/login.php").mock(
             return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
         )
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=SAML_RESPONSE_HTML)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
         # Dashboard response without MoodleSession cookie
-        respx.post(ACS_URL).mock(
-            return_value=httpx.Response(200, text=DASHBOARD_HTML)
-        )
+        respx.post(ACS_URL).mock(return_value=httpx.Response(200, text=DASHBOARD_HTML))
 
         with pytest.raises(AuthError, match="MoodleSession cookie not found"):
             await login_with_credentials(HOST, "testuser", "testpass")
@@ -240,9 +278,7 @@ class TestLoginWithCredentials:
         respx.get(f"{HOST}/auth/saml2/login.php").mock(
             return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
         )
-        respx.post(IDP_URL).mock(
-            return_value=httpx.Response(200, text=SAML_RESPONSE_HTML)
-        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
         no_sesskey_html = "<html><body><p>Dashboard without M.cfg</p></body></html>"
         respx.post(ACS_URL).mock(
             return_value=httpx.Response(
@@ -254,3 +290,73 @@ class TestLoginWithCredentials:
 
         with pytest.raises(AuthError, match="sesskey not found"):
             await login_with_credentials(HOST, "testuser", "testpass")
+
+
+class TestAcquireWsToken:
+    """Tests for WS token acquisition via launch.php."""
+
+    @respx.mock
+    async def test_successful_acquisition(self):
+        respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+            return_value=httpx.Response(303, headers={"location": _MOBILE_REDIRECT})
+        )
+        async with httpx.AsyncClient() as client:
+            token = await acquire_ws_token(client, HOST, "MoodleSession", "sess_val")
+        assert token == _WS_TOKEN
+
+    @respx.mock
+    async def test_missing_location_header(self):
+        respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+            return_value=httpx.Response(200, text="<html>no redirect</html>")
+        )
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(AuthError, match="no redirect"):
+                await acquire_ws_token(client, HOST, "MoodleSession", "sess_val")
+
+    @respx.mock
+    async def test_invalid_base64(self):
+        respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+            return_value=httpx.Response(
+                303, headers={"location": "moodlemobile://token=!!!not-base64!!!"}
+            )
+        )
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(AuthError, match="invalid token payload"):
+                await acquire_ws_token(client, HOST, "MoodleSession", "sess_val")
+
+    @respx.mock
+    async def test_missing_token_in_payload(self):
+        """Decoded payload has wrong format (no triple-colon separator)."""
+        bad_payload = _b64.b64encode(b"just-a-passport-no-separators").decode()
+        respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+            return_value=httpx.Response(
+                303, headers={"location": f"moodlemobile://token={bad_payload}"}
+            )
+        )
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(AuthError, match="token not found"):
+                await acquire_ws_token(client, HOST, "MoodleSession", "sess_val")
+
+    @respx.mock
+    async def test_login_succeeds_without_ws_token(self):
+        """Login completes gracefully when WS token acquisition fails."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+        # launch.php returns 200 instead of redirect — token acquisition fails
+        respx.get(f"{HOST}{LAUNCH_PATH}").mock(
+            return_value=httpx.Response(200, text="<html>error</html>")
+        )
+
+        result = await login_with_credentials(HOST, "testuser", "testpass")
+
+        assert result.moodle_session == "test-moodle-session"
+        assert result.ws_token is None

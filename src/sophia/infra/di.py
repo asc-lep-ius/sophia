@@ -6,6 +6,8 @@ import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import structlog
+
 from sophia.adapters.auth import load_session, session_path
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.config import Settings
@@ -16,6 +18,8 @@ if TYPE_CHECKING:
     import httpx
 from sophia.infra.http import http_session
 from sophia.infra.persistence import connect_db, run_migrations
+
+log = structlog.get_logger()
 
 
 @dataclass(frozen=True)
@@ -48,12 +52,16 @@ async def create_app(settings: Settings | None = None):
         stack.push_async_callback(db.close)
         await run_migrations(db)
 
+        if creds.ws_token is None:
+            log.warning("no_ws_token", hint="re-login for full API access")
+
         moodle = MoodleAdapter(
             http=http,
             sesskey=creds.sesskey,
             moodle_session=creds.moodle_session,
             host=settings.tuwel_host,
             cookie_name=creds.cookie_name,
+            ws_token=creds.ws_token,
         )
 
         yield AppContainer(
