@@ -6,8 +6,10 @@ import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sophia.adapters.auth import load_session, session_path
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.config import Settings
+from sophia.domain.errors import AuthError
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -36,6 +38,10 @@ async def create_app(settings: Settings | None = None):
     if settings is None:
         settings = Settings()
 
+    creds = load_session(session_path(settings.config_dir))
+    if creds is None:
+        raise AuthError("Not logged in — run: sophia auth login")
+
     async with contextlib.AsyncExitStack() as stack:
         http = await stack.enter_async_context(http_session())
         db = await connect_db(settings.db_path)
@@ -44,8 +50,10 @@ async def create_app(settings: Settings | None = None):
 
         moodle = MoodleAdapter(
             http=http,
-            token=settings.tuwel_token,
+            sesskey=creds.sesskey,
+            moodle_session=creds.moodle_session,
             host=settings.tuwel_host,
+            cookie_name=creds.cookie_name,
         )
 
         yield AppContainer(

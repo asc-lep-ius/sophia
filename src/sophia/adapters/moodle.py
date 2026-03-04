@@ -1,8 +1,13 @@
-"""Async Moodle adapter — implements CourseProvider, ResourceProvider, AssignmentProvider."""
+"""Async Moodle adapter — session-based AJAX transport.
+
+Implements CourseProvider, ResourceProvider, AssignmentProvider via
+Moodle's AJAX service endpoint (lib/ajax/service.php) using browser
+session cookies instead of WS tokens.
+"""
 
 from __future__ import annotations
 
-import base64
+import contextlib
 from typing import Any
 
 import httpx
@@ -22,89 +27,98 @@ from sophia.domain.models import (
 
 log = structlog.get_logger()
 
-# Moodle error keys that indicate an expired or invalid token
+# Error codes indicating an expired or invalid session
 _AUTH_ERROR_CODES = frozenset(
     {
-        "invalidtoken",
         "accessexception",
-        "invalidlogin",
-        "sitenotfound",
+        "invalidsesskey",
+        "requirelogin",
+        "servicerequireslogin",
+        "requireloginerror",
         "forcepasswordchangenotice",
         "usernotfullysetup",
     }
 )
 
-_TOKEN_VALIDATION_FUNCTION = "core_webservice_get_site_info"
-
-
-def parse_token(raw: str) -> str:
-    """Extract a Moodle WS token from a raw string or moodlemobile:// URL."""
-    if not raw.startswith("moodlemobile"):
-        return raw
-    try:
-        _, b64part = raw.split("=", 1)
-        decoded = base64.b64decode(b64part.encode("ascii")).decode("ascii")
-        return decoded.split(":::")[1]
-    except (ValueError, IndexError) as exc:
-        raise AuthError(f"Malformed moodlemobile:// URL: {raw}") from exc
-
-
-def _encode_course_ids(course_ids: list[int]) -> dict[str, str | int]:
-    """Moodle expects indexed form params: courseids[0]=1&courseids[1]=2."""
-    return {f"courseids[{i}]": cid for i, cid in enumerate(course_ids)}
-
 
 class MoodleAdapter:
-    """Async Moodle web-service adapter.
+    """Async Moodle adapter using session-based AJAX API.
 
     Satisfies: CourseProvider, ResourceProvider, AssignmentProvider protocols.
     """
 
-    def __init__(self, http: httpx.AsyncClient, token: str, host: str) -> None:
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        sesskey: str,
+        moodle_session: str,
+        host: str,
+        cookie_name: str = "MoodleSession",
+    ) -> None:
         self._http = http
-        self._token = parse_token(token)
-        self._endpoint = f"{host.rstrip('/')}/webservice/rest/server.php"
+        self._sesskey = sesskey
+        self._moodle_session = moodle_session
+        self._cookie_name = cookie_name
+        self._host = host.rstrip("/")
+        self._ajax_endpoint = f"{self._host}/lib/ajax/service.php"
 
     # ------------------------------------------------------------------
     # Low-level transport
     # ------------------------------------------------------------------
 
     async def _call(self, function: str, params: dict[str, Any] | None = None) -> Any:
-        """POST to the Moodle REST API and return parsed JSON.
+        """POST to the Moodle AJAX API and return parsed JSON.
 
-        Raises MoodleError for Moodle-level errors and AuthError for token issues.
+        Uses lib/ajax/service.php with session cookie authentication.
+        Raises MoodleError for Moodle-level errors and AuthError for session issues.
         """
-        form: dict[str, Any] = {
-            "wstoken": self._token,
-            "wsfunction": function,
-            "moodlewsrestformat": "json",
-        }
-        if params:
-            form.update(params)
+        payload = [{"index": 0, "methodname": function, "args": params or {}}]
 
-        response = await self._http.post(self._endpoint, data=form)
+        response = await self._http.post(
+            self._ajax_endpoint,
+            params={"sesskey": self._sesskey, "info": function},
+            json=payload,
+            cookies={self._cookie_name: self._moodle_session},
+        )
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise MoodleError(f"HTTP {exc.response.status_code} from Moodle API") from exc
+            raise MoodleError(f"HTTP {exc.response.status_code} from Moodle AJAX API") from exc
+
+        # HTML response means session expired (login page returned)
+        content_type = response.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            raise AuthError("Session expired — log in again with: sophia auth login")
+
         body = response.json()
 
-        if isinstance(body, dict) and "exception" in body:
-            errorcode = body.get("errorcode", "")
-            message = body.get("message", str(body))
+        if not isinstance(body, list) or len(body) == 0:
+            raise MoodleError(f"Unexpected AJAX response format: {body}")
+
+        result = body[0]
+        if result.get("error"):
+            exception = result.get("exception", {})
+            errorcode = exception.get("errorcode", "")
+            message = exception.get("message", str(result))
             if errorcode in _AUTH_ERROR_CODES:
                 raise AuthError(message)
             raise MoodleError(f"[{errorcode}] {message}")
 
-        return body
+        return result["data"]
 
     # ------------------------------------------------------------------
-    # Token validation
+    # Session validation
     # ------------------------------------------------------------------
 
-    async def check_token(self) -> None:
-        """Fail-fast token validation — call before expensive operations."""
-        await self._call(_TOKEN_VALIDATION_FUNCTION)
+    async def check_session(self) -> None:
+        """Fail-fast session validation — call before expensive operations.
+
+        Makes a lightweight AJAX call. If the session is expired, _call raises
+        AuthError (via HTML detection or auth error codes). If the function
+        doesn't exist but the session is valid, the MoodleError is ignored.
+        """
+        with contextlib.suppress(MoodleError):
+            await self._call("core_session_time_remaining")
 
     # ------------------------------------------------------------------
     # CourseProvider
@@ -134,21 +148,21 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_course_books(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call("mod_book_get_books_by_courses", _encode_course_ids(course_ids))
+        data = await self._call("mod_book_get_books_by_courses", {"courseids": course_ids})
         return [_parse_module(b, modname="book") for b in data["books"]]
 
     async def get_course_pages(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call("mod_page_get_pages_by_courses", _encode_course_ids(course_ids))
+        data = await self._call("mod_page_get_pages_by_courses", {"courseids": course_ids})
         return [_parse_module(p, modname="page") for p in data["pages"]]
 
     async def get_course_resources(self, course_ids: list[int]) -> list[ModuleInfo]:
         data = await self._call(
-            "mod_resource_get_resources_by_courses", _encode_course_ids(course_ids)
+            "mod_resource_get_resources_by_courses", {"courseids": course_ids}
         )
         return [_parse_module(r, modname="resource") for r in data["resources"]]
 
     async def get_course_urls(self, course_ids: list[int]) -> list[ModuleInfo]:
-        data = await self._call("mod_url_get_urls_by_courses", _encode_course_ids(course_ids))
+        data = await self._call("mod_url_get_urls_by_courses", {"courseids": course_ids})
         return [_parse_module(u, modname="url") for u in data["urls"]]
 
     # ------------------------------------------------------------------
@@ -156,7 +170,7 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_assignments(self, course_ids: list[int]) -> list[AssignmentInfo]:
-        data = await self._call("mod_assign_get_assignments", _encode_course_ids(course_ids))
+        data = await self._call("mod_assign_get_assignments", {"courseids": course_ids})
         return [
             AssignmentInfo(
                 id=a["id"],
@@ -169,14 +183,14 @@ class MoodleAdapter:
         ]
 
     async def get_quizzes(self, course_ids: list[int]) -> list[QuizInfo]:
-        data = await self._call("mod_quiz_get_quizzes_by_courses", _encode_course_ids(course_ids))
+        data = await self._call("mod_quiz_get_quizzes_by_courses", {"courseids": course_ids})
         return [
             QuizInfo(id=q["id"], name=q["name"], course_id=q["course"]) for q in data["quizzes"]
         ]
 
     async def get_checkmarks(self, course_ids: list[int]) -> list[CheckmarkInfo]:
         data = await self._call(
-            "mod_checkmark_get_checkmarks_by_courses", _encode_course_ids(course_ids)
+            "mod_checkmark_get_checkmarks_by_courses", {"courseids": course_ids}
         )
         return [
             CheckmarkInfo(

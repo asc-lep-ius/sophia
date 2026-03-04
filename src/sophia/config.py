@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import warnings
 from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir, user_data_dir
-from pydantic import Field, model_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +15,6 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SOPHIA_")
 
     # TUWEL
-    tuwel_token: str = ""
     tuwel_host: str = "https://tuwel.tuwien.ac.at"
 
     # Anna's Archive
@@ -50,14 +48,3 @@ class Settings(BaseSettings):
     def db_path(self) -> Path:
         """Path to the SQLite database file."""
         return self.data_dir / "sophia.db"
-
-    @model_validator(mode="after")
-    def _validate_token_on_startup(self) -> Settings:
-        """Warn if essential config is missing."""
-        if not self.tuwel_token:
-            warnings.warn(
-                "SOPHIA_TUWEL_TOKEN is not set. "
-                "Most commands will fail. Set it in .env or pass --token.",
-                stacklevel=2,
-            )
-        return self
