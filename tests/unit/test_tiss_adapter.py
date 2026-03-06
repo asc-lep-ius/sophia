@@ -22,23 +22,32 @@ API_COURSE_PATH = "/api/course/"
 
 COURSE_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<tpiCourse>
-  <courseNumber>186.866</courseNumber>
-  <semester>2026S</semester>
+<tpiCourse xmlns="https://tiss.tuwien.ac.at/api/schemas/course/v10"
+           xmlns:ns2="https://tiss.tuwien.ac.at/api/schemas/i18n/v10">
+  <courseNumber>186866</courseNumber>
+  <semester>
+    <ns2:de>2026S</ns2:de><ns2:en>2026S</ns2:en>
+  </semester>
   <courseType>VU</courseType>
-  <title xml:lang="de">Algorithmen und Datenstrukturen</title>
-  <title xml:lang="en">Algorithms and Data Structures</title>
+  <title>
+    <ns2:de>Algorithmen und Datenstrukturen</ns2:de>
+    <ns2:en>Algorithms and Data Structures</ns2:en>
+  </title>
   <ects>6.0</ects>
-  <teachingContent xml:lang="de">Sortieren, Suchen, Graphen</teachingContent>
-  <teachingContent xml:lang="en">Sorting, searching, graphs</teachingContent>
-  <courseObjective xml:lang="de">Grundlagen verstehen</courseObjective>
-  <courseObjective xml:lang="en">Understand fundamentals</courseObjective>
+  <teachingContent>
+    <ns2:de>Sortieren, Suchen, Graphen</ns2:de>
+    <ns2:en>Sorting, searching, graphs</ns2:en>
+  </teachingContent>
+  <courseObjective>
+    <ns2:de>Grundlagen verstehen</ns2:de>
+    <ns2:en>Understand fundamentals</ns2:en>
+  </courseObjective>
 </tpiCourse>
 """
 
 EXAM_DATES_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<examDatesList>
+<examDatesList xmlns="https://tiss.tuwien.ac.at/api/schemas/course/v10">
   <examDate>
     <id>1001</id>
     <title>1. Prüfungstermin</title>
@@ -62,7 +71,7 @@ EXAM_DATES_XML = """\
 
 EMPTY_EXAM_DATES_XML = """\
 <?xml version="1.0" encoding="UTF-8"?>
-<examDatesList/>
+<examDatesList xmlns="https://tiss.tuwien.ac.at/api/schemas/course/v10"/>
 """
 
 
@@ -157,8 +166,10 @@ class TestParseCourseXml:
 
     def test_minimal_xml(self) -> None:
         xml = (
-            "<tpiCourse><courseNumber>100.001</courseNumber>"
-            "<semester>2026S</semester></tpiCourse>"
+            '<tpiCourse xmlns="https://tiss.tuwien.ac.at/api/schemas/course/v10"'
+            ' xmlns:ns2="https://tiss.tuwien.ac.at/api/schemas/i18n/v10">'
+            "<courseNumber>100001</courseNumber>"
+            "<semester><ns2:de>2026S</ns2:de></semester></tpiCourse>"
         )
         result = parse_course_xml(xml)
 
