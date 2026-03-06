@@ -30,6 +30,10 @@ typecheck:
   stage: check
   variables:
     PYTHON_VERSION: "3.12"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends libatomic1
+    - pip install uv
+    - uv sync --extra dev
   script:
     - uv run pyright
 
@@ -40,7 +44,7 @@ test:
     matrix:
       - PYTHON_VERSION: ["3.12", "3.13"]
   script:
-    - uv run pytest --tb=short -q --cov=src/sophia --cov-report=term-missing --cov-fail-under=85
+    - uv run pytest --tb=short -q --cov=src/sophia --cov-report=term-missing --cov-report=xml --cov-fail-under=85
   coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)$/'
   artifacts:
     reports:
