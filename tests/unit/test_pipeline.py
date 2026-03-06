@@ -431,9 +431,7 @@ async def test_tiss_content_fed_to_extractor() -> None:
     extractor = FakeExtractor({tiss_desc: [ref_desc], tiss_obj: [ref_obj]})
     metadata = FakeMetadataProvider({("186.813", "2026S"): tiss_info})
 
-    result = await discover_books(
-        course_provider, resource_provider, extractor, metadata=metadata
-    )
+    result = await discover_books(course_provider, resource_provider, extractor, metadata=metadata)
 
     assert len(result) == 2
     titles = {r.title for r in result}
@@ -468,9 +466,7 @@ async def test_tiss_skipped_when_shortname_no_match() -> None:
     extractor = FakeExtractor({"Should not be reached": [ref]})
     metadata = FakeMetadataProvider({("999.999", "2026S"): tiss_info})
 
-    result = await discover_books(
-        course_provider, resource_provider, extractor, metadata=metadata
-    )
+    result = await discover_books(course_provider, resource_provider, extractor, metadata=metadata)
 
     assert result == []
 
@@ -487,9 +483,7 @@ async def test_tiss_failure_graceful() -> None:
     extractor = FakeExtractor({summary: [ref]})
     metadata = FakeMetadataProvider(failing=True)
 
-    result = await discover_books(
-        course_provider, resource_provider, extractor, metadata=metadata
-    )
+    result = await discover_books(course_provider, resource_provider, extractor, metadata=metadata)
 
     # Section refs still returned despite TISS failure
     assert len(result) == 1
@@ -553,9 +547,7 @@ async def test_url_book_with_description_extracted() -> None:
     course_provider = FakeCourseProvider([COURSE_A], sections)
     resource_provider = FakeResourceProvider()
     # The description content triggers the extraction
-    extractor = FakeExtractor(
-        {"ISBN 978-0-13-468599-1 Effective Java by Joshua Bloch": [ref]}
-    )
+    extractor = FakeExtractor({"ISBN 978-0-13-468599-1 Effective Java by Joshua Bloch": [ref]})
 
     result = await discover_books(course_provider, resource_provider, extractor)
 

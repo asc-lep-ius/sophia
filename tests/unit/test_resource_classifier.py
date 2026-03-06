@@ -88,9 +88,7 @@ class TestClassifyUrl:
             "exercise",
         ],
     )
-    def test_name_overrides_domain(
-        self, name: str, url: str, expected: ResourceCategory
-    ) -> None:
+    def test_name_overrides_domain(self, name: str, url: str, expected: ResourceCategory) -> None:
         assert classify_url(url, activity_name=name) == expected
 
     def test_empty_url_returns_other(self) -> None:

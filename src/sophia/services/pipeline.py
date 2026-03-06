@@ -109,8 +109,13 @@ async def _safe_process_course(
     """Wrapper that catches per-course errors so TaskGroup doesn't abort."""
     try:
         refs = await _process_course(
-            course_id, course_name, course_shortname,
-            courses, resources, extractor, metadata=metadata,
+            course_id,
+            course_name,
+            course_shortname,
+            courses,
+            resources,
+            extractor,
+            metadata=metadata,
         )
         results.append((course_name, refs))
     except Exception as exc:  # noqa: BLE001
@@ -148,9 +153,7 @@ async def _process_course(
     refs.extend(resource_refs)
 
     # TISS teaching content: description + objectives as additional reference source
-    tiss_refs = await _try_tiss_extraction(
-        course_shortname, course_id, metadata, extractor
-    )
+    tiss_refs = await _try_tiss_extraction(course_shortname, course_id, metadata, extractor)
     refs.extend(tiss_refs)
 
     # URL classification: extract book-related URLs from course sections
@@ -244,10 +247,7 @@ def _extract_from_url_modules(
     extractor. Non-book resources are logged for future surfacing.
     """
     url_modules = [
-        module
-        for section in sections
-        for module in section.modules
-        if module.modname == "url"
+        module for section in sections for module in section.modules if module.modname == "url"
     ]
     if not url_modules:
         return []
@@ -266,9 +266,7 @@ def _extract_from_url_modules(
     refs: list[BookReference] = []
     for resource in book_resources:
         if resource.title:
-            refs.extend(
-                extractor.extract(resource.title, ReferenceSource.RESOURCE_NAME, course_id)
-            )
+            refs.extend(extractor.extract(resource.title, ReferenceSource.RESOURCE_NAME, course_id))
         if resource.description:
             refs.extend(
                 extractor.extract(resource.description, ReferenceSource.DESCRIPTION, course_id)

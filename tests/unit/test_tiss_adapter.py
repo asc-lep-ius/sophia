@@ -230,9 +230,7 @@ class TestGetCourseDetails:
 
     @respx.mock
     async def test_404_returns_empty_default(self, adapter: TissAdapter) -> None:
-        respx.get(f"{HOST}/api/course/999999-2026S").mock(
-            return_value=httpx.Response(404)
-        )
+        respx.get(f"{HOST}/api/course/999999-2026S").mock(return_value=httpx.Response(404))
 
         result = await adapter.get_course_details("999.999", "2026S")
 
@@ -242,9 +240,7 @@ class TestGetCourseDetails:
 
     @respx.mock
     async def test_500_raises_tiss_error(self, adapter: TissAdapter) -> None:
-        respx.get(f"{HOST}/api/course/186866-2026S").mock(
-            return_value=httpx.Response(500)
-        )
+        respx.get(f"{HOST}/api/course/186866-2026S").mock(return_value=httpx.Response(500))
 
         with pytest.raises(TissError, match="HTTP 500"):
             await adapter.get_course_details("186.866", "2026S")
@@ -279,18 +275,14 @@ class TestGetExamDates:
 
     @respx.mock
     async def test_404_returns_empty_list(self, adapter: TissAdapter) -> None:
-        respx.get(f"{HOST}/api/course/999999/examDates").mock(
-            return_value=httpx.Response(404)
-        )
+        respx.get(f"{HOST}/api/course/999999/examDates").mock(return_value=httpx.Response(404))
 
         results = await adapter.get_exam_dates("999.999")
         assert results == []
 
     @respx.mock
     async def test_500_raises_tiss_error(self, adapter: TissAdapter) -> None:
-        respx.get(f"{HOST}/api/course/186866/examDates").mock(
-            return_value=httpx.Response(500)
-        )
+        respx.get(f"{HOST}/api/course/186866/examDates").mock(return_value=httpx.Response(500))
 
         with pytest.raises(TissError, match="HTTP 500"):
             await adapter.get_exam_dates("186.866")
@@ -311,7 +303,5 @@ class TestGetExamDates:
 
 
 class TestProtocolConformance:
-    def test_tiss_adapter_conforms_to_course_metadata_provider(
-        self, adapter: TissAdapter
-    ) -> None:
+    def test_tiss_adapter_conforms_to_course_metadata_provider(self, adapter: TissAdapter) -> None:
         assert _conforms_to(adapter, CourseMetadataProvider)

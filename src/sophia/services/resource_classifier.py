@@ -7,83 +7,99 @@ from urllib.parse import urlparse
 from sophia.domain.models import CourseResource, ModuleInfo, ResourceCategory
 
 # Domain → category mapping
-_BOOK_DOMAINS: frozenset[str] = frozenset({
-    "springer.com",
-    "link.springer.com",
-    "dpunkt.de",
-    "rheinwerk-verlag.de",
-    "pearson.com",
-    "wiley.com",
-    "oreilly.com",
-    "heldermann.de",
-    "addison-wesley.de",
-    "cambridge.org",
-    "oxford.press",
-    "degruyter.com",
-    "hanser-fachbuch.de",
-})
+_BOOK_DOMAINS: frozenset[str] = frozenset(
+    {
+        "springer.com",
+        "link.springer.com",
+        "dpunkt.de",
+        "rheinwerk-verlag.de",
+        "pearson.com",
+        "wiley.com",
+        "oreilly.com",
+        "heldermann.de",
+        "addison-wesley.de",
+        "cambridge.org",
+        "oxford.press",
+        "degruyter.com",
+        "hanser-fachbuch.de",
+    }
+)
 
-_TUTORIAL_DOMAINS: frozenset[str] = frozenset({
-    "youtube.com",
-    "youtu.be",
-    "tutorialspoint.com",
-    "khanacademy.org",
-    "coursera.org",
-    "udemy.com",
-    "edx.org",
-})
+_TUTORIAL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "youtube.com",
+        "youtu.be",
+        "tutorialspoint.com",
+        "khanacademy.org",
+        "coursera.org",
+        "udemy.com",
+        "edx.org",
+    }
+)
 
-_DOCUMENTATION_DOMAINS: frozenset[str] = frozenset({
-    "docs.oracle.com",
-    "developer.mozilla.org",
-    "docs.python.org",
-    "cppreference.com",
-    "devdocs.io",
-})
+_DOCUMENTATION_DOMAINS: frozenset[str] = frozenset(
+    {
+        "docs.oracle.com",
+        "developer.mozilla.org",
+        "docs.python.org",
+        "cppreference.com",
+        "devdocs.io",
+    }
+)
 
-_PRACTICE_DOMAINS: frozenset[str] = frozenset({
-    "codechef.com",
-    "codingbat.com",
-    "edabit.com",
-    "leetcode.com",
-    "hackerrank.com",
-    "exercism.org",
-    "codeforces.com",
-})
+_PRACTICE_DOMAINS: frozenset[str] = frozenset(
+    {
+        "codechef.com",
+        "codingbat.com",
+        "edabit.com",
+        "leetcode.com",
+        "hackerrank.com",
+        "exercism.org",
+        "codeforces.com",
+    }
+)
 
-_TOOL_DOMAINS: frozenset[str] = frozenset({
-    "jetbrains.com",
-    "github.com",
-    "gitlab.com",
-    "visualstudio.com",
-})
+_TOOL_DOMAINS: frozenset[str] = frozenset(
+    {
+        "jetbrains.com",
+        "github.com",
+        "gitlab.com",
+        "visualstudio.com",
+    }
+)
 
 # Activity name keywords that override domain heuristics
-_BOOK_KEYWORDS: frozenset[str] = frozenset({
-    "literatur",
-    "buch",
-    "book",
-    "textbook",
-    "bücher",
-    "pflichtliteratur",
-    "empfohlene lektüre",
-    "reading list",
-    "lehrbuch",
-})
+_BOOK_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "literatur",
+        "buch",
+        "book",
+        "textbook",
+        "bücher",
+        "pflichtliteratur",
+        "empfohlene lektüre",
+        "reading list",
+        "lehrbuch",
+    }
+)
 
-_TUTORIAL_KEYWORDS: frozenset[str] = frozenset({
-    "tutorial",
-    "video",
-    "screencast",
-    "vorlesung",
-})
+_TUTORIAL_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "tutorial",
+        "video",
+        "screencast",
+        "vorlesung",
+    }
+)
 
-_PRACTICE_KEYWORDS: frozenset[str] = frozenset({
-    "übung",
-    "exercise",
-    "practice",
-    "aufgabe",
-})
+_PRACTICE_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "übung",
+        "exercise",
+        "practice",
+        "aufgabe",
+    }
+)
 
 # Maps each domain set to its category for iteration
 _DOMAIN_CATEGORIES: list[tuple[frozenset[str], ResourceCategory]] = [
