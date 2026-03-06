@@ -1,0 +1,291 @@
+<!--
+  TUWEL Grade Report fixture — derived from real /grade/report/user/index.php HTML.
+  Covers: category hierarchy (nested levels), item rows (Checkmark, Assignment, Quiz),
+  aggregate/total rows, "no grade" state, grade with value, range formats.
+  Columns vary per course: some have 7 cols (with weight/percentage), some have 4.
+-->
+<table class="table generaltable user-grade">
+ <thead>
+  <tr>
+   <th class="header column-itemname header c0" colspan="2" id="itemname231105" scope="col">Grade item</th>
+   <th class="header column-weight header c1" id="weight231105" scope="col">Calculated weight</th>
+   <th class="header column-grade header c2" id="grade231105" scope="col">Grade</th>
+   <th class="header column-range header c3" id="range231105" scope="col">Range</th>
+   <th class="header column-percentage header c4" id="percentage231105" scope="col">Percentage</th>
+   <th class="header column-feedback header c5" id="feedback231105" scope="col">Feedback</th>
+   <th class="header column-contributiontocoursetotal header c6 lastcol" id="contributiontocoursetotal231105" scope="col">Contribution to course total</th>
+  </tr>
+ </thead>
+ <tbody>
+  <!-- Level 1 Category: Course root -->
+  <tr class="" data-hidden="false">
+   <th class="level1 d1 b1b b1t category column-itemname cell c0 lastcol" colspan="8" id="cat_104934_231105" scope="row">
+    <div class="d-flex category-content">
+     <a aria-expanded="true" class="btn btn-icon me-1 toggle-category" data-categoryid="104934" data-target=".cat_104934[data-hidden='false']" href="#" role="button">
+      <span class="collapsed text-nowrap" title="Collapse"><i class="icon fa fa-chevron-down fa-fw"></i></span>
+      <span class="expanded text-nowrap" title="Expand"><i class="icon fa fa-chevron-right fa-fw"></i></span>
+     </a>
+     <span>186.866 Algorithmen und Datenstrukturen (VU 5,5) 2026S</span>
+    </div>
+   </th>
+  </tr>
+  <tr class="cat_104934 spacer" data-hidden="false">
+   <td class="level1 d1 b1t b2b b1l cell c0 lastcol" rowspan="20"></td>
+  </tr>
+
+  <!-- Level 2 Category: Übungsteil -->
+  <tr class="cat_104934" data-hidden="false">
+   <th class="level2 d2 b1b b1t category column-itemname cell c0 lastcol" colspan="7" id="cat_104937_231105" scope="row">
+    <div class="d-flex category-content">
+     <a aria-expanded="true" class="btn btn-icon me-1 toggle-category" data-categoryid="104937" data-target=".cat_104937[data-hidden='false']" href="#" role="button">
+      <span class="collapsed text-nowrap" title="Collapse"><i class="icon fa fa-chevron-down fa-fw"></i></span>
+      <span class="expanded text-nowrap" title="Expand"><i class="icon fa fa-chevron-right fa-fw"></i></span>
+     </a>
+     <span>Übungsteil</span>
+    </div>
+   </th>
+  </tr>
+  <tr class="cat_104934 cat_104937 spacer" data-hidden="false">
+   <td class="level2 d2 b1t b2b b1l cell c0 lastcol" rowspan="10"></td>
+  </tr>
+
+  <!-- Level 3 Category: Kreuze -->
+  <tr class="cat_104934 cat_104937" data-hidden="false">
+   <th class="level3 d3 b1b b1t category column-itemname cell c0 lastcol" colspan="6" id="cat_104952_231105" scope="row">
+    <div class="d-flex category-content">
+     <a aria-expanded="true" class="btn btn-icon me-1 toggle-category" data-categoryid="104952" href="#">
+      <span class="collapsed text-nowrap" title="Collapse"><i class="icon fa fa-chevron-down fa-fw"></i></span>
+      <span class="expanded text-nowrap" title="Expand"><i class="icon fa fa-chevron-right fa-fw"></i></span>
+     </a>
+     <span>Kreuze Übungsbeispiele</span>
+    </div>
+   </th>
+  </tr>
+  <tr class="cat_104934 cat_104937 cat_104952 spacer" data-hidden="false">
+   <td class="level3 d3 b1t b2b b1l cell c0 lastcol" rowspan="4"></td>
+  </tr>
+
+  <!-- Level 4 Item: Checkmark (no grade yet) -->
+  <tr class="cat_104934 cat_104937 cat_104952" data-hidden="false">
+   <th class="level4 item b1b column-itemname cell c0" colspan="1" id="row_684001_231105" scope="row">
+    <div class="item d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Checkmark" class="icon itemicon" src="/theme/image.php/tuwien/checkmark/1772515279/monologo?filtericon=1"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Checkmark">Checkmark</span>
+      <div class="rowtitle">
+       <span class="gradeitemheader" tabindex="0" title="UE1Mi (Wednesday)">UE1Mi (Wednesday)</span>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level4 item b1b itemcenter column-weight cell c1" headers="cat_104952_231105 row_684001_231105 weight231105">-</td>
+   <td class="level4 item b1b itemcenter column-grade cell c2" headers="cat_104952_231105 row_684001_231105 grade231105">-</td>
+   <td class="level4 item b1b itemcenter column-range cell c3" headers="cat_104952_231105 row_684001_231105 range231105">0–6</td>
+   <td class="level4 item b1b itemcenter column-percentage cell c4" headers="cat_104952_231105 row_684001_231105 percentage231105">-</td>
+   <td class="level4 item b1b feedbacktext column-feedback cell c5" headers="cat_104952_231105 row_684001_231105 feedback231105"></td>
+   <td class="level4 item b1b itemcenter column-contributiontocoursetotal cell c6 lastcol" headers="cat_104952_231105 row_684001_231105 contributiontocoursetotal231105">-</td>
+  </tr>
+
+  <!-- Level 4 Item: Checkmark (with a grade) -->
+  <tr class="cat_104934 cat_104937 cat_104952" data-hidden="false">
+   <th class="level4 item b1b column-itemname cell c0" colspan="1" id="row_684002_231105" scope="row">
+    <div class="item d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Checkmark" class="icon itemicon" src="/theme/image.php/tuwien/checkmark/1772515279/monologo?filtericon=1"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Checkmark">Checkmark</span>
+      <div class="rowtitle">
+       <a class="gradeitemheader" href="https://tuwel.tuwien.ac.at/mod/checkmark/view.php?id=2853642" title="Checkmark activity UE2Do (Thursday)">UE2Do (Thursday)</a>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level4 item b1b itemcenter column-weight cell c1" headers="cat_104952_231105 row_684002_231105 weight231105">16.67 %</td>
+   <td class="level4 item b1b itemcenter column-grade cell c2" headers="cat_104952_231105 row_684002_231105 grade231105">4</td>
+   <td class="level4 item b1b itemcenter column-range cell c3" headers="cat_104952_231105 row_684002_231105 range231105">0–6</td>
+   <td class="level4 item b1b itemcenter column-percentage cell c4" headers="cat_104952_231105 row_684002_231105 percentage231105">66.67 %</td>
+   <td class="level4 item b1b feedbacktext column-feedback cell c5" headers="cat_104952_231105 row_684002_231105 feedback231105"></td>
+   <td class="level4 item b1b itemcenter column-contributiontocoursetotal cell c6 lastcol" headers="cat_104952_231105 row_684002_231105 contributiontocoursetotal231105">1.28 %</td>
+  </tr>
+
+  <!-- Aggregate: category total -->
+  <tr class="cat_104934 cat_104937 cat_104952" data-hidden="false">
+   <th class="level3 d3 baggt b2b column-itemname cell c0" colspan="2" id="row_682239_231105" scope="row">
+    <div class="categoryitem d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Natural" class="icon icon itemicon" src="/theme/image.php/tuwien/core/1772515279/i/agg_sum" title="Natural"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Aggregation">Aggregation</span>
+      <div class="rowtitle">
+       <span class="gradeitemheader" tabindex="0" title="Kreuze Übungsbeispiele total">Kreuze Übungsbeispiele total</span>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level3 d3 baggt b2b itemcenter column-weight cell c1">-</td>
+   <td class="level3 d3 baggt b2b itemcenter column-grade cell c2">4</td>
+   <td class="level3 d3 baggt b2b itemcenter column-range cell c3">0–40</td>
+   <td class="level3 d3 baggt b2b itemcenter column-percentage cell c4">10.00 %</td>
+   <td class="level3 d3 baggt b2b feedbacktext column-feedback cell c5"></td>
+   <td class="level3 d3 baggt b2b itemcenter column-contributiontocoursetotal cell c6 lastcol">-</td>
+  </tr>
+
+  <!-- Level 2: Tests category with Assignment items -->
+  <tr class="cat_104934" data-hidden="false">
+   <th class="level2 d2 b1b b1t category column-itemname cell c0 lastcol" colspan="7" id="cat_104940_231105" scope="row">
+    <div class="d-flex category-content">
+     <a aria-expanded="true" class="btn btn-icon me-1 toggle-category" data-categoryid="104940" href="#">
+      <span class="collapsed text-nowrap" title="Collapse"><i class="icon fa fa-chevron-down fa-fw"></i></span>
+      <span class="expanded text-nowrap" title="Expand"><i class="icon fa fa-chevron-right fa-fw"></i></span>
+     </a>
+     <span>Tests</span>
+    </div>
+   </th>
+  </tr>
+  <tr class="cat_104934 cat_104940 spacer" data-hidden="false">
+   <td class="level2 d2 b1t b2b b1l cell c0 lastcol" rowspan="5"></td>
+  </tr>
+
+  <!-- Level 3 Item: Assignment (no grade) -->
+  <tr class="cat_104934 cat_104940" data-hidden="false">
+   <th class="level3 item b1b column-itemname cell c0" colspan="2" id="row_684010_231105" scope="row">
+    <div class="item d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Assignment" class="icon itemicon" src="/theme/image.php/tuwien/assign/1772515279/monologo?filtericon=1"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Assignment">Assignment</span>
+      <div class="rowtitle">
+       <a class="gradeitemheader" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2853612" title="Assignment activity Test 1">Test 1</a>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level3 item b1b itemcenter column-weight cell c1">-</td>
+   <td class="level3 item b1b itemcenter column-grade cell c2">
+    <div class="d-flex align-items-center">
+     <div>-</div>
+     <div class="ps-1 d-flex align-items-center">
+      <div class="action-menu moodle-actionmenu" data-enhance="moodle-core-actionmenu" id="action-menu-2">
+       <div class="menubar d-flex" id="action-menu-2-menubar">
+        <div class="action-menu-trigger">
+         <div class="dropdown">
+          <a class="btn btn-link btn-icon d-flex no-caret dropdown-toggle icon-no-margin" data-bs-toggle="dropdown" href="#" role="button" title="Actions">
+           <i class="icon fa fa-ellipsis fa-fw"></i>
+           <span class="visually-hidden d-inline-block">Actions</span>
+          </a>
+          <div class="dropdown-menu menu dropdown-menu-start" role="menu">
+           <a class="dropdown-item menu-action" href="https://tuwel.tuwien.ac.at/mod/assign/grade.php?id=2853612&amp;itemid=684010" role="menuitem">
+            <span class="menu-action-text">Grade analysis</span>
+           </a>
+          </div>
+         </div>
+        </div>
+       </div>
+      </div>
+     </div>
+    </div>
+   </td>
+   <td class="level3 item b1b itemcenter column-range cell c3">0–8</td>
+   <td class="level3 item b1b itemcenter column-percentage cell c4">-</td>
+   <td class="level3 item b1b feedbacktext column-feedback cell c5"></td>
+   <td class="level3 item b1b itemcenter column-contributiontocoursetotal cell c6 lastcol">-</td>
+  </tr>
+
+  <!-- Level 3 Item: Assignment (with grade) -->
+  <tr class="cat_104934 cat_104940" data-hidden="false">
+   <th class="level3 item b1b column-itemname cell c0" colspan="2" id="row_684011_231105" scope="row">
+    <div class="item d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Assignment" class="icon itemicon" src="/theme/image.php/tuwien/assign/1772515279/monologo?filtericon=1"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Assignment">Assignment</span>
+      <div class="rowtitle">
+       <a class="gradeitemheader" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2853630" title="Assignment activity Test 2">Test 2</a>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level3 item b1b itemcenter column-weight cell c1">50.00 %</td>
+   <td class="level3 item b1b itemcenter column-grade cell c2">6.50</td>
+   <td class="level3 item b1b itemcenter column-range cell c3">0–8</td>
+   <td class="level3 item b1b itemcenter column-percentage cell c4">81.25 %</td>
+   <td class="level3 item b1b feedbacktext column-feedback cell c5">Good work</td>
+   <td class="level3 item b1b itemcenter column-contributiontocoursetotal cell c6 lastcol">12.50 %</td>
+  </tr>
+
+  <!-- Aggregate: Tests total (Calculated grade) -->
+  <tr class="cat_104934 cat_104940" data-hidden="false">
+   <th class="level2 d2 baggt b2b column-itemname cell c0" colspan="3" id="row_682230_231105" scope="row">
+    <div class="categoryitem d-flex align-items-center">
+     <div class="me-1">
+      <i class="icon fa fa-calculator fa-fw icon itemicon" title="Calculated grade"></i>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Calculated grade">Calculated grade</span>
+      <div class="rowtitle">
+       <span class="gradeitemheader" tabindex="0" title="Tests total">Tests total</span>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level2 d2 baggt b2b itemcenter column-weight cell c1">-</td>
+   <td class="level2 d2 baggt b2b itemcenter column-grade cell c2">6.50</td>
+   <td class="level2 d2 baggt b2b itemcenter column-range cell c3">0–200</td>
+   <td class="level2 d2 baggt b2b itemcenter column-percentage cell c4">3.25 %</td>
+   <td class="level2 d2 baggt b2b feedbacktext column-feedback cell c5"></td>
+   <td class="level2 d2 baggt b2b itemcenter column-contributiontocoursetotal cell c6 lastcol">-</td>
+  </tr>
+
+  <!-- Level 3 Item: Quiz -->
+  <tr class="cat_104934" data-hidden="false">
+   <th class="level2 item b1b column-itemname cell c0" colspan="2" id="row_682092_231105" scope="row">
+    <div class="item d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Quiz" class="icon itemicon" src="/theme/image.php/tuwien/quiz/1772515279/monologo?filtericon=1"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Quiz">Quiz</span>
+      <div class="rowtitle">
+       <a class="gradeitemheader" href="https://tuwel.tuwien.ac.at/mod/quiz/view.php?id=2838849" title="Quiz activity Eingangstest">Eingangstest</a>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level2 item b1b itemcenter column-weight cell c1">-</td>
+   <td class="level2 item b1b itemcenter column-grade cell c2">85.00</td>
+   <td class="level2 item b1b itemcenter column-range cell c3">0–100</td>
+   <td class="level2 item b1b itemcenter column-percentage cell c4">85.00 %</td>
+   <td class="level2 item b1b feedbacktext column-feedback cell c5"></td>
+   <td class="level2 item b1b itemcenter column-contributiontocoursetotal cell c6 lastcol">-</td>
+  </tr>
+
+  <!-- Course total -->
+  <tr class="cat_104934 lastrow" data-hidden="false">
+   <th class="level1 d1 baggt b2b column-itemname cell c0" colspan="2" id="row_682000_231105" scope="row">
+    <div class="courseitem d-flex align-items-center">
+     <div class="me-1">
+      <img alt="Natural" class="icon icon itemicon" src="/theme/image.php/tuwien/core/1772515279/i/agg_sum" title="Natural"/>
+     </div>
+     <div>
+      <span class="d-block text-uppercase small" title="Aggregation">Aggregation</span>
+      <div class="rowtitle">
+       <span class="gradeitemheader" tabindex="0" title="Course total">Course total</span>
+      </div>
+     </div>
+    </div>
+   </th>
+   <td class="level1 d1 baggt b2b itemcenter column-weight cell c1">-</td>
+   <td class="level1 d1 baggt b2b itemcenter column-grade cell c2">10.50</td>
+   <td class="level1 d1 baggt b2b itemcenter column-range cell c3">0–52</td>
+   <td class="level1 d1 baggt b2b itemcenter column-percentage cell c4">20.19 %</td>
+   <td class="level1 d1 baggt b2b feedbacktext column-feedback cell c5"></td>
+   <td class="level1 d1 baggt b2b itemcenter column-contributiontocoursetotal cell c6 lastcol">-</td>
+  </tr>
+ </tbody>
+</table>

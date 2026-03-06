@@ -140,6 +140,22 @@ class MoodleAdapter:
             for c in data["courses"]
         ]
 
+    async def _scrape(self, path: str, params: dict[str, Any] | None = None) -> str:
+        """Fetch a Moodle page via GET and return raw HTML.
+
+        Checks for login redirect (session expired) and raises AuthError.
+        """
+        url = f"{self._host}{path}"
+        response = await self._http.get(
+            url,
+            params=params or {},
+            cookies={self._cookie_name: self._moodle_session},
+        )
+        if "login" in str(response.url) and response.status_code in (200, 302):
+            raise AuthError("Session expired — log in again with: sophia auth login")
+        response.raise_for_status()
+        return response.text
+
     async def get_course_content(self, course_id: int) -> list[CourseSection]:
         """Fetch course content by scraping the course page HTML.
 
@@ -147,16 +163,8 @@ class MoodleAdapter:
         Moodle instances, and WS tokens may not be available.  Scraping
         the course page with the session cookie is universally reliable.
         """
-        url = f"{self._host}/course/view.php"
-        response = await self._http.get(
-            url,
-            params={"id": course_id},
-            cookies={self._cookie_name: self._moodle_session},
-        )
-        if "login" in str(response.url) and response.status_code in (200, 302):
-            raise AuthError("Session expired \u2014 log in again with: sophia auth login")
-        response.raise_for_status()
-        return _parse_course_page(response.text)
+        html = await self._scrape("/course/view.php", {"id": course_id})
+        return _parse_course_page(html)
 
     # ------------------------------------------------------------------
     # ResourceProvider
@@ -179,16 +187,39 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_assignments(self, course_ids: list[int]) -> list[AssignmentInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[AssignmentInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/assign/index.php", {"id": cid})
+            results.extend(_parse_assignment_index(html, cid))
+        return results
 
     async def get_quizzes(self, course_ids: list[int]) -> list[QuizInfo]:
         raise NotImplementedError("WS transport removed; scraping replacement pending")
 
     async def get_checkmarks(self, course_ids: list[int]) -> list[CheckmarkInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[CheckmarkInfo] = []
+        for cid in course_ids:
+            grade_items = await self.get_grade_items(cid)
+            for item in grade_items:
+                if item.item_type.lower() != "checkmark":
+                    continue
+                has_grade = item.grade is not None and item.grade not in ("", "-")
+                results.append(
+                    CheckmarkInfo(
+                        id=item.id,
+                        name=item.name,
+                        course_id=cid,
+                        grade=item.grade,
+                        max_grade=item.max_grade,
+                        completed=has_grade,
+                        url=item.url,
+                    )
+                )
+        return results
 
     async def get_grade_items(self, course_id: int) -> list[GradeItem]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        html = await self._scrape("/grade/report/user/index.php", {"id": course_id})
+        return _parse_grade_report(html)
 
 
 # ------------------------------------------------------------------
@@ -265,3 +296,154 @@ def _extract_trailing_int(value: str, *, default: int = 0) -> int:
     if len(parts) == 2 and parts[1].isdigit():
         return int(parts[1])
     return default
+
+
+def _extract_id_from_row(row_id: str) -> int:
+    """Extract the numeric ID from a grade-row id like 'row_684001_231105'."""
+    match = re.match(r"row_(\d+)_", row_id)
+    return int(match.group(1)) if match else 0
+
+
+def _extract_range_max(range_text: str) -> str | None:
+    """Extract max value from range like '0–6' or '0-6'."""
+    # Handles both en-dash (U+2013) and regular hyphen
+    parts = re.split(r"[–\-]", range_text.strip())
+    if len(parts) == 2 and parts[1].strip():
+        return parts[1].strip()
+    return None
+
+
+def _parse_grade_report(html: str) -> list[GradeItem]:
+    """Parse TUWEL grade report HTML into ``GradeItem`` objects."""
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.generaltable.user-grade")
+    if not table:
+        return []
+
+    items: list[GradeItem] = []
+    current_category = ""
+
+    for row in table.select("tbody > tr"):
+        th = row.select_one("th")
+        if not th:
+            continue
+
+        # Category rows update the current category context
+        if "category" in (th.get("class") or []):
+            cat_span = th.select_one("div.category-content span:not(.collapsed):not(.expanded)")
+            if cat_span:
+                current_category = cat_span.get_text(strip=True)
+            continue
+
+        # Only process item rows (th with "item" class)
+        th_classes = list(th.get("class") or [])
+        if "item" not in th_classes:
+            continue
+
+        row_id = str(th.get("id", ""))
+        item_id = _extract_id_from_row(row_id)
+
+        # Item type from the uppercase label
+        type_el = th.select_one("span.d-block.text-uppercase")
+        item_type = type_el.get_text(strip=True) if type_el else ""
+
+        # Name from .rowtitle
+        name_el = th.select_one(".rowtitle")
+        name = name_el.get_text(strip=True) if name_el else ""
+
+        # URL from link
+        link_el = th.select_one("a.gradeitemheader[href]")
+        url: str | None = str(link_el["href"]) if link_el else None
+
+        # Grade — must strip action menu before extracting text
+        grade_el = row.select_one("td.column-grade")
+        grade: str | None = None
+        if grade_el:
+            for menu in grade_el.select("div.action-menu"):
+                menu.decompose()
+            grade_text = grade_el.get_text(strip=True)
+            grade = None if grade_text in ("", "-") else grade_text
+
+        # Range → max_grade
+        range_el = row.select_one("td.column-range")
+        range_text = range_el.get_text(strip=True) if range_el else ""
+        max_grade = _extract_range_max(range_text) if range_text else None
+
+        # Weight (may not exist in 4-column layouts)
+        weight_el = row.select_one("td.column-weight")
+        weight_text = weight_el.get_text(strip=True) if weight_el else None
+        weight = None if weight_text in (None, "", "-") else weight_text
+
+        # Percentage (may not exist)
+        pct_el = row.select_one("td.column-percentage")
+        pct_text = pct_el.get_text(strip=True) if pct_el else None
+        percentage = None if pct_text in (None, "", "-") else pct_text
+
+        # Feedback
+        fb_el = row.select_one("td.column-feedback")
+        feedback = fb_el.get_text(strip=True) if fb_el else ""
+
+        items.append(
+            GradeItem(
+                id=item_id,
+                name=name,
+                item_type=item_type,
+                grade=grade,
+                max_grade=max_grade,
+                weight=weight,
+                percentage=percentage,
+                feedback=feedback,
+                url=url,
+                category=current_category,
+            )
+        )
+
+    return items
+
+
+def _parse_assignment_index(html: str, course_id: int) -> list[AssignmentInfo]:
+    """Parse TUWEL assignment index HTML into ``AssignmentInfo`` objects."""
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.course-overview-table")
+    if not table:
+        return []
+
+    assignments: list[AssignmentInfo] = []
+
+    for row in table.select("tbody > tr[data-mdl-overview-cmid]"):
+        cmid = int(row["data-mdl-overview-cmid"])  # type: ignore[arg-type]
+
+        name_td = row.select_one("td[data-mdl-overview-item='name']")
+        name = str(name_td.get("data-mdl-overview-value", "")) if name_td else ""
+
+        due_td = row.select_one("td[data-mdl-overview-item='duedate']")
+        due_val = str(due_td.get("data-mdl-overview-value", "")) if due_td else ""
+        due_date = due_val if due_val else None
+
+        status_td = row.select_one("td[data-mdl-overview-item='submissionstatus']")
+        submission_status = str(status_td.get("data-mdl-overview-value", "")) if status_td else ""
+
+        grade_td = row.select_one("td[data-mdl-overview-item='Grade']")
+        grade_val = str(grade_td.get("data-mdl-overview-value", "")) if grade_td else ""
+        grade = None if grade_val in ("", "-") else grade_val
+
+        link = row.select_one("a.activityname[href]")
+        url: str | None = str(link["href"]) if link else None
+
+        row_classes = list(row.get("class") or [])
+        is_restricted = "bg-danger-subtle" in row_classes
+
+        assignments.append(
+            AssignmentInfo(
+                id=cmid,
+                name=name,
+                course_id=course_id,
+                due_date=due_date,
+                submission_status=submission_status,
+                grade=grade,
+                url=url,
+                is_restricted=is_restricted,
+            )
+        )
+
+    return assignments

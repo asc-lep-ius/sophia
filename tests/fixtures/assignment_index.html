@@ -1,0 +1,108 @@
+<!--
+  TUWEL Assignment Index fixture — derived from real /mod/assign/index.php HTML.
+  Covers: assignments with due dates, without due dates, various submission statuses,
+  grade column (optional), overdue/restricted rows (bg-danger-subtle), group restrictions.
+-->
+<table class="course-overview-table boxaligncenter table w-100 d-block d-md-table">
+ <caption class="accesshide">Table listing all Assignment activities</caption>
+ <thead>
+  <tr>
+   <th class="text-start border-top-0" data-mdl-overview-column="name" scope="col">Name</th>
+   <th class="text-start border-top-0" data-mdl-overview-column="duedate" scope="col">Due date</th>
+   <th class="text-start border-top-0" data-mdl-overview-column="submissionstatus" scope="col">Submission status</th>
+   <th class="text-start border-top-0" data-mdl-overview-column="Grade" scope="col">Grade</th>
+  </tr>
+ </thead>
+ <tbody>
+  <!-- Normal assignment with due date, no submission -->
+  <tr data-mdl-overview-cmid="2847774">
+   <td class="text-start" data-mdl-overview-item="name" data-mdl-overview-value="Upload Motivationsschreiben">
+    <div class="d-flex flex-column">
+     <div class="fw-bold">
+      <a class="activityname" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2847774">Upload Motivationsschreiben</a>
+     </div>
+     <div class="small">Upload Motivationsschreiben</div>
+     <div class="ms-2"></div>
+    </div>
+   </td>
+   <td class="text-start" data-mdl-overview-item="duedate" data-mdl-overview-value="1774004400">
+    <span class="date" data-timestamp="1774004400">Friday, 20 March, 12:00</span>
+   </td>
+   <td class="text-start" data-mdl-overview-item="submissionstatus" data-mdl-overview-value="No submission">No submission</td>
+   <td class="text-start" data-mdl-overview-item="Grade" data-mdl-overview-value="-">-</td>
+  </tr>
+
+  <!-- Assignment without due date, no submission -->
+  <tr data-mdl-overview-cmid="2853612">
+   <td class="text-start" data-mdl-overview-item="name" data-mdl-overview-value="Test 1">
+    <div class="d-flex flex-column">
+     <div class="fw-bold">
+      <a class="activityname" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2853612">Test 1</a>
+     </div>
+     <div class="small">Übung 6 (Lesson 6)</div>
+     <div class="ms-2"></div>
+    </div>
+   </td>
+   <td class="text-start" data-mdl-overview-item="duedate" data-mdl-overview-value="">
+   </td>
+   <td class="text-start" data-mdl-overview-item="submissionstatus" data-mdl-overview-value="No submission">No submission</td>
+   <td class="text-start" data-mdl-overview-item="Grade" data-mdl-overview-value="-">-</td>
+  </tr>
+
+  <!-- Assignment with submitted status and grade -->
+  <tr data-mdl-overview-cmid="2853630">
+   <td class="text-start" data-mdl-overview-item="name" data-mdl-overview-value="Test 2">
+    <div class="d-flex flex-column">
+     <div class="fw-bold">
+      <a class="activityname" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2853630">Test 2</a>
+     </div>
+     <div class="small">Übung 11 (Lesson 11)</div>
+     <div class="ms-2"></div>
+    </div>
+   </td>
+   <td class="text-start" data-mdl-overview-item="duedate" data-mdl-overview-value="1778000000">
+    <span class="date" data-timestamp="1778000000">Wednesday, 4 June, 14:00</span>
+   </td>
+   <td class="text-start" data-mdl-overview-item="submissionstatus" data-mdl-overview-value="Submitted for grading">Submitted for grading</td>
+   <td class="text-start" data-mdl-overview-item="Grade" data-mdl-overview-value="6.50">6.50</td>
+  </tr>
+
+  <!-- Overdue/past-due with dimmed date -->
+  <tr data-mdl-overview-cmid="2856828">
+   <td class="text-start" data-mdl-overview-item="name" data-mdl-overview-value="Abgabe zum Üben">
+    <div class="d-flex flex-column">
+     <div class="fw-bold">
+      <a class="activityname" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2856828">Abgabe zum Üben</a>
+     </div>
+     <div class="small">Einstufungstests (Kompetenzstufe 2 und Kompetenzstufe 3)</div>
+     <div class="ms-2"></div>
+    </div>
+   </td>
+   <td class="text-start" data-mdl-overview-item="duedate" data-mdl-overview-value="1772521200">
+    <span class="date dimmed_text" data-timestamp="1772521200">Tuesday, 3 March, 08:00</span>
+   </td>
+   <td class="text-start" data-mdl-overview-item="submissionstatus" data-mdl-overview-value="No submission">No submission</td>
+   <td class="text-start" data-mdl-overview-item="Grade" data-mdl-overview-value="-">-</td>
+  </tr>
+
+  <!-- Group-restricted assignment (bg-danger-subtle, empty due/status) -->
+  <tr class="bg-danger-subtle" data-mdl-overview-cmid="2856843">
+   <td class="text-start" data-mdl-overview-item="name" data-mdl-overview-value="Einstufungstest Kompetenzstufe 2">
+    <div class="d-flex flex-column">
+     <div class="fw-bold">
+      <a class="activityname" href="https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2856843">Einstufungstest Kompetenzstufe 2</a>
+     </div>
+     <div class="small">Einstufungstests (Kompetenzstufe 2 und Kompetenzstufe 3)</div>
+     <div class="ms-2"></div>
+     <div class="text-danger-emphasis small">
+      <i class="icon fa fa-circle-xmark fa-fw" title="Information not available because you are not a member of any group"></i>
+      You are not a member of any group
+     </div>
+    </div>
+   </td>
+   <td class="" data-mdl-overview-item="duedate" data-mdl-overview-value=""></td>
+   <td class="" data-mdl-overview-item="submissionstatus" data-mdl-overview-value=""></td>
+   <td class="" data-mdl-overview-item="Grade" data-mdl-overview-value=""></td>
+  </tr>
+ </tbody>
+</table>

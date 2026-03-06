@@ -112,16 +112,51 @@ class CourseSection(BaseModel):
     modules: list[ModuleInfo]
 
 
+# --- TISS models ---
+
+
+class TissCourseInfo(BaseModel):
+    """Course metadata from the TISS public API."""
+
+    course_number: str
+    semester: str
+    course_type: str = ""  # "VU", "UE", "SE", "VO", etc.
+    title_de: str = ""
+    title_en: str = ""
+    ects: float = 0.0
+    description_de: str = ""
+    description_en: str = ""
+    objectives_de: str = ""
+    objectives_en: str = ""
+
+
+class TissExamDate(BaseModel):
+    """An exam date from the TISS public API."""
+
+    exam_id: str
+    course_number: str
+    title: str = ""
+    date_start: str | None = None
+    date_end: str | None = None
+    registration_start: str | None = None
+    registration_end: str | None = None
+    mode: str = ""  # "WRITTEN", "ORAL", etc.
+
+
 # --- Placeholder models for ports (will be fleshed out in later phases) ---
 
 
 class AssignmentInfo(BaseModel):
-    """Placeholder for assignment data (Chronos phase)."""
+    """An assignment from the TUWEL assignment index page."""
 
-    id: int
+    id: int  # Course module ID (cmid)
     name: str
     course_id: int
-    due_date: str | None = None
+    due_date: str | None = None  # UNIX timestamp as string, or None
+    submission_status: str = ""
+    grade: str | None = None
+    url: str | None = None
+    is_restricted: bool = False
 
 
 class QuizInfo(BaseModel):
@@ -133,21 +168,30 @@ class QuizInfo(BaseModel):
 
 
 class CheckmarkInfo(BaseModel):
-    """Placeholder for checkmark/completion data."""
+    """Checkmark (Kreuzerlübung) data — extracted from the grade report."""
 
     id: int
     name: str
     course_id: int
+    grade: str | None = None
+    max_grade: str | None = None
     completed: bool = False
+    url: str | None = None
 
 
 class GradeItem(BaseModel):
-    """Placeholder for grade item data."""
+    """A grade item from the TUWEL grade report."""
 
     id: int
     name: str
-    grade: float | None = None
-    max_grade: float | None = None
+    item_type: str = ""
+    grade: str | None = None
+    max_grade: str | None = None
+    weight: str | None = None
+    percentage: str | None = None
+    feedback: str = ""
+    url: str | None = None
+    category: str = ""
 
 
 class ReportData(BaseModel):

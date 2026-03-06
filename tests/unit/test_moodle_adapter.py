@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 import respx
@@ -9,8 +11,11 @@ import respx
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.domain.errors import AuthError, MoodleError
 from sophia.domain.models import (
+    AssignmentInfo,
+    CheckmarkInfo,
     Course,
     CourseSection,
+    GradeItem,
 )
 from sophia.domain.ports import AssignmentProvider, CourseProvider, ResourceProvider
 
@@ -303,17 +308,9 @@ class TestNotImplementedMethods:
         with pytest.raises(NotImplementedError, match="scraping replacement pending"):
             await adapter.get_course_books([1])
 
-    async def test_get_assignments(self, adapter: MoodleAdapter):
-        with pytest.raises(NotImplementedError, match="scraping replacement pending"):
-            await adapter.get_assignments([1])
-
     async def test_get_quizzes(self, adapter: MoodleAdapter):
         with pytest.raises(NotImplementedError, match="scraping replacement pending"):
             await adapter.get_quizzes([1])
-
-    async def test_get_grade_items(self, adapter: MoodleAdapter):
-        with pytest.raises(NotImplementedError, match="scraping replacement pending"):
-            await adapter.get_grade_items(1)
 
 
 # ------------------------------------------------------------------
@@ -372,3 +369,247 @@ class TestProtocolConformance:
 
     def test_satisfies_assignment_provider(self, adapter: MoodleAdapter):
         assert _conforms_to(adapter, AssignmentProvider)
+
+
+# ------------------------------------------------------------------
+# Fixtures directory
+# ------------------------------------------------------------------
+
+FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+GRADE_REPORT_PATH = "/grade/report/user/index.php"
+ASSIGN_INDEX_PATH = "/mod/assign/index.php"
+
+
+# ------------------------------------------------------------------
+# Grade report (Phase 0.5.2)
+# ------------------------------------------------------------------
+
+
+class TestGradeReport:
+    @respx.mock
+    async def test_parses_grade_items(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "grade_report.html").read_text()
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        items = await adapter.get_grade_items(course_id=231105)
+
+        assert len(items) == 5
+        assert all(isinstance(i, GradeItem) for i in items)
+
+        # Checkmark without grade
+        ue1 = items[0]
+        assert ue1.id == 684001
+        assert ue1.name == "UE1Mi (Wednesday)"
+        assert ue1.item_type == "Checkmark"
+        assert ue1.grade is None
+        assert ue1.max_grade == "6"
+
+        # Checkmark with grade
+        ue2 = items[1]
+        assert ue2.id == 684002
+        assert ue2.name == "UE2Do (Thursday)"
+        assert ue2.grade == "4"
+        assert ue2.weight == "16.67 %"
+        assert ue2.percentage == "66.67 %"
+        assert ue2.url == "https://tuwel.tuwien.ac.at/mod/checkmark/view.php?id=2853642"
+
+        # Assignment without grade (has action menu!)
+        test1 = items[2]
+        assert test1.id == 684010
+        assert test1.name == "Test 1"
+        assert test1.item_type == "Assignment"
+        assert test1.grade is None
+        assert test1.max_grade == "8"
+
+        # Assignment with grade
+        test2 = items[3]
+        assert test2.id == 684011
+        assert test2.name == "Test 2"
+        assert test2.grade == "6.50"
+        assert test2.feedback == "Good work"
+
+        # Quiz
+        quiz = items[4]
+        assert quiz.id == 682092
+        assert quiz.name == "Eingangstest"
+        assert quiz.item_type == "Quiz"
+        assert quiz.grade == "85.00"
+
+    @respx.mock
+    async def test_grade_with_action_menu_stripped(self, adapter: MoodleAdapter):
+        """The 'Actions' dropdown text must NOT leak into the grade value."""
+        html = (FIXTURES_DIR / "grade_report.html").read_text()
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        items = await adapter.get_grade_items(course_id=231105)
+        # Test 1 has an action menu in the grade cell — grade should be None (dash)
+        test1 = next(i for i in items if i.name == "Test 1")
+        assert test1.grade is None
+        assert "Actions" not in (test1.grade or "")
+
+    @respx.mock
+    async def test_handles_empty_table(self, adapter: MoodleAdapter):
+        empty_html = "<html><body><p>No grades</p></body></html>"
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=empty_html)
+        )
+        items = await adapter.get_grade_items(course_id=1)
+        assert items == []
+
+    async def test_session_expired_raises_auth_error(self, adapter: MoodleAdapter):
+        from unittest.mock import AsyncMock
+
+        login_url = f"{HOST}/login/index.php"
+        mock_resp = httpx.Response(
+            200,
+            text="<html>Login page</html>",
+            request=httpx.Request("GET", login_url),
+        )
+        adapter._http = AsyncMock()  # noqa: SLF001
+        adapter._http.get = AsyncMock(return_value=mock_resp)  # noqa: SLF001
+        with pytest.raises(AuthError, match="Session expired"):
+            await adapter.get_grade_items(course_id=1)
+
+
+# ------------------------------------------------------------------
+# Assignment index (Phase 0.5.3)
+# ------------------------------------------------------------------
+
+
+class TestAssignmentIndex:
+    @respx.mock
+    async def test_parses_assignments(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "assignment_index.html").read_text()
+        respx.route(method="GET", path=ASSIGN_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        assignments = await adapter.get_assignments([42])
+
+        assert len(assignments) == 5
+        assert all(isinstance(a, AssignmentInfo) for a in assignments)
+
+        # First assignment: normal with due date
+        a0 = assignments[0]
+        assert a0.id == 2847774
+        assert a0.name == "Upload Motivationsschreiben"
+        assert a0.course_id == 42
+        assert a0.due_date == "1774004400"
+        assert a0.submission_status == "No submission"
+        assert a0.grade is None
+        assert a0.is_restricted is False
+
+        # Assignment without due date
+        a1 = assignments[1]
+        assert a1.id == 2853612
+        assert a1.name == "Test 1"
+        assert a1.due_date is None
+
+        # Assignment with grade
+        a2 = assignments[2]
+        assert a2.id == 2853630
+        assert a2.name == "Test 2"
+        assert a2.grade == "6.50"
+        assert a2.submission_status == "Submitted for grading"
+        assert a2.url == "https://tuwel.tuwien.ac.at/mod/assign/view.php?id=2853630"
+
+    @respx.mock
+    async def test_restricted_assignment_detected(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "assignment_index.html").read_text()
+        respx.route(method="GET", path=ASSIGN_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        assignments = await adapter.get_assignments([42])
+        restricted = [a for a in assignments if a.is_restricted]
+        assert len(restricted) == 1
+        assert restricted[0].id == 2856843
+        assert restricted[0].name == "Einstufungstest Kompetenzstufe 2"
+
+    @respx.mock
+    async def test_handles_empty_table(self, adapter: MoodleAdapter):
+        empty_html = "<html><body><p>No assignments</p></body></html>"
+        respx.route(method="GET", path=ASSIGN_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=empty_html)
+        )
+        assignments = await adapter.get_assignments([1])
+        assert assignments == []
+
+    @respx.mock
+    async def test_multiple_courses(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "assignment_index.html").read_text()
+        empty_html = "<html><body><p>No assignments</p></body></html>"
+        respx.route(method="GET", path=ASSIGN_INDEX_PATH, params={"id": "10"}).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        respx.route(method="GET", path=ASSIGN_INDEX_PATH, params={"id": "20"}).mock(
+            return_value=httpx.Response(200, text=empty_html)
+        )
+        results = await adapter.get_assignments([10, 20])
+        # All from course 10, none from course 20
+        assert len(results) == 5
+        assert all(a.course_id == 10 for a in results)
+
+
+# ------------------------------------------------------------------
+# Checkmarks (Phase 0.5.4)
+# ------------------------------------------------------------------
+
+
+class TestCheckmarks:
+    @respx.mock
+    async def test_extracts_checkmarks_from_grades(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "grade_report.html").read_text()
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        checkmarks = await adapter.get_checkmarks([231105])
+
+        assert len(checkmarks) == 2
+        assert all(isinstance(c, CheckmarkInfo) for c in checkmarks)
+        assert checkmarks[0].name == "UE1Mi (Wednesday)"
+        assert checkmarks[1].name == "UE2Do (Thursday)"
+
+    @respx.mock
+    async def test_completed_vs_incomplete(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "grade_report.html").read_text()
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        checkmarks = await adapter.get_checkmarks([231105])
+
+        # UE1Mi has grade "-" → incomplete
+        assert checkmarks[0].completed is False
+        assert checkmarks[0].grade is None
+
+        # UE2Do has grade "4" → completed
+        assert checkmarks[1].completed is True
+        assert checkmarks[1].grade == "4"
+        assert checkmarks[1].max_grade == "6"
+
+    @respx.mock
+    async def test_no_checkmarks_in_course(self, adapter: MoodleAdapter):
+        """Grade report with only Assignment/Quiz items → empty checkmarks list."""
+        html = """
+        <table class="table generaltable user-grade">
+         <thead><tr><th>Grade item</th><th>Grade</th></tr></thead>
+         <tbody>
+          <tr>
+           <th class="item" id="row_100_1" scope="row">
+            <div class="item">
+             <div><span class="d-block text-uppercase small">Assignment</span>
+              <div class="rowtitle"><span class="gradeitemheader">HW1</span></div>
+             </div>
+            </div>
+           </th>
+           <td class="column-grade">10</td>
+           <td class="column-range">0–20</td>
+          </tr>
+         </tbody>
+        </table>
+        """
+        respx.route(method="GET", path=GRADE_REPORT_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        checkmarks = await adapter.get_checkmarks([42])
+        assert checkmarks == []
