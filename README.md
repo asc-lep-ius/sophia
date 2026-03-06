@@ -2,7 +2,7 @@
 
 *"I am the love of wisdom, the spirit that kindles the flame of truth in those who seek it."*
 
-A student toolkit for TU Wien that automates the tedious parts of academic life (finding textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
+A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
 **Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional. Chronos and Athena are planned.
 
@@ -134,16 +134,16 @@ uv run sophia books discover
 Sophia scans your enrolled TUWEL courses, extracts textbook references from course descriptions and resources, and prints a table of everything it found. The output looks something like this:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│  Bücherwurm — Discovered References                                         │
-├─────────────────────────┬──────────────────────────────┬─────────────────────┤
-│ Course                   │ Title                         │ ISBN                │
-├─────────────────────────┼──────────────────────────────┼─────────────────────┤
-│ Algorithms & Data Struc. │ Introduction to Algorithms     │ 978-0-262-04630-5   │
-│ Algorithms & Data Struc. │ Algorithm Design               │ 978-0-321-29535-4   │
-│ Analysis 1               │ Principles of Math. Analysis   │ 978-0-07-054235-8   │
-└─────────────────────────┴──────────────────────────────┴─────────────────────┘
- Found 12 references across 5 courses.
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Bücherwurm — Discovered References                                      │
+├──────────────────────────┬──────────────────────────────┬────────────────┤
+│ Course                   │ Title                        │ ISBN           │
+├──────────────────────────┼──────────────────────────────┼────────────────┤
+│ Algorithms & Data Struc. │ Introduction to Algorithms   │ 978-0-262-046… │
+│ Algorithms & Data Struc. │ Algorithm Design             │ 978-0-321-295… │
+│ Analysis 1               │ Principles of Math. Analysis │ 978-0-07-054…  │
+└──────────────────────────┴──────────────────────────────┴────────────────┘
+Found 12 references across 5 courses.
 ```
 
 ✅ A table of textbook references appears. You're done. Welcome to Sophia.
@@ -199,7 +199,7 @@ Sophia is built on Jean Piaget's constructivist epistemology: the idea that know
 This has real design consequences. Every feature passes through a filter: *does this help the student construct understanding, or does it bypass thinking?* If a feature does the thinking for you, it doesn't ship.
 
 > *"The principal goal of education in the schools should be creating men and women who are capable of doing new things, not simply repeating what other generations have done."*
-> — Piaget, in Bringuier, *Conversations with Jean Piaget* (1980), p. 132
+> — Piaget, in Bringuier, J.-C. (1980). *Conversations with Jean Piaget* (B. M. Gulati, Trans.). University of Chicago Press, p. 132.
 
 ### The Predict → Act → Reflect Cycle
 
@@ -240,12 +240,12 @@ In practice, this means your Sophia dashboard might show something like: "Your e
 
 Sophia's design draws on well-established research in cognitive and learning science. Each of these directly shaped a feature or a design constraint:
 
-- **Piaget:** Constructivism and equilibration: knowledge is built through prediction, conflict, and accommodation. This gives Sophia its core loop: predict → act → reflect.
-- **Vygotsky:** Zone of proximal development: effective tools scaffold what's currently too hard and fade support as competence grows. Sophia's prompts become less frequent as your calibration improves.
-- **Bjork & Bjork** (1992): Desirable difficulties: conditions that make learning harder in the short term (spacing, interleaving, retrieval practice) enhance long-term retention and transfer. Sophia never optimizes for short-term ease.
-- **Kapur** (2008): Productive failure: students who struggle with a problem before receiving instruction develop deeper conceptual understanding than those given instruction first. Sophia lets you struggle with predictions before showing data.
-- **Dunlosky et al.** (2013): Comprehensive review of learning strategies. Self-explanation and practice testing ranked as the highest-utility strategies. Sophia emphasizes both.
-- **Roediger & Karpicke** (2006): The testing effect: retrieving information from memory strengthens retention more than re-reading it. Athena's flashcard system is built entirely on retrieval practice.
+- **Piaget:** Constructivism and equilibration — knowledge is built through prediction, conflict, and accommodation. This gives Sophia its core loop: predict → act → reflect. *(Piaget, J. (1950). The Psychology of Intelligence. Routledge & Kegan Paul.)*
+- **Vygotsky:** Zone of proximal development — effective tools scaffold what's currently too hard and fade support as competence grows. Sophia's prompts become less frequent as your calibration improves. *(Vygotsky, L. S. (1978). Mind in Society: The Development of Higher Psychological Processes. Harvard University Press.)*
+- **Bjork & Bjork (1992):** Desirable difficulties — conditions that make learning harder in the short term (spacing, interleaving, retrieval practice) enhance long-term retention and transfer. Sophia never optimizes for short-term ease. *(Bjork, R. A. (1994). Memory and metamemory considerations in the training of human beings. In J. Metcalfe & A. Shimamura (Eds.), Metacognition: Knowing about Knowing (pp. 185–205). MIT Press.)*
+- **Kapur (2008):** Productive failure — students who struggle with a problem before receiving instruction develop deeper conceptual understanding than those given instruction first. Sophia lets you struggle with predictions before showing data. *(Kapur, M. (2008). Productive failure. Cognition and Instruction, 26(3), 379–424. https://doi.org/10.1080/07370000802212669)*
+- **Dunlosky et al. (2013):** Comprehensive review of learning strategies — self-explanation and practice testing ranked as the highest-utility strategies. Sophia emphasizes both. *(Dunlosky, J., Rawson, K. A., Marsh, E. J., Nathan, M. J., & Willingham, D. T. (2013). Improving students' learning with effective learning techniques. Psychological Science in the Public Interest, 14(1), 4–58. https://doi.org/10.1177/1529100612453266)*
+- **Roediger & Karpicke (2006):** The testing effect — retrieving information from memory strengthens retention more than re-reading it. Athena's flashcard system is built entirely on retrieval practice. *(Roediger, H. L., III, & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves long-term retention. Psychological Science, 17(3), 249–255. https://doi.org/10.1111/j.1467-9280.2006.01693.x)*
 
 ---
 
