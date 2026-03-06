@@ -135,7 +135,7 @@ Sophia scans your enrolled TUWEL courses, extracts textbook references from cour
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│ Bücherwurm — Discovered References                                      │
+│ Bücherwurm — Discovered References                                       │
 ├──────────────────────────┬──────────────────────────────┬────────────────┤
 │ Course                   │ Title                        │ ISBN           │
 ├──────────────────────────┼──────────────────────────────┼────────────────┤
