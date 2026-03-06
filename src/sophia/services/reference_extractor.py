@@ -8,7 +8,7 @@ from difflib import SequenceMatcher
 from html import unescape
 from typing import assert_never
 
-import isbnlib
+import isbnlib  # type: ignore[import-untyped]
 import structlog
 from bs4 import BeautifulSoup
 
@@ -126,16 +126,16 @@ def _extract_isbns(text: str) -> list[str]:
     for match in ISBN_REGEX.findall(text):
         candidates.add(match)
 
-    for candidate in isbnlib.get_isbnlike(text):
-        candidates.add(candidate)
+    for candidate in isbnlib.get_isbnlike(text):  # type: ignore[no-untyped-call]
+        candidates.add(str(candidate))  # pyright: ignore[reportUnknownArgumentType]
 
     valid: list[str] = []
     seen: set[str] = set()
     for raw in candidates:
-        canonical = isbnlib.canonical(raw)
+        canonical: str = isbnlib.canonical(raw)  # type: ignore[no-untyped-call]
         if canonical in seen:
             continue
-        if isbnlib.is_isbn13(canonical) or isbnlib.is_isbn10(canonical):
+        if isbnlib.is_isbn13(canonical) or isbnlib.is_isbn10(canonical):  # type: ignore[no-untyped-call]
             seen.add(canonical)
             valid.append(canonical)
 
@@ -144,7 +144,7 @@ def _extract_isbns(text: str) -> list[str]:
 
 def _classify_isbn(isbn: str) -> HasISBN13 | HasISBN10:
     """Classify a validated ISBN by length."""
-    if isbnlib.is_isbn13(isbn):
+    if isbnlib.is_isbn13(isbn):  # type: ignore[no-untyped-call]
         return HasISBN13(isbn=isbn)
     return HasISBN10(isbn=isbn)
 
@@ -231,7 +231,7 @@ def _build_reference(
                 course_id=course_id,
                 confidence=0.5,
             )
-        case unreachable:
+        case unreachable:  # pyright: ignore[reportUnnecessaryComparison]
             assert_never(unreachable)
 
 

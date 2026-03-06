@@ -14,6 +14,7 @@ from sophia.domain.models import (
     ModuleInfo,
     ReferenceSource,
     TissCourseInfo,
+    TissExamDate,
 )
 from sophia.services.pipeline import discover_books
 
@@ -114,7 +115,7 @@ class FakeMetadataProvider:
             return self._courses[key]
         return TissCourseInfo(course_number=course_number, semester=semester)
 
-    async def get_exam_dates(self, course_number: str) -> list:
+    async def get_exam_dates(self, course_number: str) -> list[TissExamDate]:
         return []
 
 

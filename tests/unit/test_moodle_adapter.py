@@ -290,8 +290,8 @@ class TestGetCourseContent:
             text="<html>Login page</html>",
             request=httpx.Request("GET", login_url),
         )
-        adapter._http = AsyncMock()  # noqa: SLF001
-        adapter._http.get = AsyncMock(return_value=mock_resp)  # noqa: SLF001
+        adapter._http = AsyncMock()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        adapter._http.get = AsyncMock(return_value=mock_resp)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         with pytest.raises(AuthError, match="Session expired"):
             await adapter.get_course_content(course_id=1)
 
@@ -467,8 +467,8 @@ class TestGradeReport:
             text="<html>Login page</html>",
             request=httpx.Request("GET", login_url),
         )
-        adapter._http = AsyncMock()  # noqa: SLF001
-        adapter._http.get = AsyncMock(return_value=mock_resp)  # noqa: SLF001
+        adapter._http = AsyncMock()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        adapter._http.get = AsyncMock(return_value=mock_resp)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         with pytest.raises(AuthError, match="Session expired"):
             await adapter.get_grade_items(course_id=1)
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import re
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import structlog
@@ -91,16 +91,16 @@ class MoodleAdapter:
         if "application/json" not in content_type:
             raise AuthError("Session expired — log in again with: sophia auth login")
 
-        body = response.json()
+        raw_body: Any = response.json()
 
-        if not isinstance(body, list) or len(body) == 0:
-            raise MoodleError(f"Unexpected AJAX response format: {body}")
+        if not isinstance(raw_body, list) or not raw_body:
+            raise MoodleError(f"Unexpected AJAX response format: {raw_body}")
 
-        result = body[0]
+        result = cast("dict[str, Any]", raw_body[0])
         if result.get("error"):
-            exception = result.get("exception", {})
-            errorcode = exception.get("errorcode", "")
-            message = exception.get("message", str(result))
+            exception = cast("dict[str, Any]", result.get("exception", {}))
+            errorcode = str(exception.get("errorcode", ""))
+            message = str(exception.get("message", str(result)))
             if errorcode in _AUTH_ERROR_CODES:
                 raise AuthError(message)
             raise MoodleError(f"[{errorcode}] {message}")
@@ -262,7 +262,9 @@ def _parse_activity_element(el: Tag) -> ModuleInfo | None:
     module_id = int(match.group(1))
 
     modname = ""
-    for cls in el.get("class", []):
+    raw_classes = el.get("class")
+    classes: list[str] = raw_classes if isinstance(raw_classes, list) else []
+    for cls in classes:
         if cls.startswith("modtype_"):
             modname = cls[len("modtype_") :]
             break

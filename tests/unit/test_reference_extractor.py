@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import isbnlib
+import isbnlib  # type: ignore[import-untyped]
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -12,9 +12,9 @@ from sophia.domain.models import BookReference, ReferenceSource
 from sophia.domain.ports import ReferenceExtractor
 from sophia.services.reference_extractor import (
     RegexReferenceExtractor,
-    _deduplicate,
-    _parse_resource_name,
-    _strip_html,
+    _deduplicate,  # pyright: ignore[reportPrivateUsage]
+    _parse_resource_name,  # pyright: ignore[reportPrivateUsage]
+    _strip_html,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -94,7 +94,7 @@ class TestISBNExtraction:
         # Only valid ISBNs survive validation
         for ref in refs:
             if ref.isbn:
-                assert isbnlib.is_isbn10(ref.isbn) or isbnlib.is_isbn13(ref.isbn)
+                assert isbnlib.is_isbn10(ref.isbn) or isbnlib.is_isbn13(ref.isbn)  # type: ignore[no-untyped-call]
 
     def test_isbn_sets_correct_source_and_course(self, extractor: RegexReferenceExtractor):
         text = "978-0-201-63361-0"
