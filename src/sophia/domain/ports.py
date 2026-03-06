@@ -24,6 +24,8 @@ if TYPE_CHECKING:
         ReferenceSource,
         ReportData,
         SearchResult,
+        TissCourseInfo,
+        TissExamDate,
     )
 
 
@@ -51,6 +53,13 @@ class AssignmentProvider(Protocol):
     async def get_quizzes(self, course_ids: list[int]) -> list[QuizInfo]: ...
     async def get_checkmarks(self, course_ids: list[int]) -> list[CheckmarkInfo]: ...
     async def get_grade_items(self, course_id: int) -> list[GradeItem]: ...
+
+
+class CourseMetadataProvider(Protocol):
+    """Course metadata from external sources (TISS)."""
+
+    async def get_course_details(self, course_number: str, semester: str) -> TissCourseInfo: ...
+    async def get_exam_dates(self, course_number: str) -> list[TissExamDate]: ...
 
 
 class BookSearcher(Protocol):

@@ -10,6 +10,7 @@ import structlog
 
 from sophia.adapters.auth import load_session, session_path
 from sophia.adapters.moodle import MoodleAdapter
+from sophia.adapters.tiss import TissAdapter
 from sophia.config import Settings
 from sophia.domain.errors import AuthError
 
@@ -30,6 +31,7 @@ class AppContainer:
     http: httpx.AsyncClient
     db: aiosqlite.Connection
     moodle: MoodleAdapter
+    tiss: TissAdapter
 
 
 @contextlib.asynccontextmanager
@@ -60,9 +62,12 @@ async def create_app(settings: Settings | None = None):
             cookie_name=creds.cookie_name,
         )
 
+        tiss = TissAdapter(http=http, host=settings.tiss_host)
+
         yield AppContainer(
             settings=settings,
             http=http,
             db=db,
             moodle=moodle,
+            tiss=tiss,
         )

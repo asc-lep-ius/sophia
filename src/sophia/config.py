@@ -14,8 +14,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="SOPHIA_")
 
-    # TUWEL
+    # TUWEL / TISS
     tuwel_host: str = "https://tuwel.tuwien.ac.at"
+    tiss_host: str = "https://tiss.tuwien.ac.at"
 
     # Anna's Archive
     annas_api_key: str = ""

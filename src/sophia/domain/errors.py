@@ -27,3 +27,7 @@ class ExtractionError(SophiaError):
 
 class RenderError(SophiaError):
     """Report rendering failed."""
+
+
+class TissError(SophiaError):
+    """TISS API request failed."""
