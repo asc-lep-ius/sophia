@@ -6,6 +6,19 @@ A student toolkit for TU Wien that automates the tedious parts of academic life 
 
 **Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional. Chronos and Athena are planned.
 
+| Section | What's There |
+|---------|-------------|
+| [Getting Started](#getting-started) | Step-by-step setup from zero to running |
+| [What Sophia Does](#what-sophia-does) | The three modules and what each one handles |
+| [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
+| [Architecture](#architecture) | Hexagonal design, protocols, async |
+| [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
+| [Data Access](#data-access) | How Sophia talks to TUWEL and TISS |
+| [Development](#development) | Running tests, linting, type checking |
+| [Roadmap](#roadmap) | What's done, what's next |
+| [Quick Reference](#quick-reference) | Common commands at a glance |
+| [Contributing](#contributing) | How to help out |
+
 ---
 
 ## Getting Started
