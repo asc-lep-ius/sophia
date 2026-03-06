@@ -192,6 +192,13 @@ Before downloading, Sophia asks you to predict whether each book will actually b
 
 It would be easy to build a tool that auto-generates study plans, pre-makes flashcards, and tells students exactly what to do. Many edtech products do precisely this, optimizing for the feeling of productivity rather than actual learning. Sophia deliberately does none of these things. The reason has to do with how learning actually works, and decades of cognitive science research point in the same direction.
 
+### Maieutics (The Socratic Midwife)
+Sophia is named for wisdom, but her methodology is Socratic. In the Meno, Socrates famously compares himself to a midwife: he cannot give birth to the truth for the student, but he can help the student deliver it themselves.
+
+"The boy now knows what it is to be in doubt... and while he does not know, he at least does not think he knows." — Meno 84a
+
+Sophia uses Piaget’s equilibration theory to modernise this ancient practice. We provide the "scaffold" (the data, the prompts, the timing), but the construction of the knowledge remains entirely yours.
+
 ### The Constructivist Foundation
 
 Sophia is built on Jean Piaget's constructivist epistemology: the idea that knowledge is not passively received but actively constructed through experience. A student who reads a summary is not doing the same cognitive work as a student who wrestles with the material and builds their own understanding. The summary might transmit information, but information is not knowledge. Knowledge requires the learner to integrate new ideas with existing schemas, to assimilate where possible and accommodate where necessary.
@@ -200,13 +207,6 @@ This has real design consequences. Every feature passes through a filter: *does 
 
 > *"The principal goal of education in the schools should be creating men and women who are capable of doing new things, not simply repeating what other generations have done."*
 > — Piaget, in Bringuier, J.-C. (1980). *Conversations with Jean Piaget* (B. M. Gulati, Trans.). University of Chicago Press, p. 132.
-
-#### Maieutics (The Socratic Midwife)
-Sophia is named for wisdom, but her methodology is Socratic. In the Meno, Socrates famously compares himself to a midwife: he cannot give birth to the truth for the student, but he can help the student deliver it themselves.
-
-"The boy now knows what it is to be in doubt... and while he does not know, he at least does not think he knows." — Meno 84a
-
-Sophia uses Piaget’s equilibration theory to modernise this ancient practice. We provide the "scaffold" (the data, the prompts, the timing), but the construction of the knowledge remains entirely yours.
 
 ### The Predict → Act → Reflect Cycle
 
