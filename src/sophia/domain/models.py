@@ -23,6 +23,18 @@ class ReferenceSource(StrEnum):
     RESOURCE_NAME = "resource_name"
     PDF = "pdf"
     LLM = "llm"
+    TISS = "tiss"
+
+
+class ResourceCategory(StrEnum):
+    """Category of a course resource (URL activity)."""
+
+    BOOK = "book"
+    TUTORIAL = "tutorial"
+    DOCUMENTATION = "documentation"
+    PRACTICE = "practice"
+    TOOL = "tool"
+    OTHER = "other"
 
 
 class Format(StrEnum):
@@ -65,6 +77,17 @@ class BookReference(BaseModel):
     course_id: int
     course_name: str = ""
     confidence: float = 1.0
+
+
+class CourseResource(BaseModel):
+    """A classified URL resource from a course page."""
+
+    url: str
+    title: str
+    category: ResourceCategory
+    course_id: int
+    course_name: str = ""
+    description: str = ""
 
 
 class SearchResult(BaseModel):

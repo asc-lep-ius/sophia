@@ -43,6 +43,7 @@ async def discover() -> None:
                 courses=container.moodle,
                 resources=container.moodle,
                 extractor=extractor,
+                metadata=container.tiss,
             )
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")

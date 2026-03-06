@@ -9,11 +9,18 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
+from sophia.adapters.tiss import extract_course_info
 from sophia.domain.events import ExtractionReport
 from sophia.domain.models import BookReference, CourseSection, ModuleInfo, ReferenceSource
+from sophia.services.resource_classifier import classify_modules, is_book_resource
 
 if TYPE_CHECKING:
-    from sophia.domain.ports import CourseProvider, ReferenceExtractor, ResourceProvider
+    from sophia.domain.ports import (
+        CourseMetadataProvider,
+        CourseProvider,
+        ReferenceExtractor,
+        ResourceProvider,
+    )
 
 logger = structlog.get_logger()
 
@@ -31,6 +38,7 @@ async def discover_books(
     resources: ResourceProvider,
     extractor: ReferenceExtractor,
     on_event: EventCallback | None = None,
+    metadata: CourseMetadataProvider | None = None,
 ) -> list[BookReference]:
     """Fetch enrolled courses, extract book references, and return deduplicated results.
 
@@ -46,7 +54,14 @@ async def discover_books(
         for course in enrolled:
             tg.create_task(
                 _safe_process_course(
-                    course.id, course.fullname, courses, resources, extractor, results
+                    course.id,
+                    course.fullname,
+                    course.shortname,
+                    courses,
+                    resources,
+                    extractor,
+                    results,
+                    metadata=metadata,
                 ),
             )
 
@@ -83,14 +98,20 @@ async def discover_books(
 async def _safe_process_course(
     course_id: int,
     course_name: str,
+    course_shortname: str,
     courses: CourseProvider,
     resources: ResourceProvider,
     extractor: ReferenceExtractor,
     results: list[_CourseResult],
+    *,
+    metadata: CourseMetadataProvider | None = None,
 ) -> None:
     """Wrapper that catches per-course errors so TaskGroup doesn't abort."""
     try:
-        refs = await _process_course(course_id, course_name, courses, resources, extractor)
+        refs = await _process_course(
+            course_id, course_name, course_shortname,
+            courses, resources, extractor, metadata=metadata,
+        )
         results.append((course_name, refs))
     except Exception as exc:  # noqa: BLE001
         logger.warning("course_failed", course=course_name, error=str(exc))
@@ -100,15 +121,19 @@ async def _safe_process_course(
 async def _process_course(
     course_id: int,
     course_name: str,
+    course_shortname: str,
     courses: CourseProvider,
     resources: ResourceProvider,
     extractor: ReferenceExtractor,
+    *,
+    metadata: CourseMetadataProvider | None = None,
 ) -> list[BookReference]:
     """Extract references from all content sources for a single course.
 
     Section content (core_course_get_contents) is the primary source — always
     available via the AJAX API. The mod_* resource calls are best-effort: they
     may not be exposed on all Moodle instances (e.g. behind the WS-only API).
+    TISS teaching content and URL classification are additional sources.
     """
     logger.debug("processing_course", course=course_name, course_id=course_id)
 
@@ -121,6 +146,16 @@ async def _process_course(
     # Best-effort: mod_* functions may not be available via AJAX
     resource_refs = await _try_resource_extraction(course_id, resources, extractor)
     refs.extend(resource_refs)
+
+    # TISS teaching content: description + objectives as additional reference source
+    tiss_refs = await _try_tiss_extraction(
+        course_shortname, course_id, metadata, extractor
+    )
+    refs.extend(tiss_refs)
+
+    # URL classification: extract book-related URLs from course sections
+    url_refs = _extract_from_url_modules(sections, extractor, course_id, course_name)
+    refs.extend(url_refs)
 
     enriched = [ref.model_copy(update={"course_name": course_name}) for ref in refs]
     logger.debug("course_refs_found", course=course_name, count=len(enriched))
@@ -157,6 +192,87 @@ async def _try_resource_extraction(
             )
             continue
         refs.extend(_extract_from_modules(result, extractor, course_id, source))
+
+    return refs
+
+
+async def _try_tiss_extraction(
+    course_shortname: str,
+    course_id: int,
+    metadata: CourseMetadataProvider | None,
+    extractor: ReferenceExtractor,
+) -> list[BookReference]:
+    """Extract references from TISS teaching content (best-effort).
+
+    Parses the TUWEL shortname to get course number + semester, then fetches
+    TISS course details. Description and objectives are fed to the extractor.
+    """
+    if metadata is None:
+        return []
+
+    info = extract_course_info(course_shortname)
+    if info is None:
+        logger.debug("tiss_shortname_no_match", shortname=course_shortname)
+        return []
+
+    course_number, semester = info
+    try:
+        tiss_info = await metadata.get_course_details(course_number, semester)
+    except Exception:  # noqa: BLE001
+        logger.debug("tiss_fetch_failed", course_number=course_number, semester=semester)
+        return []
+
+    refs: list[BookReference] = []
+    for text in (tiss_info.description_de, tiss_info.objectives_de):
+        if text:
+            refs.extend(extractor.extract(text, ReferenceSource.TISS, course_id))
+
+    if refs:
+        logger.debug("tiss_refs_found", course_number=course_number, count=len(refs))
+    return refs
+
+
+def _extract_from_url_modules(
+    sections: list[CourseSection],
+    extractor: ReferenceExtractor,
+    course_id: int,
+    course_name: str,
+) -> list[BookReference]:
+    """Classify URL modules from course sections and extract book references.
+
+    URL modules classified as books have their names/descriptions fed to the
+    extractor. Non-book resources are logged for future surfacing.
+    """
+    url_modules = [
+        module
+        for section in sections
+        for module in section.modules
+        if module.modname == "url"
+    ]
+    if not url_modules:
+        return []
+
+    classified = classify_modules(url_modules, course_id, course_name)
+    book_resources = [r for r in classified if is_book_resource(r)]
+    non_book_count = len(classified) - len(book_resources)
+
+    if non_book_count:
+        logger.debug(
+            "url_non_book_resources",
+            course_id=course_id,
+            count=non_book_count,
+        )
+
+    refs: list[BookReference] = []
+    for resource in book_resources:
+        if resource.title:
+            refs.extend(
+                extractor.extract(resource.title, ReferenceSource.RESOURCE_NAME, course_id)
+            )
+        if resource.description:
+            refs.extend(
+                extractor.extract(resource.description, ReferenceSource.DESCRIPTION, course_id)
+            )
 
     return refs
 

@@ -13,6 +13,7 @@ from sophia.domain.models import (
     CourseSection,
     ModuleInfo,
     ReferenceSource,
+    TissCourseInfo,
 )
 from sophia.services.pipeline import discover_books
 
@@ -90,6 +91,31 @@ class FakeExtractor:
 
     def extract(self, content: str, source: ReferenceSource, course_id: int) -> list[BookReference]:
         return self._mapping.get(content, [])
+
+
+class FakeMetadataProvider:
+    """Implements CourseMetadataProvider protocol for testing."""
+
+    def __init__(
+        self,
+        courses: dict[tuple[str, str], TissCourseInfo] | None = None,
+        *,
+        failing: bool = False,
+    ) -> None:
+        self._courses = courses or {}
+        self._failing = failing
+
+    async def get_course_details(self, course_number: str, semester: str) -> TissCourseInfo:
+        if self._failing:
+            msg = "TISS API unavailable"
+            raise RuntimeError(msg)
+        key = (course_number, semester)
+        if key in self._courses:
+            return self._courses[key]
+        return TissCourseInfo(course_number=course_number, semester=semester)
+
+    async def get_exam_dates(self, course_number: str) -> list:
+        return []
 
 
 # --- Fixtures ---
@@ -377,3 +403,160 @@ async def test_resource_fetch_failure_graceful() -> None:
     assert isinstance(report, ExtractionReport)
     assert report.successful == 1
     assert report.failed == []
+
+
+# --- TISS integration tests ---
+
+
+async def test_tiss_content_fed_to_extractor() -> None:
+    """TISS description and objectives are fed to the extractor when metadata is provided."""
+    tiss_desc = "Algorithmen und Datenstrukturen, Cormen et al."
+    tiss_obj = "Lehrbuch: Introduction to Algorithms"
+    tiss_info = TissCourseInfo(
+        course_number="186.813",
+        semester="2026S",
+        description_de=tiss_desc,
+        objectives_de=tiss_obj,
+    )
+
+    # Course shortname must match the TISS pattern
+    course = Course(
+        id=1, fullname="Algorithmen und Datenstrukturen 1", shortname="186.813 ADS1 2026S"
+    )
+    ref_desc = _make_ref("Cormen Algorithms", course_id=1, source=ReferenceSource.TISS)
+    ref_obj = _make_ref("Introduction to Algorithms", course_id=1, source=ReferenceSource.TISS)
+
+    course_provider = FakeCourseProvider([course])
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor({tiss_desc: [ref_desc], tiss_obj: [ref_obj]})
+    metadata = FakeMetadataProvider({("186.813", "2026S"): tiss_info})
+
+    result = await discover_books(
+        course_provider, resource_provider, extractor, metadata=metadata
+    )
+
+    assert len(result) == 2
+    titles = {r.title for r in result}
+    assert "Cormen Algorithms" in titles
+    assert "Introduction to Algorithms" in titles
+
+
+async def test_tiss_skipped_when_no_metadata() -> None:
+    """Without metadata provider, TISS extraction is skipped gracefully."""
+    course = Course(id=1, fullname="Some Course", shortname="186.813 SC 2026S")
+    course_provider = FakeCourseProvider([course])
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor()
+
+    result = await discover_books(course_provider, resource_provider, extractor, metadata=None)
+
+    assert result == []
+
+
+async def test_tiss_skipped_when_shortname_no_match() -> None:
+    """Courses with non-matching shortnames skip TISS extraction."""
+    course = Course(id=1, fullname="Some Course", shortname="no-course-number-here")
+    tiss_info = TissCourseInfo(
+        course_number="999.999",
+        semester="2026S",
+        description_de="Should not be reached",
+    )
+    ref = _make_ref("Should Not Appear", course_id=1)
+
+    course_provider = FakeCourseProvider([course])
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor({"Should not be reached": [ref]})
+    metadata = FakeMetadataProvider({("999.999", "2026S"): tiss_info})
+
+    result = await discover_books(
+        course_provider, resource_provider, extractor, metadata=metadata
+    )
+
+    assert result == []
+
+
+async def test_tiss_failure_graceful() -> None:
+    """TISS API failure doesn't break the pipeline."""
+    summary = "<p>ISBN 978-0-13-468599-1</p>"
+    course = Course(id=1, fullname="Some Course", shortname="186.813 SC 2026S")
+    sections = {1: [_make_section(10, "Week 1", summary)]}
+    ref = _make_ref("Effective Java", isbn="9780134685991", course_id=1)
+
+    course_provider = FakeCourseProvider([course], sections)
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor({summary: [ref]})
+    metadata = FakeMetadataProvider(failing=True)
+
+    result = await discover_books(
+        course_provider, resource_provider, extractor, metadata=metadata
+    )
+
+    # Section refs still returned despite TISS failure
+    assert len(result) == 1
+    assert result[0].isbn == "9780134685991"
+
+
+# --- URL classification integration tests ---
+
+
+async def test_url_modules_book_refs_extracted() -> None:
+    """URL modules classified as books have their names fed to the extractor."""
+    url_module = ModuleInfo(
+        id=100,
+        name="Springer Textbook Link",
+        modname="url",
+        url="https://link.springer.com/book/10.1007/978-3-658-21155-0",
+    )
+    sections = {1: [_make_section(10, "Resources", "", modules=[url_module])]}
+    ref = _make_ref("Springer Textbook Link", course_id=1)
+
+    course_provider = FakeCourseProvider([COURSE_A], sections)
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor({"Springer Textbook Link": [ref]})
+
+    result = await discover_books(course_provider, resource_provider, extractor)
+
+    assert any(r.title == "Springer Textbook Link" for r in result)
+
+
+async def test_url_modules_non_book_not_extracted() -> None:
+    """URL modules classified as non-book don't produce book references."""
+    url_module = ModuleInfo(
+        id=100,
+        name="YouTube Tutorial",
+        modname="url",
+        url="https://www.youtube.com/watch?v=abc123",
+    )
+    sections = {1: [_make_section(10, "Resources", "", modules=[url_module])]}
+
+    course_provider = FakeCourseProvider([COURSE_A], sections)
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor()
+
+    result = await discover_books(course_provider, resource_provider, extractor)
+
+    assert result == []
+
+
+async def test_url_book_with_description_extracted() -> None:
+    """Book URL modules with descriptions have both name and description extracted."""
+    url_module = ModuleInfo(
+        id=100,
+        name="Literatur",
+        modname="url",
+        url="https://example.com/books",
+        description="ISBN 978-0-13-468599-1 Effective Java by Joshua Bloch",
+    )
+    sections = {1: [_make_section(10, "Week 1", "", modules=[url_module])]}
+    ref = _make_ref("Effective Java", isbn="9780134685991", course_id=1)
+
+    course_provider = FakeCourseProvider([COURSE_A], sections)
+    resource_provider = FakeResourceProvider()
+    # The description content triggers the extraction
+    extractor = FakeExtractor(
+        {"ISBN 978-0-13-468599-1 Effective Java by Joshua Bloch": [ref]}
+    )
+
+    result = await discover_books(course_provider, resource_provider, extractor)
+
+    assert any(r.isbn == "9780134685991" for r in result)

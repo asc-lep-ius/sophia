@@ -29,6 +29,7 @@ class TestEnums:
             ReferenceSource.RESOURCE_NAME,
             ReferenceSource.PDF,
             ReferenceSource.LLM,
+            ReferenceSource.TISS,
         }
 
     def test_format_values(self):
