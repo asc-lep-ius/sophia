@@ -71,6 +71,7 @@ pythonVersion = "3.12"
 typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
+include = ["src", "tests"]
 
 [tool.coverage.run]
 omit = ["src/sophia/__main__.py"]
