@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import re
+import warnings
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
+from random import randint
 from typing import TYPE_CHECKING
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunsplit
 
 import httpx
 import structlog
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -20,11 +23,13 @@ from sophia.domain.errors import AuthError
 log = structlog.get_logger()
 
 _SESSION_FILENAME = "tuwel_session.json"
+_TISS_SESSION_FILENAME = "tiss_session.json"
 _SESSKEY_RE = re.compile(r'"sesskey"\s*:\s*"([a-zA-Z0-9]+)"')
 
 # TU Wien SSO entry point parameters
 _SSO_IDP_ENTITY = "7bdd808f9f4da82bfe7992e779794b9a"
 _SSO_LOGIN_PATH = "/auth/saml2/login.php"
+_TISS_AUTH_PATH = "/admin/authentifizierung"
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,17 @@ class SessionCredentials:
     host: str
     created_at: str
     cookie_name: str = "MoodleSession"
+
+
+@dataclass(frozen=True)
+class TissSessionCredentials:
+    """Stored TISS session credentials."""
+
+    jsessionid: str
+    tiss_session: str
+    host: str
+    created_at: str
+    cookies: str = "{}"  # JSON-encoded dict of all session cookies
 
 
 def session_path(config_dir: Path) -> Path:
@@ -69,6 +85,67 @@ def clear_session(path: Path) -> None:
     if path.exists():
         path.unlink()
         log.info("session_cleared", path=str(path))
+
+
+def tiss_session_path(config_dir: Path) -> Path:
+    """Return the path to the stored TISS session file."""
+    return config_dir / _TISS_SESSION_FILENAME
+
+
+def save_tiss_session(creds: TissSessionCredentials, path: Path) -> None:
+    """Persist TISS session credentials to disk with restricted permissions."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(creds), indent=2))
+    path.chmod(0o600)
+    log.info("tiss_session_saved", path=str(path))
+
+
+def load_tiss_session(path: Path) -> TissSessionCredentials | None:
+    """Load TISS session credentials from disk, or None if missing/corrupt."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+        valid = {f.name for f in fields(TissSessionCredentials)}
+        return TissSessionCredentials(**{k: v for k, v in data.items() if k in valid})
+    except (json.JSONDecodeError, TypeError, KeyError) as exc:
+        log.warning("tiss_session_load_failed", path=str(path), error=str(exc))
+        return None
+
+
+def clear_tiss_session(path: Path) -> None:
+    """Remove stored TISS session credentials."""
+    if path.exists():
+        path.unlink()
+        log.info("tiss_session_cleared", path=str(path))
+
+
+async def login_tiss(host: str, username: str, password: str) -> TissSessionCredentials:
+    """Authenticate with TISS via TU Wien SSO.
+
+    Same IdP as TUWEL but different SP (tiss.tuwien.ac.at).
+    TISS uses JSESSIONID + _tiss_session cookies.
+
+    After the initial SSO dance (which authenticates the /admin context),
+    we also establish a session for the /education/ context.  This avoids
+    a redirect to instant_login when the adapter later accesses JSF pages,
+    because the IdP cookies are only available on *this* client — they
+    would be lost once the client is garbage-collected.
+    """
+    base = host.rstrip("/")
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        auth_url = f"{base}{_TISS_AUTH_PATH}"
+        log.info("tiss_sso_initiate", url=auth_url)
+        idp_resp = await client.get(auth_url)
+        idp_resp.raise_for_status()
+
+        saml_resp = await _submit_credentials(client, idp_resp, username, password)
+        dashboard_resp = await _relay_saml_response(client, saml_resp)
+
+        # Establish the /education/ session while IdP cookies are still available
+        await _establish_education_session(client, base)
+
+        return _build_tiss_credentials(client, dashboard_resp, base)
 
 
 async def login_with_credentials(host: str, username: str, password: str) -> SessionCredentials:
@@ -125,12 +202,15 @@ async def _submit_credentials(
 
 
 async def _relay_saml_response(client: httpx.AsyncClient, resp: httpx.Response) -> httpx.Response:
-    """Find and POST the SAMLResponse + RelayState back to the SP."""
+    """Find and POST the SAMLResponse (+ optional RelayState) back to the SP.
+
+    TUWEL includes RelayState in the IdP response; TISS does not.
+    Both are valid SAML flows — RelayState is optional per the spec.
+    """
     soup = BeautifulSoup(resp.text, "lxml")
 
     saml_input = soup.find("input", {"name": "SAMLResponse"})
-    relay_input = soup.find("input", {"name": "RelayState"})
-    if not saml_input or not relay_input:
+    if not saml_input:
         raise AuthError("SSO failed — no SAML response received from IdP")
 
     saml_form = saml_input.find_parent("form")  # type: ignore[union-attr]
@@ -138,10 +218,12 @@ async def _relay_saml_response(client: httpx.AsyncClient, resp: httpx.Response) 
         raise AuthError("SSO failed — SAML response form has no action URL")
 
     acs_url = str(saml_form["action"])
-    payload = {
+    payload: dict[str, object] = {
         "SAMLResponse": saml_input["value"],  # type: ignore[index]
-        "RelayState": relay_input["value"],  # type: ignore[index]
     }
+    relay_input = soup.find("input", {"name": "RelayState"})
+    if relay_input:
+        payload["RelayState"] = relay_input["value"]  # type: ignore[index]
 
     log.info("sso_relay_saml", acs_url=acs_url)
     dashboard = await client.post(acs_url, data=payload)
@@ -166,6 +248,53 @@ def _build_credentials(
         host=base,
         created_at=datetime.now(UTC).isoformat(),
         cookie_name=cookie_name,
+    )
+
+
+def _build_tiss_credentials(
+    client: httpx.AsyncClient, resp: httpx.Response, base: str
+) -> TissSessionCredentials:
+    """Extract TISS session cookies from the authenticated response.
+
+    Dumps the full cookie jar (including /education/ JSESSIONID established
+    by ``_establish_education_session``) so the adapter can restore all
+    cookies later without needing IdP cookies.
+    """
+    jsessionid = None
+    tiss_session = None
+
+    for name, value in client.cookies.items():
+        if name == "JSESSIONID":
+            jsessionid = value
+        elif name == "_tiss_session":
+            tiss_session = value
+
+    # Fall back to Set-Cookie headers
+    if not jsessionid or not tiss_session:
+        all_responses = [*resp.history, resp]
+        for r in all_responses:
+            for header_val in r.headers.get_list("set-cookie"):
+                cookie_part = header_val.split(";")[0]
+                name, _, value = cookie_part.partition("=")
+                if name == "JSESSIONID" and value and not jsessionid:
+                    jsessionid = value
+                elif name == "_tiss_session" and value and not tiss_session:
+                    tiss_session = value
+
+    if not jsessionid:
+        raise AuthError("TISS login completed but JSESSIONID cookie not found")
+    if not tiss_session:
+        raise AuthError("TISS login completed but _tiss_session cookie not found")
+
+    # Capture full cookie jar for cross-context session support
+    all_cookies = {name: value for name, value in client.cookies.items()}
+
+    return TissSessionCredentials(
+        jsessionid=jsessionid,
+        tiss_session=tiss_session,
+        host=base,
+        created_at=datetime.now(UTC).isoformat(),
+        cookies=json.dumps(all_cookies),
     )
 
 
@@ -226,10 +355,76 @@ def _extract_hidden_inputs(form: BeautifulSoup) -> dict[str, str]:
     }
 
 
+async def _establish_education_session(
+    client: httpx.AsyncClient, base: str
+) -> None:
+    """Navigate to /education/ so the server issues a JSESSIONID for that context.
+
+    Must be called while the client still holds IdP cookies (i.e. during
+    the same ``login_tiss`` client session).  Handles the DeltaSpike
+    "Loading" page the same way the adapter does at runtime.
+    """
+    education_url = f"{base}/education/favorites.xhtml"
+    log.info("tiss_establish_education_session", url=education_url)
+
+    resp = await client.get(education_url)
+    resp.raise_for_status()
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+        soup = BeautifulSoup(resp.text, "lxml")
+    redirect_path = _extract_deltaspike_redirect(soup)
+    if redirect_path:
+        redirect_url = _build_auth_deltaspike_url(
+            str(resp.url), redirect_path, client,
+        )
+        log.debug("tiss_education_deltaspike_redirect", url=redirect_url)
+        resp = await client.get(redirect_url)
+        resp.raise_for_status()
+
+    log.info("tiss_education_session_established")
+
+
+_DELTASPIKE_REDIRECT_RE = re.compile(r"var\s+redirectUrl\s*=\s*'([^']+)'")
+
+
+def _extract_deltaspike_redirect(soup: BeautifulSoup) -> str | None:
+    """Detect the DeltaSpike window-handler Loading page; return redirect URL."""
+    title = soup.find("title")
+    if not title or "Loading" not in title.get_text():
+        return None
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        m = _DELTASPIKE_REDIRECT_RE.search(text)
+        if m:
+            return (
+                m.group(1)
+                .replace(r"\/", "/")
+                .encode("utf-8")
+                .decode("unicode_escape")
+            )
+    return None
+
+
+def _build_auth_deltaspike_url(
+    base_url: str, redirect_path: str, client: httpx.AsyncClient,
+) -> str:
+    """Build DeltaSpike redirect URL with window-ID tokens (login-time)."""
+    window_id = str(randint(1000, 9999))  # noqa: S311
+    request_token = str(randint(0, 998))  # noqa: S311
+    client.cookies.set(f"dsrwid-{request_token}", window_id)
+
+    full_url = urljoin(base_url, redirect_path)
+    parsed = urlparse(full_url)
+    params = parse_qs(parsed.query, keep_blank_values=True)
+    params["dsrid"] = [request_token]
+    params["dswid"] = [window_id]
+    new_query = urlencode(params, doseq=True)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, new_query, ""))
+
+
 def _resolve_url(current_url: str, action: str) -> str:
     """Resolve a potentially relative form action against the current URL."""
     if action.startswith("http"):
         return action
-    from urllib.parse import urljoin
-
     return urljoin(current_url, action)
