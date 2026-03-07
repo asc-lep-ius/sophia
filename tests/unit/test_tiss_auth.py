@@ -153,6 +153,7 @@ class TestExtractHiddenInputs:
         )
         soup = BeautifulSoup(html, "lxml")
         form = soup.find("form")
+        assert form is not None
         result = _extract_hidden_inputs(form)  # pyright: ignore[reportPrivateUsage]
         assert result == {"csrf": "tok1", "relay": "tok2"}
 
@@ -160,6 +161,7 @@ class TestExtractHiddenInputs:
         html = '<form><input type="hidden" value="ghost"/></form>'
         soup = BeautifulSoup(html, "lxml")
         form = soup.find("form")
+        assert form is not None
         assert _extract_hidden_inputs(form) == {}  # pyright: ignore[reportPrivateUsage]
 
 
@@ -209,4 +211,4 @@ class TestBuildAuthDeltaspikeUrl:
 
         import asyncio
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())

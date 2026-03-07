@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunsplit
 
 import httpx
 import structlog
-from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -346,7 +346,7 @@ def _find_login_form(soup: BeautifulSoup) -> BeautifulSoup:
     return form  # type: ignore[return-value]
 
 
-def _extract_hidden_inputs(form: BeautifulSoup) -> dict[str, str]:
+def _extract_hidden_inputs(form: Tag) -> dict[str, str]:
     """Collect all hidden input values from a form."""
     return {
         str(inp["name"]): str(inp.get("value", ""))

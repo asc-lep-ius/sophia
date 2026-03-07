@@ -469,7 +469,7 @@ class TestBuildDeltaspikeUrl:
                 assert "dsrid=" in url
                 assert "dswid=" in url
 
-        asyncio.get_event_loop().run_until_complete(_run())
+        asyncio.run(_run())
 
 
 class TestSafeFloat:
