@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional. Chronos and Athena are planned.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery) and Kairos (registration) are functional. Chronos and Athena are planned.
 
 | Section | What's There |
 |---------|-------------|
@@ -166,6 +166,7 @@ Sophia is organized into three modules, each named for a concept that matches it
 | Module | Command | What It Does | Status |
 |--------|---------|--------------|--------|
 | **Bücherwurm** 📚 | `sophia books` | Finds textbook references in your courses, searches Open Access libraries and Anna's Archive, downloads them | ✅ Functional |
+| **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
 | **Athena** 🎓 | `sophia exams` | Analyzes past exams for topic patterns, builds flashcards, calibrates your confidence | 📋 Planned |
 
@@ -179,6 +180,62 @@ Bücherwurm (German for "bookworm") scans your enrolled TUWEL courses and extrac
 4. Lets you download books directly to a local library organized by semester
 
 Before downloading, Sophia asks you to predict whether each book will actually be useful for your studies. After a few weeks, it asks you to revisit that prediction. This builds your ability to evaluate resources before committing time to them.
+
+### Kairos in Action
+
+Kairos (Καιρός — the decisive, opportune moment) automates course registration on TISS. Instead of frantically refreshing the page when a registration window opens, Kairos watches the clock and submits the instant the window opens — with a preference-ordered list of groups so you get your best available slot.
+
+**Step 1: Log in to TISS**
+
+```bash
+uv run sophia register tiss-login
+```
+
+This authenticates with TISS using the same TU Wien credentials you use for TUWEL. Your session is stored locally (same security as the TUWEL session).
+
+**Step 2: Browse available groups**
+
+```bash
+uv run sophia register groups 186.813
+```
+
+Sophia shows you a table of all groups with their schedule at a glance:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ Groups for 186.813 (2026S)                                           │
+├────┬──────────────┬──────────┬─────────────┬──────────┬────────┬─────┤
+│ #  │ Name         │ Day      │ Time        │ Location │ Enrol. │ Cap │
+├────┼──────────────┼──────────┼─────────────┼──────────┼────────┼─────┤
+│ 1  │ Group 1 - Mo │ Monday   │ 09:00–11:00 │ Room A   │ 15     │ 30  │
+│ 2  │ Group 2 - Di │ Tuesday  │ 14:00–16:00 │ HS1      │ 30     │ 30  │
+│ 3  │ Group 3 - Mi │ Wednesday│ 10:00–12:00 │ Lab      │ 20     │ 25  │
+└────┴──────────────┴──────────┴─────────────┴──────────┴────────┴─────┘
+```
+
+Use this to decide which groups fit your schedule, then set your preference order.
+
+**Step 3: Register with preferences**
+
+```bash
+# Register for LVA (course itself)
+uv run sophia register go 186.813
+
+# Register with group preferences (indices from the table above)
+uv run sophia register go 186.813 --preferences "1,3"
+```
+
+If group 1 is full, Kairos automatically tries group 3. You get the best available slot from your preference list.
+
+**Step 4: Watch mode — wait for the window to open**
+
+```bash
+uv run sophia register go 186.813 --preferences "1,3" --watch
+```
+
+Kairos checks the registration status, calculates when the window opens, sleeps until the right moment, and submits the instant it opens. Run this in a terminal tab (or `tmux`/`screen` session) before the registration window opens and walk away.
+
+> 💡 **Planned upgrade (v1.1):** `sophia register schedule` will install a system timer (systemd/launchd/cron) so you don't need to keep a terminal open. For now, `--watch` in a terminal is reliable enough — and most students who use CLI tools are comfortable with `tmux`.
 
 ### What's Coming: Chronos and Athena
 
@@ -270,10 +327,12 @@ src/sophia/
 ├── services/         # Orchestration and business logic
 │   ├── pipeline.py   # Book discovery pipeline
 │   ├── reference_extractor.py
-│   └── resource_classifier.py
+│   ├── resource_classifier.py
+│   └── registration.py    # Kairos preference-based registration
 ├── adapters/         # External world implementations
 │   ├── moodle.py     # TUWEL/Moodle AJAX adapter
 │   ├── tiss.py       # TISS public API adapter
+│   ├── tiss_registration.py  # TISS registration (JSF scraping)
 │   └── auth.py       # SSO authentication flow
 ├── infra/            # Cross-cutting concerns
 │   ├── http.py       # Shared HTTP client with retry logic
@@ -352,6 +411,7 @@ See the `Makefile` for additional convenience targets (`make test`, `make lint`,
 | Status | Milestone | Description |
 |--------|-----------|-------------|
 | ✅ Done | **M0: MVP Foundation** | Authentication, TUWEL adapter, course listing, `sophia books discover` works against real TUWEL |
+| ✅ Done | **Kairos: Registration** | TISS course & group registration with preference lists, watch mode for auto-submit |
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
 | 📋 Planned | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq), Typst-rendered reading reports |
 | 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
@@ -374,6 +434,14 @@ uv run sophia auth logout          # clear saved credentials
 uv run sophia books discover       # scan courses for textbook references
 uv run sophia books list           # show previously discovered books
 uv run sophia books search <query> # search for a specific book
+
+# Registration (Kairos)
+uv run sophia register tiss-login          # log in to TISS
+uv run sophia register status 186.813      # check registration status
+uv run sophia register groups 186.813      # show groups with schedule
+uv run sophia register go 186.813          # register for LVA
+uv run sophia register go 186.813 --preferences "1,3"   # with group preferences
+uv run sophia register go 186.813 --watch  # wait for window, then register
 
 # Coming soon
 uv run sophia deadlines            # (Chronos — planned)
