@@ -217,6 +217,79 @@ class GradeItem(BaseModel):
     category: str = ""
 
 
+class RegistrationStatus(StrEnum):
+    """Status of a registration attempt."""
+
+    PENDING = "pending"
+    OPEN = "open"
+    REGISTERED = "registered"
+    FULL = "full"
+    CLOSED = "closed"
+    FAILED = "failed"
+
+
+class RegistrationType(StrEnum):
+    """Type of TISS registration."""
+
+    LVA = "lva"
+    GROUP = "group"
+    EXAM = "exam"
+
+
+class RegistrationGroup(BaseModel):
+    """A group/timeslot within a TISS course."""
+
+    group_id: str
+    name: str
+    day: str = ""
+    time_start: str = ""
+    time_end: str = ""
+    location: str = ""
+    capacity: int = 0
+    enrolled: int = 0
+    status: RegistrationStatus = RegistrationStatus.PENDING
+    register_button_id: str = ""
+
+
+class RegistrationTarget(BaseModel):
+    """A course registration target with preference-ordered groups."""
+
+    course_number: str
+    semester: str
+    registration_type: RegistrationType
+    title: str = ""
+    registration_start: str | None = None
+    registration_end: str | None = None
+    status: RegistrationStatus = RegistrationStatus.PENDING
+    groups: list[RegistrationGroup] = []
+    preferred_group_ids: list[str] = []
+
+
+class RegistrationResult(BaseModel):
+    """Outcome of a registration attempt."""
+
+    course_number: str
+    registration_type: RegistrationType
+    success: bool
+    group_name: str = ""
+    message: str = ""
+    attempted_at: str = ""
+
+
+class FavoriteCourse(BaseModel, frozen=True):
+    """A course from the TISS favorites page."""
+
+    course_number: str
+    title: str
+    course_type: str  # VU, VO, UE, SE, etc.
+    semester: str
+    hours: float
+    ects: float
+    lva_registered: bool = False
+    group_registered: bool = False
+    exam_registered: bool = False
+
+
 class ReportData(BaseModel):
     """Placeholder for report rendering input."""
 

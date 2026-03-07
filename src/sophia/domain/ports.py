@@ -22,6 +22,9 @@ if TYPE_CHECKING:
         ModuleInfo,
         QuizInfo,
         ReferenceSource,
+        RegistrationGroup,
+        RegistrationResult,
+        RegistrationTarget,
         ReportData,
         SearchResult,
         TissCourseInfo,
@@ -96,3 +99,19 @@ class ReportRenderer(Protocol):
     """Renders data into formatted reports."""
 
     async def render(self, data: ReportData, output: Path) -> Path: ...
+
+
+class RegistrationProvider(Protocol):
+    """TISS course/group registration — used by Kairos."""
+
+    async def get_registration_status(
+        self, course_number: str, semester: str
+    ) -> RegistrationTarget: ...
+
+    async def get_groups(
+        self, course_number: str, semester: str
+    ) -> list[RegistrationGroup]: ...
+
+    async def register(
+        self, course_number: str, semester: str, group_id: str | None = None
+    ) -> RegistrationResult: ...

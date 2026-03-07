@@ -31,3 +31,7 @@ class RenderError(SophiaError):
 
 class TissError(SophiaError):
     """TISS API request failed."""
+
+
+class RegistrationError(SophiaError):
+    """Course or group registration failed."""
