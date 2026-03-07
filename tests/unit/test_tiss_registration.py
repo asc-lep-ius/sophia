@@ -9,8 +9,14 @@ import respx
 from sophia.adapters.auth import TissSessionCredentials
 from sophia.adapters.tiss_registration import (
     TissRegistrationAdapter,
+    _build_deltaspike_url,  # pyright: ignore[reportPrivateUsage]
+    _button_by_text,  # pyright: ignore[reportPrivateUsage]
     _clean,  # pyright: ignore[reportPrivateUsage]
     _detect_status,  # pyright: ignore[reportPrivateUsage]
+    _extract_deltaspike_redirect,  # pyright: ignore[reportPrivateUsage]
+    _find_confirm_btn,  # pyright: ignore[reportPrivateUsage]
+    _form_info,  # pyright: ignore[reportPrivateUsage]
+    _safe_float,  # pyright: ignore[reportPrivateUsage]
     _viewstate,  # pyright: ignore[reportPrivateUsage]
 )
 from sophia.domain.errors import AuthError, RegistrationError
@@ -226,6 +232,19 @@ class TestDetectStatus:
         soup = BeautifulSoup(TISS_REG_PAGE_CLOSED, "lxml")
         assert _detect_status(soup) == RegistrationStatus.CLOSED
 
+    def test_full_warteliste(self):
+        from bs4 import BeautifulSoup
+
+        html = "<html><body><p>Sie stehen auf der Warteliste.</p></body></html>"
+        soup = BeautifulSoup(html, "lxml")
+        assert _detect_status(soup) == RegistrationStatus.FULL
+
+    def test_pending_minimal(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<html><body><p>Kursinfos</p></body></html>", "lxml")
+        assert _detect_status(soup) == RegistrationStatus.PENDING
+
 
 class TestViewstate:
     def test_extracts_jakarta(self):
@@ -233,6 +252,17 @@ class TestViewstate:
 
         soup = BeautifulSoup(TISS_REG_PAGE_OPEN, "lxml")
         assert _viewstate(soup) == "VIEWSTATE_ABC123"
+
+    def test_extracts_javax(self):
+        from bs4 import BeautifulSoup
+
+        html = (
+            "<html><body><form>"
+            '<input type="hidden" name="javax.faces.ViewState" value="VS_JAVAX"/>'
+            "</form></body></html>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        assert _viewstate(soup) == "VS_JAVAX"
 
     def test_raises_when_missing(self):
         from bs4 import BeautifulSoup
@@ -280,10 +310,12 @@ class TestGetRegistrationStatus:
     async def test_auth_redirect_raises(self):
         respx.get(
             "https://tiss.tuwien.ac.at/education/course/courseRegistration.xhtml",
-        ).mock(return_value=httpx.Response(
-            302,
-            headers={"Location": "https://tiss.tuwien.ac.at/admin/authentifizierung"},
-        ))
+        ).mock(
+            return_value=httpx.Response(
+                302,
+                headers={"Location": "https://tiss.tuwien.ac.at/admin/authentifizierung"},
+            )
+        )
         respx.get(
             "https://tiss.tuwien.ac.at/admin/authentifizierung",
         ).mock(return_value=httpx.Response(200, html="<html>Login</html>"))
@@ -403,6 +435,129 @@ class TestRegister:
         assert "button" in result.message.lower()
 
 
+class TestExtractDeltaspikeRedirect:
+    def test_returns_redirect_url(self):
+        from bs4 import BeautifulSoup
+
+        html = (
+            "<html><head><title>Loading</title></head><body>"
+            "<script>var redirectUrl = '/education/favorites.xhtml?q=1';</script>"
+            "</body></html>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        url = _extract_deltaspike_redirect(soup)  # pyright: ignore[reportPrivateUsage]
+        assert url == "/education/favorites.xhtml?q=1"
+
+    def test_returns_none_no_loading_title(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<html><head><title>Home</title></head></html>", "lxml")
+        assert _extract_deltaspike_redirect(soup) is None  # pyright: ignore[reportPrivateUsage]
+
+
+class TestBuildDeltaspikeUrl:
+    def test_adds_dsrid_dswid(self):
+        import asyncio
+
+        async def _run():
+            async with httpx.AsyncClient() as client:
+                url = _build_deltaspike_url(  # pyright: ignore[reportPrivateUsage]
+                    "https://tiss.tuwien.ac.at/education/favorites.xhtml",
+                    "/education/favorites.xhtml?dswid=123",
+                    client,
+                )
+                assert "dsrid=" in url
+                assert "dswid=" in url
+
+        asyncio.get_event_loop().run_until_complete(_run())
+
+
+class TestSafeFloat:
+    def test_parses_int(self):
+        assert _safe_float("4") == 4.0  # pyright: ignore[reportPrivateUsage]
+
+    def test_parses_decimal(self):
+        assert _safe_float("5.5") == 5.5  # pyright: ignore[reportPrivateUsage]
+
+    def test_parses_comma_decimal(self):
+        assert _safe_float("6,5") == 6.5  # pyright: ignore[reportPrivateUsage]
+
+    def test_returns_zero_on_failure(self):
+        assert _safe_float("abc") == 0.0  # pyright: ignore[reportPrivateUsage]
+
+    def test_returns_zero_on_empty(self):
+        assert _safe_float("") == 0.0  # pyright: ignore[reportPrivateUsage]
+
+
+class TestButtonByText:
+    def test_finds_button(self):
+        from bs4 import BeautifulSoup
+
+        html = '<div><button type="submit">Anmelden</button></div>'
+        soup = BeautifulSoup(html, "lxml")
+        btn = _button_by_text(soup, "Anmelden")  # pyright: ignore[reportPrivateUsage]
+        assert btn is not None
+        assert btn.get_text(strip=True) == "Anmelden"
+
+    def test_returns_none_when_missing(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<div></div>", "lxml")
+        assert _button_by_text(soup, "Anmelden") is None  # pyright: ignore[reportPrivateUsage]
+
+
+class TestFindConfirmBtn:
+    def test_finds_ok(self):
+        from bs4 import BeautifulSoup
+
+        html = '<form><input type="submit" value="OK" name="f:ok"/></form>'
+        soup = BeautifulSoup(html, "lxml")
+        btn = _find_confirm_btn(soup)  # pyright: ignore[reportPrivateUsage]
+        assert btn is not None
+        assert btn["value"] == "OK"
+
+    def test_finds_ja(self):
+        from bs4 import BeautifulSoup
+
+        html = '<form><input type="submit" value="Ja" name="f:ja"/></form>'
+        soup = BeautifulSoup(html, "lxml")
+        btn = _find_confirm_btn(soup)  # pyright: ignore[reportPrivateUsage]
+        assert btn is not None
+        assert btn["value"] == "Ja"
+
+    def test_returns_none_when_no_match(self):
+        from bs4 import BeautifulSoup
+
+        html = '<form><input type="submit" value="Cancel" name="f:c"/></form>'
+        soup = BeautifulSoup(html, "lxml")
+        assert _find_confirm_btn(soup) is None  # pyright: ignore[reportPrivateUsage]
+
+
+class TestFormInfo:
+    def test_skips_logout_form(self):
+        from bs4 import BeautifulSoup
+
+        html = (
+            "<html><body>"
+            '<form method="post" action="/logout" id="logoutForm">'
+            '<input type="hidden" name="x" value="1"/></form>'
+            '<form method="post" action="/education/reg.xhtml" id="regForm">'
+            '<input type="hidden" name="y" value="2"/></form>'
+            "</body></html>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        action, fid = _form_info(soup)  # pyright: ignore[reportPrivateUsage]
+        assert action == "/education/reg.xhtml"
+        assert fid == "regForm"
+
+    def test_raises_when_no_post_form(self):
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup("<html><body></body></html>", "lxml")
+        with pytest.raises(RegistrationError, match="No suitable POST form"):
+            _form_info(soup)  # pyright: ignore[reportPrivateUsage]
+
+
 class TestProtocolConformance:
     """Verify TissRegistrationAdapter structurally satisfies RegistrationProvider."""
 
@@ -474,10 +629,12 @@ class TestGetFavorites:
     async def test_auth_redirect_raises(self):
         respx.get(
             "https://tiss.tuwien.ac.at/education/favorites.xhtml",
-        ).mock(return_value=httpx.Response(
-            302,
-            headers={"Location": "https://tiss.tuwien.ac.at/admin/authentifizierung"},
-        ))
+        ).mock(
+            return_value=httpx.Response(
+                302,
+                headers={"Location": "https://tiss.tuwien.ac.at/admin/authentifizierung"},
+            )
+        )
         respx.get(
             "https://tiss.tuwien.ac.at/admin/authentifizierung",
         ).mock(return_value=httpx.Response(200, html="<html>Login</html>"))

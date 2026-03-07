@@ -108,9 +108,7 @@ class RegistrationProvider(Protocol):
         self, course_number: str, semester: str
     ) -> RegistrationTarget: ...
 
-    async def get_groups(
-        self, course_number: str, semester: str
-    ) -> list[RegistrationGroup]: ...
+    async def get_groups(self, course_number: str, semester: str) -> list[RegistrationGroup]: ...
 
     async def register(
         self, course_number: str, semester: str, group_id: str | None = None

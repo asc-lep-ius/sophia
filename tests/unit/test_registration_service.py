@@ -53,9 +53,7 @@ class FakeRegistrationProvider:
             registration_type=RegistrationType.LVA,
         )
 
-    async def get_groups(
-        self, course_number: str, semester: str
-    ) -> list[RegistrationGroup]:
+    async def get_groups(self, course_number: str, semester: str) -> list[RegistrationGroup]:
         return self._groups
 
     async def register(
@@ -145,9 +143,7 @@ class TestRegisterWithPreferences:
                 "g2": _ok("Group 2"),
             }
         )
-        result = await register_with_preferences(
-            provider, "186.813", "2026S", ["g3", "g1", "g2"]
-        )
+        result = await register_with_preferences(provider, "186.813", "2026S", ["g3", "g1", "g2"])
         assert result.success
         assert provider.register_calls == [
             ("186.813", "2026S", "g3"),

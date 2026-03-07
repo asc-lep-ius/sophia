@@ -40,9 +40,7 @@ _FAVORITES_PATH = "/education/favorites.xhtml"
 _VIEWSTATE_NAMES = ("jakarta.faces.ViewState", "javax.faces.ViewState")
 _DATE_RE = re.compile(r"\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2}")
 _CAPACITY_RE = re.compile(r"(\d+)\s*/\s*(\d+)")
-_DELTASPIKE_REDIRECT_RE = re.compile(
-    r"var\s+redirectUrl\s*=\s*'([^']+)'"
-)
+_DELTASPIKE_REDIRECT_RE = re.compile(r"var\s+redirectUrl\s*=\s*'([^']+)'")
 
 
 def _extract_deltaspike_redirect(soup: BeautifulSoup) -> str | None:
@@ -60,19 +58,12 @@ def _extract_deltaspike_redirect(soup: BeautifulSoup) -> str | None:
         text = script.string or ""
         m = _DELTASPIKE_REDIRECT_RE.search(text)
         if m:
-            raw = (
-                m.group(1)
-                .replace(r"\/", "/")
-                .encode("utf-8")
-                .decode("unicode_escape")
-            )
+            raw = m.group(1).replace(r"\/", "/").encode("utf-8").decode("unicode_escape")
             return raw
     return None
 
 
-def _build_deltaspike_url(
-    base_url: str, redirect_path: str, http: httpx.AsyncClient
-) -> str:
+def _build_deltaspike_url(base_url: str, redirect_path: str, http: httpx.AsyncClient) -> str:
     """Build the Deltaspike redirect URL with proper window-ID tokens.
 
     Replicates the browser-side ``handleWindowId`` JS flow:
@@ -210,7 +201,8 @@ class TissRegistrationAdapter:
 
     @staticmethod
     def _restore_cookies(
-        http: httpx.AsyncClient, credentials: TissSessionCredentials,
+        http: httpx.AsyncClient,
+        credentials: TissSessionCredentials,
     ) -> None:
         """Restore all session cookies from stored credentials.
 
@@ -259,9 +251,7 @@ class TissRegistrationAdapter:
         soup, resp = self._parse(resp)
         redirect_path = _extract_deltaspike_redirect(soup)
         if redirect_path:
-            redirect_url = _build_deltaspike_url(
-                str(resp.url), redirect_path, self._http
-            )
+            redirect_url = _build_deltaspike_url(str(resp.url), redirect_path, self._http)
             log.debug("tiss_reg.deltaspike_redirect", url=redirect_url)
             try:
                 resp = await self._http.get(redirect_url)
@@ -271,9 +261,7 @@ class TissRegistrationAdapter:
 
         return soup, resp
 
-    async def _post(
-        self, url: str, data: dict[str, str]
-    ) -> tuple[BeautifulSoup, httpx.Response]:
+    async def _post(self, url: str, data: dict[str, str]) -> tuple[BeautifulSoup, httpx.Response]:
         """POST a JSF form; raises AuthError on login redirect."""
         log.debug("tiss_reg.submit", url=url)
         try:
@@ -317,9 +305,7 @@ class TissRegistrationAdapter:
             status=detected_status,
         )
 
-    async def get_groups(
-        self, course_number: str, semester: str
-    ) -> list[RegistrationGroup]:
+    async def get_groups(self, course_number: str, semester: str) -> list[RegistrationGroup]:
         """Fetch available groups for a course from the group list page."""
         url = f"{self._host}{_GROUP_LIST_PATH}"
         params = {"courseNr": _clean(course_number), "semester": semester, "windowId": "1"}
@@ -358,8 +344,9 @@ class TissRegistrationAdapter:
 
         btn = self._find_btn(soup, group_id)
         if not btn:
-            return _result(course_number, rtype, group_id, ok=False,
-                           msg="No register button found on page")
+            return _result(
+                course_number, rtype, group_id, ok=False, msg="No register button found on page"
+            )
 
         # Step 1: POST the register form
         post_data = _build_post(fid, vs, soup, btn)
@@ -377,12 +364,14 @@ class TissRegistrationAdapter:
         try:
             cvs = _viewstate(csoup)
         except RegistrationError:
-            return _result(course_number, rtype, group_id, ok=False,
-                           msg="Confirmation page missing ViewState")
+            return _result(
+                course_number, rtype, group_id, ok=False, msg="Confirmation page missing ViewState"
+            )
 
         cact, cfid = _form_info(csoup)
-        fsoup, _ = await self._post(urljoin(str(cresp.url), cact),
-                                    _build_post(cfid, cvs, csoup, cbtn))
+        fsoup, _ = await self._post(
+            urljoin(str(cresp.url), cact), _build_post(cfid, cvs, csoup, cbtn)
+        )
         fok, fmsg = _check_result(fsoup)
         log.info("tiss_reg.register", course=course_number, group=group_id, success=fok)
         return _result(course_number, rtype, group_id, ok=fok, msg=fmsg)
@@ -466,17 +455,19 @@ def _parse_favorites(soup: BeautifulSoup, semester: str) -> list[FavoriteCourse]
         grp_td: Tag | None = row.find("td", class_="favoritesGrp")  # type: ignore[assignment]
         exam_td: Tag | None = row.find("td", class_="favoritesExam")  # type: ignore[assignment]
 
-        results.append(FavoriteCourse(
-            course_number=course_number,
-            title=title,
-            course_type=course_type,
-            semester=sem,
-            hours=hours,
-            ects=ects,
-            lva_registered=_has_checkmark(reg_td) if reg_td else False,
-            group_registered=_has_checkmark(grp_td) if grp_td else False,
-            exam_registered=_has_checkmark(exam_td) if exam_td else False,
-        ))
+        results.append(
+            FavoriteCourse(
+                course_number=course_number,
+                title=title,
+                course_type=course_type,
+                semester=sem,
+                hours=hours,
+                ects=ects,
+                lva_registered=_has_checkmark(reg_td) if reg_td else False,
+                group_registered=_has_checkmark(grp_td) if grp_td else False,
+                exam_registered=_has_checkmark(exam_td) if exam_td else False,
+            )
+        )
 
     return results
 
@@ -510,11 +501,18 @@ def _build_post(fid: str, vs: str, soup: BeautifulSoup, btn: Tag) -> dict[str, s
 
 
 def _result(
-    course_number: str, rtype: RegistrationType, group_id: str | None,
-    *, ok: bool, msg: str,
+    course_number: str,
+    rtype: RegistrationType,
+    group_id: str | None,
+    *,
+    ok: bool,
+    msg: str,
 ) -> RegistrationResult:
     return RegistrationResult(
-        course_number=course_number, registration_type=rtype,
-        success=ok, group_name=group_id or "", message=msg,
+        course_number=course_number,
+        registration_type=rtype,
+        success=ok,
+        group_name=group_id or "",
+        message=msg,
         attempted_at=datetime.now(UTC).isoformat(),
     )

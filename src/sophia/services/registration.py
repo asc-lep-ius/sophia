@@ -132,13 +132,14 @@ async def watch_and_register(
         if target.status == RegistrationStatus.OPEN:
             log.info("kairos.window_open", course=course_number)
             return await register_with_preferences(
-                provider, course_number, semester, preferred_group_ids,
+                provider,
+                course_number,
+                semester,
+                preferred_group_ids,
             )
 
         if target.status == RegistrationStatus.CLOSED:
-            raise RegistrationError(
-                f"Registration for {course_number} is closed"
-            )
+            raise RegistrationError(f"Registration for {course_number} is closed")
 
         wait = _calculate_wait(target, lead_time_secs)
         log.info(
@@ -161,9 +162,9 @@ def _calculate_wait(target: RegistrationTarget, lead_time_secs: float) -> float:
             # TISS dates are CET/CEST, not UTC.  Treating them as UTC
             # introduces a 1-2 h offset, but this is safe because the
             # loop polls repeatedly and will catch the actual opening.
-            reg_time = datetime.strptime(
-                target.registration_start, "%d.%m.%Y %H:%M"
-            ).replace(tzinfo=UTC)
+            reg_time = datetime.strptime(target.registration_start, "%d.%m.%Y %H:%M").replace(
+                tzinfo=UTC
+            )
             remaining = (reg_time - datetime.now(UTC)).total_seconds() - lead_time_secs
             if remaining > 0:
                 return min(remaining, _MAX_SLEEP_SECS)

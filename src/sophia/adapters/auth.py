@@ -355,9 +355,7 @@ def _extract_hidden_inputs(form: BeautifulSoup) -> dict[str, str]:
     }
 
 
-async def _establish_education_session(
-    client: httpx.AsyncClient, base: str
-) -> None:
+async def _establish_education_session(client: httpx.AsyncClient, base: str) -> None:
     """Navigate to /education/ so the server issues a JSESSIONID for that context.
 
     Must be called while the client still holds IdP cookies (i.e. during
@@ -376,7 +374,9 @@ async def _establish_education_session(
     redirect_path = _extract_deltaspike_redirect(soup)
     if redirect_path:
         redirect_url = _build_auth_deltaspike_url(
-            str(resp.url), redirect_path, client,
+            str(resp.url),
+            redirect_path,
+            client,
         )
         log.debug("tiss_education_deltaspike_redirect", url=redirect_url)
         resp = await client.get(redirect_url)
@@ -397,17 +397,14 @@ def _extract_deltaspike_redirect(soup: BeautifulSoup) -> str | None:
         text = script.string or ""
         m = _DELTASPIKE_REDIRECT_RE.search(text)
         if m:
-            return (
-                m.group(1)
-                .replace(r"\/", "/")
-                .encode("utf-8")
-                .decode("unicode_escape")
-            )
+            return m.group(1).replace(r"\/", "/").encode("utf-8").decode("unicode_escape")
     return None
 
 
 def _build_auth_deltaspike_url(
-    base_url: str, redirect_path: str, client: httpx.AsyncClient,
+    base_url: str,
+    redirect_path: str,
+    client: httpx.AsyncClient,
 ) -> str:
     """Build DeltaSpike redirect URL with window-ID tokens (login-time)."""
     window_id = str(randint(1000, 9999))  # noqa: S311

@@ -6,16 +6,27 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import httpx
+import pytest
+
 if TYPE_CHECKING:
     from pathlib import Path
 
+from bs4 import BeautifulSoup
+
 from sophia.adapters.auth import (
     TissSessionCredentials,
+    _build_auth_deltaspike_url,  # pyright: ignore[reportPrivateUsage]
+    _extract_deltaspike_redirect,  # pyright: ignore[reportPrivateUsage]
+    _extract_hidden_inputs,  # pyright: ignore[reportPrivateUsage]
+    _extract_sesskey,  # pyright: ignore[reportPrivateUsage]
+    _find_login_form,  # pyright: ignore[reportPrivateUsage]
     clear_tiss_session,
     load_tiss_session,
     save_tiss_session,
     tiss_session_path,
 )
+from sophia.domain.errors import AuthError
 
 
 class TestTissSessionPath:
@@ -97,3 +108,105 @@ class TestClearTissSession:
 
     def test_clears_missing_no_error(self, tmp_path: Path):
         clear_tiss_session(tmp_path / "nonexistent.json")
+
+
+class TestExtractSesskey:
+    def test_extracts_sesskey(self):
+        html = '<script>var M = {"sesskey":"abc123XYZ"};</script>'
+        assert _extract_sesskey(html) == "abc123XYZ"  # pyright: ignore[reportPrivateUsage]
+
+    def test_extracts_with_spaces(self):
+        html = '"sesskey" : "key42"'
+        assert _extract_sesskey(html) == "key42"  # pyright: ignore[reportPrivateUsage]
+
+    def test_raises_when_missing(self):
+        with pytest.raises(AuthError, match="sesskey not found"):
+            _extract_sesskey("<html>no key here</html>")  # pyright: ignore[reportPrivateUsage]
+
+
+class TestFindLoginForm:
+    def test_finds_form(self):
+        html = '<form id="login"><input name="username"/><input name="password"/></form>'
+        soup = BeautifulSoup(html, "lxml")
+        form = _find_login_form(soup)  # pyright: ignore[reportPrivateUsage]
+        assert form.get("id") == "login"
+
+    def test_raises_no_username_input(self):
+        soup = BeautifulSoup("<form><input name='email'/></form>", "lxml")
+        with pytest.raises(AuthError, match="login form not found"):
+            _find_login_form(soup)  # pyright: ignore[reportPrivateUsage]
+
+    def test_raises_no_parent_form(self):
+        soup = BeautifulSoup("<div><input name='username'/></div>", "lxml")
+        with pytest.raises(AuthError, match="no parent form"):
+            _find_login_form(soup)  # pyright: ignore[reportPrivateUsage]
+
+
+class TestExtractHiddenInputs:
+    def test_collects_hidden_fields(self):
+        html = (
+            "<form>"
+            '<input type="hidden" name="csrf" value="tok1"/>'
+            '<input type="hidden" name="relay" value="tok2"/>'
+            '<input type="text" name="user" value="ignored"/>'
+            "</form>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        form = soup.find("form")
+        result = _extract_hidden_inputs(form)  # pyright: ignore[reportPrivateUsage]
+        assert result == {"csrf": "tok1", "relay": "tok2"}
+
+    def test_skips_nameless_inputs(self):
+        html = '<form><input type="hidden" value="ghost"/></form>'
+        soup = BeautifulSoup(html, "lxml")
+        form = soup.find("form")
+        assert _extract_hidden_inputs(form) == {}  # pyright: ignore[reportPrivateUsage]
+
+
+class TestExtractDeltaspikeRedirectAuth:
+    def test_returns_redirect_url(self):
+        html = (
+            "<html><head><title>Loading</title></head><body>"
+            "<script>var redirectUrl = '/education/favorites.xhtml?x=1';</script>"
+            "</body></html>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        url = _extract_deltaspike_redirect(soup)  # pyright: ignore[reportPrivateUsage]
+        assert url == "/education/favorites.xhtml?x=1"
+
+    def test_returns_none_without_loading_title(self):
+        html = "<html><head><title>Dashboard</title></head><body></body></html>"
+        soup = BeautifulSoup(html, "lxml")
+        assert _extract_deltaspike_redirect(soup) is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_returns_none_without_title(self):
+        soup = BeautifulSoup("<html><body></body></html>", "lxml")
+        assert _extract_deltaspike_redirect(soup) is None  # pyright: ignore[reportPrivateUsage]
+
+    def test_returns_none_when_no_script_match(self):
+        html = (
+            "<html><head><title>Loading</title></head><body>"
+            "<script>var other = 'value';</script>"
+            "</body></html>"
+        )
+        soup = BeautifulSoup(html, "lxml")
+        assert _extract_deltaspike_redirect(soup) is None  # pyright: ignore[reportPrivateUsage]
+
+
+class TestBuildAuthDeltaspikeUrl:
+    def test_adds_dsrid_dswid(self):
+        async def _run():
+            async with httpx.AsyncClient() as client:
+                url = _build_auth_deltaspike_url(  # pyright: ignore[reportPrivateUsage]
+                    "https://tiss.tuwien.ac.at/education/favorites.xhtml",
+                    "/education/favorites.xhtml?x=1",
+                    client,
+                )
+                parsed = httpx.URL(url)
+                assert "dsrid" in str(parsed.params)
+                assert "dswid" in str(parsed.params)
+                assert parsed.scheme == "https"
+
+        import asyncio
+
+        asyncio.get_event_loop().run_until_complete(_run())

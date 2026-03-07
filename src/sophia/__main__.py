@@ -203,7 +203,9 @@ async def reg_status(course_number: str, *, semester: str = "") -> None:
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
-            http=http, credentials=tiss_creds, host=settings.tiss_host,
+            http=http,
+            credentials=tiss_creds,
+            host=settings.tiss_host,
         )
         target = await adapter.get_registration_status(course_number, semester)
 
@@ -235,7 +237,9 @@ async def groups(course_number: str, *, semester: str = "") -> None:
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
-            http=http, credentials=tiss_creds, host=settings.tiss_host,
+            http=http,
+            credentials=tiss_creds,
+            host=settings.tiss_host,
         )
         grps = await adapter.get_groups(course_number, semester)
 
@@ -255,9 +259,7 @@ async def groups(course_number: str, *, semester: str = "") -> None:
 
     for i, g in enumerate(grps, 1):
         time_str = f"{g.time_start}\u2013{g.time_end}" if g.time_start else "\u2014"
-        enrolled_style = (
-            "red" if g.enrolled >= g.capacity and g.capacity > 0 else "white"
-        )
+        enrolled_style = "red" if g.enrolled >= g.capacity and g.capacity > 0 else "white"
         table.add_row(
             str(i),
             g.name,
@@ -296,7 +298,9 @@ async def favorites(*, semester: str = "") -> None:
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
-            http=http, credentials=tiss_creds, host=settings.tiss_host,
+            http=http,
+            credentials=tiss_creds,
+            host=settings.tiss_host,
         )
         favs = await adapter.get_favorites(semester)
 
@@ -364,17 +368,15 @@ async def go(
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
-            http=http, credentials=tiss_creds, host=settings.tiss_host,
+            http=http,
+            credentials=tiss_creds,
+            host=settings.tiss_host,
         )
 
         pref_ids: list[str] = []
         if preferences:
             grps = await adapter.get_groups(course_number, semester)
-            indices = [
-                int(x.strip()) - 1
-                for x in preferences.split(",")
-                if x.strip().isdigit()
-            ]
+            indices = [int(x.strip()) - 1 for x in preferences.split(",") if x.strip().isdigit()]
             for idx in indices:
                 if 0 <= idx < len(grps):
                     pref_ids.append(grps[idx].group_id)
@@ -388,14 +390,20 @@ async def go(
             console.print("[dim]Press Ctrl+C to cancel.[/dim]")
             try:
                 result = await watch_and_register(
-                    adapter, course_number, semester, pref_ids,
+                    adapter,
+                    course_number,
+                    semester,
+                    pref_ids,
                 )
             except KeyboardInterrupt:
                 console.print("\n[yellow]Watch cancelled.[/yellow]")
                 return
         else:
             result = await register_with_preferences(
-                adapter, course_number, semester, pref_ids,
+                adapter,
+                course_number,
+                semester,
+                pref_ids,
             )
 
     if result.success:
