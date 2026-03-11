@@ -188,10 +188,10 @@ Kairos (Καιρός — the decisive, opportune moment) automates course regist
 **Step 1: Log in to TISS**
 
 ```bash
-uv run sophia register tiss-login
+uv run sophia auth login
 ```
 
-This authenticates with TISS using the same TU Wien credentials you use for TUWEL. Your session is stored locally (same security as the TUWEL session).
+This authenticates with both TUWEL and TISS using your TU Wien credentials. Your sessions are stored locally.
 
 **Step 2: Browse available groups**
 
@@ -436,7 +436,7 @@ uv run sophia books list           # show previously discovered books
 uv run sophia books search <query> # search for a specific book
 
 # Registration (Kairos)
-uv run sophia register tiss-login          # log in to TISS
+uv run sophia auth login                   # log in to TUWEL + TISS
 uv run sophia register status 186.813      # check registration status
 uv run sophia register groups 186.813      # show groups with schedule
 uv run sophia register go 186.813          # register for LVA

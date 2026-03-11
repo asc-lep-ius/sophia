@@ -93,11 +93,17 @@ async def discover() -> None:
 
 @auth_app.command
 async def login() -> None:
-    """Log in to TUWEL via TU Wien SSO (username/password)."""
+    """Log in to TUWEL and TISS via TU Wien SSO (single prompt)."""
     import getpass
     import os
 
-    from sophia.adapters.auth import login_with_credentials, save_session, session_path
+    from sophia.adapters.auth import (
+        login_both,
+        save_session,
+        save_tiss_session,
+        session_path,
+        tiss_session_path,
+    )
     from sophia.config import Settings
 
     settings = Settings()
@@ -105,10 +111,21 @@ async def login() -> None:
     username = os.environ.get("SOPHIA_TUWEL_USERNAME") or input("TU Wien username: ")
     password = getpass.getpass("TU Wien password: ")
 
-    creds = await login_with_credentials(settings.tuwel_host, username, password)
-    path = session_path(settings.config_dir)
-    save_session(creds, path)
-    log.info("login_complete", msg="Session saved. You can now use sophia commands.")
+    tuwel_creds, tiss_creds = await login_both(
+        settings.tuwel_host, settings.tiss_host, username, password
+    )
+
+    save_session(tuwel_creds, session_path(settings.config_dir))
+    log.info("tuwel_login_complete", msg="TUWEL session saved.")
+
+    if tiss_creds:
+        save_tiss_session(tiss_creds, tiss_session_path(settings.config_dir))
+        log.info("tiss_login_complete", msg="TISS session saved.")
+    else:
+        log.warning(
+            "tiss_login_failed",
+            msg="TUWEL login succeeded but TISS login failed. TISS features may be unavailable.",
+        )
 
 
 @auth_app.command
@@ -156,24 +173,6 @@ def logout() -> None:
 # --- Kairos: TISS registration commands ---
 
 
-@register_app.command
-async def tiss_login() -> None:
-    """Log in to TISS via TU Wien SSO."""
-    import getpass
-    import os
-
-    from sophia.adapters.auth import login_tiss, save_tiss_session, tiss_session_path
-    from sophia.config import Settings
-
-    settings = Settings()
-    username = os.environ.get("SOPHIA_TUWEL_USERNAME") or input("TU Wien username: ")
-    password = getpass.getpass("TU Wien password: ")
-    creds = await login_tiss(settings.tiss_host, username, password)
-    path = tiss_session_path(settings.config_dir)
-    save_tiss_session(creds, path)
-    log.info("tiss_login_complete", msg="TISS session saved.")
-
-
 def _require_tiss_session() -> tuple[Settings, TissSessionCredentials | None]:
     """Load TISS session or return (settings, None) if not logged in."""
     from sophia.adapters.auth import load_tiss_session, tiss_session_path
@@ -195,7 +194,7 @@ async def reg_status(course_number: str, *, semester: str = "") -> None:
     console = Console()
     settings, tiss_creds = _require_tiss_session()
     if tiss_creds is None:
-        console.print("[red]Not logged in to TISS — run:[/red] sophia register tiss-login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
@@ -229,7 +228,7 @@ async def groups(course_number: str, *, semester: str = "") -> None:
     console = Console()
     settings, tiss_creds = _require_tiss_session()
     if tiss_creds is None:
-        console.print("[red]Not logged in to TISS — run:[/red] sophia register tiss-login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
@@ -290,7 +289,7 @@ async def favorites(*, semester: str = "") -> None:
     console = Console()
     settings, tiss_creds = _require_tiss_session()
     if tiss_creds is None:
-        console.print("[red]Not logged in to TISS — run:[/red] sophia register tiss-login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
@@ -360,7 +359,7 @@ async def go(
     console = Console()
     settings, tiss_creds = _require_tiss_session()
     if tiss_creds is None:
-        console.print("[red]Not logged in to TISS — run:[/red] sophia register tiss-login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:

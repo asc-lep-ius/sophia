@@ -120,32 +120,47 @@ def clear_tiss_session(path: Path) -> None:
         log.info("tiss_session_cleared", path=str(path))
 
 
-async def login_tiss(host: str, username: str, password: str) -> TissSessionCredentials:
-    """Authenticate with TISS via TU Wien SSO.
+async def login_both(
+    tuwel_host: str,
+    tiss_host: str,
+    username: str,
+    password: str,
+) -> tuple[SessionCredentials, TissSessionCredentials | None]:
+    """Authenticate to both TUWEL and TISS with a single credential prompt.
 
-    Same IdP as TUWEL but different SP (tiss.tuwien.ac.at).
-    TISS uses JSESSIONID + _tiss_session cookies.
+    Performs the TUWEL SAML flow first, then reuses the same httpx client
+    (which holds IdP cookies) to initiate the TISS SSO flow.  The IdP
+    recognizes the existing session and skips the credential prompt.
 
-    After the initial SSO dance (which authenticates the /admin context),
-    we also establish a session for the /education/ context.  This avoids
-    a redirect to instant_login when the adapter later accesses JSF pages,
-    because the IdP cookies are only available on *this* client — they
-    would be lost once the client is garbage-collected.
+    If TUWEL succeeds but TISS fails, returns (tuwel_creds, None) so the
+    caller can still save the TUWEL session.
     """
-    base = host.rstrip("/")
-    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
-        auth_url = f"{base}{_TISS_AUTH_PATH}"
-        log.info("tiss_sso_initiate", url=auth_url)
-        idp_resp = await client.get(auth_url)
-        idp_resp.raise_for_status()
+    tuwel_base = tuwel_host.rstrip("/")
+    tiss_base = tiss_host.rstrip("/")
 
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        # --- TUWEL SAML flow ---
+        idp_resp = await _initiate_sso(client, tuwel_base)
         saml_resp = await _submit_credentials(client, idp_resp, username, password)
         dashboard_resp = await _relay_saml_response(client, saml_resp)
+        tuwel_creds = _build_credentials(client, dashboard_resp, tuwel_base)
 
-        # Establish the /education/ session while IdP cookies are still available
-        await _establish_education_session(client, base)
+        # --- TISS SSO flow (IdP cookies already present) ---
+        tiss_creds: TissSessionCredentials | None = None
+        try:
+            auth_url = f"{tiss_base}{_TISS_AUTH_PATH}"
+            log.info("tiss_sso_initiate", url=auth_url)
+            tiss_idp_resp = await client.get(auth_url)
+            tiss_idp_resp.raise_for_status()
 
-        return _build_tiss_credentials(client, dashboard_resp, base)
+            tiss_saml_resp = await _relay_saml_response(client, tiss_idp_resp)
+
+            await _establish_education_session(client, tiss_base)
+            tiss_creds = _build_tiss_credentials(client, tiss_saml_resp, tiss_base)
+        except Exception:
+            log.warning("tiss_login_failed_during_unified_login", exc_info=True)
+
+        return tuwel_creds, tiss_creds
 
 
 async def login_with_credentials(host: str, username: str, password: str) -> SessionCredentials:
@@ -359,7 +374,7 @@ async def _establish_education_session(client: httpx.AsyncClient, base: str) -> 
     """Navigate to /education/ so the server issues a JSESSIONID for that context.
 
     Must be called while the client still holds IdP cookies (i.e. during
-    the same ``login_tiss`` client session).  Handles the DeltaSpike
+    the same ``login_both`` client session).  Handles the DeltaSpike
     "Loading" page the same way the adapter does at runtime.
     """
     education_url = f"{base}/education/favorites.xhtml"

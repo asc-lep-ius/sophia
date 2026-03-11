@@ -16,6 +16,7 @@ from sophia.adapters.auth import (
     SessionCredentials,
     clear_session,
     load_session,
+    login_both,
     login_with_credentials,
     save_session,
     session_path,
@@ -257,3 +258,112 @@ class TestLoginWithCredentials:
 
         with pytest.raises(AuthError, match="sesskey not found"):
             await login_with_credentials(HOST, "testuser", "testpass")
+
+
+# --- TISS SSO HTML fixtures for login_both tests ---
+
+TISS_HOST = "https://tiss.tuwien.ac.at"
+TISS_ACS_URL = f"{TISS_HOST}/auth/saml2/sp/saml2-acs.php/tiss.tuwien.ac.at"
+
+TISS_SAML_RESPONSE_HTML = f"""
+<html><body>
+<form method="post" action="{TISS_ACS_URL}">
+  <input type="hidden" name="SAMLResponse" value="fake-tiss-saml-response-b64" />
+</form>
+<script>document.forms[0].submit();</script>
+</body></html>
+"""
+
+TISS_DASHBOARD_HTML = """
+<html><body><p>TISS Dashboard</p></body></html>
+"""
+
+TISS_EDUCATION_HTML = """
+<html><body><p>Favorites</p></body></html>
+"""
+
+
+class TestLoginBoth:
+    """Tests for the unified login_both() that authenticates TUWEL + TISS."""
+
+    @respx.mock
+    async def test_successful_unified_login(self):
+        """Single credential prompt authenticates to both TUWEL and TISS."""
+        # TUWEL SSO flow
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+
+        # TISS SSO flow — IdP recognizes session, returns SAML auto-submit
+        respx.get(f"{TISS_HOST}/admin/authentifizierung").mock(
+            return_value=httpx.Response(200, text=TISS_SAML_RESPONSE_HTML)
+        )
+        respx.post(TISS_ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=TISS_DASHBOARD_HTML,
+                headers={
+                    "set-cookie": "JSESSIONID=tiss-jsid; path=/",
+                },
+            )
+        )
+        # _establish_education_session GET
+        respx.get(f"{TISS_HOST}/education/favorites.xhtml").mock(
+            return_value=httpx.Response(
+                200,
+                text=TISS_EDUCATION_HTML,
+                headers={"set-cookie": "_tiss_session=tiss-sess-val; path=/"},
+            )
+        )
+
+        tuwel_creds, tiss_creds = await login_both(
+            tuwel_host=HOST,
+            tiss_host=TISS_HOST,
+            username="testuser",
+            password="testpass",
+        )
+
+        assert tuwel_creds.moodle_session == "test-moodle-session"
+        assert tuwel_creds.sesskey == "abc123sesskey"
+        assert tiss_creds is not None
+        assert tiss_creds.jsessionid == "tiss-jsid"
+        assert tiss_creds.tiss_session == "tiss-sess-val"
+
+    @respx.mock
+    async def test_tuwel_succeeds_tiss_fails_returns_partial(self):
+        """TUWEL login works but TISS fails — returns TUWEL creds and TISS error."""
+        # TUWEL SSO flow succeeds
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+
+        # TISS SSO flow fails — network error
+        respx.get(f"{TISS_HOST}/admin/authentifizierung").mock(
+            side_effect=httpx.ConnectError("TISS unreachable")
+        )
+
+        tuwel_creds, tiss_creds = await login_both(
+            tuwel_host=HOST,
+            tiss_host=TISS_HOST,
+            username="testuser",
+            password="testpass",
+        )
+
+        assert tuwel_creds.moodle_session == "test-moodle-session"
+        assert tiss_creds is None
