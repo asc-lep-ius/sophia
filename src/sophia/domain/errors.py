@@ -35,3 +35,11 @@ class TissError(SophiaError):
 
 class RegistrationError(SophiaError):
     """Course or group registration failed."""
+
+
+class HermesError(SophiaError):
+    """Hermes lecture pipeline error."""
+
+
+class HermesSetupError(HermesError):
+    """Hermes setup/configuration error."""

@@ -38,6 +38,12 @@ export = [
 web = [
     "gradio>=4.0",
 ]
+hermes = [
+    "faster-whisper>=1.1",
+    "chromadb>=1.0",
+    "sentence-transformers>=3.0",
+    "openai>=1.50",
+]
 dev = [
     "sophia[llm,pdf,export,web]",
     "pytest>=8.0",

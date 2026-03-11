@@ -357,3 +357,81 @@ class DownloadJob:
         if error is not None:
             self.error = error
         self.status = new_status
+
+
+# --- Hermes (lecture pipeline) models ---
+
+
+class WhisperModel(StrEnum):
+    """Supported Whisper model sizes."""
+
+    LARGE_V3 = "large-v3"
+    TURBO = "turbo"
+    MEDIUM = "medium"
+    SMALL = "small"
+
+
+class ComputeDevice(StrEnum):
+    """Hardware compute target."""
+
+    CUDA = "cuda"
+    CPU = "cpu"
+
+
+class ComputeType(StrEnum):
+    """Numeric precision for inference."""
+
+    FLOAT16 = "float16"
+    INT8 = "int8"
+    INT8_FLOAT16 = "int8_float16"
+    FLOAT32 = "float32"
+
+
+class LLMProvider(StrEnum):
+    """Supported LLM providers."""
+
+    GITHUB = "github"
+    GEMINI = "gemini"
+    GROQ = "groq"
+    OLLAMA = "ollama"
+
+
+class EmbeddingProvider(StrEnum):
+    """Embedding model source."""
+
+    LOCAL = "local"
+    GITHUB = "github"
+    GEMINI = "gemini"
+
+
+class HermesWhisperConfig(BaseModel, frozen=True):
+    """Whisper transcription engine configuration."""
+
+    model: WhisperModel = WhisperModel.LARGE_V3
+    device: ComputeDevice = ComputeDevice.CPU
+    compute_type: ComputeType = ComputeType.FLOAT32
+    vad_filter: bool = True
+    language: str = "de"
+
+
+class HermesLLMConfig(BaseModel, frozen=True):
+    """LLM provider for classification, summaries, quiz generation."""
+
+    provider: LLMProvider = LLMProvider.GITHUB
+    model: str = "openai/gpt-4o"
+    api_key_env: str = "GITHUB_TOKEN"
+
+
+class HermesEmbeddingConfig(BaseModel, frozen=True):
+    """Embedding model for vector search."""
+
+    provider: EmbeddingProvider = EmbeddingProvider.LOCAL
+    model: str = "intfloat/multilingual-e5-large"
+
+
+class HermesConfig(BaseModel, frozen=True):
+    """Complete Hermes module configuration."""
+
+    whisper: HermesWhisperConfig = HermesWhisperConfig()
+    llm: HermesLLMConfig = HermesLLMConfig()
+    embeddings: HermesEmbeddingConfig = HermesEmbeddingConfig()

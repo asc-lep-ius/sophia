@@ -30,6 +30,9 @@ app.command(auth_app)
 register_app = cyclopts.App(name="register", help="Kairos — TISS course & group registration.")
 app.command(register_app)
 
+lectures_app = cyclopts.App(name="lectures", help="Hermes — Lecture knowledge base pipeline.")
+app.command(lectures_app)
+
 log = structlog.get_logger()
 
 
@@ -412,6 +415,214 @@ async def go(
     else:
         console.print(f"\n[bold red]{result.message}[/bold red]")
         raise SystemExit(1)
+
+
+# --- Hermes: Lecture pipeline commands ---
+
+
+@lectures_app.command(name="setup")
+def lectures_setup() -> None:
+    """Detect hardware and configure the lecture knowledge base pipeline."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+
+    from sophia.config import Settings
+    from sophia.domain.models import (
+        ComputeDevice,
+        ComputeType,
+        EmbeddingProvider,
+        HermesConfig,
+        HermesEmbeddingConfig,
+        HermesLLMConfig,
+        HermesWhisperConfig,
+        LLMProvider,
+        WhisperModel,
+    )
+    from sophia.services.hermes_setup import (
+        detect_gpu,
+        get_provider_defaults,
+        load_hermes_config,
+        recommend_config,
+        save_hermes_config,
+        validate_llm_provider,
+    )
+
+    console = Console()
+    settings = Settings()
+
+    console.print(
+        Panel("[bold]Hermes Setup Wizard[/bold]\nLecture knowledge base pipeline", style="cyan"),
+    )
+
+    # Step 1: Hardware detection
+    console.print("\n[bold]Step 1:[/bold] Detecting hardware...")
+    has_gpu, gpu_name, vram_mb = detect_gpu()
+
+    if has_gpu:
+        console.print(f"  [green]✓[/green] GPU detected: {gpu_name} ({vram_mb} MiB VRAM)")
+    else:
+        console.print("  [yellow]No GPU detected — using CPU mode[/yellow]")
+
+    recommended = recommend_config(has_gpu, vram_mb)
+
+    # Step 2: Whisper config
+    console.print("\n[bold]Step 2:[/bold] Whisper transcription model")
+    whisper_table = Table(show_header=True, box=None)
+    whisper_table.add_column("#", style="dim", width=3)
+    whisper_table.add_column("Model", style="cyan")
+    whisper_table.add_column("Note")
+    for i, m in enumerate(WhisperModel, 1):
+        marker = " [green](recommended)[/green]" if m == recommended.whisper.model else ""
+        whisper_table.add_row(str(i), m.value, marker)
+    console.print(whisper_table)
+
+    prompt = f"  Select model [1-{len(WhisperModel)}] (Enter for recommended): "
+    whisper_choice = input(prompt).strip()
+    models_list = list(WhisperModel)
+    if whisper_choice and whisper_choice.isdigit():
+        idx = int(whisper_choice) - 1
+        if 0 <= idx < len(models_list):
+            chosen_model = models_list[idx]
+        else:
+            chosen_model = recommended.whisper.model
+    else:
+        chosen_model = recommended.whisper.model
+
+    if has_gpu:
+        device = ComputeDevice.CUDA
+        compute_type = ComputeType.FLOAT16
+    else:
+        device = ComputeDevice.CPU
+        compute_type = ComputeType.FLOAT32
+
+    whisper_cfg = HermesWhisperConfig(
+        model=chosen_model,
+        device=device,
+        compute_type=compute_type,
+    )
+
+    # Step 3: LLM provider
+    console.print("\n[bold]Step 3:[/bold] LLM provider")
+    provider_table = Table(show_header=True, box=None)
+    provider_table.add_column("#", style="dim", width=3)
+    provider_table.add_column("Provider", style="cyan")
+    provider_table.add_column("Default model")
+    for i, p in enumerate(LLMProvider, 1):
+        defaults = get_provider_defaults(p)
+        provider_table.add_row(str(i), p.value, defaults["model"])
+    console.print(provider_table)
+
+    llm_choice = input(f"  Select provider [1-{len(LLMProvider)}] (Enter for GitHub): ").strip()
+    providers_list = list(LLMProvider)
+    if llm_choice and llm_choice.isdigit():
+        idx = int(llm_choice) - 1
+        if 0 <= idx < len(providers_list):
+            chosen_provider = providers_list[idx]
+        else:
+            chosen_provider = LLMProvider.GITHUB
+    else:
+        chosen_provider = LLMProvider.GITHUB
+
+    defaults = get_provider_defaults(chosen_provider)
+    llm_cfg = HermesLLMConfig(
+        provider=chosen_provider,
+        model=defaults["model"],
+        api_key_env=defaults["api_key_env"],
+    )
+
+    # Validate API key
+    valid, msg = validate_llm_provider(llm_cfg)
+    if valid:
+        console.print(f"  [green]✓[/green] {msg}")
+    else:
+        console.print(f"  [yellow]⚠[/yellow] {msg}")
+
+    # Step 4: Embeddings
+    console.print("\n[bold]Step 4:[/bold] Embedding provider")
+    embed_options: list[tuple[EmbeddingProvider, str]] = [
+        (EmbeddingProvider.LOCAL, "intfloat/multilingual-e5-large"),
+    ]
+    # Add provider-specific embeddings if available
+    if defaults["embedding_model"]:
+        embed_provider = {
+            LLMProvider.GITHUB: EmbeddingProvider.GITHUB,
+            LLMProvider.GEMINI: EmbeddingProvider.GEMINI,
+        }.get(chosen_provider)
+        if embed_provider is not None:
+            embed_options.append((embed_provider, defaults["embedding_model"]))
+
+    for i, (ep, em) in enumerate(embed_options, 1):
+        marker = " (recommended)" if i == 1 else ""
+        console.print(f"  {i}. {ep.value} — {em}{marker}")
+
+    prompt = f"  Select embeddings [1-{len(embed_options)}] (Enter for local): "
+    embed_choice = input(prompt).strip()
+    if embed_choice and embed_choice.isdigit():
+        idx = int(embed_choice) - 1
+        if 0 <= idx < len(embed_options):
+            chosen_embed_provider, chosen_embed_model = embed_options[idx]
+        else:
+            chosen_embed_provider, chosen_embed_model = embed_options[0]
+    else:
+        chosen_embed_provider, chosen_embed_model = embed_options[0]
+
+    embed_cfg = HermesEmbeddingConfig(provider=chosen_embed_provider, model=chosen_embed_model)
+
+    config = HermesConfig(whisper=whisper_cfg, llm=llm_cfg, embeddings=embed_cfg)
+
+    # Save
+    path = save_hermes_config(config, settings.config_dir)
+    console.print(f"\n[bold green]✓ Config saved to {path}[/bold green]")
+
+    # Verify round-trip
+    loaded = load_hermes_config(settings.config_dir)
+    if loaded == config:
+        console.print("[green]✓ Config verified[/green]")
+    else:
+        console.print("[red]⚠ Config verification failed — please check the file[/red]")
+
+    console.print("\n[dim]Next steps:[/dim]")
+    console.print("  1. Install Hermes extras: [cyan]uv pip install -e '.[hermes]'[/cyan]")
+    console.print("  2. Process a lecture: [cyan]sophia lectures process <audio-file>[/cyan]")
+
+
+@lectures_app.command(name="status")
+def lectures_status() -> None:
+    """Show current Hermes configuration."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.config import Settings
+    from sophia.services.hermes_setup import load_hermes_config
+
+    console = Console()
+    settings = Settings()
+
+    config = load_hermes_config(settings.config_dir)
+    if config is None:
+        console.print("[yellow]Hermes is not configured.[/yellow]")
+        console.print("Run [cyan]sophia lectures setup[/cyan] to get started.")
+        return
+
+    table = Table(title="Hermes Configuration")
+    table.add_column("Setting", style="cyan")
+    table.add_column("Value", style="green")
+
+    table.add_row("Whisper model", config.whisper.model.value)
+    table.add_row("Device", config.whisper.device.value)
+    table.add_row("Compute type", config.whisper.compute_type.value)
+    table.add_row("VAD filter", str(config.whisper.vad_filter))
+    table.add_row("Language", config.whisper.language)
+    table.add_row("", "")
+    table.add_row("LLM provider", config.llm.provider.value)
+    table.add_row("LLM model", config.llm.model)
+    table.add_row("API key env", config.llm.api_key_env or "(none)")
+    table.add_row("", "")
+    table.add_row("Embedding provider", config.embeddings.provider.value)
+    table.add_row("Embedding model", config.embeddings.model)
+
+    console.print(table)
 
 
 def main() -> None:
