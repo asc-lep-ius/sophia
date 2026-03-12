@@ -118,3 +118,30 @@ class LectureDownloadFailed:
     episode_id: str
     title: str
     error: str
+
+
+@dataclass(frozen=True)
+class TranscriptionStarted:
+    """Emitted when transcription of a lecture begins."""
+
+    episode_id: str
+    title: str
+
+
+@dataclass(frozen=True)
+class TranscriptionCompleted:
+    """Emitted when transcription finishes successfully."""
+
+    episode_id: str
+    title: str
+    segment_count: int
+    duration_s: float
+
+
+@dataclass(frozen=True)
+class TranscriptionFailed:
+    """Emitted when transcription fails."""
+
+    episode_id: str
+    title: str
+    error: str

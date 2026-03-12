@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         SearchResult,
         TissCourseInfo,
         TissExamDate,
+        TranscriptSegment,
     )
 
 
@@ -129,3 +130,9 @@ class LectureDownloader(Protocol):
     async def download_track(
         self, url: str, dest: Path
     ) -> AsyncIterator[DownloadProgressEvent]: ...
+
+
+class Transcriber(Protocol):
+    """Transcribes audio files into text segments."""
+
+    def transcribe(self, audio_path: Path) -> list[TranscriptSegment]: ...

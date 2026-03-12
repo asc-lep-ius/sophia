@@ -488,3 +488,16 @@ class ScheduledJob(BaseModel, frozen=True):
     created_at: str
     status: JobStatus = JobStatus.PENDING
     description: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Transcription — Whisper transcription models
+# ---------------------------------------------------------------------------
+
+
+class TranscriptSegment(BaseModel, frozen=True):
+    """A single segment from a lecture transcription."""
+
+    start: float  # seconds
+    end: float  # seconds
+    text: str

@@ -897,6 +897,64 @@ async def lectures_download(
         raise SystemExit(1) from None
 
 
+@lectures_app.command(name="transcribe")
+async def lectures_transcribe(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (from 'sophia lectures list').")
+    ],
+) -> None:
+    """Transcribe downloaded lectures using Whisper. Requires 'sophia lectures setup'."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, TranscriptionError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_transcribe import transcribe_lectures
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+
+            def _on_start(episode_id: str, title: str) -> None:
+                console.print(f"[dim]Transcribing:[/dim] {title}...")
+
+            def _on_complete(episode_id: str, segment_count: int) -> None:
+                console.print(f"  [green]✓[/green] {segment_count} segments")
+
+            results = await transcribe_lectures(
+                container, module_id, on_start=_on_start, on_complete=_on_complete
+            )
+
+            table = Table(title="Transcription Results")
+            table.add_column("Title", style="cyan", no_wrap=False)
+            table.add_column("Status", style="white")
+            table.add_column("Segments", justify="right")
+            table.add_column("SRT", style="dim", no_wrap=False)
+
+            for r in results:
+                status_style = {
+                    "completed": "green",
+                    "skipped": "yellow",
+                    "failed": "red",
+                }.get(r.status, "white")
+                table.add_row(
+                    r.title,
+                    f"[{status_style}]{r.status}[/{status_style}]",
+                    str(r.segment_count) if r.segment_count else "",
+                    str(r.srt_path) if r.srt_path else r.error or "",
+                )
+
+            console.print(table)
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TranscriptionError as exc:
+        console.print(f"[red]Transcription error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
 # --- Jobs: scheduler management commands ---
 
 

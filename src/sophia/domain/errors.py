@@ -51,3 +51,7 @@ class LectureTubeError(HermesError):
 
 class LectureDownloadError(HermesError):
     """Lecture media download failed."""
+
+
+class TranscriptionError(HermesError):
+    """Whisper transcription failed."""
