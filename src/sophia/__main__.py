@@ -626,47 +626,69 @@ def lectures_status() -> None:
 
 
 @lectures_app.command(name="list")
-async def lectures_list(query: str) -> None:
-    """Search for lecture series on LectureTube."""
+async def lectures_list() -> None:
+    """Discover lecture recordings from enrolled courses."""
     from rich.console import Console
     from rich.table import Table
 
-    from sophia.adapters.auth import load_session, session_path
-    from sophia.adapters.lecturetube import LectureTubeAdapter
-    from sophia.config import Settings
+    from sophia.adapters.lecturetube import OpencastAdapter
     from sophia.domain.errors import AuthError
-    from sophia.infra.http import http_session
+    from sophia.infra.di import create_app
 
     console = Console()
-    settings = Settings()
 
-    creds = load_session(session_path(settings.config_dir))
-    if creds is None:
-        console.print("[red]Not logged in — run:[/red] sophia auth login")
-        raise SystemExit(1)
+    try:
+        async with create_app() as container:
+            courses = await container.moodle.get_enrolled_courses()
 
-    async with http_session() as http:
-        http.cookies.set(creds.cookie_name, creds.moodle_session)
-        adapter = LectureTubeAdapter(http=http, host=settings.lecturetube_host)
+            if not courses:
+                console.print("[yellow]No enrolled courses found.[/yellow]")
+                return
 
-        try:
-            series = await adapter.search_series(query)
-        except AuthError:
-            console.print("[red]Session expired — run:[/red] sophia auth login")
-            raise SystemExit(1) from None
+            console.print(f"[dim]Scanning {len(courses)} courses for lecture recordings...[/dim]\n")
 
-    if not series:
-        console.print(f"[yellow]No lecture series found for '{query}'.[/yellow]")
-        return
+            adapter = OpencastAdapter(
+                http=container.http,
+                host=container.settings.tuwel_host,
+                moodle_session=container.moodle._moodle_session,  # pyright: ignore[reportPrivateUsage]
+                cookie_name=container.moodle._cookie_name,  # pyright: ignore[reportPrivateUsage]
+            )
 
-    table = Table(title=f"Lecture Series — '{query}'")
-    table.add_column("Series ID", style="dim")
-    table.add_column("Title", style="cyan", no_wrap=False)
+            table = Table(title="Lecture Recordings")
+            table.add_column("Course", style="cyan", no_wrap=False)
+            table.add_column("Module", style="green", no_wrap=False)
+            table.add_column("Episodes", justify="right")
+            table.add_column("Module ID", style="dim")
 
-    for s in series:
-        table.add_row(s.series_id, s.title)
+            found_any = False
+            for course in courses:
+                sections = await container.moodle.get_course_content(course.id)
+                for section in sections:
+                    for module in section.modules:
+                        if module.modname != "opencast":
+                            continue
+                        found_any = True
+                        episodes = await adapter.get_series_episodes(module.id)
+                        table.add_row(
+                            course.shortname,
+                            module.name,
+                            str(len(episodes)),
+                            str(module.id),
+                        )
 
-    console.print(table)
+            if not found_any:
+                console.print("[yellow]No lecture recordings found in enrolled courses.[/yellow]")
+                return
+
+            console.print(table)
+            console.print(
+                "\n[dim]Use [cyan]sophia lectures episodes <module-id>[/cyan]"
+                " to list episodes for a module.[/dim]",
+            )
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
 
 
 def main() -> None:

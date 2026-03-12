@@ -20,7 +20,6 @@ if TYPE_CHECKING:
         DownloadProgressEvent,
         GradeItem,
         Lecture,
-        LectureSeries,
         ModuleInfo,
         QuizInfo,
         ReferenceSource,
@@ -118,7 +117,7 @@ class RegistrationProvider(Protocol):
 
 
 class LectureProvider(Protocol):
-    """Lecture discovery from LectureTube/Opencast — used by Hermes."""
+    """Lecture discovery from TUWEL Opencast modules — used by Hermes."""
 
-    async def search_series(self, query: str) -> list[LectureSeries]: ...
-    async def get_episodes(self, series_id: str) -> list[Lecture]: ...
+    async def get_series_episodes(self, module_id: int) -> list[Lecture]: ...
+    async def get_episode_detail(self, module_id: int, episode_id: str) -> Lecture | None: ...

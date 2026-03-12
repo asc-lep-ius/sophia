@@ -22,6 +22,8 @@ from sophia.adapters.tiss_registration import (
 from sophia.domain.errors import AuthError, RegistrationError
 from sophia.domain.models import RegistrationStatus
 
+HOST = "https://tiss.tuwien.ac.at"
+
 # --- HTML Fixtures ---
 
 TISS_FAVORITES_PAGE = (
@@ -645,3 +647,55 @@ class TestGetFavorites:
             )
             with pytest.raises(AuthError, match="session expired"):
                 await adapter.get_favorites("2026S")
+
+
+class TestTooManyRedirectsHandling:
+    """TooManyRedirects (SSO redirect loops) should raise AuthError, not RegistrationError."""
+
+    @respx.mock
+    async def test_get_too_many_redirects_raises_auth_error(self) -> None:
+        respx.get(f"{HOST}/education/course/courseRegistration.xhtml").mock(
+            side_effect=httpx.TooManyRedirects("redirect loop", request=httpx.Request("GET", HOST)),
+        )
+
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+            with pytest.raises(AuthError, match="session expired"):
+                await adapter.get_registration_status("186.813", "2026S")
+
+    @respx.mock
+    async def test_post_too_many_redirects_raises_auth_error(self) -> None:
+        # First GET succeeds (returns an open registration page)
+        respx.get(f"{HOST}/education/course/courseRegistration.xhtml").mock(
+            return_value=httpx.Response(200, html=TISS_REG_PAGE_OPEN),
+        )
+        # POST triggers TooManyRedirects (SSO loop)
+        respx.post(f"{HOST}/education/course/courseRegistration.xhtml").mock(
+            side_effect=httpx.TooManyRedirects(
+                "redirect loop",
+                request=httpx.Request("POST", HOST),
+            ),
+        )
+
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+            with pytest.raises(AuthError, match="session expired"):
+                await adapter.register("186.813", "2026S")
+
+    def test_parse_detects_idp_redirect(self) -> None:
+        resp = httpx.Response(
+            200,
+            html="<html>IdP login</html>",
+            request=httpx.Request("GET", "https://idp.zid.tuwien.ac.at/simplesaml/login"),
+        )
+        with pytest.raises(AuthError, match="session expired"):
+            TissRegistrationAdapter._parse(resp)  # pyright: ignore[reportPrivateUsage]
+
+    def test_parse_detects_login_redirect(self) -> None:
+        resp = httpx.Response(
+            200,
+            html="<html>Login page</html>",
+            request=httpx.Request("GET", "https://tiss.tuwien.ac.at/admin/login"),
+        )
+        with pytest.raises(AuthError, match="session expired"):
+            TissRegistrationAdapter._parse(resp)  # pyright: ignore[reportPrivateUsage]

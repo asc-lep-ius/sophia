@@ -451,14 +451,6 @@ class LectureTrack(BaseModel, frozen=True):
     resolution: str = ""
 
 
-class LectureSeries(BaseModel, frozen=True):
-    """An Opencast series (maps to a course's lecture recordings)."""
-
-    series_id: str
-    title: str
-    episode_count: int = 0
-
-
 class Lecture(BaseModel, frozen=True):
     """A single lecture recording (Opencast episode)."""
 

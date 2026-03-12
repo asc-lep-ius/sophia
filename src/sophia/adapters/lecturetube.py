@@ -1,136 +1,144 @@
-"""Async LectureTube adapter — Opencast Search API client.
+"""Async Opencast adapter — TUWEL Moodle Opencast module scraper.
 
-Fetches series and episode data from TU Wien's LectureTube platform
-(Opencast-based). Implements LectureProvider protocol.
+Discovers lecture recordings from enrolled TUWEL courses by scraping
+the Moodle Opencast plugin pages. Implements LectureProvider protocol.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any, cast
 
 import httpx
 import structlog
+from bs4 import BeautifulSoup
 
 from sophia.domain.errors import AuthError, LectureTubeError
-from sophia.domain.models import Lecture, LectureSeries, LectureTrack
+from sophia.domain.models import Lecture, LectureTrack
 
 log = structlog.get_logger()
 
-
-def _ensure_list(value: Any) -> list[dict[str, Any]]:
-    """Normalize Opencast's single-object-or-array JSON quirk."""
-    if isinstance(value, list):
-        return value  # type: ignore[no-any-return]
-    return [value]
+_EPISODE_DATA_RE = re.compile(r"window\.episode\s*=\s*({.*?})\s*;", re.DOTALL)
 
 
-def _parse_tracks(media: dict[str, Any]) -> list[LectureTrack]:
-    """Extract tracks from a mediapackage's ``media`` block."""
-    raw_tracks = media.get("track")
-    if not raw_tracks:
-        return []
+def _parse_paella_tracks(data: dict[str, Any]) -> list[LectureTrack]:
+    """Extract tracks from Paella player manifest's ``streams`` block."""
     tracks: list[LectureTrack] = []
-    for t in _ensure_list(raw_tracks):
-        video: dict[str, str] = t.get("video") or {}
-        tracks.append(
-            LectureTrack(
-                flavor=str(t.get("type", "")),
-                url=str(t.get("url", "")),
-                mimetype=str(t.get("mimetype", "")),
-                resolution=str(video.get("resolution", "")),
+    for stream in data.get("streams", []):
+        content = stream.get("content", "")
+        sources = stream.get("sources", {})
+        for fmt, raw_items in sources.items():
+            items_list = cast(
+                "list[dict[str, Any]]",
+                raw_items if isinstance(raw_items, list) else [raw_items],
             )
-        )
+            for item in items_list:
+                res = cast("dict[str, Any]", item.get("res", {}))
+                w: int = res.get("w", 0)
+                h: int = res.get("h", 0)
+                resolution = f"{w}x{h}" if w and h else ""
+                tracks.append(
+                    LectureTrack(
+                        flavor=f"{content}/{fmt}",
+                        url=str(item.get("src", "")),
+                        mimetype=str(item.get("mimetype", "")),
+                        resolution=resolution,
+                    )
+                )
     return tracks
 
 
-def _parse_creator(creators: Any) -> str:
-    """Extract creator string — can be a string or ``{"creator": "..."}``."""
-    if not isinstance(creators, dict):
-        return ""
-    creators_dict = cast("dict[str, Any]", creators)
-    raw: str | list[str] = creators_dict.get("creator", "")
-    if isinstance(raw, list):
-        return ", ".join(str(c) for c in raw)
-    return str(raw)
-
-
-class LectureTubeAdapter:
-    """Async LectureTube adapter — Opencast Search API client.
+class OpencastAdapter:
+    """Async TUWEL Opencast adapter — scrapes Moodle Opencast module pages.
 
     Satisfies: LectureProvider protocol.
     """
 
-    def __init__(self, http: httpx.AsyncClient, host: str) -> None:
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        host: str,
+        moodle_session: str,
+        cookie_name: str = "MoodleSession",
+    ) -> None:
         self._http = http
         self._host = host.rstrip("/")
+        self._moodle_session = moodle_session
+        self._cookie_name = cookie_name
 
-    async def _get_json(self, path: str, params: dict[str, str]) -> dict[str, Any]:
-        """GET a JSON endpoint, handling auth redirects and HTTP errors."""
+    async def _scrape(self, path: str, params: dict[str, str] | None = None) -> str:
+        """Fetch a TUWEL page and return raw HTML. Detects auth redirects."""
         url = f"{self._host}{path}"
-        log.debug("lecturetube.request", url=url, params=params)
-
-        try:
-            response = await self._http.get(url, params=params, follow_redirects=False)
-        except httpx.HTTPError as exc:
-            raise LectureTubeError(f"LectureTube request failed: {path}") from exc
-
-        # SSO redirect → not authenticated
-        if response.status_code in (301, 302, 303, 307, 308):
-            location = response.headers.get("location", "")
-            if "login" in location or "idp" in location:
-                raise AuthError("Session expired — log in again with: sophia auth login")
-
+        log.debug("opencast.scrape", url=url, params=params)
+        response = await self._http.get(
+            url,
+            params=params or {},
+            cookies={self._cookie_name: self._moodle_session},
+        )
+        if "login" in str(response.url) and response.status_code in (200, 302):
+            raise AuthError("Session expired — log in again with: sophia auth login")
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
-            raise LectureTubeError(
-                f"HTTP {exc.response.status_code} from LectureTube: {path}"
-            ) from exc
+            raise LectureTubeError(f"HTTP {exc.response.status_code} from TUWEL Opencast") from exc
+        return response.text
 
-        return response.json()  # type: ignore[no-any-return]
+    async def get_series_episodes(self, module_id: int) -> list[Lecture]:
+        """Scrape all episode links from an Opencast series module page."""
+        html = await self._scrape("/mod/opencast/view.php", {"id": str(module_id)})
+        soup = BeautifulSoup(html, "lxml")
 
-    async def search_series(self, query: str) -> list[LectureSeries]:
-        """Search for lecture series matching *query*."""
-        data = await self._get_json("/search/series.json", {"q": query, "limit": "20"})
-        sr = data.get("search-results", {})
-        if int(sr.get("total", 0)) == 0:
-            return []
+        title_el = soup.select_one("h2") or soup.select_one(".page-header-headings h1")
+        series_title = title_el.get_text(strip=True) if title_el else ""
 
-        results: list[LectureSeries] = []
-        for item in _ensure_list(sr["result"]):
-            mp = item.get("mediapackage", {})
-            title = item.get("dcTitle") or mp.get("title", "")
-            results.append(
-                LectureSeries(
-                    series_id=mp.get("id", item.get("id", "")),
-                    title=title,
-                )
-            )
-        return results
+        episodes: list[Lecture] = []
+        for link in soup.select("a[href*='view.php'][href*='&e=']"):
+            href = str(link.get("href", ""))
+            ep_match = re.search(r"[&?]e=([0-9a-f-]{36})", href)
+            if not ep_match:
+                continue
+            episode_id = ep_match.group(1)
 
-    async def get_episodes(self, series_id: str) -> list[Lecture]:
-        """List episodes for a given series, newest first."""
-        data = await self._get_json(
-            "/search/episode.json",
-            {"sid": series_id, "limit": "100", "sort": "created desc"},
-        )
-        sr = data.get("search-results", {})
-        if int(sr.get("total", 0)) == 0:
-            return []
+            ep_title = link.get_text(strip=True)
+            if not ep_title:
+                img = link.select_one("img")
+                ep_title = str(img.get("alt", "")) if img else ""
 
-        results: list[Lecture] = []
-        for item in _ensure_list(sr["result"]):
-            mp = item.get("mediapackage", {})
-            results.append(
+            episodes.append(
                 Lecture(
-                    episode_id=mp.get("id", item.get("id", "")),
-                    title=mp.get("title", ""),
-                    series_id=mp.get("series", ""),
-                    series_title=mp.get("seriestitle", ""),
-                    duration_ms=int(mp.get("duration", 0)),
-                    created=mp.get("start", ""),
-                    creator=_parse_creator(mp.get("creators")),
-                    tracks=_parse_tracks(mp.get("media", {})),
+                    episode_id=episode_id,
+                    title=ep_title or episode_id,
+                    series_id="",
+                    series_title=series_title,
                 )
             )
-        return results
+
+        return episodes
+
+    async def get_episode_detail(self, module_id: int, episode_id: str) -> Lecture | None:
+        """Scrape full episode metadata + track URLs from the player page."""
+        html = await self._scrape("/mod/opencast/view.php", {"id": str(module_id), "e": episode_id})
+
+        match = _EPISODE_DATA_RE.search(html)
+        if not match:
+            log.warning("opencast.no_episode_data", module_id=module_id, episode_id=episode_id)
+            return None
+
+        try:
+            data = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            log.warning("opencast.invalid_episode_json", module_id=module_id, episode_id=episode_id)
+            return None
+
+        metadata = data.get("metadata", {})
+        return Lecture(
+            episode_id=episode_id,
+            title=str(metadata.get("title", "")),
+            series_id=str(metadata.get("series", "")),
+            series_title=str(metadata.get("seriestitle", "")),
+            duration_ms=int(metadata.get("duration", 0)) * 1000,
+            created=str(metadata.get("startDate", "")),
+            creator=str(metadata.get("presenter", "")),
+            tracks=_parse_paella_tracks(data),
+        )

@@ -246,6 +246,9 @@ class TissRegistrationAdapter:
         try:
             resp = await self._http.get(url, params=params or {})
         except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.TooManyRedirects):
+                msg = "TISS session expired — log in again with: sophia auth login"
+                raise AuthError(msg) from exc
             raise RegistrationError(f"HTTP request failed: {url}") from exc
 
         soup, resp = self._parse(resp)
@@ -256,6 +259,9 @@ class TissRegistrationAdapter:
             try:
                 resp = await self._http.get(redirect_url)
             except httpx.HTTPError as exc:
+                if isinstance(exc, httpx.TooManyRedirects):
+                    msg = "TISS session expired — log in again with: sophia auth login"
+                    raise AuthError(msg) from exc
                 raise RegistrationError(f"HTTP request failed: {redirect_url}") from exc
             soup, resp = self._parse(resp)
 
@@ -267,12 +273,16 @@ class TissRegistrationAdapter:
         try:
             resp = await self._http.post(url, data=data)
         except httpx.HTTPError as exc:
+            if isinstance(exc, httpx.TooManyRedirects):
+                msg = "TISS session expired — log in again with: sophia auth login"
+                raise AuthError(msg) from exc
             raise RegistrationError(f"POST failed: {url}") from exc
         return self._parse(resp)
 
     @staticmethod
     def _parse(resp: httpx.Response) -> tuple[BeautifulSoup, httpx.Response]:
-        if "authentifizierung" in str(resp.url).lower():
+        url_str = str(resp.url).lower()
+        if "authentifizierung" in url_str or "idp" in url_str or "login" in url_str:
             raise AuthError("TISS session expired — log in again")
         try:
             resp.raise_for_status()
