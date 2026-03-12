@@ -349,13 +349,27 @@ class TissRegistrationAdapter:
         params = {"courseNr": _clean(course_number), "semester": semester, "windowId": "1"}
 
         soup, resp = await self._get(f"{self._host}{path}", params)
-        vs = _viewstate(soup)
-        action, fid = _form_info(soup)
+        try:
+            vs = _viewstate(soup)
+            action, fid = _form_info(soup)
+        except RegistrationError:
+            return _result(
+                course_number,
+                rtype,
+                group_id,
+                ok=False,
+                msg="Course page has no registration form — check the course number",
+            )
 
         btn = self._find_btn(soup, group_id)
         if not btn:
             return _result(
-                course_number, rtype, group_id, ok=False, msg="No register button found on page"
+                course_number,
+                rtype,
+                group_id,
+                ok=False,
+                msg="No register button found — registration may be closed"
+                " or not available for this course",
             )
 
         # Step 1: POST the register form

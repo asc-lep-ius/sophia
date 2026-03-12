@@ -99,6 +99,13 @@ TISS_FAVORITES_EMPTY = """
 </body></html>
 """
 
+TISS_INVALID_COURSE_PAGE = """
+<html><body>
+<h1>Error</h1>
+<p>Die angegebene Lehrveranstaltung wurde nicht gefunden.</p>
+</body></html>
+"""
+
 TISS_REG_PAGE_OPEN = """
 <html><body>
 <h1>Algorithmen und Datenstrukturen 1 VU</h1>
@@ -434,7 +441,22 @@ class TestRegister:
             result = await adapter.register("186.813", "2026S")
 
         assert not result.success
-        assert "button" in result.message.lower()
+        assert "registration may be closed" in result.message.lower()
+
+    @respx.mock
+    async def test_invalid_course_returns_failure(self):
+        respx.get(
+            "https://tiss.tuwien.ac.at/education/course/courseRegistration.xhtml",
+        ).mock(return_value=httpx.Response(200, html=TISS_INVALID_COURSE_PAGE))
+
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(
+                http=http, credentials=_make_creds(), host="https://tiss.tuwien.ac.at"
+            )
+            result = await adapter.register("5", "2026S")
+
+        assert not result.success
+        assert "registration form" in result.message.lower()
 
 
 class TestExtractDeltaspikeRedirect:

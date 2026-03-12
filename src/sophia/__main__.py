@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
 import cyclopts
 import structlog
@@ -27,7 +27,21 @@ app.command(books_app)
 auth_app = cyclopts.App(name="auth", help="Session authentication commands.")
 app.command(auth_app)
 
-register_app = cyclopts.App(name="register", help="Kairos — TISS course & group registration.")
+register_app = cyclopts.App(
+    name="register",
+    help=(
+        "Kairos — TISS course & group registration.\n"
+        "\n"
+        "Workflow:\n"
+        " 1. favorites              — list TISS favorites with course numbers\n"
+        " 2. status  COURSE_NR      — check registration window times\n"
+        " 3. groups  COURSE_NR      — show available groups with indices\n"
+        " 4. go      COURSE_NR      — register for the course (LVA)\n"
+        " 5. go      COURSE_NR -p 1,3 — register for groups by preference\n"
+        "\n"
+        "Course numbers are TISS numbers like 186.813 (find via favorites or TISS URL)."
+    ),
+)
 app.command(register_app)
 
 lectures_app = cyclopts.App(name="lectures", help="Hermes — Lecture knowledge base pipeline.")
@@ -218,8 +232,12 @@ def _require_tiss_session() -> tuple[Settings, TissSessionCredentials | None]:
 
 
 @register_app.command(name="status")
-async def reg_status(course_number: str, *, semester: str = "") -> None:
-    """Check registration status for a course on TISS."""
+async def reg_status(
+    course_number: Annotated[str, cyclopts.Parameter(help="TISS course number, e.g. 186.813")],
+    *,
+    semester: Annotated[str, cyclopts.Parameter(help="Semester code (default: current)")] = "",
+) -> None:
+    """Check registration status and window times for a course on TISS."""
     from rich.console import Console
 
     from sophia.adapters.tiss_registration import TissRegistrationAdapter
@@ -251,8 +269,14 @@ async def reg_status(course_number: str, *, semester: str = "") -> None:
 
 
 @register_app.command
-async def groups(course_number: str, *, semester: str = "") -> None:
-    """Show available groups for a course with day/time schedule."""
+async def groups(
+    course_number: Annotated[str, cyclopts.Parameter(help="TISS course number, e.g. 186.813")],
+    *,
+    semester: Annotated[str, cyclopts.Parameter(help="Semester code (default: current)")] = "",
+) -> None:
+    """Show available groups for a course with day/time schedule.
+
+    Use the group indices (#) with 'sophia register go --preferences'."""
     from rich.console import Console
     from rich.table import Table
 
@@ -312,7 +336,10 @@ async def groups(course_number: str, *, semester: str = "") -> None:
 
 
 @register_app.command
-async def favorites(*, semester: str = "") -> None:
+async def favorites(
+    *,
+    semester: Annotated[str, cyclopts.Parameter(help="Semester code (default: current)")] = "",
+) -> None:
     """List your TISS favorites with registration status."""
     from rich.console import Console
     from rich.table import Table
@@ -371,20 +398,40 @@ async def favorites(*, semester: str = "") -> None:
 
 @register_app.command
 async def go(
-    course_number: str,
+    course_number: Annotated[str, cyclopts.Parameter(help="TISS course number, e.g. 186.813")],
     *,
-    semester: str = "",
-    preferences: str = "",
-    watch: bool = False,
-    schedule: bool = False,
+    semester: Annotated[
+        str, cyclopts.Parameter(help="Semester code, e.g. 2026S (default: current)")
+    ] = "",
+    preferences: Annotated[
+        str,
+        cyclopts.Parameter(
+            help="Comma-separated group indices from 'sophia register groups', e.g. 1,3,2"
+        ),
+    ] = "",
+    watch: Annotated[
+        bool,
+        cyclopts.Parameter(help="Poll until the registration window opens, then register"),
+    ] = False,
+    schedule: Annotated[
+        bool,
+        cyclopts.Parameter(help="Schedule a system job to register at the exact opening time"),
+    ] = False,
 ) -> None:
-    """Register for a course or group. Use --watch to wait for the window.
+    """Register for a course (LVA) or specific groups on TISS.
+
+    Without --preferences, registers directly for the course (LVA registration).
+    With --preferences, tries each group in order and stops at first success.
 
     Examples:
         sophia register go 186.813                     # LVA registration
-        sophia register go 186.813 --preferences 1,3   # groups by index
+        sophia register go 186.813 --preferences 1,3   # groups 1 then 3
         sophia register go 186.813 --watch              # wait for window
         sophia register go 186.813 --schedule           # schedule at open time
+
+    Find course numbers:
+        sophia register favorites                       # from your TISS favorites
+        Or check the URL on TISS: courseNr=186813 → 186.813
     """
     from rich.console import Console
 
