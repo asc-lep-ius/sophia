@@ -654,6 +654,7 @@ async def lectures_list() -> None:
 
             table = Table(title="Lecture Recordings")
             table.add_column("Course", style="cyan", no_wrap=False)
+            table.add_column("Name", style="white", no_wrap=False)
             table.add_column("Module", style="green", no_wrap=False)
             table.add_column("Episodes", justify="right")
             table.add_column("Module ID", style="dim")
@@ -662,24 +663,27 @@ async def lectures_list() -> None:
                 *(container.moodle.get_course_content(c.id) for c in courses)
             )
 
-            opencast_modules: list[tuple[str, ModuleInfo]] = []
+            opencast_modules: list[tuple[str, str, ModuleInfo]] = []
             for course, sections in zip(courses, sections_by_course, strict=True):
                 for section in sections:
                     for module in section.modules:
                         if module.modname == "opencast":
-                            opencast_modules.append((course.shortname, module))
+                            opencast_modules.append((course.shortname, course.fullname, module))
 
             if not opencast_modules:
                 console.print("[yellow]No lecture recordings found in enrolled courses.[/yellow]")
                 return
 
             episode_counts = await asyncio.gather(
-                *(container.opencast.get_series_episodes(m.id) for _, m in opencast_modules)
+                *(container.opencast.get_series_episodes(m.id) for _, _, m in opencast_modules)
             )
 
-            for (shortname, module), episodes in zip(opencast_modules, episode_counts, strict=True):
+            for (shortname, fullname, module), episodes in zip(
+                opencast_modules, episode_counts, strict=True
+            ):
                 table.add_row(
                     shortname,
+                    fullname,
                     module.name,
                     str(len(episodes)),
                     str(module.id),
