@@ -435,3 +435,38 @@ class HermesConfig(BaseModel, frozen=True):
     whisper: HermesWhisperConfig = HermesWhisperConfig()
     llm: HermesLLMConfig = HermesLLMConfig()
     embeddings: HermesEmbeddingConfig = HermesEmbeddingConfig()
+
+
+# ---------------------------------------------------------------------------
+# Hermes — Lecture models
+# ---------------------------------------------------------------------------
+
+
+class LectureTrack(BaseModel, frozen=True):
+    """A single media track (video/audio) of a lecture."""
+
+    flavor: str
+    url: str
+    mimetype: str
+    resolution: str = ""
+
+
+class LectureSeries(BaseModel, frozen=True):
+    """An Opencast series (maps to a course's lecture recordings)."""
+
+    series_id: str
+    title: str
+    episode_count: int = 0
+
+
+class Lecture(BaseModel, frozen=True):
+    """A single lecture recording (Opencast episode)."""
+
+    episode_id: str
+    title: str
+    series_id: str
+    series_title: str = ""
+    duration_ms: int = 0
+    created: str = ""
+    creator: str = ""
+    tracks: list[LectureTrack] = []

@@ -43,3 +43,7 @@ class HermesError(SophiaError):
 
 class HermesSetupError(HermesError):
     """Hermes setup/configuration error."""
+
+
+class LectureTubeError(HermesError):
+    """LectureTube API request failed."""

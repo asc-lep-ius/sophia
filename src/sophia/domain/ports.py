@@ -19,6 +19,8 @@ if TYPE_CHECKING:
         CourseSection,
         DownloadProgressEvent,
         GradeItem,
+        Lecture,
+        LectureSeries,
         ModuleInfo,
         QuizInfo,
         ReferenceSource,
@@ -113,3 +115,10 @@ class RegistrationProvider(Protocol):
     async def register(
         self, course_number: str, semester: str, group_id: str | None = None
     ) -> RegistrationResult: ...
+
+
+class LectureProvider(Protocol):
+    """Lecture discovery from LectureTube/Opencast — used by Hermes."""
+
+    async def search_series(self, query: str) -> list[LectureSeries]: ...
+    async def get_episodes(self, series_id: str) -> list[Lecture]: ...

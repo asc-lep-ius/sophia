@@ -625,6 +625,50 @@ def lectures_status() -> None:
     console.print(table)
 
 
+@lectures_app.command(name="list")
+async def lectures_list(query: str) -> None:
+    """Search for lecture series on LectureTube."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.adapters.auth import load_session, session_path
+    from sophia.adapters.lecturetube import LectureTubeAdapter
+    from sophia.config import Settings
+    from sophia.domain.errors import AuthError
+    from sophia.infra.http import http_session
+
+    console = Console()
+    settings = Settings()
+
+    creds = load_session(session_path(settings.config_dir))
+    if creds is None:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1)
+
+    async with http_session() as http:
+        http.cookies.set(creds.cookie_name, creds.moodle_session)
+        adapter = LectureTubeAdapter(http=http, host=settings.lecturetube_host)
+
+        try:
+            series = await adapter.search_series(query)
+        except AuthError:
+            console.print("[red]Session expired — run:[/red] sophia auth login")
+            raise SystemExit(1) from None
+
+    if not series:
+        console.print(f"[yellow]No lecture series found for '{query}'.[/yellow]")
+        return
+
+    table = Table(title=f"Lecture Series — '{query}'")
+    table.add_column("Series ID", style="dim")
+    table.add_column("Title", style="cyan", no_wrap=False)
+
+    for s in series:
+        table.add_row(s.series_id, s.title)
+
+    console.print(table)
+
+
 def main() -> None:
     """Entry point called by the `sophia` console script."""
     setup_logging(debug=True)
