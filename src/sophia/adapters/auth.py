@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import contextlib
+import getpass
 import json
+import os
 import re
 import warnings
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from datetime import UTC, datetime
 from random import randint
@@ -16,6 +20,7 @@ import structlog
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 from sophia.domain.errors import AuthError
@@ -123,6 +128,23 @@ def clear_tiss_session(path: Path) -> None:
 _KEYRING_SERVICE = "sophia-tuwien"
 _KEYRING_USERNAME_KEY = "username"
 _KEYRING_PASSWORD_KEY = "password"
+_KEYRING_PASSWORD_ENV = "SOPHIA_KEYRING_PASSWORD"
+
+
+@contextmanager
+def _keyring_env_password() -> Iterator[None]:
+    """If SOPHIA_KEYRING_PASSWORD is set, bypass interactive getpass prompt."""
+    env_pw = os.environ.get(_KEYRING_PASSWORD_ENV)
+    if env_pw is None:
+        yield
+        return
+
+    original = getpass.getpass
+    getpass.getpass = lambda prompt="", stream=None: env_pw  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        getpass.getpass = original
 
 
 class KeyringUnavailableError(Exception):
@@ -138,8 +160,9 @@ def save_credentials_to_keyring(username: str, password: str) -> None:
     import keyring.errors
 
     try:
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
+        with _keyring_env_password():
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
+            keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
     except keyring.errors.NoKeyringError as exc:
         raise KeyringUnavailableError(
             "No keyring backend available. "
@@ -154,8 +177,9 @@ def load_credentials_from_keyring() -> tuple[str, str] | None:
     import keyring.errors
 
     try:
-        username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
-        password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+        with _keyring_env_password():
+            username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
+            password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
     except keyring.errors.NoKeyringError:
         log.warning("keyring_unavailable")
         return None
@@ -166,15 +190,14 @@ def load_credentials_from_keyring() -> tuple[str, str] | None:
 
 def clear_credentials_from_keyring() -> None:
     """Remove stored TU Wien credentials from the OS keyring."""
-    import contextlib
-
     import keyring
     import keyring.errors
 
-    with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
-    with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
-        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+    with _keyring_env_password():
+        with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
+            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
+        with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
+            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
     log.info("credentials_cleared_from_keyring", service=_KEYRING_SERVICE)
 
 

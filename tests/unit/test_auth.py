@@ -17,6 +17,7 @@ from unittest.mock import patch
 from sophia.adapters.auth import (
     KeyringUnavailableError,
     SessionCredentials,
+    _keyring_env_password,  # pyright: ignore[reportPrivateUsage]
     clear_credentials_from_keyring,
     clear_session,
     load_credentials_from_keyring,
@@ -466,3 +467,26 @@ class TestKeyringCredentials:
             side_effect=keyring.errors.NoKeyringError("No backend"),
         ):
             clear_credentials_from_keyring()  # Should not raise
+
+    def test_keyring_env_password_patches_getpass(self):
+        """_keyring_env_password patches getpass when env var is set."""
+        import getpass
+
+        original = getpass.getpass
+        with (
+            patch.dict("os.environ", {"SOPHIA_KEYRING_PASSWORD": "test-pw"}),
+            _keyring_env_password(),
+        ):
+            assert getpass.getpass() == "test-pw"
+        assert getpass.getpass is original
+
+    def test_keyring_env_password_noop_without_env(self):
+        """_keyring_env_password is a no-op when env var is not set."""
+        import getpass
+        import os
+
+        original = getpass.getpass
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("SOPHIA_KEYRING_PASSWORD", None)
+            with _keyring_env_password():
+                assert getpass.getpass is original
