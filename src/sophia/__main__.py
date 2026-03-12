@@ -835,6 +835,68 @@ async def lectures_list() -> None:
         raise SystemExit(1) from None
 
 
+@lectures_app.command(name="download")
+async def lectures_download(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (from 'sophia lectures list').")
+    ],
+) -> None:
+    """Download lecture recordings. Prefers audio; extracts audio from video via ffmpeg."""
+    from typing import TYPE_CHECKING
+
+    from rich.console import Console
+    from rich.progress import BarColumn, DownloadColumn, Progress, TransferSpeedColumn
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+
+    if TYPE_CHECKING:
+        from sophia.domain.models import DownloadProgressEvent
+    from sophia.services.hermes_download import download_lectures
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            progress = Progress(
+                "[progress.description]{task.description}",
+                BarColumn(),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+            )
+            tasks: dict[str, object] = {}
+
+            def _on_progress(episode_id: str, event: DownloadProgressEvent) -> None:
+                if episode_id not in tasks:
+                    tasks[episode_id] = progress.add_task(episode_id, total=event.total_bytes)
+                progress.update(tasks[episode_id], completed=event.bytes_downloaded)  # type: ignore[arg-type]
+
+            with progress:
+                results = await download_lectures(container, module_id, on_progress=_on_progress)
+
+            table = Table(title="Download Results")
+            table.add_column("Title", style="cyan", no_wrap=False)
+            table.add_column("Status", style="white")
+            table.add_column("File", style="dim", no_wrap=False)
+
+            for r in results:
+                status_style = {"completed": "green", "skipped": "yellow", "failed": "red"}.get(
+                    r.status, "white"
+                )
+                table.add_row(
+                    r.title,
+                    f"[{status_style}]{r.status}[/{status_style}]",
+                    str(r.file_path) if r.file_path else r.error or "",
+                )
+
+            console.print(table)
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+
+
 # --- Jobs: scheduler management commands ---
 
 

@@ -121,3 +121,11 @@ class LectureProvider(Protocol):
 
     async def get_series_episodes(self, module_id: int) -> list[Lecture]: ...
     async def get_episode_detail(self, module_id: int, episode_id: str) -> Lecture | None: ...
+
+
+class LectureDownloader(Protocol):
+    """Downloads lecture media tracks with progress reporting and resume."""
+
+    async def download_track(
+        self, url: str, dest: Path
+    ) -> AsyncIterator[DownloadProgressEvent]: ...

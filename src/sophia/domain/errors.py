@@ -47,3 +47,7 @@ class HermesSetupError(HermesError):
 
 class LectureTubeError(HermesError):
     """LectureTube API request failed."""
+
+
+class LectureDownloadError(HermesError):
+    """Lecture media download failed."""

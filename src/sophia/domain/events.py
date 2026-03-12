@@ -90,3 +90,31 @@ class ExtractionReport:
     successful: int
     failed: list[tuple[str, str]]
     total_references: int
+
+
+@dataclass(frozen=True)
+class LectureDownloadStarted:
+    """Emitted when a lecture media download begins."""
+
+    episode_id: str
+    title: str
+    track_url: str
+
+
+@dataclass(frozen=True)
+class LectureDownloadCompleted:
+    """Emitted when a lecture download finishes successfully."""
+
+    episode_id: str
+    title: str
+    file_path: Path
+    file_size_bytes: int
+
+
+@dataclass(frozen=True)
+class LectureDownloadFailed:
+    """Emitted when a lecture download fails."""
+
+    episode_id: str
+    title: str
+    error: str

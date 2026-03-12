@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import structlog
 
 from sophia.adapters.auth import load_session, session_path
+from sophia.adapters.lecture_downloader import HttpLectureDownloader
 from sophia.adapters.lecturetube import OpencastAdapter
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.adapters.tiss import TissAdapter
@@ -35,6 +36,7 @@ class AppContainer:
     moodle: MoodleAdapter
     tiss: TissAdapter
     opencast: OpencastAdapter
+    lecture_downloader: HttpLectureDownloader
 
 
 @contextlib.asynccontextmanager
@@ -69,6 +71,7 @@ async def create_app(settings: Settings | None = None):
 
         tiss = TissAdapter(http=http, host=settings.tiss_host)
         opencast = OpencastAdapter(http=http, host=settings.tuwel_host)
+        lecture_downloader = HttpLectureDownloader(http=http)
 
         yield AppContainer(
             settings=settings,
@@ -77,4 +80,5 @@ async def create_app(settings: Settings | None = None):
             moodle=moodle,
             tiss=tiss,
             opencast=opencast,
+            lecture_downloader=lecture_downloader,
         )
