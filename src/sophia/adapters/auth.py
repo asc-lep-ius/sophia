@@ -125,21 +125,40 @@ _KEYRING_USERNAME_KEY = "username"
 _KEYRING_PASSWORD_KEY = "password"
 
 
-def save_credentials_to_keyring(username: str, password: str) -> None:
-    """Store TU Wien credentials in the OS keyring (opt-in)."""
-    import keyring
+class KeyringUnavailableError(Exception):
+    """Raised when no keyring backend is available."""
 
-    keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
-    keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
+
+def save_credentials_to_keyring(username: str, password: str) -> None:
+    """Store TU Wien credentials in the OS keyring (opt-in).
+
+    Raises KeyringUnavailableError if no backend is configured.
+    """
+    import keyring
+    import keyring.errors
+
+    try:
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
+    except keyring.errors.NoKeyringError as exc:
+        raise KeyringUnavailableError(
+            "No keyring backend available. "
+            "Install 'secretstorage' (Linux) or 'keyrings.alt' for a file-based fallback."
+        ) from exc
     log.info("credentials_saved_to_keyring", service=_KEYRING_SERVICE)
 
 
 def load_credentials_from_keyring() -> tuple[str, str] | None:
     """Load stored TU Wien credentials from the OS keyring, or None."""
     import keyring
+    import keyring.errors
 
-    username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
-    password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+    try:
+        username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
+        password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+    except keyring.errors.NoKeyringError:
+        log.warning("keyring_unavailable")
+        return None
     if username and password:
         return username, password
     return None
@@ -152,9 +171,9 @@ def clear_credentials_from_keyring() -> None:
     import keyring
     import keyring.errors
 
-    with contextlib.suppress(keyring.errors.PasswordDeleteError):
+    with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
         keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
-    with contextlib.suppress(keyring.errors.PasswordDeleteError):
+    with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
         keyring.delete_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
     log.info("credentials_cleared_from_keyring", service=_KEYRING_SERVICE)
 

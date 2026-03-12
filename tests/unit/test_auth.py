@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 from unittest.mock import patch
 
 from sophia.adapters.auth import (
+    KeyringUnavailableError,
     SessionCredentials,
     clear_credentials_from_keyring,
     clear_session,
@@ -431,4 +432,37 @@ class TestKeyringCredentials:
             raise keyring.errors.PasswordDeleteError("not found")
 
         with patch("keyring.delete_password", side_effect=fake_delete):
+            clear_credentials_from_keyring()  # Should not raise
+
+    def test_save_raises_on_no_backend(self):
+        """save_credentials_to_keyring raises KeyringUnavailableError when no backend."""
+        import keyring.errors
+
+        with (
+            patch(
+                "keyring.set_password",
+                side_effect=keyring.errors.NoKeyringError("No backend"),
+            ),
+            pytest.raises(KeyringUnavailableError, match="No keyring backend"),
+        ):
+            save_credentials_to_keyring("user", "pass")
+
+    def test_load_returns_none_on_no_backend(self):
+        """load_credentials_from_keyring returns None when no backend."""
+        import keyring.errors
+
+        with patch(
+            "keyring.get_password",
+            side_effect=keyring.errors.NoKeyringError("No backend"),
+        ):
+            assert load_credentials_from_keyring() is None
+
+    def test_clear_ignores_no_backend(self):
+        """clear_credentials_from_keyring tolerates missing keyring backend."""
+        import keyring.errors
+
+        with patch(
+            "keyring.delete_password",
+            side_effect=keyring.errors.NoKeyringError("No backend"),
+        ):
             clear_credentials_from_keyring()  # Should not raise

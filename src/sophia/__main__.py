@@ -129,9 +129,16 @@ async def login(*, save_credentials: bool = False) -> None:
     log.info("tuwel_login_complete", msg="TUWEL session saved.")
 
     if save_credentials:
-        from sophia.adapters.auth import save_credentials_to_keyring
+        from sophia.adapters.auth import KeyringUnavailableError, save_credentials_to_keyring
 
-        save_credentials_to_keyring(username, password)
+        try:
+            save_credentials_to_keyring(username, password)
+        except KeyringUnavailableError:
+            log.warning(
+                "keyring_unavailable",
+                msg="No keyring backend found. Credentials NOT saved. "
+                "Install 'secretstorage' (Linux) or 'keyrings.alt' for file-based storage.",
+            )
 
     if tiss_creds:
         save_tiss_session(tiss_creds, tiss_session_path(settings.config_dir))
