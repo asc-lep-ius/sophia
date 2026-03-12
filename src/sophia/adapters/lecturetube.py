@@ -55,17 +55,9 @@ class OpencastAdapter:
     Satisfies: LectureProvider protocol.
     """
 
-    def __init__(
-        self,
-        http: httpx.AsyncClient,
-        host: str,
-        moodle_session: str,
-        cookie_name: str = "MoodleSession",
-    ) -> None:
+    def __init__(self, http: httpx.AsyncClient, host: str) -> None:
         self._http = http
         self._host = host.rstrip("/")
-        self._moodle_session = moodle_session
-        self._cookie_name = cookie_name
 
     async def _scrape(self, path: str, params: dict[str, str] | None = None) -> str:
         """Fetch a TUWEL page and return raw HTML. Detects auth redirects."""
@@ -74,7 +66,6 @@ class OpencastAdapter:
         response = await self._http.get(
             url,
             params=params or {},
-            cookies={self._cookie_name: self._moodle_session},
         )
         if "login" in str(response.url) and response.status_code in (200, 302):
             raise AuthError("Session expired — log in again with: sophia auth login")

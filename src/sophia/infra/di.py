@@ -5,10 +5,12 @@ from __future__ import annotations
 import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 import structlog
 
 from sophia.adapters.auth import load_session, session_path
+from sophia.adapters.lecturetube import OpencastAdapter
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.adapters.tiss import TissAdapter
 from sophia.config import Settings
@@ -32,6 +34,7 @@ class AppContainer:
     db: aiosqlite.Connection
     moodle: MoodleAdapter
     tiss: TissAdapter
+    opencast: OpencastAdapter
 
 
 @contextlib.asynccontextmanager
@@ -50,6 +53,8 @@ async def create_app(settings: Settings | None = None):
 
     async with contextlib.AsyncExitStack() as stack:
         http = await stack.enter_async_context(http_session())
+        tuwel_domain = urlparse(settings.tuwel_host).hostname or ""
+        http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
         db = await connect_db(settings.db_path)
         stack.push_async_callback(db.close)
         await run_migrations(db)
@@ -63,6 +68,7 @@ async def create_app(settings: Settings | None = None):
         )
 
         tiss = TissAdapter(http=http, host=settings.tiss_host)
+        opencast = OpencastAdapter(http=http, host=settings.tuwel_host)
 
         yield AppContainer(
             settings=settings,
@@ -70,4 +76,5 @@ async def create_app(settings: Settings | None = None):
             db=db,
             moodle=moodle,
             tiss=tiss,
+            opencast=opencast,
         )

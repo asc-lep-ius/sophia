@@ -628,12 +628,17 @@ def lectures_status() -> None:
 @lectures_app.command(name="list")
 async def lectures_list() -> None:
     """Discover lecture recordings from enrolled courses."""
+    import asyncio
+    from typing import TYPE_CHECKING
+
     from rich.console import Console
     from rich.table import Table
 
-    from sophia.adapters.lecturetube import OpencastAdapter
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
+
+    if TYPE_CHECKING:
+        from sophia.domain.models import ModuleInfo
 
     console = Console()
 
@@ -647,38 +652,38 @@ async def lectures_list() -> None:
 
             console.print(f"[dim]Scanning {len(courses)} courses for lecture recordings...[/dim]\n")
 
-            adapter = OpencastAdapter(
-                http=container.http,
-                host=container.settings.tuwel_host,
-                moodle_session=container.moodle._moodle_session,  # pyright: ignore[reportPrivateUsage]
-                cookie_name=container.moodle._cookie_name,  # pyright: ignore[reportPrivateUsage]
-            )
-
             table = Table(title="Lecture Recordings")
             table.add_column("Course", style="cyan", no_wrap=False)
             table.add_column("Module", style="green", no_wrap=False)
             table.add_column("Episodes", justify="right")
             table.add_column("Module ID", style="dim")
 
-            found_any = False
-            for course in courses:
-                sections = await container.moodle.get_course_content(course.id)
+            sections_by_course = await asyncio.gather(
+                *(container.moodle.get_course_content(c.id) for c in courses)
+            )
+
+            opencast_modules: list[tuple[str, ModuleInfo]] = []
+            for course, sections in zip(courses, sections_by_course, strict=True):
                 for section in sections:
                     for module in section.modules:
-                        if module.modname != "opencast":
-                            continue
-                        found_any = True
-                        episodes = await adapter.get_series_episodes(module.id)
-                        table.add_row(
-                            course.shortname,
-                            module.name,
-                            str(len(episodes)),
-                            str(module.id),
-                        )
+                        if module.modname == "opencast":
+                            opencast_modules.append((course.shortname, module))
 
-            if not found_any:
+            if not opencast_modules:
                 console.print("[yellow]No lecture recordings found in enrolled courses.[/yellow]")
                 return
+
+            episode_counts = await asyncio.gather(
+                *(container.opencast.get_series_episodes(m.id) for _, m in opencast_modules)
+            )
+
+            for (shortname, module), episodes in zip(opencast_modules, episode_counts, strict=True):
+                table.add_row(
+                    shortname,
+                    module.name,
+                    str(len(episodes)),
+                    str(module.id),
+                )
 
             console.print(table)
             console.print(

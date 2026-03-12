@@ -63,6 +63,14 @@ class MoodleAdapter:
         self._host = host.rstrip("/")
         self._ajax_endpoint = f"{self._host}/lib/ajax/service.php"
 
+    @property
+    def moodle_session(self) -> str:
+        return self._moodle_session
+
+    @property
+    def cookie_name(self) -> str:
+        return self._cookie_name
+
     # ------------------------------------------------------------------
     # Low-level transport
     # ------------------------------------------------------------------
@@ -79,7 +87,6 @@ class MoodleAdapter:
             self._ajax_endpoint,
             params={"sesskey": self._sesskey, "info": function},
             json=payload,
-            cookies={self._cookie_name: self._moodle_session},
         )
         try:
             response.raise_for_status()
@@ -149,7 +156,6 @@ class MoodleAdapter:
         response = await self._http.get(
             url,
             params=params or {},
-            cookies={self._cookie_name: self._moodle_session},
         )
         if "login" in str(response.url) and response.status_code in (200, 302):
             raise AuthError("Session expired — log in again with: sophia auth login")

@@ -94,17 +94,15 @@ def _conforms_to(instance: object, protocol: type) -> bool:
 
 @pytest.fixture
 def client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url=HOST)
+    return httpx.AsyncClient(
+        base_url=HOST,
+        cookies={"MoodleSession": "test-session-abc"},
+    )
 
 
 @pytest.fixture
 def adapter(client: httpx.AsyncClient) -> OpencastAdapter:
-    return OpencastAdapter(
-        http=client,
-        host=HOST,
-        moodle_session="test-session-abc",
-        cookie_name="MoodleSession",
-    )
+    return OpencastAdapter(http=client, host=HOST)
 
 
 # ------------------------------------------------------------------
