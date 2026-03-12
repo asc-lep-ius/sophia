@@ -134,6 +134,8 @@ async def login() -> None:
 @auth_app.command
 async def status() -> None:
     """Check if the current session is valid."""
+    from urllib.parse import urlparse
+
     from sophia.adapters.auth import load_session, session_path
     from sophia.adapters.moodle import MoodleAdapter
     from sophia.config import Settings
@@ -147,6 +149,8 @@ async def status() -> None:
         raise SystemExit(1)
 
     async with http_session() as http:
+        tuwel_domain = urlparse(settings.tuwel_host).hostname or ""
+        http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
         adapter = MoodleAdapter(
             http=http,
             sesskey=creds.sesskey,
