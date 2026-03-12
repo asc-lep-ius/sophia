@@ -12,12 +12,17 @@ import respx
 if TYPE_CHECKING:
     from pathlib import Path
 
+from unittest.mock import patch
+
 from sophia.adapters.auth import (
     SessionCredentials,
+    clear_credentials_from_keyring,
     clear_session,
+    load_credentials_from_keyring,
     load_session,
     login_both,
     login_with_credentials,
+    save_credentials_to_keyring,
     save_session,
     session_path,
 )
@@ -367,3 +372,63 @@ class TestLoginBoth:
 
         assert tuwel_creds.moodle_session == "test-moodle-session"
         assert tiss_creds is None
+
+
+class TestKeyringCredentials:
+    """Keyring credential save/load/clear with mocked backend."""
+
+    def test_save_and_load_roundtrip(self):
+        store: dict[tuple[str, str], str] = {}
+
+        def fake_set(service: str, key: str, value: str) -> None:
+            store[(service, key)] = value
+
+        def fake_get(service: str, key: str) -> str | None:
+            return store.get((service, key))
+
+        with (
+            patch("keyring.set_password", side_effect=fake_set),
+            patch("keyring.get_password", side_effect=fake_get),
+        ):
+            save_credentials_to_keyring("testuser", "testpass")
+            result = load_credentials_from_keyring()
+
+        assert result == ("testuser", "testpass")
+
+    def test_load_missing_returns_none(self):
+        with patch("keyring.get_password", return_value=None):
+            result = load_credentials_from_keyring()
+        assert result is None
+
+    def test_load_partial_returns_none(self):
+        """If only username is stored (no password), return None."""
+
+        def selective_get(service: str, key: str) -> str | None:
+            if key == "username":
+                return "testuser"
+            return None
+
+        with patch("keyring.get_password", side_effect=selective_get):
+            result = load_credentials_from_keyring()
+        assert result is None
+
+    def test_clear_removes_both(self):
+        deleted: list[tuple[str, str]] = []
+
+        def fake_delete(service: str, key: str) -> None:
+            deleted.append((service, key))
+
+        with patch("keyring.delete_password", side_effect=fake_delete):
+            clear_credentials_from_keyring()
+
+        assert len(deleted) == 2
+
+    def test_clear_ignores_missing(self):
+        """clear_credentials_from_keyring tolerates missing entries."""
+        import keyring.errors
+
+        def fake_delete(service: str, key: str) -> None:
+            raise keyring.errors.PasswordDeleteError("not found")
+
+        with patch("keyring.delete_password", side_effect=fake_delete):
+            clear_credentials_from_keyring()  # Should not raise

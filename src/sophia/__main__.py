@@ -33,6 +33,9 @@ app.command(register_app)
 lectures_app = cyclopts.App(name="lectures", help="Hermes — Lecture knowledge base pipeline.")
 app.command(lectures_app)
 
+jobs_app = cyclopts.App(name="jobs", help="Manage scheduled jobs.")
+app.command(jobs_app)
+
 log = structlog.get_logger()
 
 
@@ -95,8 +98,12 @@ async def discover() -> None:
 
 
 @auth_app.command
-async def login() -> None:
-    """Log in to TUWEL and TISS via TU Wien SSO (single prompt)."""
+async def login(*, save_credentials: bool = False) -> None:
+    """Log in to TUWEL and TISS via TU Wien SSO (single prompt).
+
+    Use --save-credentials to store your username/password in the OS
+    keyring for automatic re-authentication in scheduled jobs.
+    """
     import getpass
     import os
 
@@ -120,6 +127,11 @@ async def login() -> None:
 
     save_session(tuwel_creds, session_path(settings.config_dir))
     log.info("tuwel_login_complete", msg="TUWEL session saved.")
+
+    if save_credentials:
+        from sophia.adapters.auth import save_credentials_to_keyring
+
+        save_credentials_to_keyring(username, password)
 
     if tiss_creds:
         save_tiss_session(tiss_creds, tiss_session_path(settings.config_dir))
@@ -168,13 +180,21 @@ async def status() -> None:
 
 @auth_app.command
 def logout() -> None:
-    """Clear stored session credentials."""
-    from sophia.adapters.auth import clear_session, session_path
+    """Clear stored session credentials and keyring."""
+    from sophia.adapters.auth import (
+        clear_credentials_from_keyring,
+        clear_session,
+        clear_tiss_session,
+        session_path,
+        tiss_session_path,
+    )
     from sophia.config import Settings
 
     settings = Settings()
     clear_session(session_path(settings.config_dir))
-    log.info("logged_out", msg="Session cleared.")
+    clear_tiss_session(tiss_session_path(settings.config_dir))
+    clear_credentials_from_keyring()
+    log.info("logged_out", msg="Session and credentials cleared.")
 
 
 # --- Kairos: TISS registration commands ---
@@ -349,6 +369,7 @@ async def go(
     semester: str = "",
     preferences: str = "",
     watch: bool = False,
+    schedule: bool = False,
 ) -> None:
     """Register for a course or group. Use --watch to wait for the window.
 
@@ -356,6 +377,7 @@ async def go(
         sophia register go 186.813                     # LVA registration
         sophia register go 186.813 --preferences 1,3   # groups by index
         sophia register go 186.813 --watch              # wait for window
+        sophia register go 186.813 --schedule           # schedule at open time
     """
     from rich.console import Console
 
@@ -371,6 +393,63 @@ async def go(
 
     if not semester:
         semester = _current_semester()
+
+    if schedule:
+        from datetime import UTC, datetime, timedelta
+
+        from sophia.infra.persistence import connect_db, run_migrations
+        from sophia.infra.scheduler import SchedulerError, create_scheduler
+
+        async with http_session() as http:
+            adapter = TissRegistrationAdapter(
+                http=http,
+                credentials=tiss_creds,
+                host=settings.tiss_host,
+            )
+            target = await adapter.get_registration_status(course_number, semester)
+
+        if not target.registration_start:
+            console.print("[red]No registration start time found for this course.[/red]")
+            raise SystemExit(1)
+
+        reg_time = datetime.strptime(target.registration_start, "%d.%m.%Y %H:%M").replace(
+            tzinfo=UTC
+        )
+        schedule_time = reg_time - timedelta(seconds=5)
+        if schedule_time <= datetime.now(UTC):
+            console.print("[yellow]Registration opens very soon or is already open.[/yellow]")
+            console.print("[dim]Use --watch instead for immediate watching.[/dim]")
+            raise SystemExit(1)
+
+        cmd_parts = ["register", "go", course_number, "--watch"]
+        if semester:
+            cmd_parts.extend(["--semester", semester])
+        if preferences:
+            cmd_parts.extend(["--preferences", preferences])
+        command = " ".join(cmd_parts)
+
+        db = await connect_db(settings.db_path)
+        try:
+            await run_migrations(db)
+            scheduler = create_scheduler(db)
+            job = await scheduler.schedule(
+                command,
+                schedule_time,
+                description=f"Register for {target.title or course_number}",
+            )
+        except SchedulerError as exc:
+            console.print(f"[red]Failed to schedule: {exc}[/red]")
+            raise SystemExit(1) from None
+        finally:
+            await db.close()
+
+        console.print("\n[bold green]Job scheduled![/bold green]")
+        console.print(f"  Job ID:    {job.job_id}")
+        console.print(f"  Command:   sophia {command}")
+        console.print(f"  Run at:    {job.scheduled_for}")
+        console.print(f"  Opens at:  {target.registration_start}")
+        console.print("\n[dim]Use [cyan]sophia jobs list[/cyan] to check status.[/dim]")
+        return
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
@@ -698,6 +777,153 @@ async def lectures_list() -> None:
     except AuthError:
         console.print("[red]Session expired — run:[/red] sophia auth login")
         raise SystemExit(1) from None
+
+
+# --- Jobs: scheduler management commands ---
+
+
+@jobs_app.command(name="list")
+async def jobs_list() -> None:
+    """Show all scheduled jobs."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.config import Settings
+    from sophia.infra.persistence import connect_db, run_migrations
+    from sophia.infra.scheduler import create_scheduler
+
+    settings = Settings()
+    db = await connect_db(settings.db_path)
+    try:
+        await run_migrations(db)
+        scheduler = create_scheduler(db)
+        jobs = await scheduler.list_jobs()
+    finally:
+        await db.close()
+
+    console = Console()
+    if not jobs:
+        console.print("[yellow]No scheduled jobs.[/yellow]")
+        return
+
+    table = Table(title="Scheduled Jobs")
+    table.add_column("Job ID", style="dim")
+    table.add_column("Command", style="cyan")
+    table.add_column("Scheduled For", style="green")
+    table.add_column("Status", style="magenta")
+    table.add_column("Description")
+
+    for job in jobs:
+        status_style = {
+            "pending": "yellow",
+            "running": "cyan",
+            "completed": "green",
+            "failed": "red",
+            "cancelled": "dim",
+        }.get(job.status.value, "white")
+        table.add_row(
+            job.job_id,
+            job.command,
+            job.scheduled_for,
+            f"[{status_style}]{job.status.value}[/{status_style}]",
+            job.description,
+        )
+
+    console.print(table)
+
+
+@jobs_app.command
+async def cancel(job_id: str) -> None:
+    """Cancel a scheduled job."""
+    from rich.console import Console
+
+    from sophia.config import Settings
+    from sophia.infra.persistence import connect_db, run_migrations
+    from sophia.infra.scheduler import SchedulerError, create_scheduler
+
+    console = Console()
+    settings = Settings()
+    db = await connect_db(settings.db_path)
+    try:
+        await run_migrations(db)
+        scheduler = create_scheduler(db)
+
+        job = await scheduler.get_job(job_id)
+        if job is None:
+            console.print(f"[red]Job not found: {job_id}[/red]")
+            raise SystemExit(1)
+
+        try:
+            await scheduler.cancel(job_id)
+        except SchedulerError as exc:
+            console.print(f"[red]Failed to cancel: {exc}[/red]")
+            raise SystemExit(1) from None
+
+        console.print(f"[green]Job {job_id} cancelled.[/green]")
+    finally:
+        await db.close()
+
+
+# --- Internal: job runner ---
+
+
+@app.command(name="_run-job")
+async def run_job(job_id: str) -> None:
+    """Internal: Execute a scheduled job with auto-relogin. Not for direct use."""
+    import shlex
+
+    from sophia.config import Settings
+    from sophia.domain.models import JobStatus
+    from sophia.infra.persistence import connect_db, run_migrations
+    from sophia.infra.scheduler import create_scheduler
+    from sophia.services.job_runner import ensure_valid_session
+
+    settings = Settings()
+    db = await connect_db(settings.db_path)
+    scheduler = None
+    try:
+        await run_migrations(db)
+        scheduler = create_scheduler(db)
+
+        job = await scheduler.get_job(job_id)
+        if job is None:
+            log.error("job_not_found", job_id=job_id)
+            raise SystemExit(1)
+
+        await scheduler.update_status(job_id, JobStatus.RUNNING)
+
+        session_ok = await ensure_valid_session(
+            settings.config_dir, settings.tuwel_host, settings.tiss_host
+        )
+        if not session_ok:
+            log.error("job_failed_no_session", job_id=job_id)
+            await scheduler.update_status(job_id, JobStatus.FAILED)
+            raise SystemExit(1)
+
+        command_tokens = shlex.split(job.command)
+        log.info("job_executing", job_id=job_id, command=job.command)
+
+        try:
+            app(command_tokens)
+        except SystemExit as exc:
+            if exc.code and exc.code != 0:
+                await scheduler.update_status(job_id, JobStatus.FAILED)
+                raise
+
+        await scheduler.update_status(job_id, JobStatus.COMPLETED)
+        log.info("job_completed", job_id=job_id)
+    except SystemExit:
+        raise
+    except Exception:
+        log.error("job_failed", job_id=job_id, exc_info=True)
+        if scheduler is not None:
+            try:
+                await scheduler.update_status(job_id, JobStatus.FAILED)
+            except Exception:
+                log.error("job_status_update_failed", job_id=job_id, exc_info=True)
+        raise SystemExit(1) from None
+    finally:
+        await db.close()
 
 
 def main() -> None:

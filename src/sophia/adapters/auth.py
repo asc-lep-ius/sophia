@@ -120,6 +120,45 @@ def clear_tiss_session(path: Path) -> None:
         log.info("tiss_session_cleared", path=str(path))
 
 
+_KEYRING_SERVICE = "sophia-tuwien"
+_KEYRING_USERNAME_KEY = "username"
+_KEYRING_PASSWORD_KEY = "password"
+
+
+def save_credentials_to_keyring(username: str, password: str) -> None:
+    """Store TU Wien credentials in the OS keyring (opt-in)."""
+    import keyring
+
+    keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
+    keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
+    log.info("credentials_saved_to_keyring", service=_KEYRING_SERVICE)
+
+
+def load_credentials_from_keyring() -> tuple[str, str] | None:
+    """Load stored TU Wien credentials from the OS keyring, or None."""
+    import keyring
+
+    username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
+    password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+    if username and password:
+        return username, password
+    return None
+
+
+def clear_credentials_from_keyring() -> None:
+    """Remove stored TU Wien credentials from the OS keyring."""
+    import contextlib
+
+    import keyring
+    import keyring.errors
+
+    with contextlib.suppress(keyring.errors.PasswordDeleteError):
+        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
+    with contextlib.suppress(keyring.errors.PasswordDeleteError):
+        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+    log.info("credentials_cleared_from_keyring", service=_KEYRING_SERVICE)
+
+
 async def login_both(
     tuwel_host: str,
     tiss_host: str,

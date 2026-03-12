@@ -462,3 +462,29 @@ class Lecture(BaseModel, frozen=True):
     created: str = ""
     creator: str = ""
     tracks: list[LectureTrack] = []
+
+
+# ---------------------------------------------------------------------------
+# Scheduler — Job scheduling models
+# ---------------------------------------------------------------------------
+
+
+class JobStatus(StrEnum):
+    """Lifecycle states for a scheduled job."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ScheduledJob(BaseModel, frozen=True):
+    """A job scheduled to run at a specific time via OS-native scheduler."""
+
+    job_id: str
+    command: str
+    scheduled_for: str
+    created_at: str
+    status: JobStatus = JobStatus.PENDING
+    description: str = ""
