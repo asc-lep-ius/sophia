@@ -690,10 +690,6 @@ async def lectures_list() -> None:
                 )
 
             console.print(table)
-            console.print(
-                "\n[dim]Use [cyan]sophia lectures episodes <module-id>[/cyan]"
-                " to list episodes for a module.[/dim]",
-            )
 
     except AuthError:
         console.print("[red]Session expired — run:[/red] sophia auth login")
