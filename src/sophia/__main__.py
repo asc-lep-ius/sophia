@@ -955,6 +955,107 @@ async def lectures_transcribe(
         raise SystemExit(1) from None
 
 
+@lectures_app.command(name="index")
+async def lectures_index(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (from 'sophia lectures list').")
+    ],
+) -> None:
+    """Build search index from transcribed lectures. Requires transcription first."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, EmbeddingError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_index import index_lectures
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+
+            def _on_start(episode_id: str, title: str) -> None:
+                console.print(f"[dim]Indexing:[/dim] {title}...")
+
+            def _on_complete(episode_id: str, chunk_count: int) -> None:
+                console.print(f"  [green]✓[/green] {chunk_count} chunks")
+
+            results = await index_lectures(
+                container, module_id, on_start=_on_start, on_complete=_on_complete
+            )
+
+            table = Table(title="Indexing Results")
+            table.add_column("Title", style="cyan", no_wrap=False)
+            table.add_column("Status", style="white")
+            table.add_column("Chunks", justify="right")
+
+            for r in results:
+                status_style = {
+                    "completed": "green",
+                    "skipped": "yellow",
+                    "failed": "red",
+                }.get(r.status, "white")
+                table.add_row(
+                    r.title,
+                    f"[{status_style}]{r.status}[/{status_style}]",
+                    str(r.chunk_count) if r.chunk_count else r.error or "",
+                )
+
+            console.print(table)
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@lectures_app.command(name="search")
+async def lectures_search(
+    query: Annotated[str, cyclopts.Parameter(help="Natural language search query.")],
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID to search within.")],
+    *,
+    count: Annotated[
+        int, cyclopts.Parameter(help="Number of results.", name=["--count", "-n"])
+    ] = 5,
+) -> None:
+    """Search lecture transcripts by semantic similarity."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from sophia.domain.errors import AuthError, EmbeddingError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_index import search_lectures
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            results = await search_lectures(container, module_id, query, n_results=count)
+
+            if not results:
+                console.print("[yellow]No results found.[/yellow]")
+                return
+
+            for i, r in enumerate(results, 1):
+                start_mm, start_ss = divmod(int(r.start_time), 60)
+                end_mm, end_ss = divmod(int(r.end_time), 60)
+                header = (
+                    f"[cyan]{r.title}[/cyan]  "
+                    f"[dim]{start_mm:02d}:{start_ss:02d} – {end_mm:02d}:{end_ss:02d}[/dim]  "
+                    f"[green]score: {r.score:.2f}[/green]"
+                )
+                console.print(Panel(r.chunk_text, title=f"Result {i}", subtitle=header))
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
 # --- Jobs: scheduler management commands ---
 
 

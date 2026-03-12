@@ -145,3 +145,29 @@ class TranscriptionFailed:
     episode_id: str
     title: str
     error: str
+
+
+@dataclass(frozen=True)
+class IndexingStarted:
+    """Emitted when indexing of lecture transcripts begins."""
+
+    episode_id: str
+    title: str
+
+
+@dataclass(frozen=True)
+class IndexingCompleted:
+    """Emitted when indexing finishes successfully."""
+
+    episode_id: str
+    title: str
+    chunk_count: int
+
+
+@dataclass(frozen=True)
+class IndexingFailed:
+    """Emitted when indexing fails."""
+
+    episode_id: str
+    title: str
+    error: str

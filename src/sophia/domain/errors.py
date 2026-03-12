@@ -55,3 +55,7 @@ class LectureDownloadError(HermesError):
 
 class TranscriptionError(HermesError):
     """Whisper transcription failed."""
+
+
+class EmbeddingError(HermesError):
+    """Embedding or knowledge base indexing failed."""

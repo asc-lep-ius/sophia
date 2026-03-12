@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         CourseSection,
         DownloadProgressEvent,
         GradeItem,
+        KnowledgeChunk,
         Lecture,
         ModuleInfo,
         QuizInfo,
@@ -136,3 +137,27 @@ class Transcriber(Protocol):
     """Transcribes audio files into text segments."""
 
     def transcribe(self, audio_path: Path) -> list[TranscriptSegment]: ...
+
+
+class Embedder(Protocol):
+    """Embeds text chunks into dense vectors."""
+
+    def embed(self, texts: list[str]) -> list[list[float]]: ...
+
+    def embed_query(self, query: str) -> list[float]: ...
+
+
+class KnowledgeStore(Protocol):
+    """Vector store for semantic search over lecture content."""
+
+    def add_chunks(self, chunks: list[KnowledgeChunk], embeddings: list[list[float]]) -> None: ...
+
+    def search(
+        self,
+        query_embedding: list[float],
+        *,
+        n_results: int = 5,
+        episode_ids: list[str] | None = None,
+    ) -> list[tuple[KnowledgeChunk, float]]: ...
+
+    def has_episode(self, episode_id: str) -> bool: ...

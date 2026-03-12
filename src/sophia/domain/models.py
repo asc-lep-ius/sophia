@@ -501,3 +501,30 @@ class TranscriptSegment(BaseModel, frozen=True):
     start: float  # seconds
     end: float  # seconds
     text: str
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Base — Embedding + Search models
+# ---------------------------------------------------------------------------
+
+
+class KnowledgeChunk(BaseModel, frozen=True):
+    """A text chunk prepared for embedding and vector search."""
+
+    chunk_id: str
+    episode_id: str
+    chunk_index: int
+    text: str
+    start_time: float
+    end_time: float
+
+
+class LectureSearchResult(BaseModel, frozen=True):
+    """A single result from semantic search over lecture transcripts."""
+
+    episode_id: str
+    title: str
+    chunk_text: str
+    start_time: float
+    end_time: float
+    score: float
