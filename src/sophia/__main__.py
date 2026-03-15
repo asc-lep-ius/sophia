@@ -730,12 +730,12 @@ def lectures_setup() -> None:
         console.print(f"\n[yellow]Missing Hermes dependencies: {', '.join(missing)}[/yellow]")
         answer = input("Install Hermes dependencies now? [Y/n] ").strip().lower()
         if answer in ("", "y", "yes"):
-            console.print("[dim]Installing sophia[hermes]…[/dim]")
-            ok, output = install_hermes_extras()
+            console.print("[dim]Installing sophia[hermes]… (output streamed below)[/dim]")
+            ok, msg = install_hermes_extras()
             if ok:
                 console.print("[bold green]✓ Hermes dependencies installed[/bold green]")
             else:
-                console.print(f"[red]Installation failed:[/red]\n{output}")
+                console.print(f"[red]Installation failed:[/red] {msg}")
         else:
             console.print("\n[dim]Manual install:[/dim]")
             console.print("  [cyan]uv pip install -e '.[hermes]'[/cyan]")

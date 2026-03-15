@@ -211,14 +211,19 @@ def check_hermes_deps() -> list[str]:
 
 
 def install_hermes_extras() -> tuple[bool, str]:
-    """Install sophia[hermes] via uv. Returns (success, output)."""
+    """Install sophia[hermes] via uv, streaming output live.
+
+    Returns (success, summary_message).
+    """
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             ["uv", "pip", "install", "-e", ".[hermes]"],
-            capture_output=True,
-            text=True,
-            timeout=600,
+            stdout=None,
+            stderr=None,
         )
-        return result.returncode == 0, result.stdout + result.stderr
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        return False, str(exc)
+        process.wait()
+        if process.returncode == 0:
+            return True, "Installation completed successfully."
+        return False, f"uv exited with code {process.returncode}."
+    except FileNotFoundError:
+        return False, "uv not found — install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
