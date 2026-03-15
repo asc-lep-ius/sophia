@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (registration with scheduler), and Hermes (lecture knowledge base) are functional. Chronos and Athena are planned.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional, Kairos (registration with scheduler) and Hermes (lecture knowledge base) are functional. Bücherwurm download/library features are in progress. Chronos and Athena are planned.
 
 | Section | What's There |
 |---------|-------------|
@@ -134,16 +134,14 @@ uv run sophia books discover
 Sophia scans your enrolled TUWEL courses, extracts textbook references from course descriptions and resources, and prints a table of everything it found. The output looks something like this:
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ Bücherwurm — Discovered References                                       │
-├──────────────────────────┬──────────────────────────────┬────────────────┤
-│ Course                   │ Title                        │ ISBN           │
-├──────────────────────────┼──────────────────────────────┼────────────────┤
-│ Algorithms & Data Struc. │ Introduction to Algorithms   │ 978-0-262-046… │
-│ Algorithms & Data Struc. │ Algorithm Design             │ 978-0-321-295… │
-│ Analysis 1               │ Principles of Math. Analysis │ 978-0-07-054…  │
-└──────────────────────────┴──────────────────────────────┴────────────────┘
-Found 12 references across 5 courses.
+                        Discovered Book References
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Title                       ┃ Author(s)     ┃ ISBN           ┃ Source   ┃ Course                     ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ Introduction to Algorithms  │ Cormen et al. │ 978-0-262-046… │ syllabus │ Algorithms & Data Struc.   │
+│ Algorithm Design            │ Kleinberg, T. │ 978-0-321-295… │ resource │ Algorithms & Data Struc.   │
+│ Principles of Math. Anal.   │ Rudin, W.     │ 978-0-07-054…  │ syllabus │ Analysis 1                 │
+└─────────────────────────────┴───────────────┴────────────────┴──────────┴────────────────────────────┘
 ```
 
 ✅ A table of textbook references appears. You're done. Welcome to Sophia.
@@ -167,7 +165,7 @@ Sophia is organized into modules, each named for a concept that matches its purp
 
 | Module | Command | What It Does | Status |
 |--------|---------|--------------|--------|
-| **Bücherwurm** 📚 | `sophia books` | Finds textbook references in your courses, searches Open Access libraries and Anna's Archive, downloads them | ✅ Functional |
+| **Bücherwurm** 📚 | `sophia books` | Discovers textbook references from enrolled TUWEL courses (ISBN extraction, metadata enrichment) | ✅ Discovery |
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
 | **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, transcribe with Whisper, semantic search | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
@@ -175,14 +173,14 @@ Sophia is organized into modules, each named for a concept that matches its purp
 
 ### Bücherwurm in Action
 
-Bücherwurm (German for "bookworm") scans your enrolled TUWEL courses and extracts every textbook reference it can find, from course descriptions, uploaded syllabi, resource sections, and forum posts. It then:
+Bücherwurm (German for "bookworm") scans your enrolled TUWEL courses and extracts every textbook reference it can find — from course descriptions, uploaded syllabi, and resource sections. Today it:
 
-1. Resolves ISBNs and enriches metadata (title, authors, edition, publisher)
-2. Searches Open Access repositories and Anna's Archive for available copies
-3. Presents you with a clean table of results, grouped by course
-4. Lets you download books directly to a local library organized by semester
+1. Scans enrolled TUWEL courses via the Moodle AJAX API
+2. Extracts textbook references from course descriptions, syllabi, and resources
+3. Resolves ISBNs and enriches metadata (title, authors, edition) via TISS
+4. Presents a table with title, authors, ISBN, source, and course
 
-Before downloading, Sophia asks you to predict whether each book will actually be useful for your studies. After a few weeks, it asks you to revisit that prediction. This builds your ability to evaluate resources before committing time to them.
+**What's coming (M1 — in progress):** Open Access and Anna's Archive search, download pipeline with local library organized by semester, and a usefulness prediction loop where Sophia asks you to predict whether each book will be useful before downloading — then revisits that prediction after a few weeks.
 
 ### Kairos in Action
 
@@ -205,15 +203,14 @@ uv run sophia register groups 186.813
 Sophia shows you a table of all groups with their schedule at a glance:
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ Groups for 186.813 (2026S)                                           │
-├────┬──────────────┬──────────┬─────────────┬──────────┬────────┬─────┤
-│ #  │ Name         │ Day      │ Time        │ Location │ Enrol. │ Cap │
-├────┼──────────────┼──────────┼─────────────┼──────────┼────────┼─────┤
-│ 1  │ Group 1 - Mo │ Monday   │ 09:00–11:00 │ Room A   │ 15     │ 30  │
-│ 2  │ Group 2 - Di │ Tuesday  │ 14:00–16:00 │ HS1      │ 30     │ 30  │
-│ 3  │ Group 3 - Mi │ Wednesday│ 10:00–12:00 │ Lab      │ 20     │ 25  │
-└────┴──────────────┴──────────┴─────────────┴──────────┴────────┴─────┘
+                        Groups for 186.813 (2026S)
+┏━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
+┃ # ┃ Name         ┃ Day       ┃ Time        ┃ Location ┃ Enrolled ┃ Capacity ┃ Status   ┃
+┡━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
+│ 1 │ Group 1 - Mo │ Monday    │ 09:00–11:00 │ Room A   │       15 │       30 │ open     │
+│ 2 │ Group 2 - Di │ Tuesday   │ 14:00–16:00 │ HS1      │       30 │       30 │ full     │
+│ 3 │ Group 3 - Mi │ Wednesday │ 10:00–12:00 │ Lab      │       20 │       25 │ open     │
+└───┴──────────────┴───────────┴─────────────┴──────────┴──────────┴──────────┴──────────┘
 ```
 
 Use this to decide which groups fit your schedule, then set your preference order.
@@ -484,6 +481,7 @@ uv run sophia auth logout         # clear saved credentials
 uv run sophia books discover      # scan courses for textbook references
 
 # Registration (Kairos)
+uv run sophia register favorites           # list TISS favorites with registration info
 uv run sophia register status 186.813      # check registration status
 uv run sophia register groups 186.813      # show groups with schedule
 uv run sophia register go 186.813          # register for LVA
