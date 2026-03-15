@@ -226,4 +226,6 @@ def install_hermes_extras() -> tuple[bool, str]:
             return True, "Installation completed successfully."
         return False, f"uv exited with code {process.returncode}."
     except FileNotFoundError:
-        return False, "uv not found — install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        return False, (
+            "uv not found — install it with: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        )
