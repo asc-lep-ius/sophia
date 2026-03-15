@@ -1,7 +1,10 @@
-.PHONY: dev test lint typecheck run clean clean-all docker-build docker-up docker-down docker-logs
+.PHONY: dev setup-hermes test lint typecheck run clean clean-all docker-build docker-up docker-down docker-logs
 
 dev:                             ## Install all dev dependencies
-	uv sync --extra dev
+	uv sync --all-extras --group dev
+
+setup-hermes:                    ## Configure Hermes for your hardware (GPU, models, providers)
+	uv run sophia lectures setup
 
 test:                            ## Run test suite with coverage
 	uv run pytest --tb=short -q --cov=src/sophia --cov-fail-under=85
