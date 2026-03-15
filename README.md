@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery) and Kairos (registration) are functional. Chronos and Athena are planned.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (registration with scheduler), and Hermes (lecture knowledge base) are functional. Chronos and Athena are planned.
 
 | Section | What's There |
 |---------|-------------|
@@ -156,17 +156,20 @@ Found 12 references across 5 courses.
 | Python version is too old | Install Python 3.12+ from [python.org](https://www.python.org/downloads/). On Linux, you may need `sudo apt install python3.12`. |
 | Login fails | Double-check your credentials. If it still fails, try `uv run sophia auth login --debug` for more details. |
 | `git` not found | Install Git from [git-scm.com/downloads](https://git-scm.com/downloads), then restart your terminal. |
+| `sophia lectures setup` is slow | The first run downloads large models (Whisper, sentence-transformers, CUDA libraries). This is normal and only happens once. Expect 1–5 GB depending on model size. |
+| GPU not detected during Hermes setup | Ensure NVIDIA drivers are installed (`nvidia-smi` should show your GPU). On WSL, you need WSL2 with GPU passthrough enabled. The setup wizard falls back to CPU mode if no GPU is found. |
 
 ---
 
 ## What Sophia Does
 
-Sophia is organized into three modules, each named for a concept that matches its purpose:
+Sophia is organized into modules, each named for a concept that matches its purpose:
 
 | Module | Command | What It Does | Status |
 |--------|---------|--------------|--------|
 | **Bücherwurm** 📚 | `sophia books` | Finds textbook references in your courses, searches Open Access libraries and Anna's Archive, downloads them | ✅ Functional |
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
+| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, transcribe with Whisper, semantic search | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
 | **Athena** 🎓 | `sophia exams` | Analyzes past exams for topic patterns, builds flashcards, calibrates your confidence | 📋 Planned |
 
@@ -235,7 +238,33 @@ uv run sophia register go 186.813 --preferences "1,3" --watch
 
 Kairos checks the registration status, calculates when the window opens, sleeps until the right moment, and submits the instant it opens. Run this in a terminal tab (or `tmux`/`screen` session) before the registration window opens and walk away.
 
-> 💡 **Planned upgrade (v1.1):** `sophia register schedule` will install a system timer (systemd/launchd/cron) so you don't need to keep a terminal open. For now, `--watch` in a terminal is reliable enough — and most students who use CLI tools are comfortable with `tmux`.
+**Step 5: Schedule it — no terminal needed**
+
+```bash
+uv run sophia register go 186.813 --preferences "1,3" --schedule
+```
+
+This installs a system timer (systemd on Linux, launchd on macOS, Task Scheduler on Windows) that fires at the registration window. No terminal needs to stay open.
+
+```bash
+uv run sophia jobs list              # show scheduled jobs
+uv run sophia jobs cancel <job-id>   # cancel a job
+```
+
+### Hermes in Action
+
+Hermes (Ἑρμῆς — the messenger who carries knowledge between realms) turns lecture recordings into a searchable knowledge base. It downloads recordings from TUWEL's Opencast integration, transcribes them using Whisper (with GPU acceleration and hallucination filtering), and builds a semantic search index so you can find exactly where a topic was discussed.
+
+**The pipeline:**
+
+1. **`sophia lectures setup`** — detect hardware (GPU/CPU), choose Whisper model, configure LLM and embedding providers
+2. **`sophia lectures list`** — discover lecture recordings from enrolled courses
+3. **`sophia lectures download <module-id>`** — download recordings (prefers audio for efficiency)
+4. **`sophia lectures transcribe <module-id>`** — transcribe with Whisper, VAD filtering, hallucination detection
+5. **`sophia lectures index <module-id>`** — chunk transcripts and build embedding index
+6. **`sophia lectures search "topic" <module-id>`** — semantic search within a lecture's transcripts
+
+Step 1 only needs to happen once. The setup wizard detects your GPU, recommends a Whisper model based on VRAM, lets you choose an LLM provider (GitHub Models, Gemini, Groq, or Ollama), and automatically installs the heavy dependencies (`faster-whisper`, `chromadb`, `sentence-transformers`) when needed.
 
 ### What's Coming: Chronos and Athena
 
@@ -328,12 +357,22 @@ src/sophia/
 │   ├── pipeline.py   # Book discovery pipeline
 │   ├── reference_extractor.py
 │   ├── resource_classifier.py
-│   └── registration.py    # Kairos preference-based registration
+│   ├── registration.py        # Kairos preference-based registration
+│   ├── job_runner.py          # Cross-platform job scheduler (systemd/launchd/Task Scheduler)
+│   ├── hermes_setup.py        # Hardware detection, config wizard
+│   ├── hermes_download.py     # Lecture download with audio extraction
+│   ├── hermes_transcribe.py   # Whisper transcription with VAD and hallucination filtering
+│   └── hermes_index.py        # Chunking, embeddings, semantic search orchestration
 ├── adapters/         # External world implementations
 │   ├── moodle.py     # TUWEL/Moodle AJAX adapter
 │   ├── tiss.py       # TISS public API adapter
-│   ├── tiss_registration.py  # TISS registration (JSF scraping)
-│   └── auth.py       # SSO authentication flow
+│   ├── tiss_registration.py   # TISS registration (JSF scraping)
+│   ├── auth.py                # SSO authentication flow
+│   ├── lecturetube.py         # TUWEL Opencast lecture discovery
+│   ├── lecture_downloader.py  # Recording download adapter
+│   ├── transcriber.py         # Whisper adapter (faster-whisper)
+│   ├── embedder.py            # Embedding adapter (sentence-transformers)
+│   └── knowledge_store.py     # Vector store adapter (ChromaDB)
 ├── infra/            # Cross-cutting concerns
 │   ├── http.py       # Shared HTTP client with retry logic
 │   ├── persistence.py # SQLite via aiosqlite
@@ -387,10 +426,19 @@ Sophia accesses TU Wien data through three tiers, each chosen for the data it ca
 
 ```bash
 # Set up the development environment
-uv sync --all-extras          # install everything including dev & optional tools
+uv sync --all-extras --group dev   # install all optional features + test/lint tools
+uv run sophia lectures setup       # configure Hermes for your hardware (GPU, models, LLM provider)
+
+# Or use the Makefile shortcuts:
+# make dev                         # install deps
+# make setup-hermes                # configure Hermes
+
+# For users (no dev tools needed):
+# uv sync                          # base install (core deps only)
+# The lectures setup wizard auto-installs hermes deps when needed
 
 # Run the test suite
-uv run pytest                  # 210 tests currently passing
+uv run pytest                      # 420 tests currently passing
 uv run pytest --cov=sophia     # with coverage report
 uv run pytest -x               # stop on first failure (useful when debugging)
 
@@ -412,6 +460,8 @@ See the `Makefile` for additional convenience targets (`make test`, `make lint`,
 |--------|-----------|-------------|
 | ✅ Done | **M0: MVP Foundation** | Authentication, TUWEL adapter, course listing, `sophia books discover` works against real TUWEL |
 | ✅ Done | **Kairos: Registration** | TISS course & group registration with preference lists, watch mode for auto-submit |
+| ✅ Done | **Kairos: Scheduler** | Cross-platform job scheduler (systemd/launchd/Task Scheduler) — `--schedule` and `sophia jobs` |
+| ✅ Done | **Hermes: Lectures** | Lecture download, Whisper transcription (GPU/CPU), semantic search via embeddings |
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
 | 📋 Planned | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq), Typst-rendered reading reports |
 | 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
@@ -426,30 +476,37 @@ Once you're set up, these are the commands you'll use most:
 
 ```bash
 # Authentication
-uv run sophia auth login          # log in to TUWEL
-uv run sophia auth status          # check if your session is valid
-uv run sophia auth logout          # clear saved credentials
+uv run sophia auth login          # log in to TUWEL + TISS
+uv run sophia auth status         # check if your session is valid
+uv run sophia auth logout         # clear saved credentials
 
 # Books (Bücherwurm)
-uv run sophia books discover       # scan courses for textbook references
-uv run sophia books list           # show previously discovered books
-uv run sophia books search <query> # search for a specific book
+uv run sophia books discover      # scan courses for textbook references
 
 # Registration (Kairos)
-uv run sophia auth login                   # log in to TUWEL + TISS
 uv run sophia register status 186.813      # check registration status
 uv run sophia register groups 186.813      # show groups with schedule
 uv run sophia register go 186.813          # register for LVA
 uv run sophia register go 186.813 --preferences "1,3"   # with group preferences
 uv run sophia register go 186.813 --watch  # wait for window, then register
+uv run sophia register go 186.813 --preferences "1,3" --schedule  # install system timer
 
-# Coming soon
-uv run sophia deadlines            # (Chronos — planned)
-uv run sophia exams                # (Athena — planned)
+# Lectures (Hermes)
+uv run sophia lectures setup               # configure hardware, models, providers
+uv run sophia lectures list                # discover lecture recordings
+uv run sophia lectures download <module-id>  # download recordings
+uv run sophia lectures transcribe <module-id> # transcribe with Whisper
+uv run sophia lectures index <module-id>   # build embedding index
+uv run sophia lectures search "topic" <module-id>  # semantic search within a lecture
+
+# Scheduled Jobs
+uv run sophia jobs list            # show scheduled jobs
+uv run sophia jobs cancel <job-id> # cancel a scheduled job
 
 # Help
 uv run sophia --help               # show all commands
 uv run sophia books --help         # show book subcommands
+uv run sophia lectures --help      # show lecture subcommands
 ```
 
 ---
