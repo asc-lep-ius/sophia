@@ -189,3 +189,36 @@ def validate_llm_provider(config: HermesLLMConfig) -> tuple[bool, str]:
 def get_provider_defaults(provider: LLMProvider) -> dict[str, str]:
     """Return default model/api_key_env/embedding_model for a provider."""
     return dict(_PROVIDER_DEFAULTS[provider])
+
+
+_HERMES_PACKAGES: list[tuple[str, str]] = [
+    ("faster_whisper", "faster-whisper"),
+    ("chromadb", "chromadb"),
+    ("sentence_transformers", "sentence-transformers"),
+    ("openai", "openai"),
+]
+
+
+def check_hermes_deps() -> list[str]:
+    """Return names of missing hermes dependencies."""
+    missing: list[str] = []
+    for mod, name in _HERMES_PACKAGES:
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(name)
+    return missing
+
+
+def install_hermes_extras() -> tuple[bool, str]:
+    """Install sophia[hermes] via uv. Returns (success, output)."""
+    try:
+        result = subprocess.run(
+            ["uv", "pip", "install", "-e", ".[hermes]"],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        return result.returncode == 0, result.stdout + result.stderr
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)

@@ -721,9 +721,27 @@ def lectures_setup() -> None:
     else:
         console.print("[red]⚠ Config verification failed — please check the file[/red]")
 
-    console.print("\n[dim]Next steps:[/dim]")
-    console.print("  1. Install Hermes extras: [cyan]uv pip install -e '.[hermes]'[/cyan]")
-    console.print("  2. Process a lecture: [cyan]sophia lectures process <audio-file>[/cyan]")
+    from sophia.services.hermes_setup import check_hermes_deps, install_hermes_extras
+
+    missing = check_hermes_deps()
+    if not missing:
+        console.print("\n[bold green]✓ Hermes dependencies already installed[/bold green]")
+    else:
+        console.print(f"\n[yellow]Missing Hermes dependencies: {', '.join(missing)}[/yellow]")
+        answer = input("Install Hermes dependencies now? [Y/n] ").strip().lower()
+        if answer in ("", "y", "yes"):
+            console.print("[dim]Installing sophia[hermes]…[/dim]")
+            ok, output = install_hermes_extras()
+            if ok:
+                console.print("[bold green]✓ Hermes dependencies installed[/bold green]")
+            else:
+                console.print(f"[red]Installation failed:[/red]\n{output}")
+        else:
+            console.print("\n[dim]Manual install:[/dim]")
+            console.print("  [cyan]uv pip install -e '.[hermes]'[/cyan]")
+
+    console.print("\n[dim]Next step:[/dim]")
+    console.print("  Process a lecture: [cyan]sophia lectures process <audio-file>[/cyan]")
 
 
 @lectures_app.command(name="status")

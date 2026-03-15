@@ -3788,10 +3788,13 @@ dependencies = [
 [package.optional-dependencies]
 dev = [
     { name = "bibtexparser" },
+    { name = "chromadb" },
+    { name = "faster-whisper" },
     { name = "google-genai" },
     { name = "gradio" },
     { name = "groq" },
     { name = "hypothesis" },
+    { name = "openai" },
     { name = "pip-audit" },
     { name = "pymupdf" },
     { name = "pyright" },
@@ -3800,6 +3803,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "respx" },
     { name = "ruff" },
+    { name = "sentence-transformers" },
     { name = "textual-dev" },
 ]
 export = [
@@ -3852,7 +3856,7 @@ requires-dist = [
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.4" },
     { name = "sentence-transformers", marker = "extra == 'hermes'", specifier = ">=3.0" },
-    { name = "sophia", extras = ["llm", "pdf", "export", "web"], marker = "extra == 'dev'" },
+    { name = "sophia", extras = ["llm", "pdf", "export", "web", "hermes"], marker = "extra == 'dev'" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tenacity", specifier = ">=8.0" },
     { name = "textual", specifier = ">=0.80" },
