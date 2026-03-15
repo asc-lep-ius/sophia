@@ -19,7 +19,9 @@ from sophia.domain.models import Lecture, LectureTrack
 
 log = structlog.get_logger()
 
-_EPISODE_DATA_RE = re.compile(r"window\.episode\s*=\s*({.*?})\s*;", re.DOTALL)
+
+# Regex to find the prefix for window.episode assignment
+_EPISODE_PREFIX_RE = re.compile(r"window\.episode\s*=\s*")
 
 
 def _parse_paella_tracks(data: dict[str, Any]) -> list[LectureTrack]:
@@ -111,14 +113,32 @@ class OpencastAdapter:
         """Scrape full episode metadata + track URLs from the player page."""
         html = await self._scrape("/mod/opencast/view.php", {"id": str(module_id), "e": episode_id})
 
-        match = _EPISODE_DATA_RE.search(html)
-        if not match:
-            log.warning("opencast.no_episode_data", module_id=module_id, episode_id=episode_id)
+        def _extract_episode_json(html: str) -> dict[str, Any] | None:
+            """Extract the episode JSON from window.episode = {...}; using balanced braces."""
+            match = _EPISODE_PREFIX_RE.search(html)
+            if not match:
+                return None
+            start = match.end()
+            # Skip whitespace
+            while start < len(html) and html[start].isspace():
+                start += 1
+            if start >= len(html) or html[start] != '{':
+                return None
+            depth = 0
+            for i in range(start, len(html)):
+                if html[i] == '{':
+                    depth += 1
+                elif html[i] == '}':
+                    depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(html[start:i + 1])
+                        except json.JSONDecodeError:
+                            return None
             return None
 
-        try:
-            data = json.loads(match.group(1))
-        except json.JSONDecodeError:
+        data = _extract_episode_json(html)
+        if data is None:
             log.warning("opencast.invalid_episode_json", module_id=module_id, episode_id=episode_id)
             return None
 
