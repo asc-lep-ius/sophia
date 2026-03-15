@@ -528,3 +528,35 @@ class LectureSearchResult(BaseModel, frozen=True):
     start_time: float
     end_time: float
     score: float
+
+
+# ---------------------------------------------------------------------------
+# Athena — Study companion models
+# ---------------------------------------------------------------------------
+
+
+class TopicSource(StrEnum):
+    """Origin of a topic mapping."""
+
+    LECTURE = "lecture"
+    QUIZ = "quiz"
+    MANUAL = "manual"
+
+
+class TopicMapping(BaseModel, frozen=True):
+    """A topic extracted from course content (lecture or quiz)."""
+
+    topic: str
+    course_id: int
+    source: TopicSource = TopicSource.LECTURE
+    frequency: int = 1
+
+
+class TopicLectureLink(BaseModel, frozen=True):
+    """Links a topic to a specific lecture transcript chunk."""
+
+    topic: str
+    course_id: int
+    chunk_id: str
+    episode_id: str
+    score: float  # embedding similarity score

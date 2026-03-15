@@ -52,6 +52,19 @@ app.command(lectures_app)
 jobs_app = cyclopts.App(name="jobs", help="Manage scheduled jobs.")
 app.command(jobs_app)
 
+quiz_app = cyclopts.App(
+    name="quiz",
+    help=(
+        "Athena — Study companion and topic analysis.\n"
+        "\n"
+        "Workflow:\n"
+        " 1. topics  MODULE_ID  — extract topics from lecture transcripts\n"
+        "\n"
+        "Requires Hermes lecture data. Run 'sophia lectures' pipeline first."
+    ),
+)
+app.command(quiz_app)
+
 log = structlog.get_logger()
 
 
@@ -1219,6 +1232,97 @@ async def run_job(job_id: str) -> None:
         raise SystemExit(1) from None
     finally:
         await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Athena — Quiz / Study companion
+# ---------------------------------------------------------------------------
+
+
+@quiz_app.command(name="topics")
+async def quiz_topics(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+) -> None:
+    """Extract topics from lecture transcripts and cross-reference with lectures."""
+    from rich.console import Console
+    from rich.status import Status
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, EmbeddingError, TopicExtractionError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        extract_topics_from_lectures,
+        link_topics_to_lectures,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            with Status("Extracting topics from lectures…", console=console):
+                topics = await extract_topics_from_lectures(container, module_id)
+
+            if not topics:
+                console.print(
+                    "[yellow]No topics extracted. Ensure lectures are indexed first.[/yellow]"
+                )
+                console.print("  Run: sophia lectures download/transcribe/index <module-id>")
+                return
+
+            console.print(f"[green]Extracted {len(topics)} topics.[/green]\n")
+
+            topic_labels = [t.topic for t in topics]
+            with Status("Cross-referencing with lecture content…", console=console):
+                links = await link_topics_to_lectures(
+                    container,
+                    module_id,
+                    module_id,
+                    topic_labels,
+                )
+
+            # Build episode title mapping for display
+            episode_ids: set[str] = set()
+            for chunks in links.values():
+                for chunk, _score in chunks:
+                    episode_ids.add(chunk.episode_id)
+
+            title_map: dict[str, str] = {}
+            if episode_ids:
+                placeholders = ",".join("?" for _ in episode_ids)
+                cursor = await container.db.execute(
+                    f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
+                    f" WHERE episode_id IN ({placeholders})",
+                    tuple(episode_ids),
+                )
+                for row in await cursor.fetchall():
+                    title_map[row[0]] = row[1]
+
+            table = Table(title="📊 Topic Analysis")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Freq", justify="right")
+            table.add_column("Lecture Coverage", style="dim")
+
+            for tm in topics:
+                lecture_refs: list[str] = []
+                for chunk, _score in links.get(tm.topic, [])[:3]:
+                    title = title_map.get(chunk.episode_id, "Unknown")
+                    mm, ss = divmod(int(chunk.start_time), 60)
+                    lecture_refs.append(f"{title} ({mm:02d}:{ss:02d})")
+                coverage = ", ".join(lecture_refs) if lecture_refs else "⚠ No lecture match"
+                table.add_row(tm.topic, str(tm.frequency), coverage)
+
+            console.print(table)
+            console.print("\n💡 Next: sophia quiz study <module-id> <topic>")
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TopicExtractionError as exc:
+        console.print(f"[red]Topic extraction failed:[/red] {exc}")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
 
 
 def main() -> None:

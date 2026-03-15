@@ -161,3 +161,9 @@ class KnowledgeStore(Protocol):
     ) -> list[tuple[KnowledgeChunk, float]]: ...
 
     def has_episode(self, episode_id: str) -> bool: ...
+
+
+class TopicExtractor(Protocol):
+    """Uses LLM to extract topic labels from text content."""
+
+    async def extract_topics(self, text: str, course_context: str = "") -> list[str]: ...

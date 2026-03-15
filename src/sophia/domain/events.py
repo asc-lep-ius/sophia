@@ -171,3 +171,21 @@ class IndexingFailed:
     episode_id: str
     title: str
     error: str
+
+
+@dataclass(frozen=True)
+class TopicsExtracted:
+    """Emitted after topics are extracted from course content."""
+
+    course_id: int
+    topic_count: int
+    source: str  # "lecture" or "quiz"
+
+
+@dataclass(frozen=True)
+class TopicLectureLinked:
+    """Emitted when a topic is cross-referenced with lecture chunks."""
+
+    topic: str
+    course_id: int
+    chunk_count: int
