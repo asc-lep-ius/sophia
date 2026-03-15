@@ -45,8 +45,9 @@ hermes = [
     "sentence-transformers>=3.0",
     "openai>=1.50",
 ]
+
+[dependency-groups]
 dev = [
-    "sophia[llm,pdf,export,web,hermes]",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "hypothesis>=6.0",
