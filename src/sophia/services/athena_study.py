@@ -1,15 +1,23 @@
-"""Athena study service — topic extraction and lecture cross-referencing."""
+"""Athena study service — topic extraction, study sessions, and flashcards."""
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
 
 from sophia.adapters.topic_extractor import LLMTopicExtractor
 from sophia.domain.errors import TopicExtractionError
-from sophia.domain.models import KnowledgeChunk, TopicMapping, TopicSource
+from sophia.domain.models import (
+    FlashcardSource,
+    KnowledgeChunk,
+    StudentFlashcard,
+    StudySession,
+    TopicMapping,
+    TopicSource,
+)
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
@@ -218,6 +226,208 @@ async def get_course_topics(
             course_id=row[1],
             source=TopicSource(row[2]),
             frequency=row[3],
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Study sessions
+# ---------------------------------------------------------------------------
+
+
+async def start_study_session(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str,
+) -> StudySession:
+    """Create a new study session."""
+    now = datetime.now(UTC).isoformat()
+    cursor = await db.execute(
+        "INSERT INTO study_sessions (course_id, topic, started_at) VALUES (?, ?, ?)",
+        (course_id, topic, now),
+    )
+    await db.commit()
+    return StudySession(id=cursor.lastrowid or 0, course_id=course_id, topic=topic, started_at=now)
+
+
+async def complete_study_session(
+    db: aiosqlite.Connection,
+    session_id: int,
+    pre_test_score: float,
+    post_test_score: float,
+) -> None:
+    """Record pre/post scores and mark session complete."""
+    now = datetime.now(UTC).isoformat()
+    await db.execute(
+        "UPDATE study_sessions SET pre_test_score = ?, post_test_score = ?, completed_at = ? "
+        "WHERE id = ?",
+        (pre_test_score, post_test_score, now, session_id),
+    )
+    await db.commit()
+
+
+async def get_study_sessions(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str | None = None,
+) -> list[StudySession]:
+    """Get study sessions, optionally filtered by topic."""
+    if topic:
+        cursor = await db.execute(
+            "SELECT id, course_id, topic, pre_test_score, post_test_score, "
+            "started_at, completed_at "
+            "FROM study_sessions WHERE course_id = ? AND topic = ? ORDER BY started_at DESC",
+            (course_id, topic),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, course_id, topic, pre_test_score, post_test_score, "
+            "started_at, completed_at "
+            "FROM study_sessions WHERE course_id = ? ORDER BY started_at DESC",
+            (course_id,),
+        )
+    rows = await cursor.fetchall()
+    return [
+        StudySession(
+            id=row[0],
+            course_id=row[1],
+            topic=row[2],
+            pre_test_score=row[3],
+            post_test_score=row[4],
+            started_at=row[5] or "",
+            completed_at=row[6],
+        )
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Question generation (RAG-grounded)
+# ---------------------------------------------------------------------------
+
+_FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
+
+
+async def get_lecture_context(
+    app: AppContainer,
+    module_id: int,
+    topic: str,
+    *,
+    n_results: int = 5,
+) -> str:
+    """Retrieve concatenated lecture transcript chunks relevant to a topic.
+
+    Uses RAG: embed topic → search ChromaDB scoped to module's episodes.
+    Returns empty string if no lecture data is available.
+    """
+    episode_ids = await _get_episode_ids(app.db, module_id)
+    if not episode_ids:
+        return ""
+
+    embedder = _create_embedder(app)
+    store = _create_store(app)
+    query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
+    search_results = await asyncio.to_thread(
+        store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
+    )
+    return "\n\n".join(chunk.text for chunk, _score in search_results)
+
+
+async def generate_study_questions(
+    app: AppContainer,
+    module_id: int,
+    topic: str,
+    count: int = 3,
+) -> list[str]:
+    """Generate practice questions for a topic, grounded in lecture content.
+
+    Uses RAG: embed topic → search lecture chunks → feed to LLM as context.
+    Falls back to generic questions if no lecture data or no LLM.
+    """
+    lecture_context = await get_lecture_context(app, module_id, topic)
+
+    if not lecture_context:
+        return [_FALLBACK_QUESTION.format(topic=topic)] * count
+
+    extractor = _create_topic_extractor(app)
+    questions: list[str] = []
+    for _ in range(count):
+        try:
+            q = await extractor.generate_question(topic, lecture_context)
+            if q and q not in questions:
+                questions.append(q)
+        except TopicExtractionError:
+            log.warning("question_generation_failed", topic=topic)
+            break
+
+    while len(questions) < count:
+        questions.append(_FALLBACK_QUESTION.format(topic=topic))
+
+    return questions
+
+
+# ---------------------------------------------------------------------------
+# Flashcards
+# ---------------------------------------------------------------------------
+
+
+async def save_flashcard(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str,
+    front: str,
+    back: str,
+    source: str = "study",
+) -> StudentFlashcard:
+    """Save a student-authored flashcard."""
+    now = datetime.now(UTC).isoformat()
+    cursor = await db.execute(
+        "INSERT INTO student_flashcards (course_id, topic, front, back, source, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (course_id, topic, front, back, source, now),
+    )
+    await db.commit()
+    return StudentFlashcard(
+        id=cursor.lastrowid or 0,
+        course_id=course_id,
+        topic=topic,
+        front=front,
+        back=back,
+        source=FlashcardSource(source),
+        created_at=now,
+    )
+
+
+async def get_flashcards(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str | None = None,
+) -> list[StudentFlashcard]:
+    """Load flashcards for a course, optionally filtered by topic."""
+    if topic:
+        cursor = await db.execute(
+            "SELECT id, course_id, topic, front, back, source, created_at "
+            "FROM student_flashcards WHERE course_id = ? AND topic = ? "
+            "ORDER BY created_at DESC",
+            (course_id, topic),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT id, course_id, topic, front, back, source, created_at "
+            "FROM student_flashcards WHERE course_id = ? ORDER BY created_at DESC",
+            (course_id,),
+        )
+    rows = await cursor.fetchall()
+    return [
+        StudentFlashcard(
+            id=row[0],
+            course_id=row[1],
+            topic=row[2],
+            front=row[3],
+            back=row[4],
+            source=FlashcardSource(row[5]),
+            created_at=row[6] or "",
         )
         for row in rows
     ]

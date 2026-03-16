@@ -31,6 +31,22 @@ _SYSTEM_PROMPT = (
 _OLLAMA_BASE_URL = "http://localhost:11434/v1"
 _GITHUB_BASE_URL = "https://models.github.ai/inference/v1"
 
+_QUESTION_SYSTEM_PROMPT = (
+    "You are a university-level practice question generator. "
+    "Generate questions that test conceptual understanding, not surface recognition. "
+    "Do NOT include student names, IDs, or any personal information."
+)
+
+_QUESTION_USER_TEMPLATE = (
+    "Topic: {topic}\n\n"
+    "Relevant lecture content:\n{lecture_context}\n\n"
+    "Generate ONE practice question that:\n"
+    "1. Tests understanding of the topic based on the lecture content above\n"
+    "2. Requires the student to APPLY the concept, not just recognize key words\n"
+    "3. Is appropriate for a university-level course\n\n"
+    "Return ONLY the question text, nothing else."
+)
+
 
 def _parse_topics(text: str) -> list[str]:
     """Parse LLM response into a deduplicated list of topic strings."""
@@ -68,14 +84,42 @@ class LLMTopicExtractor:
     def __init__(self, config: HermesLLMConfig) -> None:
         self._config = config
 
+    async def _call_llm(self, system_prompt: str, user_prompt: str) -> str:
+        """Route LLM call to the configured provider."""
+        from sophia.domain.models import LLMProvider
+
+        try:
+            if self._config.provider == LLMProvider.GEMINI:
+                raw = await self._call_gemini(user_prompt, system_prompt=system_prompt)
+            elif self._config.provider == LLMProvider.GROQ:
+                raw = await self._call_groq(user_prompt, system_prompt=system_prompt)
+            elif self._config.provider == LLMProvider.OLLAMA:
+                raw = await self._call_openai(
+                    user_prompt,
+                    base_url=_OLLAMA_BASE_URL,
+                    api_key="ollama",
+                    system_prompt=system_prompt,
+                )
+            else:
+                api_key = os.environ.get(self._config.api_key_env, "")
+                raw = await self._call_openai(
+                    user_prompt,
+                    base_url=_GITHUB_BASE_URL,
+                    api_key=api_key,
+                    system_prompt=system_prompt,
+                )
+        except TopicExtractionError:
+            raise
+        except Exception as exc:
+            raise TopicExtractionError(str(exc)) from exc
+        return raw
+
     async def extract_topics(self, text: str, course_context: str = "") -> list[str]:
         """Extract topic labels from the given text via LLM.
 
         Returns a deduplicated, normalized list of topic strings.
         Raises ``TopicExtractionError`` on any failure.
         """
-        from sophia.domain.models import LLMProvider
-
         user_prompt = _build_user_prompt(text, course_context)
         log.debug(
             "topic_extraction_request",
@@ -84,31 +128,20 @@ class LLMTopicExtractor:
             text_len=len(text),
         )
 
-        try:
-            if self._config.provider == LLMProvider.GEMINI:
-                raw = await self._call_gemini(user_prompt)
-            elif self._config.provider == LLMProvider.GROQ:
-                raw = await self._call_groq(user_prompt)
-            elif self._config.provider == LLMProvider.OLLAMA:
-                raw = await self._call_openai(
-                    user_prompt, base_url=_OLLAMA_BASE_URL, api_key="ollama"
-                )
-            else:
-                # GitHub Models (default) — OpenAI-compatible
-                api_key = os.environ.get(self._config.api_key_env, "")
-                raw = await self._call_openai(
-                    user_prompt, base_url=_GITHUB_BASE_URL, api_key=api_key
-                )
-        except TopicExtractionError:
-            raise
-        except Exception as exc:
-            raise TopicExtractionError(str(exc)) from exc
-
+        raw = await self._call_llm(_SYSTEM_PROMPT, user_prompt)
         topics = _parse_topics(raw)
         log.debug("topic_extraction_response", topic_count=len(topics), topics=topics)
         return topics
 
-    async def _call_openai(self, user_prompt: str, *, base_url: str, api_key: str) -> str:
+    async def generate_question(self, topic: str, lecture_context: str) -> str:
+        """Generate a practice question grounded in lecture content."""
+        user_prompt = _QUESTION_USER_TEMPLATE.format(topic=topic, lecture_context=lecture_context)
+        raw = await self._call_llm(_QUESTION_SYSTEM_PROMPT, user_prompt)
+        return raw.strip()
+
+    async def _call_openai(
+        self, user_prompt: str, *, base_url: str, api_key: str, system_prompt: str = _SYSTEM_PROMPT
+    ) -> str:
         """Call an OpenAI-compatible API (GitHub Models or Ollama)."""
         try:
             from openai import AsyncOpenAI  # type: ignore[import-not-found]
@@ -121,14 +154,14 @@ class LLMTopicExtractor:
         response = await client.chat.completions.create(
             model=self._config.model,
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,
         )
         return response.choices[0].message.content or ""
 
-    async def _call_gemini(self, user_prompt: str) -> str:
+    async def _call_gemini(self, user_prompt: str, *, system_prompt: str = _SYSTEM_PROMPT) -> str:
         """Call the Google Gemini API."""
         try:
             from google import genai  # type: ignore[import-not-found]
@@ -141,11 +174,11 @@ class LLMTopicExtractor:
         client = genai.Client(api_key=api_key)
         response = await client.aio.models.generate_content(
             model=self._config.model,
-            contents=f"{_SYSTEM_PROMPT}\n\n{user_prompt}",
+            contents=f"{system_prompt}\n\n{user_prompt}",
         )
         return response.text or ""
 
-    async def _call_groq(self, user_prompt: str) -> str:
+    async def _call_groq(self, user_prompt: str, *, system_prompt: str = _SYSTEM_PROMPT) -> str:
         """Call the Groq API."""
         try:
             from groq import AsyncGroq  # type: ignore[import-not-found]
@@ -157,7 +190,7 @@ class LLMTopicExtractor:
         response = await client.chat.completions.create(
             model=self._config.model,
             messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.3,

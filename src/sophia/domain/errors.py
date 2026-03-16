@@ -71,3 +71,7 @@ class TopicExtractionError(AthenaError):
 
 class ConfidenceError(AthenaError):
     """Confidence assessment workflow failed."""
+
+
+class StudySessionError(AthenaError):
+    """Study session workflow failed."""

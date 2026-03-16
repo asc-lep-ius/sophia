@@ -583,3 +583,42 @@ class ConfidenceRating(BaseModel, frozen=True):
         """Topic where student is significantly overconfident (>0.2 delta)."""
         err = self.calibration_error
         return err is not None and err > 0.2
+
+
+class StudySession(BaseModel, frozen=True):
+    """A pre-test → study → post-test learning session."""
+
+    id: int = 0
+    course_id: int
+    topic: str
+    pre_test_score: float | None = None  # 0.0-1.0
+    post_test_score: float | None = None  # 0.0-1.0
+    started_at: str = ""
+    completed_at: str | None = None
+
+    @property
+    def improvement(self) -> float | None:
+        """Post-test score minus pre-test score. Positive = learned."""
+        if self.pre_test_score is None or self.post_test_score is None:
+            return None
+        return self.post_test_score - self.pre_test_score
+
+
+class FlashcardSource(StrEnum):
+    """Origin of a flashcard."""
+
+    STUDY = "study"
+    LECTURE = "lecture"
+    MANUAL = "manual"
+
+
+class StudentFlashcard(BaseModel, frozen=True):
+    """A flashcard authored or adopted by the student."""
+
+    id: int = 0
+    course_id: int
+    topic: str
+    front: str  # question
+    back: str  # answer
+    source: FlashcardSource = FlashcardSource.STUDY
+    created_at: str = ""

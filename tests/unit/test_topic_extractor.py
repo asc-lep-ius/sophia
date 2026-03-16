@@ -231,3 +231,112 @@ class TestParseTopics:
         assert len(result) == 2
         assert result[0] == "Linear Algebra"
         assert result[1] == "Calculus"
+
+
+class TestGenerateQuestion:
+    """Tests for LLMTopicExtractor.generate_question()."""
+
+    @pytest.mark.asyncio
+    async def test_generate_question_returns_stripped_text(self) -> None:
+        from sophia.adapters.topic_extractor import LLMTopicExtractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "  What is quicksort?  "
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("openai.AsyncOpenAI", return_value=mock_client):
+            extractor = LLMTopicExtractor(_make_config())
+            result = await extractor.generate_question("Sorting", "Quicksort uses pivots.")
+
+        assert result == "What is quicksort?"
+
+    @pytest.mark.asyncio
+    async def test_generate_question_uses_question_system_prompt(self) -> None:
+        from sophia.adapters.topic_extractor import _QUESTION_SYSTEM_PROMPT, LLMTopicExtractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "A question?"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("openai.AsyncOpenAI", return_value=mock_client):
+            extractor = LLMTopicExtractor(_make_config())
+            await extractor.generate_question("Sorting", "Some context")
+
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args[1]["messages"]
+        system_msg = next(m for m in messages if m["role"] == "system")
+        assert system_msg["content"] == _QUESTION_SYSTEM_PROMPT
+
+    @pytest.mark.asyncio
+    async def test_generate_question_includes_lecture_context(self) -> None:
+        from sophia.adapters.topic_extractor import LLMTopicExtractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "A question?"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("openai.AsyncOpenAI", return_value=mock_client):
+            extractor = LLMTopicExtractor(_make_config())
+            await extractor.generate_question("Sorting", "Quicksort partitions arrays")
+
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args[1]["messages"]
+        user_msg = next(m for m in messages if m["role"] == "user")
+        assert "Quicksort partitions arrays" in user_msg["content"]
+        assert "Sorting" in user_msg["content"]
+
+    @pytest.mark.asyncio
+    async def test_generate_question_error_raises(self) -> None:
+        from sophia.adapters.topic_extractor import LLMTopicExtractor
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=RuntimeError("API down"))
+
+        with patch("openai.AsyncOpenAI", return_value=mock_client):
+            extractor = LLMTopicExtractor(_make_config())
+            with pytest.raises(TopicExtractionError, match="API down"):
+                await extractor.generate_question("Sorting", "context")
+
+    @pytest.mark.asyncio
+    async def test_extract_topics_still_works_after_refactor(self) -> None:
+        """Ensure extract_topics still uses the topic extraction system prompt."""
+        from sophia.adapters.topic_extractor import _SYSTEM_PROMPT, LLMTopicExtractor
+
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock()]
+        mock_response.choices[0].message.content = "1. Sorting"
+
+        mock_client = MagicMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        with patch("openai.AsyncOpenAI", return_value=mock_client):
+            extractor = LLMTopicExtractor(_make_config())
+            topics = await extractor.extract_topics("Some lecture text")
+
+        assert "Sorting" in topics
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args[1]["messages"]
+        system_msg = next(m for m in messages if m["role"] == "system")
+        assert system_msg["content"] == _SYSTEM_PROMPT
+
+
+class TestQuestionUserTemplate:
+    """Tests for _QUESTION_USER_TEMPLATE formatting."""
+
+    def test_template_formatting(self) -> None:
+        from sophia.adapters.topic_extractor import _QUESTION_USER_TEMPLATE
+
+        result = _QUESTION_USER_TEMPLATE.format(
+            topic="Sorting", lecture_context="Quicksort uses pivots."
+        )
+        assert "Sorting" in result
+        assert "Quicksort uses pivots." in result

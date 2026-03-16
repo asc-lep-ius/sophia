@@ -98,7 +98,34 @@ class LectureDownloadStarted:
 
     episode_id: str
     title: str
-    track_url: str
+
+
+@dataclass(frozen=True)
+class StudySessionStarted:
+    """Emitted when a study session begins."""
+
+    course_id: int
+    topic: str
+
+
+@dataclass(frozen=True)
+class StudySessionCompleted:
+    """Emitted when a study session finishes."""
+
+    course_id: int
+    topic: str
+    pre_test_score: float
+    post_test_score: float
+    improvement: float
+
+
+@dataclass(frozen=True)
+class FlashcardCreated:
+    """Emitted when a student creates a flashcard."""
+
+    course_id: int
+    topic: str
+    source: str
 
 
 @dataclass(frozen=True)

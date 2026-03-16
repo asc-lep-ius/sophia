@@ -1,4 +1,4 @@
-"""Tests for the Athena study service — topic extraction and linking orchestration."""
+"""Tests for the Athena study service — topic extraction, linking, study sessions, flashcards."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ import aiosqlite
 import pytest
 
 from sophia.domain.models import (
+    FlashcardSource,
     KnowledgeChunk,
+    StudentFlashcard,
+    StudySession,
     TopicSource,
 )
 from sophia.infra.persistence import run_migrations
@@ -281,3 +284,338 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: aiosqlite.Con
     assert len(rows) == 1
     assert rows[0][0] == "Sorting"
     assert rows[0][1] == "ep-001_0"
+
+
+# ---------------------------------------------------------------------------
+# StudySession model
+# ---------------------------------------------------------------------------
+
+
+class TestStudySessionModel:
+    """Tests for the StudySession domain model."""
+
+    def test_improvement_both_scores(self) -> None:
+        s = StudySession(course_id=1, topic="X", pre_test_score=0.33, post_test_score=0.67)
+        assert s.improvement == pytest.approx(0.34)
+
+    def test_improvement_none_when_missing_pre(self) -> None:
+        s = StudySession(course_id=1, topic="X", post_test_score=0.67)
+        assert s.improvement is None
+
+    def test_improvement_none_when_missing_post(self) -> None:
+        s = StudySession(course_id=1, topic="X", pre_test_score=0.33)
+        assert s.improvement is None
+
+    def test_improvement_negative_means_worse(self) -> None:
+        s = StudySession(course_id=1, topic="X", pre_test_score=1.0, post_test_score=0.33)
+        assert s.improvement is not None
+        assert s.improvement < 0
+
+    def test_defaults(self) -> None:
+        s = StudySession(course_id=1, topic="X")
+        assert s.id == 0
+        assert s.pre_test_score is None
+        assert s.post_test_score is None
+        assert s.completed_at is None
+
+
+# ---------------------------------------------------------------------------
+# StudentFlashcard model
+# ---------------------------------------------------------------------------
+
+
+class TestStudentFlashcardModel:
+    """Tests for the StudentFlashcard domain model."""
+
+    def test_create_with_defaults(self) -> None:
+        f = StudentFlashcard(course_id=1, topic="X", front="Q?", back="A.")
+        assert f.source == FlashcardSource.STUDY
+        assert f.id == 0
+
+    def test_create_with_source(self) -> None:
+        f = StudentFlashcard(
+            course_id=1, topic="X", front="Q?", back="A.", source=FlashcardSource.LECTURE
+        )
+        assert f.source == FlashcardSource.LECTURE
+
+
+# ---------------------------------------------------------------------------
+# start_study_session
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_study_session(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import start_study_session
+
+    session = await start_study_session(db, course_id=42, topic="Sorting")
+    assert session.course_id == 42
+    assert session.topic == "Sorting"
+    assert session.id > 0
+    assert session.started_at != ""
+    assert session.pre_test_score is None
+    assert session.completed_at is None
+
+
+@pytest.mark.asyncio
+async def test_start_study_session_persists(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import start_study_session
+
+    session = await start_study_session(db, course_id=42, topic="Sorting")
+    cursor = await db.execute("SELECT id, topic FROM study_sessions WHERE id = ?", (session.id,))
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row[1] == "Sorting"
+
+
+# ---------------------------------------------------------------------------
+# complete_study_session
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_complete_study_session(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import complete_study_session, start_study_session
+
+    session = await start_study_session(db, course_id=42, topic="Sorting")
+    await complete_study_session(db, session.id, pre_test_score=0.33, post_test_score=0.67)
+
+    cursor = await db.execute(
+        "SELECT pre_test_score, post_test_score, completed_at FROM study_sessions WHERE id = ?",
+        (session.id,),
+    )
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row[0] == pytest.approx(0.33)
+    assert row[1] == pytest.approx(0.67)
+    assert row[2] is not None  # completed_at set
+
+
+# ---------------------------------------------------------------------------
+# get_study_sessions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_study_sessions_empty(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_study_sessions
+
+    result = await get_study_sessions(db, course_id=99)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_study_sessions_all(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_study_sessions, start_study_session
+
+    await start_study_session(db, course_id=42, topic="Sorting")
+    await start_study_session(db, course_id=42, topic="Graphs")
+
+    result = await get_study_sessions(db, course_id=42)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_study_sessions_by_topic(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_study_sessions, start_study_session
+
+    await start_study_session(db, course_id=42, topic="Sorting")
+    await start_study_session(db, course_id=42, topic="Graphs")
+
+    result = await get_study_sessions(db, course_id=42, topic="Sorting")
+    assert len(result) == 1
+    assert result[0].topic == "Sorting"
+
+
+# ---------------------------------------------------------------------------
+# save_flashcard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_flashcard(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import save_flashcard
+
+    card = await save_flashcard(
+        db,
+        course_id=42,
+        topic="Sorting",
+        front="What is quicksort?",
+        back="A divide-and-conquer algorithm",
+    )
+    assert card.id > 0
+    assert card.front == "What is quicksort?"
+    assert card.source == FlashcardSource.STUDY
+
+
+@pytest.mark.asyncio
+async def test_save_flashcard_with_source(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import save_flashcard
+
+    card = await save_flashcard(
+        db, course_id=42, topic="Sorting", front="Q?", back="A.", source="lecture"
+    )
+    assert card.source == FlashcardSource.LECTURE
+
+
+@pytest.mark.asyncio
+async def test_save_flashcard_persists(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import save_flashcard
+
+    card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
+    cursor = await db.execute("SELECT front, back FROM student_flashcards WHERE id = ?", (card.id,))
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row[0] == "Q?"
+
+
+# ---------------------------------------------------------------------------
+# get_flashcards
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_flashcards_empty(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_flashcards
+
+    result = await get_flashcards(db, course_id=99)
+    assert result == []
+
+
+@pytest.mark.asyncio
+async def test_get_flashcards_all(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_flashcards, save_flashcard
+
+    await save_flashcard(db, course_id=42, topic="Sorting", front="Q1?", back="A1")
+    await save_flashcard(db, course_id=42, topic="Graphs", front="Q2?", back="A2")
+
+    result = await get_flashcards(db, course_id=42)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_get_flashcards_by_topic(db: aiosqlite.Connection) -> None:
+    from sophia.services.athena_study import get_flashcards, save_flashcard
+
+    await save_flashcard(db, course_id=42, topic="Sorting", front="Q1?", back="A1")
+    await save_flashcard(db, course_id=42, topic="Graphs", front="Q2?", back="A2")
+
+    result = await get_flashcards(db, course_id=42, topic="Sorting")
+    assert len(result) == 1
+    assert result[0].topic == "Sorting"
+
+
+# ---------------------------------------------------------------------------
+# generate_study_questions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.Connection) -> None:
+    """LLM generates questions grounded in lecture context."""
+    from sophia.services.athena_study import generate_study_questions
+
+    await _insert_download(db, episode_id="ep-001", module_id=42)
+
+    mock_chunk = KnowledgeChunk(
+        chunk_id="ep-001_0",
+        episode_id="ep-001",
+        chunk_index=0,
+        text="Sorting: quicksort partitions an array around a pivot.",
+        start_time=0.0,
+        end_time=15.0,
+    )
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.1, 0.2]
+
+    mock_store = MagicMock()
+    mock_store.search.return_value = [(mock_chunk, 0.9)]
+
+    mock_extractor = AsyncMock()
+    mock_extractor.generate_question = AsyncMock(
+        side_effect=["Q about pivots?", "Q about partitioning?", "Q about complexity?"]
+    )
+
+    with (
+        patch("sophia.services.athena_study._create_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study._create_store", return_value=mock_store),
+        patch(
+            "sophia.services.athena_study._create_topic_extractor",
+            return_value=mock_extractor,
+        ),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+        ),
+    ):
+        questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
+
+    assert len(questions) == 3
+    assert "Q about pivots?" in questions
+    # Verify lecture context was passed to LLM
+    call_args = mock_extractor.generate_question.call_args_list
+    assert "quicksort" in call_args[0].args[1]
+
+
+@pytest.mark.asyncio
+async def test_generate_study_questions_fallback_no_lectures(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """Falls back to generic questions when no lecture data available."""
+    from sophia.services.athena_study import generate_study_questions
+
+    # No downloads inserted → no episode_ids → fallback
+    questions = await generate_study_questions(app, module_id=99, topic="Sorting", count=3)
+
+    assert len(questions) == 3
+    assert all("Sorting" in q for q in questions)
+
+
+@pytest.mark.asyncio
+async def test_generate_study_questions_llm_partial_failure(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """Pads with fallback when LLM produces fewer questions than requested."""
+    from sophia.services.athena_study import generate_study_questions
+
+    await _insert_download(db, episode_id="ep-001", module_id=42)
+
+    mock_chunk = KnowledgeChunk(
+        chunk_id="ep-001_0",
+        episode_id="ep-001",
+        chunk_index=0,
+        text="Sorting algorithms",
+        start_time=0.0,
+        end_time=15.0,
+    )
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.1]
+
+    mock_store = MagicMock()
+    mock_store.search.return_value = [(mock_chunk, 0.9)]
+
+    mock_extractor = AsyncMock()
+    from sophia.domain.errors import TopicExtractionError
+
+    mock_extractor.generate_question = AsyncMock(
+        side_effect=["One question?", TopicExtractionError("fail")]
+    )
+
+    with (
+        patch("sophia.services.athena_study._create_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study._create_store", return_value=mock_store),
+        patch(
+            "sophia.services.athena_study._create_topic_extractor",
+            return_value=mock_extractor,
+        ),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+        ),
+    ):
+        questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
+
+    assert len(questions) == 3
+    assert questions[0] == "One question?"
+    # Remaining should be fallback
+    assert "Sorting" in questions[1]
