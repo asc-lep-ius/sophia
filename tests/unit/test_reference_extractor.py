@@ -249,6 +249,7 @@ class TestSectionHeaderDetection:
         "bullet",
         [
             "TODO: submit assignment 2 by Friday",
+            "Task: submit assignment 2 by Friday",
             "Contact: prof@example.com",
             "https://example.com/reading-list",
         ],
@@ -261,6 +262,26 @@ class TestSectionHeaderDetection:
         html = f"<h3>References</h3><ul><li>{bullet}</li></ul>"
         refs = extractor.extract(html, SOURCE, COURSE_ID)
         assert refs == []
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Task: A Practical Introduction to Research. Springer, 2021.",
+            "Exercise: Theory and Practice. Springer, 2021.",
+            "Contact: A Philosophical Study. Springer, 2021.",
+            "Link: An Essay on Meaning. Springer, 2021.",
+            "Task - A Practical Introduction to Research. Springer, 2021.",
+        ],
+    )
+    def test_legitimate_prefixed_bibliography_lines_are_preserved(
+        self,
+        extractor: RegexReferenceExtractor,
+        line: str,
+    ):
+        html = f"<h3>Bibliography</h3><ul><li>{line}</li></ul>"
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert len(refs) == 1
+        assert refs[0].title == line.rsplit(".", maxsplit=2)[0]
 
     @pytest.mark.parametrize(
         "title",

@@ -99,8 +99,25 @@ NON_BIBLIO_BULLET_PREFIXES = frozenset(
 )
 
 NON_BIBLIO_BULLET_PATTERNS = (
-    re.compile(r"^(?:todo|task|assignment|exercise|deadline|submit|abgabe|aufgabe)\s*(?::|-|\d\b)"),
-    re.compile(r"^(?:contact|email|link)\s*[:\-]"),
+    re.compile(r"^(?:todo|assignment|deadline|submit|abgabe|aufgabe)\s*(?::|-|\d\b)"),
+    re.compile(r"^email\s*[:\-]"),
+)
+
+GUARDED_NON_BIBLIO_PREFIX_RE = re.compile(
+    r"^(?P<prefix>task|exercise|contact|link)\s*(?P<separator>:|-)\s*(?P<remainder>.+)$",
+    re.IGNORECASE,
+)
+
+NUMBERED_TASK_STRUCTURE_RE = re.compile(
+    r"^(?:task|exercise)\s+(?:\(?\d+\)?|[ivxlcdm]+|[a-z])(?:[.):-]\s*|\s*:\s*).+$",
+    re.IGNORECASE,
+)
+
+ADMIN_REMAINDER_PATTERNS = (
+    re.compile(r"^(?:submit|read|watch|complete|solve|prepare|review|visit|open|download|upload|contact|email)\b"),
+    re.compile(r"\b(?:due|deadline|submission|submit|abgabe|einreichen|upload(?:ed)?|hand\s+in)\b"),
+    re.compile(r"^(?:assignment|worksheet|slides?|lecture slides|forum|moodle|canvas|portal)\b"),
+    re.compile(r"^(?:\(?\d+\)?|[ivxlcdm]+|[a-z])[.):-]\s+"),
 )
 
 URL_OR_EMAIL_RE = re.compile(
@@ -182,6 +199,30 @@ def _normalize_section_item(item_text: str) -> str:
     return re.sub(r"\s+", " ", item_text).strip()
 
 
+def _looks_like_admin_remainder(item_text: str) -> bool:
+    """Return whether a guarded bullet remainder looks administrative."""
+    normalized = _normalize_section_item(item_text)
+    if not normalized:
+        return True
+    if URL_OR_EMAIL_RE.search(normalized):
+        return True
+    lowered = normalized.lower()
+    return any(pattern.search(lowered) for pattern in ADMIN_REMAINDER_PATTERNS)
+
+
+def _matches_guarded_non_bibliography_prefix(item_text: str) -> bool:
+    """Match guarded task-like prefixes only when the remainder is administrative."""
+    normalized = _normalize_section_item(item_text)
+    if NUMBERED_TASK_STRUCTURE_RE.match(normalized):
+        return True
+
+    match = GUARDED_NON_BIBLIO_PREFIX_RE.match(normalized)
+    if not match:
+        return False
+
+    return _looks_like_admin_remainder(match.group("remainder"))
+
+
 def _is_non_bibliography_line(item_text: str) -> bool:
     """Reject obvious non-bibliography bullets in literature-like sections."""
     normalized = _normalize_section_item(item_text)
@@ -189,7 +230,9 @@ def _is_non_bibliography_line(item_text: str) -> bool:
         return True
     if URL_OR_EMAIL_RE.search(normalized):
         return True
-    return any(pattern.match(normalized.lower()) for pattern in NON_BIBLIO_BULLET_PATTERNS)
+    if any(pattern.match(normalized.lower()) for pattern in NON_BIBLIO_BULLET_PATTERNS):
+        return True
+    return _matches_guarded_non_bibliography_prefix(normalized)
 
 
 def _looks_like_author(author_candidate: str) -> bool:
