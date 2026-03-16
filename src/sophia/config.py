@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Sophia configuration — loaded from environment and .env file."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_prefix="SOPHIA_")
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="SOPHIA_", extra="ignore")
 
     # TUWEL / TISS
     tuwel_host: str = "https://tuwel.tuwien.ac.at"
