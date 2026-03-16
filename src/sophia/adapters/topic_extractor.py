@@ -29,7 +29,7 @@ _SYSTEM_PROMPT = (
 )
 
 _OLLAMA_BASE_URL = "http://localhost:11434/v1"
-_GITHUB_BASE_URL = "https://models.github.ai/inference/v1"
+_GITHUB_BASE_URL = "https://models.github.ai/inference"
 
 _QUESTION_SYSTEM_PROMPT = (
     "You are a university-level practice question generator. "
