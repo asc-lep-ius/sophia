@@ -13,6 +13,7 @@ A student toolkit for TU Wien that automates the tedious parts of academic life 
 | [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
 | [Architecture](#architecture) | Hexagonal design, protocols, async |
 | [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
+| [External Dependencies](#external-dependencies) | LLM providers, transcription, Anki, ffmpeg, and more |
 | [Data Access](#data-access) | How Sophia talks to TUWEL and TISS |
 | [Development](#development) | Running tests, linting, type checking |
 | [Roadmap](#roadmap) | What's done, what's next |
@@ -404,6 +405,179 @@ Key design decisions:
 | Type checking | Pyright (strict mode) |
 | Packaging | uv + hatchling |
 | CI | GitLab CI |
+
+---
+
+## External Dependencies
+
+Sophia pulls in several external tools and services beyond the core Python stack. Some are Python packages installed automatically with `uv sync`, others are optional extras you opt into, and a few are system-level tools you install separately. This section tells you what each one does, whether you need it, and how to get it running on your platform.
+
+### At a Glance
+
+| Dependency | What It Does for Sophia | Required? | How to Install |
+|-----------|------------------------|-----------|----------------|
+| keyring | Stores your TUWEL/TISS credentials securely in your OS keychain | Core (auto-installed) | `uv sync` |
+| google-genai | Calls Google Gemini for topic extraction from lectures | Optional | `uv sync --extra llm` |
+| groq | Calls Groq for fast topic extraction (alternative to Gemini) | Optional | `uv sync --extra llm` |
+| openai | Connects to GitHub Models or local Ollama for topic extraction | Optional | `uv sync --extra llm` |
+| faster-whisper | Transcribes lecture recordings (speech-to-text) | Optional | `uv sync --extra hermes` |
+| sentence-transformers | Encodes text into vectors for semantic search over lectures | Optional | `uv sync --extra hermes` |
+| chromadb | Stores and searches lecture embeddings (vector database) | Optional | `uv sync --extra hermes` |
+| genanki | Generates Anki flashcard decks (`.apkg` files) | Optional | `uv sync --extra athena` |
+| ffmpeg | Extracts audio from lecture videos (system tool) | Optional (system) | See [System Tools](#5-system-tools) |
+| NVIDIA drivers | GPU acceleration for Whisper transcription | Optional (system) | See [System Tools](#5-system-tools) |
+
+### 1. Core (Always Installed)
+
+These are installed automatically when you run `uv sync`.
+
+**keyring** (≥ 25.0) — OS-level credential storage. Used by Sophia's auth adapter to store your TUWEL and TISS session credentials securely instead of in a plain-text file.
+
+| Platform | Backend | Setup Needed? |
+|----------|---------|---------------|
+| macOS | Keychain | None — built-in |
+| Windows | Credential Manager | None — built-in |
+| Linux | SecretStorage (via libsecret / gnome-keyring) | You may need to install the backend |
+
+**Linux users:** If Sophia warns about missing keyring backends, install the system libraries:
+
+```bash
+# Debian / Ubuntu
+sudo apt install gnome-keyring libsecret-1-0
+
+# Fedora / RHEL
+sudo dnf install gnome-keyring libsecret
+
+# Arch
+sudo pacman -S gnome-keyring libsecret
+```
+
+If no keyring backend is available, Sophia falls back gracefully — you'll just be prompted for credentials more often.
+
+### 2. LLM Providers (Optional)
+
+Install with:
+
+```bash
+uv sync --extra llm
+```
+
+These packages let Sophia use large language models to extract study topics from lecture transcripts. You only need **one** provider — pick whichever you prefer.
+
+| Package | Provider | API Key Env Var | Get a Key |
+|---------|----------|----------------|-----------|
+| google-genai (≥ 1.0) | Google Gemini | `SOPHIA_GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
+| groq (≥ 0.4) | Groq (fast inference) | `SOPHIA_GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) |
+| openai (≥ 1.50) | GitHub Models / Ollama | — | [GitHub PAT](https://github.com/settings/tokens) (for GitHub Models) |
+
+**Which one should I pick?**
+
+- **Gemini** — generous free tier, good quality. Best default choice.
+- **Groq** — extremely fast inference, free tier available. Good if you value speed.
+- **Ollama** (via the openai package) — runs entirely on your machine, no API key needed, no data leaves your computer. Requires [Ollama](https://ollama.com/) installed separately. Best for privacy-conscious users or offline use.
+
+All three produce comparable results for Sophia's use case (topic extraction). You can switch providers at any time.
+
+### 3. Hermes — Lecture Knowledge Base (Optional)
+
+Install with:
+
+```bash
+uv sync --extra hermes
+```
+
+These power Sophia's lecture transcription and semantic search features.
+
+**faster-whisper** (≥ 1.1) — Optimized Whisper speech-to-text engine. Transcribes your lecture recordings into searchable text. Downloads a model on first use (1–3 GB depending on the model size Sophia picks for your hardware).
+
+- Works on all platforms with no special setup.
+- **GPU acceleration:** If you have an NVIDIA GPU with CUDA, Whisper runs dramatically faster. Sophia auto-detects your GPU and picks the right model size. Without a GPU, it still works — just slower.
+
+**sentence-transformers** (≥ 3.0) — Encodes lecture text into vector embeddings so Sophia can search lectures by *meaning*, not just keywords. Pulls in PyTorch as a dependency (large download, ~2 GB on first install). No platform-specific setup required.
+
+**chromadb** (≥ 1.0) — A SQLite-backed vector database that stores and searches the lecture embeddings locally. No platform-specific setup required.
+
+### 4. Athena — Study & Export (Optional)
+
+Install with:
+
+```bash
+uv sync --extra athena
+```
+
+**genanki** (≥ 0.13) — Generates `.apkg` Anki flashcard deck files from Sophia's study materials. Used by `sophia study export` to create ready-to-import flashcard decks.
+
+To actually *use* the generated decks, you need **Anki** installed separately:
+
+| Platform | Install Anki |
+|----------|--------------|
+| All platforms | Download from [apps.ankiweb.net](https://apps.ankiweb.net/) |
+| Linux | Also available via `sudo apt install anki` or Flatpak |
+| Android | [AnkiDroid](https://play.google.com/store/apps/details?id=com.ichi2.anki) (free) on Google Play |
+| iOS | [AnkiMobile](https://apps.apple.com/app/ankimobile-flashcards/id373493387) on the App Store |
+
+### 5. System Tools
+
+These are **not** Python packages — you install them through your operating system's package manager. All are optional; Sophia works without them but with reduced functionality.
+
+#### ffmpeg
+
+Extracts audio tracks from lecture video recordings so Sophia downloads only the audio (much smaller) instead of full video files. Sophia detects ffmpeg automatically; if it's missing, it simply downloads the complete video instead.
+
+| Platform | Install Command |
+|----------|----------------|
+| Debian / Ubuntu | `sudo apt install ffmpeg` |
+| Fedora / RHEL | `sudo dnf install ffmpeg` |
+| Arch | `sudo pacman -S ffmpeg` |
+| macOS | `brew install ffmpeg` |
+| Windows | `winget install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH |
+
+#### NVIDIA Drivers + CUDA (for GPU-accelerated transcription)
+
+Sophia's Hermes module detects your GPU via `nvidia-smi` to choose the optimal Whisper model. Without a GPU, everything still works — Sophia just uses CPU mode.
+
+| Platform | Install |
+|----------|---------|
+| Debian / Ubuntu | `sudo apt install nvidia-driver-XXX` (replace XXX with your version, e.g. 550) |
+| Fedora / RHEL | `sudo dnf install akmod-nvidia` |
+| Windows | Download from [nvidia.com/drivers](https://www.nvidia.com/drivers) |
+| macOS | Not applicable (no CUDA support on macOS) |
+
+#### System Scheduler (for `sophia register --schedule`)
+
+Sophia's Kairos module can schedule automatic registration attempts. It uses your OS's built-in scheduler:
+
+| Platform | Scheduler | Setup Needed? |
+|----------|-----------|---------------|
+| Linux | systemd timers | None — systemd is pre-installed on most distros |
+| macOS | launchd | None — built-in |
+| Windows | Task Scheduler | None — built-in |
+
+### 6. Configuration
+
+After installing dependencies, configure your LLM provider:
+
+**Option A: Interactive wizard** (recommended)
+
+```bash
+sophia lectures setup
+```
+
+This walks you through choosing a provider, entering API keys, and picking model sizes for your hardware. All settings are saved locally.
+
+**Option B: Environment variables**
+
+Create a `.env` file in the project root or set these in your shell:
+
+```bash
+# Pick one (or more) — Sophia uses whichever is configured
+SOPHIA_GEMINI_API_KEY=your-gemini-key-here
+SOPHIA_GROQ_API_KEY=your-groq-key-here
+```
+
+**Option C: Local Ollama (no API key needed)**
+
+Install [Ollama](https://ollama.com/), pull a model (`ollama pull llama3`), and Sophia connects automatically on `localhost:11434`. No API key, no cloud, everything stays on your machine.
 
 ---
 

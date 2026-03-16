@@ -11,10 +11,12 @@ variables:
     - pip install uv
     - uv sync --extra dev
   cache:
-    key: uv-${PYTHON_VERSION}
+    key:
+      prefix: uv-${PYTHON_VERSION}
+      files:
+        - uv.lock
     paths:
       - .uv-cache/
-      - .venv/
 
 lint:
   extends: .python-job
