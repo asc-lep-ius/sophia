@@ -1,4 +1,4 @@
-"""Tests for the quiz CLI command group (Athena Phase 4.0+)."""
+"""Tests for the study CLI command group (Athena Phase 4.0+)."""
 
 from __future__ import annotations
 
@@ -16,23 +16,23 @@ from sophia.domain.models import (
 )
 
 
-class TestQuizAppRegistration:
-    """The quiz app must be registered on the root CLI."""
+class TestStudyAppRegistration:
+    """The study app must be registered on the root CLI."""
 
-    def test_quiz_app_exists(self) -> None:
-        from sophia.__main__ import quiz_app
+    def test_study_app_exists(self) -> None:
+        from sophia.__main__ import study_app
 
-        assert "quiz" in quiz_app.name
+        assert "study" in study_app.name
 
-    def test_quiz_app_help_mentions_athena(self) -> None:
-        from sophia.__main__ import quiz_app
+    def test_study_app_help_mentions_athena(self) -> None:
+        from sophia.__main__ import study_app
 
-        help_parts = quiz_app.help if isinstance(quiz_app.help, (list, tuple)) else [quiz_app.help]
-        assert any("Athena" in (p or "") for p in help_parts)
+        help_text = study_app.help if isinstance(study_app.help, str) else ""
+        assert "Athena" in help_text
 
 
-class TestQuizTopicsCommand:
-    """The `sophia quiz topics` command extracts and displays topics."""
+class TestStudyTopicsCommand:
+    """The `sophia study topics` command extracts and displays topics."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -62,7 +62,7 @@ class TestQuizTopicsCommand:
     @pytest.mark.asyncio
     async def test_topics_no_results(self, mock_container: MagicMock) -> None:
         """When no topics are extracted, print a helpful yellow message."""
-        from sophia.__main__ import quiz_topics
+        from sophia.__main__ import study_topics
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -74,7 +74,7 @@ class TestQuizTopicsCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_topics(module_id=42)
+            await study_topics(module_id=42)
 
     @pytest.mark.asyncio
     async def test_topics_success_calls_extract_and_link(
@@ -84,7 +84,7 @@ class TestQuizTopicsCommand:
         sample_chunks: dict[str, list[tuple[KnowledgeChunk, float]]],
     ) -> None:
         """Topics command should call extract then link, and not raise."""
-        from sophia.__main__ import quiz_topics
+        from sophia.__main__ import study_topics
 
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[("ep1", "Lecture 1")])
@@ -104,7 +104,7 @@ class TestQuizTopicsCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_topics(module_id=42)
+            await study_topics(module_id=42)
 
             mock_extract.assert_called_once_with(mock_container, 42)
             mock_link.assert_called_once_with(
@@ -117,7 +117,7 @@ class TestQuizTopicsCommand:
     @pytest.mark.asyncio
     async def test_topics_auth_error_exits_1(self, mock_container: MagicMock) -> None:
         """AuthError should print message and exit with code 1."""
-        from sophia.__main__ import quiz_topics
+        from sophia.__main__ import study_topics
         from sophia.domain.errors import AuthError
 
         with (
@@ -131,12 +131,12 @@ class TestQuizTopicsCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_topics(module_id=42)
+                await study_topics(module_id=42)
 
     @pytest.mark.asyncio
     async def test_topics_extraction_error_exits_1(self, mock_container: MagicMock) -> None:
         """TopicExtractionError should print message and exit with code 1."""
-        from sophia.__main__ import quiz_topics
+        from sophia.__main__ import study_topics
         from sophia.domain.errors import TopicExtractionError
 
         with (
@@ -150,12 +150,12 @@ class TestQuizTopicsCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_topics(module_id=42)
+                await study_topics(module_id=42)
 
     @pytest.mark.asyncio
     async def test_topics_embedding_error_exits_1(self, mock_container: MagicMock) -> None:
         """EmbeddingError should print message and exit with code 1."""
-        from sophia.__main__ import quiz_topics
+        from sophia.__main__ import study_topics
         from sophia.domain.errors import EmbeddingError
 
         with (
@@ -169,11 +169,11 @@ class TestQuizTopicsCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_topics(module_id=42)
+                await study_topics(module_id=42)
 
 
-class TestQuizConfidenceCommand:
-    """The `sophia quiz confidence` command runs the confidence workflow."""
+class TestStudyConfidenceCommand:
+    """The `sophia study confidence` command runs the confidence workflow."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -190,7 +190,7 @@ class TestQuizConfidenceCommand:
     @pytest.mark.asyncio
     async def test_confidence_no_topics_prints_message(self, mock_container: MagicMock) -> None:
         """When no topics exist, print a helpful yellow message."""
-        from sophia.__main__ import quiz_confidence
+        from sophia.__main__ import study_confidence
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -202,11 +202,11 @@ class TestQuizConfidenceCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_confidence(module_id=42)
+            await study_confidence(module_id=42)
 
     @pytest.mark.asyncio
     async def test_confidence_auth_error_exits_1(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_confidence
+        from sophia.__main__ import study_confidence
         from sophia.domain.errors import AuthError
 
         with (
@@ -220,11 +220,11 @@ class TestQuizConfidenceCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_confidence(module_id=42)
+                await study_confidence(module_id=42)
 
     @pytest.mark.asyncio
     async def test_confidence_error_exits_1(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_confidence
+        from sophia.__main__ import study_confidence
         from sophia.domain.errors import ConfidenceError
 
         with (
@@ -238,7 +238,7 @@ class TestQuizConfidenceCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_confidence(module_id=42)
+                await study_confidence(module_id=42)
 
     @pytest.mark.asyncio
     async def test_confidence_rates_and_displays(
@@ -247,7 +247,7 @@ class TestQuizConfidenceCommand:
         sample_topics: list[TopicMapping],
     ) -> None:
         """Success path: rates topics, then shows table."""
-        from sophia.__main__ import quiz_confidence
+        from sophia.__main__ import study_confidence
 
         rating = ConfidenceRating(
             topic="Sorting", course_id=42, predicted=0.75, rated_at="2026-01-01T00:00:00"
@@ -272,13 +272,13 @@ class TestQuizConfidenceCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_confidence(module_id=42)
+            await study_confidence(module_id=42)
 
             mock_rate.assert_called_once_with(mock_container, "Sorting", 42, 4)
 
 
-class TestQuizReviewCommand:
-    """The `sophia quiz review` command reviews flashcards and updates calibration."""
+class TestStudyReviewCommand:
+    """The `sophia study review` command reviews flashcards and updates calibration."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -311,7 +311,7 @@ class TestQuizReviewCommand:
 
     @pytest.mark.asyncio
     async def test_review_no_cards_prints_message(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_review
+        from sophia.__main__ import study_review
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -323,7 +323,7 @@ class TestQuizReviewCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_review(module_id=42)
+            await study_review(module_id=42)
 
     @pytest.mark.asyncio
     async def test_review_saves_attempts_and_calibrates(
@@ -331,7 +331,7 @@ class TestQuizReviewCommand:
         mock_container: MagicMock,
         sample_cards: list[StudentFlashcard],
     ) -> None:
-        from sophia.__main__ import quiz_review
+        from sophia.__main__ import study_review
 
         mock_review_attempt = MagicMock()
 
@@ -356,19 +356,20 @@ class TestQuizReviewCommand:
                     "success_rate": 0.5,
                 },
             ),
-            patch("rich.prompt.Prompt.ask", side_effect=["", "y", "", "n"]),
+            patch("rich.prompt.Prompt.ask", side_effect=["", ""]),
+            patch("rich.prompt.Confirm.ask", side_effect=[True, False]),
         ):
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_review(module_id=42)
+            await study_review(module_id=42)
 
             assert mock_save.call_count == 2
             mock_calibrate.assert_called()
 
     @pytest.mark.asyncio
     async def test_review_card_review_error_exits_1(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_review
+        from sophia.__main__ import study_review
         from sophia.domain.errors import CardReviewError
 
         with (
@@ -382,20 +383,20 @@ class TestQuizReviewCommand:
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
             with pytest.raises(SystemExit, match="1"):
-                await quiz_review(module_id=42)
+                await study_review(module_id=42)
 
     @pytest.mark.asyncio
     async def test_review_command_registered(self) -> None:
-        """The review command should be registered on quiz_app."""
-        from sophia.__main__ import quiz_app
+        """The review command should be registered on study_app."""
+        from sophia.__main__ import study_app
 
-        command_names = [cmd for cmd in quiz_app]
-        # quiz_app is a cyclopts App — check it has a "review" command
+        command_names = [cmd for cmd in study_app]
+        # study_app is a cyclopts App — check it has a "review" command
         assert any("review" in str(cmd) for cmd in command_names)
 
 
-class TestQuizExplainCommand:
-    """The `sophia quiz explain` command prompts students to self-explain wrong answers."""
+class TestStudyExplainCommand:
+    """The `sophia study explain` command prompts students to self-explain wrong answers."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -419,17 +420,19 @@ class TestQuizExplainCommand:
 
     @pytest.mark.asyncio
     async def test_explain_no_wrong_cards_prints_message(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_explain
+        from sophia.__main__ import study_explain
 
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[])
-        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
-
-        with patch("sophia.infra.di.create_app") as mock_create:
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_failed_review_cards",
+                return_value=[],
+            ),
+        ):
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_explain(module_id=42)
+            await study_explain(module_id=42)
 
     @pytest.mark.asyncio
     async def test_explain_full_scaffold_collects_3_responses(
@@ -437,28 +440,15 @@ class TestQuizExplainCommand:
         mock_container: MagicMock,
         sample_wrong_cards: list[StudentFlashcard],
     ) -> None:
-        from sophia.__main__ import quiz_explain
-
-        mock_cursor = AsyncMock()
-        # Return raw DB rows matching student_flashcards columns
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                (
-                    1,
-                    42,
-                    "Sorting",
-                    "What is quicksort?",
-                    "Divide-and-conquer sort",
-                    "study",
-                    "2026-01-01",
-                ),
-            ]
-        )
-        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+        from sophia.__main__ import study_explain
 
         mock_exp = MagicMock()
         with (
             patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_failed_review_cards",
+                return_value=sample_wrong_cards,
+            ),
             patch(
                 "sophia.services.athena_study.get_explanation_count",
                 return_value=5,
@@ -476,7 +466,7 @@ class TestQuizExplainCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_explain(module_id=42)
+            await study_explain(module_id=42)
 
             mock_save.assert_called_once()
             # scaffold_level=3 for count=5
@@ -487,27 +477,25 @@ class TestQuizExplainCommand:
         self,
         mock_container: MagicMock,
     ) -> None:
-        from sophia.__main__ import quiz_explain
+        from sophia.__main__ import study_explain
 
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                (
-                    1,
-                    42,
-                    "Sorting",
-                    "What is quicksort?",
-                    "Divide-and-conquer sort",
-                    "study",
-                    "2026-01-01",
-                ),
-            ]
+        wrong_card = StudentFlashcard(
+            id=1,
+            course_id=42,
+            topic="Sorting",
+            front="What is quicksort?",
+            back="Divide-and-conquer sort",
+            source=FlashcardSource.STUDY,
+            created_at="2026-01-01",
         )
-        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
 
         mock_exp = MagicMock()
         with (
             patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_failed_review_cards",
+                return_value=[wrong_card],
+            ),
             patch(
                 "sophia.services.athena_study.get_explanation_count",
                 return_value=25,
@@ -525,7 +513,7 @@ class TestQuizExplainCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_explain(module_id=42)
+            await study_explain(module_id=42)
 
             mock_save.assert_called_once()
             # At 25 explanations, scaffold_level should be 0
@@ -533,15 +521,15 @@ class TestQuizExplainCommand:
 
     @pytest.mark.asyncio
     async def test_explain_command_registered(self) -> None:
-        """The explain command should be registered on quiz_app."""
-        from sophia.__main__ import quiz_app
+        """The explain command should be registered on study_app."""
+        from sophia.__main__ import study_app
 
-        command_names = [cmd for cmd in quiz_app]
+        command_names = [cmd for cmd in study_app]
         assert any("explain" in str(cmd) for cmd in command_names)
 
 
-class TestQuizExportAnkiCommand:
-    """The `sophia quiz export-anki` command exports flashcards as .apkg."""
+class TestStudyExportCommand:
+    """The `sophia study export` command exports flashcards as .apkg."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -551,7 +539,7 @@ class TestQuizExportAnkiCommand:
 
     @pytest.mark.asyncio
     async def test_export_anki_success(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_export_anki
+        from sophia.__main__ import study_export
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -563,13 +551,13 @@ class TestQuizExportAnkiCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_export_anki(module_id=42)
+            await study_export(module_id=42)
 
             mock_export.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_export_anki_no_cards(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_export_anki
+        from sophia.__main__ import study_export
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -581,19 +569,19 @@ class TestQuizExportAnkiCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_export_anki(module_id=42)
+            await study_export(module_id=42)
 
     @pytest.mark.asyncio
     async def test_export_anki_registered(self) -> None:
-        """The export-anki command should be registered on quiz_app."""
-        from sophia.__main__ import quiz_app
+        """The export command should be registered on study_app."""
+        from sophia.__main__ import study_app
 
-        command_names = [cmd for cmd in quiz_app]
-        assert any("export-anki" in str(cmd) for cmd in command_names)
+        command_names = [cmd for cmd in study_app]
+        assert any("export" in str(cmd) for cmd in command_names)
 
 
-class TestQuizReviewCheckCommand:
-    """The `sophia quiz review-check` command shows due and upcoming reviews."""
+class TestStudyDueCommand:
+    """The `sophia study due` command shows due and upcoming reviews."""
 
     @pytest.fixture
     def mock_container(self) -> MagicMock:
@@ -603,7 +591,7 @@ class TestQuizReviewCheckCommand:
 
     @pytest.mark.asyncio
     async def test_review_check_with_due_reviews(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_review_check
+        from sophia.__main__ import study_due
         from sophia.domain.models import ReviewSchedule
 
         due = [
@@ -638,14 +626,14 @@ class TestQuizReviewCheckCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_review_check()
+            await study_due()
 
             mock_due.assert_called_once()
             mock_upcoming.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_review_check_no_reviews(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_review_check
+        from sophia.__main__ import study_due
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -661,11 +649,11 @@ class TestQuizReviewCheckCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_review_check()
+            await study_due()
 
     @pytest.mark.asyncio
     async def test_review_check_with_module_filter(self, mock_container: MagicMock) -> None:
-        from sophia.__main__ import quiz_review_check
+        from sophia.__main__ import study_due
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -681,15 +669,15 @@ class TestQuizReviewCheckCommand:
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
 
-            await quiz_review_check(module_id=42)
+            await study_due(module_id=42)
 
             mock_due.assert_called_once_with(mock_container.db, course_id=42)
             mock_upcoming.assert_called_once_with(mock_container.db, course_id=42, days_ahead=3)
 
     @pytest.mark.asyncio
     async def test_review_check_command_registered(self) -> None:
-        """The review-check command should be registered on quiz_app."""
-        from sophia.__main__ import quiz_app
+        """The due command should be registered on study_app."""
+        from sophia.__main__ import study_app
 
-        command_names = [cmd for cmd in quiz_app]
-        assert any("review-check" in str(cmd) for cmd in command_names)
+        command_names = [cmd for cmd in study_app]
+        assert any("due" in str(cmd) for cmd in command_names)

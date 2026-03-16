@@ -169,7 +169,7 @@ Sophia is organized into modules, each named for a concept that matches its purp
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
 | **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, transcribe with Whisper, semantic search | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
-| **Athena** 🎓 | `sophia exams` | Analyzes past exams for topic patterns, builds flashcards, calibrates your confidence | 📋 Planned |
+| **Athena** 🎓 | `sophia study` | Study companion: topic extraction, confidence calibration, guided sessions, spaced review | ✅ Functional |
 
 ### Bücherwurm in Action
 
@@ -267,7 +267,7 @@ Step 1 only needs to happen once. The setup wizard detects your GPU, recommends 
 
 **Chronos** will pull assignment deadlines from TUWEL and TISS, but it won't just list them in a calendar. TUWEL already does that, and students still miss deadlines. The problem isn't information, it's planning. Chronos asks you to estimate how long each task will take *before* you start, tracks your actual time, and helps you see where your estimates fall short. Over a semester, you develop better planning intuition, a skill that transfers far beyond university.
 
-**Athena** will analyze past exam papers to surface recurring topic patterns and question styles. But instead of handing you a study guide, it asks you to predict which topics will appear and how confident you are about each one, then shows you the historical data. It generates flashcard *prompts* (not answers; you write those) and tracks your confidence calibration across topics. The goal is to make your preparation more strategic and less anxious.
+**Athena** is now functional! It extracts topics from lecture transcripts, asks you to rate your confidence per topic, then runs guided study sessions with pre/post testing to measure actual learning. Flashcards are generated during study and reviewed with spaced repetition. Self-explanation exercises with fading scaffolds deepen understanding. Export to Anki for mobile review.
 
 ---
 
@@ -462,7 +462,7 @@ See the `Makefile` for additional convenience targets (`make test`, `make lint`,
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
 | 📋 Planned | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq), Typst-rendered reading reports |
 | 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
-| 📋 Planned | **M4: Athena** | Past exam scraping, topic frequency analysis, flashcard prompt generation, spaced repetition scheduling, confidence calibration |
+| ✅ Done | **Athena: Study** | Topic extraction, confidence calibration, guided study sessions, flashcard review, self-explanation, Anki export |
 | 📋 Planned | **M5: Polish & Ship** | Textual TUI, Gradio web interface, comprehensive documentation, stable public release |
 
 ---
@@ -496,6 +496,15 @@ uv run sophia lectures download <module-id>  # download recordings
 uv run sophia lectures transcribe <module-id> # transcribe with Whisper
 uv run sophia lectures index <module-id>   # build embedding index
 uv run sophia lectures search "topic" <module-id>  # semantic search within a lecture
+
+# Study (Athena)
+uv run sophia study topics <module-id>              # extract topics from transcripts
+uv run sophia study confidence <module-id>          # rate confidence per topic
+uv run sophia study session <module-id> [topic]     # guided study with pre/post test
+uv run sophia study review <module-id> [topic]      # review flashcards
+uv run sophia study explain <module-id> [topic]     # self-explain wrong answers
+uv run sophia study export <module-id>              # export flashcards to Anki
+uv run sophia study due                             # show topics due for review
 
 # Scheduled Jobs
 uv run sophia jobs list            # show scheduled jobs

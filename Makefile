@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck run clean clean-all docker-build docker-up docker-down docker-logs
+.PHONY: dev setup-hermes test lint typecheck run format clean clean-all docker-build docker-up docker-down docker-logs
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -15,8 +15,11 @@ lint:                            ## Lint and format check
 typecheck:                       ## Type check with pyright
 	uv run pyright
 
-run:                             ## Run sophia TUI
+run:                             ## Run sophia CLI
 	uv run sophia
+
+format:                          ## Format code with ruff
+	uv run ruff format .
 
 clean:                           ## Remove build artifacts (preserves .venv)
 	rm -rf dist/ .pytest_cache/ .ruff_cache/ __pycache__/ .coverage coverage.xml

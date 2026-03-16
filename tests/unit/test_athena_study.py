@@ -766,6 +766,44 @@ class TestCardReview:
         # Should not raise
         await update_topic_calibration(db, course_id=42, topic="Nonexistent")
 
+    @pytest.mark.asyncio
+    async def test_get_failed_review_cards_returns_wrong_answers(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        from sophia.services.athena_study import (
+            get_failed_review_cards,
+            save_flashcard,
+            save_review_attempt,
+        )
+
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q2", back="A2")
+        await save_review_attempt(db, flashcard_id=c1.id, success=False)
+        await save_review_attempt(db, flashcard_id=c2.id, success=True)
+
+        failed = await get_failed_review_cards(db, course_id=42)
+        assert len(failed) == 1
+        assert failed[0].id == c1.id
+
+    @pytest.mark.asyncio
+    async def test_get_failed_review_cards_with_topic_filter(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        from sophia.services.athena_study import (
+            get_failed_review_cards,
+            save_flashcard,
+            save_review_attempt,
+        )
+
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Hashing", front="Q2", back="A2")
+        await save_review_attempt(db, flashcard_id=c1.id, success=False)
+        await save_review_attempt(db, flashcard_id=c2.id, success=False)
+
+        failed = await get_failed_review_cards(db, course_id=42, topic="Hashing")
+        assert len(failed) == 1
+        assert failed[0].topic == "Hashing"
+
 
 # ---------------------------------------------------------------------------
 # Self-explanation

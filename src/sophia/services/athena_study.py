@@ -531,6 +531,42 @@ async def get_due_cards(
     ]
 
 
+async def get_failed_review_cards(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str | None = None,
+    limit: int = 5,
+) -> list[StudentFlashcard]:
+    """Get cards that were reviewed and answered incorrectly."""
+    query = (
+        "SELECT sf.id, sf.course_id, sf.topic, sf.front, sf.back, sf.source, sf.created_at "
+        "FROM student_flashcards sf "
+        "JOIN card_review_attempts cra ON cra.flashcard_id = sf.id "
+        "WHERE sf.course_id = ? AND cra.success = 0 "
+    )
+    params: list[int | str] = [course_id]
+    if topic:
+        query += "AND sf.topic = ? "
+        params.append(topic)
+    query += "GROUP BY sf.id ORDER BY MAX(cra.reviewed_at) DESC LIMIT ?"
+    params.append(limit)
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [
+        StudentFlashcard(
+            id=row[0],
+            course_id=row[1],
+            topic=row[2],
+            front=row[3],
+            back=row[4],
+            source=FlashcardSource(row[5]),
+            created_at=row[6] or "",
+        )
+        for row in rows
+    ]
+
+
 async def update_topic_calibration(
     db: aiosqlite.Connection,
     course_id: int,
