@@ -31,6 +31,7 @@ type EventCallback = Callable[[Any], None]
 
 # Internal result from per-course processing: either refs or an error message
 type _CourseResult = tuple[str, list[BookReference] | str]
+type _ResourceExtractionResult = tuple[list[BookReference], list[ModuleInfo] | None]
 
 
 async def discover_books(
@@ -149,7 +150,7 @@ async def _process_course(
     refs.extend(_extract_from_sections(sections, extractor, course_id))
 
     # Best-effort: mod_* functions may not be available via AJAX
-    resource_refs = await _try_resource_extraction(course_id, resources, extractor)
+    resource_refs, url_modules = await _try_resource_extraction(course_id, resources, extractor)
     refs.extend(resource_refs)
 
     # TISS teaching content: description + objectives as additional reference source
@@ -162,8 +163,10 @@ async def _process_course(
     )
     refs.extend(tiss_refs)
 
-    # URL classification: extract book-related URLs from course sections
-    url_refs = _extract_from_url_modules(sections, extractor, course_id, course_name)
+    # URL classification prefers enriched mod/url results and falls back to section scraping.
+    if url_modules is None:
+        url_modules = _section_url_modules(sections)
+    url_refs = _extract_from_url_modules(url_modules, extractor, course_id, course_name)
     refs.extend(url_refs)
 
     enriched = [ref.model_copy(update={"course_name": course_name}) for ref in refs]
@@ -175,7 +178,7 @@ async def _try_resource_extraction(
     course_id: int,
     resources: ResourceProvider,
     extractor: ReferenceExtractor,
-) -> list[BookReference]:
+) -> _ResourceExtractionResult:
     """Attempt to fetch resources via mod_* API calls (best-effort).
 
     These web service functions may not be available via the AJAX endpoint
@@ -185,13 +188,14 @@ async def _try_resource_extraction(
         resources.get_course_books([course_id]),
         resources.get_course_pages([course_id]),
         resources.get_course_resources([course_id]),
+        resources.get_course_urls([course_id]),
         return_exceptions=True,
     )
 
     sources = [ReferenceSource.RESOURCE_NAME, ReferenceSource.PAGE, ReferenceSource.RESOURCE_NAME]
     refs: list[BookReference] = []
 
-    for result, source in zip(results, sources, strict=True):
+    for result, source in zip(results[:3], sources, strict=True):
         if isinstance(result, BaseException):
             logger.debug(
                 "resource_fetch_skipped",
@@ -202,7 +206,17 @@ async def _try_resource_extraction(
             continue
         refs.extend(_extract_from_modules(result, extractor, course_id, source))
 
-    return refs
+    url_result = results[3]
+    if isinstance(url_result, BaseException):
+        logger.debug(
+            "resource_fetch_skipped",
+            course_id=course_id,
+            source="url",
+            error=str(url_result),
+        )
+        return refs, None
+
+    return refs, url_result
 
 
 async def _try_tiss_extraction(
@@ -248,7 +262,7 @@ async def _try_tiss_extraction(
 
 
 def _extract_from_url_modules(
-    sections: list[CourseSection],
+    url_modules: list[ModuleInfo],
     extractor: ReferenceExtractor,
     course_id: int,
     course_name: str,
@@ -258,9 +272,6 @@ def _extract_from_url_modules(
     URL modules classified as books have their names/descriptions fed to the
     extractor. Non-book resources are logged for future surfacing.
     """
-    url_modules = [
-        module for section in sections for module in section.modules if module.modname == "url"
-    ]
     if not url_modules:
         return []
 
@@ -279,12 +290,18 @@ def _extract_from_url_modules(
     for resource in book_resources:
         if resource.title:
             refs.extend(extractor.extract(resource.title, ReferenceSource.RESOURCE_NAME, course_id))
+
+    for resource in classified:
         if resource.description:
             refs.extend(
                 extractor.extract(resource.description, ReferenceSource.DESCRIPTION, course_id)
             )
 
     return refs
+
+
+def _section_url_modules(sections: list[CourseSection]) -> list[ModuleInfo]:
+    return [module for section in sections for module in section.modules if module.modname == "url"]
 
 
 def _extract_from_sections(
@@ -328,7 +345,16 @@ def _extract_from_modules(
     for module in modules:
         if module.name:
             refs.extend(extractor.extract(module.name, source, course_id))
+        if module.description and _is_pdf_module(module):
+            refs.extend(extractor.extract(module.description, ReferenceSource.PDF, course_id))
     return refs
+
+
+def _is_pdf_module(module: ModuleInfo) -> bool:
+    return any(
+        content.mimetype == "application/pdf" or content.filename.lower().endswith(".pdf")
+        for content in module.contents
+    )
 
 
 # --- Cross-course deduplication ---

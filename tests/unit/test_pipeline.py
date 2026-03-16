@@ -9,6 +9,7 @@ import pytest
 from sophia.domain.events import ExtractionReport
 from sophia.domain.models import (
     BookReference,
+    ContentInfo,
     Course,
     CourseSection,
     ModuleInfo,
@@ -87,11 +88,17 @@ class FakeResourceProvider:
 class FakeExtractor:
     """Implements ReferenceExtractor protocol for testing."""
 
-    def __init__(self, mapping: dict[str, list[BookReference]] | None = None) -> None:
+    def __init__(self, mapping: dict[object, list[BookReference]] | None = None) -> None:
         self._mapping = mapping or {}
+        self.calls: list[tuple[str, ReferenceSource, int]] = []
 
     def extract(self, content: str, source: ReferenceSource, course_id: int) -> list[BookReference]:
-        return self._mapping.get(content, [])
+        self.calls.append((content, source, course_id))
+        return (
+            self._mapping.get((content, source, course_id), [])
+            or self._mapping.get((content, source), [])
+            or self._mapping.get(content, [])
+        )
 
 
 class FakeMetadataProvider:
@@ -579,3 +586,90 @@ async def test_url_book_with_description_extracted() -> None:
     result = await discover_books(course_provider, resource_provider, extractor)
 
     assert any(r.isbn == "9780134685991" for r in result)
+
+
+async def test_enriched_url_module_description_from_resource_provider_reaches_discovery() -> None:
+    """Enriched URL modules from ResourceProvider feed fetched target text into discovery."""
+    enriched_url = ModuleInfo(
+        id=100,
+        name="Professor Homepage",
+        modname="url",
+        url="https://tuwel.tuwien.ac.at/mod/url/view.php?id=100",
+        description="Recommended literature: Pattern Recognition and Machine Learning",
+        contents=[
+            ContentInfo(
+                filename="literature",
+                fileurl="https://example.edu/~prof/literature",
+                filesize=0,
+                mimetype="text/html",
+            )
+        ],
+    )
+    ref = _make_ref(
+        "Pattern Recognition and Machine Learning",
+        course_id=1,
+        source=ReferenceSource.DESCRIPTION,
+    )
+
+    course_provider = FakeCourseProvider([COURSE_A])
+    resource_provider = FakeResourceProvider(urls=[enriched_url])
+    extractor = FakeExtractor(
+        {
+            (
+                "Recommended literature: Pattern Recognition and Machine Learning",
+                ReferenceSource.DESCRIPTION,
+                1,
+            ): [ref]
+        }
+    )
+
+    result = await discover_books(course_provider, resource_provider, extractor)
+
+    assert len(result) == 1
+    assert result[0].title == "Pattern Recognition and Machine Learning"
+    assert (
+        "Recommended literature: Pattern Recognition and Machine Learning",
+        ReferenceSource.DESCRIPTION,
+        1,
+    ) in extractor.calls
+
+
+async def test_enriched_pdf_description_uses_pdf_source() -> None:
+    """PDF text from enriched resource modules is extracted with ReferenceSource.PDF."""
+    resource_module = ModuleInfo(
+        id=200,
+        name="Lecture Notes",
+        modname="resource",
+        description="Mandatory literature: Deep Learning by Goodfellow",
+        contents=[
+            ContentInfo(
+                filename="lecture-notes.pdf",
+                fileurl="https://tuwel.tuwien.ac.at/pluginfile.php/1/lecture-notes.pdf",
+                filesize=128,
+                mimetype="application/pdf",
+            )
+        ],
+    )
+    ref = _make_ref("Deep Learning", course_id=1, source=ReferenceSource.PDF)
+
+    course_provider = FakeCourseProvider([COURSE_A])
+    resource_provider = FakeResourceProvider(resources=[resource_module])
+    extractor = FakeExtractor(
+        {
+            (
+                "Mandatory literature: Deep Learning by Goodfellow",
+                ReferenceSource.PDF,
+                1,
+            ): [ref]
+        }
+    )
+
+    result = await discover_books(course_provider, resource_provider, extractor)
+
+    assert len(result) == 1
+    assert result[0].title == "Deep Learning"
+    assert (
+        "Mandatory literature: Deep Learning by Goodfellow",
+        ReferenceSource.PDF,
+        1,
+    ) in extractor.calls

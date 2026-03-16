@@ -389,6 +389,219 @@ class TestModIndex:
         assert len(results) == 2
 
 
+@respx.mock
+async def test_url_modules_follow_redirect_and_capture_target_text(
+        adapter: MoodleAdapter,
+):
+        html = """
+        <html><body>
+            <table class="course-overview-table">
+                <tbody>
+                    <tr data-mdl-overview-cmid="2880001">
+                        <td
+                            data-mdl-overview-item="name"
+                            data-mdl-overview-value="Professor Homepage"
+                        >
+                            <a
+                                class="activityname"
+                                href="https://tuwel.tuwien.ac.at/mod/url/view.php?id=2880001"
+                            >
+                                Professor Homepage
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </body></html>
+        """
+        target_url = "https://example.edu/~prof/literature"
+        target_html = """
+        <html><body>
+            <main>
+                <h1>Recommended Literature</h1>
+                <p>Primary text: Introduction to Algorithms by Cormen et al.</p>
+            </main>
+        </body></html>
+        """
+        respx.route(method="GET", path=URL_INDEX_PATH).mock(
+                return_value=httpx.Response(200, text=html)
+        )
+        respx.get(f"{HOST}/mod/url/view.php?id=2880001").mock(
+                return_value=httpx.Response(
+                        302,
+                        headers={"location": target_url},
+                        request=httpx.Request("GET", f"{HOST}/mod/url/view.php?id=2880001"),
+                )
+        )
+        respx.get(target_url).mock(
+                return_value=httpx.Response(
+                        200,
+                        text=target_html,
+                        headers={"content-type": "text/html; charset=utf-8"},
+                )
+        )
+
+        urls = await adapter.get_course_urls([42])
+
+        assert len(urls) == 1
+        assert urls[0].contents[0].fileurl == target_url
+        assert "Recommended Literature" in urls[0].description
+        assert "Introduction to Algorithms" in urls[0].description
+
+
+@respx.mock
+async def test_url_module_follow_failure_keeps_metadata(adapter: MoodleAdapter):
+        html = """
+        <html><body>
+            <table class="course-overview-table">
+                <tbody>
+                    <tr data-mdl-overview-cmid="2880001">
+                        <td
+                            data-mdl-overview-item="name"
+                            data-mdl-overview-value="Professor Homepage"
+                        >
+                            <a
+                                class="activityname"
+                                href="https://tuwel.tuwien.ac.at/mod/url/view.php?id=2880001"
+                            >
+                                Professor Homepage
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </body></html>
+        """
+        respx.route(method="GET", path=URL_INDEX_PATH).mock(
+                return_value=httpx.Response(200, text=html)
+        )
+        respx.get(f"{HOST}/mod/url/view.php?id=2880001").mock(
+                side_effect=httpx.ConnectError("network down")
+        )
+
+        urls = await adapter.get_course_urls([42])
+
+        assert len(urls) == 1
+        assert urls[0].name == "Professor Homepage"
+        assert urls[0].url == f"{HOST}/mod/url/view.php?id=2880001"
+        assert urls[0].contents == []
+        assert urls[0].description == ""
+
+
+@respx.mock
+async def test_resource_modules_capture_pdf_metadata_and_text(
+        adapter: MoodleAdapter,
+):
+        html = """
+        <html><body>
+            <table class="course-overview-table">
+                <tbody>
+                    <tr data-mdl-overview-cmid="2870001">
+                        <td
+                            data-mdl-overview-item="name"
+                            data-mdl-overview-value="Literature PDF"
+                        >
+                            <a
+                                class="activityname"
+                                href="https://tuwel.tuwien.ac.at/mod/resource/view.php?id=2870001"
+                            >
+                                Literature PDF
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </body></html>
+        """
+        pdf_url = "https://tuwel.tuwien.ac.at/pluginfile.php/123/mod_resource/content/1/literature.pdf"
+        pdf_text = "Mandatory literature: Pattern Recognition and Machine Learning"
+        pdf_bytes = _make_pdf_bytes(pdf_text)
+        respx.route(method="GET", path=RESOURCE_INDEX_PATH).mock(
+                return_value=httpx.Response(200, text=html)
+        )
+        respx.get(f"{HOST}/mod/resource/view.php?id=2870001").mock(
+                return_value=httpx.Response(
+                        302,
+                        headers={"location": pdf_url},
+                        request=httpx.Request("GET", f"{HOST}/mod/resource/view.php?id=2870001"),
+                )
+        )
+        respx.get(pdf_url).mock(
+                return_value=httpx.Response(
+                        200,
+                        content=pdf_bytes,
+                        headers={
+                                "content-type": "application/pdf",
+                                "content-disposition": 'attachment; filename="literature.pdf"',
+                                "content-length": str(len(pdf_bytes)),
+                        },
+                )
+        )
+
+        resources = await adapter.get_course_resources([42])
+
+        assert len(resources) == 1
+        assert resources[0].contents[0].filename == "literature.pdf"
+        assert resources[0].contents[0].fileurl == pdf_url
+        assert resources[0].contents[0].mimetype == "application/pdf"
+        assert resources[0].contents[0].filesize == len(pdf_bytes)
+        assert "Pattern Recognition and Machine Learning" in resources[0].description
+
+
+@respx.mock
+async def test_resource_pdf_parse_failure_keeps_metadata(adapter: MoodleAdapter):
+        html = """
+        <html><body>
+            <table class="course-overview-table">
+                <tbody>
+                    <tr data-mdl-overview-cmid="2870001">
+                        <td
+                            data-mdl-overview-item="name"
+                            data-mdl-overview-value="Literature PDF"
+                        >
+                            <a
+                                class="activityname"
+                                href="https://tuwel.tuwien.ac.at/mod/resource/view.php?id=2870001"
+                            >
+                                Literature PDF
+                            </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </body></html>
+        """
+        pdf_url = "https://tuwel.tuwien.ac.at/pluginfile.php/123/mod_resource/content/1/literature.pdf"
+        respx.route(method="GET", path=RESOURCE_INDEX_PATH).mock(
+                return_value=httpx.Response(200, text=html)
+        )
+        respx.get(f"{HOST}/mod/resource/view.php?id=2870001").mock(
+                return_value=httpx.Response(
+                        302,
+                        headers={"location": pdf_url},
+                        request=httpx.Request("GET", f"{HOST}/mod/resource/view.php?id=2870001"),
+                )
+        )
+        respx.get(pdf_url).mock(
+                return_value=httpx.Response(
+                        200,
+                        content=b"not-a-real-pdf",
+                        headers={
+                                "content-type": "application/pdf",
+                                "content-disposition": 'attachment; filename="literature.pdf"',
+                                "content-length": "14",
+                        },
+                )
+        )
+
+        resources = await adapter.get_course_resources([42])
+
+        assert len(resources) == 1
+        assert resources[0].contents[0].filename == "literature.pdf"
+        assert resources[0].contents[0].fileurl == pdf_url
+        assert resources[0].description == ""
+
+
 class TestNotImplementedMethods:
     """WS-dependent methods that still need scraping replacements."""
 
@@ -466,6 +679,16 @@ BOOK_INDEX_PATH = "/mod/book/index.php"
 PAGE_INDEX_PATH = "/mod/page/index.php"
 RESOURCE_INDEX_PATH = "/mod/resource/index.php"
 URL_INDEX_PATH = "/mod/url/index.php"
+
+
+def _make_pdf_bytes(text: str) -> bytes:
+    fitz = pytest.importorskip("fitz")
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), text)
+    pdf_bytes = document.write()
+    document.close()
+    return pdf_bytes
 
 
 # ------------------------------------------------------------------

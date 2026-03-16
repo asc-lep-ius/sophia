@@ -7,9 +7,11 @@ session cookies instead of WS tokens.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from typing import Any, cast
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import structlog
@@ -19,6 +21,7 @@ from sophia.domain.errors import AuthError, MoodleError
 from sophia.domain.models import (
     AssignmentInfo,
     CheckmarkInfo,
+    ContentInfo,
     Course,
     CourseSection,
     GradeItem,
@@ -26,7 +29,15 @@ from sophia.domain.models import (
     QuizInfo,
 )
 
+try:
+    import fitz  # pyright: ignore[reportMissingTypeStubs]
+except ImportError:  # pragma: no cover - optional dependency
+    fitz = None
+
 log = structlog.get_logger()
+
+_MAX_INGESTION_CHARS = 20_000
+_MAX_PDF_PAGES = 5
 
 # Error codes indicating an expired or invalid session
 _AUTH_ERROR_CODES = frozenset(
@@ -194,15 +205,146 @@ class MoodleAdapter:
         results: list[ModuleInfo] = []
         for cid in course_ids:
             html = await self._scrape("/mod/resource/index.php", {"id": cid})
-            results.extend(_parse_mod_index(html, modname="resource"))
+            modules = _parse_mod_index(html, modname="resource")
+            results.extend(await self._enrich_resource_modules(modules))
         return results
 
     async def get_course_urls(self, course_ids: list[int]) -> list[ModuleInfo]:
         results: list[ModuleInfo] = []
         for cid in course_ids:
             html = await self._scrape("/mod/url/index.php", {"id": cid})
-            results.extend(_parse_mod_index(html, modname="url"))
+            modules = _parse_mod_index(html, modname="url")
+            results.extend(await self._enrich_url_modules(modules))
         return results
+
+    async def _enrich_resource_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
+        if not modules:
+            return []
+        return list(
+            await asyncio.gather(*(self._enrich_resource_module(module) for module in modules))
+        )
+
+    async def _enrich_url_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
+        if not modules:
+            return []
+        return list(await asyncio.gather(*(self._enrich_url_module(module) for module in modules)))
+
+    async def _enrich_url_module(self, module: ModuleInfo) -> ModuleInfo:
+        if not module.url:
+            return module
+
+        try:
+            response = await self._fetch(module.url)
+            target_url, target_response = await self._resolve_url_target(module.url, response)
+        except AuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.debug("url_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            return module
+
+        if not target_url:
+            return module
+
+        description = module.description
+        if target_response is not None:
+            text = _extract_response_text(target_response)
+            if text:
+                description = _merge_description(description, text)
+
+        return module.model_copy(
+            update={
+                "description": description,
+                "contents": [_build_content_info(target_url, target_response)],
+            }
+        )
+
+    async def _enrich_resource_module(self, module: ModuleInfo) -> ModuleInfo:
+        if not module.url:
+            return module
+
+        try:
+            response = await self._fetch(module.url)
+            file_url, file_response = await self._resolve_resource_target(module.url, response)
+        except AuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.debug("resource_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            return module
+
+        if not file_url:
+            return module
+
+        description = module.description
+        if file_response is not None and _response_is_pdf(file_response, file_url):
+            pdf_text = _extract_pdf_text(file_response.content)
+            if pdf_text:
+                description = _merge_description(description, pdf_text)
+
+        return module.model_copy(
+            update={
+                "description": description,
+                "contents": [_build_content_info(file_url, file_response)],
+            }
+        )
+
+    async def _fetch(self, url: str) -> httpx.Response:
+        response = await self._http.get(url, follow_redirects=True)
+        if _is_login_url(str(response.url), self._host) and response.status_code in (200, 302):
+            raise AuthError("Session expired — log in again with: sophia auth login")
+        response.raise_for_status()
+        return response
+
+    async def _resolve_url_target(
+        self,
+        module_url: str,
+        response: httpx.Response,
+    ) -> tuple[str | None, httpx.Response | None]:
+        resolved_url = str(response.url)
+        if _is_http_url(resolved_url) and resolved_url != module_url:
+            return resolved_url, response
+
+        if not _response_is_html(response):
+            return None, None
+
+        outbound_url = _extract_outbound_url(response.text, base_url=resolved_url, host=self._host)
+        if not outbound_url:
+            return None, None
+
+        try:
+            target_response = await self._fetch(outbound_url)
+        except AuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.debug("url_target_fetch_skipped", module_url=module_url, error=str(exc))
+            return outbound_url, None
+
+        return str(target_response.url), target_response
+
+    async def _resolve_resource_target(
+        self,
+        module_url: str,
+        response: httpx.Response,
+    ) -> tuple[str | None, httpx.Response | None]:
+        resolved_url = str(response.url)
+        if _looks_like_download(resolved_url, response):
+            return resolved_url, response
+
+        if not _response_is_html(response):
+            return resolved_url, response
+
+        resource_url = _extract_resource_url(response.text, base_url=resolved_url)
+        if not resource_url:
+            return None, None
+
+        try:
+            resource_response = await self._fetch(resource_url)
+        except AuthError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log.debug("resource_target_fetch_skipped", module_url=module_url, error=str(exc))
+            return resource_url, None
+
+        return str(resource_response.url), resource_response
 
     # ------------------------------------------------------------------
     # AssignmentProvider
@@ -494,3 +636,167 @@ def _parse_assignment_index(html: str, course_id: int) -> list[AssignmentInfo]:
         )
 
     return assignments
+
+
+def _extract_outbound_url(html: str, *, base_url: str, host: str) -> str | None:
+    soup = BeautifulSoup(html, "lxml")
+    host_name = urlparse(host).hostname or ""
+
+    for anchor in soup.select("a[href]"):
+        href = urljoin(base_url, str(anchor["href"]))
+        if not _is_http_url(href):
+            continue
+
+        parsed = urlparse(href)
+        if parsed.hostname == host_name and parsed.path.startswith("/mod/url/view.php"):
+            continue
+        return href
+
+    return None
+
+
+def _extract_resource_url(html: str, *, base_url: str) -> str | None:
+    soup = BeautifulSoup(html, "lxml")
+
+    for anchor in soup.select("a[href]"):
+        href = urljoin(base_url, str(anchor["href"]))
+        if not _is_http_url(href):
+            continue
+        if "/pluginfile.php/" in href or _path_looks_like_file(href):
+            return href
+
+    return None
+
+
+def _extract_response_text(response: httpx.Response) -> str:
+    if not _response_has_extractable_text(response):
+        return ""
+
+    body = response.text
+    if _response_is_html(response):
+        body = BeautifulSoup(body, "lxml").get_text("\n", strip=True)
+
+    return _truncate_text(body)
+
+
+def _extract_pdf_text(content: bytes) -> str:
+    if fitz is None or not content:
+        return ""
+
+    fitz_module: Any = fitz
+
+    try:
+        document = fitz_module.open(stream=content, filetype="pdf")
+    except Exception:  # noqa: BLE001
+        return ""
+
+    try:
+        parts: list[str] = []
+        total_length = 0
+        page_count = int(document.page_count)
+        for page_index in range(min(page_count, _MAX_PDF_PAGES)):
+            text = str(document.load_page(page_index).get_text("text")).strip()
+            if not text:
+                continue
+            parts.append(text)
+            total_length += len(text)
+            if total_length >= _MAX_INGESTION_CHARS:
+                break
+    finally:
+        document.close()
+
+    return _truncate_text("\n".join(parts))
+
+
+def _build_content_info(url: str, response: httpx.Response | None) -> ContentInfo:
+    return ContentInfo(
+        filename=_extract_filename(url, response),
+        fileurl=url,
+        filesize=_extract_filesize(response),
+        mimetype=_response_mimetype(response),
+    )
+
+
+def _extract_filename(url: str, response: httpx.Response | None) -> str:
+    if response is not None:
+        disposition = response.headers.get("content-disposition", "")
+        match = re.search(r'filename="?([^";]+)"?', disposition)
+        if match:
+            return match.group(1)
+
+    path = urlparse(url).path.rstrip("/")
+    return path.rsplit("/", 1)[-1] if path else ""
+
+
+def _extract_filesize(response: httpx.Response | None) -> int:
+    if response is None:
+        return 0
+
+    content_length = response.headers.get("content-length")
+    if content_length and content_length.isdigit():
+        return int(content_length)
+
+    return len(response.content)
+
+
+def _response_mimetype(response: httpx.Response | None) -> str:
+    if response is None:
+        return ""
+    return response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+
+
+def _response_is_html(response: httpx.Response) -> bool:
+    return _response_mimetype(response) == "text/html"
+
+
+def _response_has_extractable_text(response: httpx.Response) -> bool:
+    mimetype = _response_mimetype(response)
+    return mimetype in {"text/html", "text/plain"}
+
+
+def _response_is_pdf(response: httpx.Response, url: str) -> bool:
+    mimetype = _response_mimetype(response)
+    return mimetype == "application/pdf" or urlparse(url).path.lower().endswith(".pdf")
+
+
+def _looks_like_download(url: str, response: httpx.Response) -> bool:
+    if _response_is_pdf(response, url):
+        return True
+    if _response_mimetype(response) and _response_mimetype(response) != "text/html":
+        return True
+    disposition = response.headers.get("content-disposition", "")
+    return "attachment" in disposition.lower() or _path_looks_like_file(url)
+
+
+def _path_looks_like_file(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return "." in path.rsplit("/", 1)[-1]
+
+
+def _is_http_url(url: str) -> bool:
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _is_login_url(url: str, host: str) -> bool:
+    parsed = urlparse(url)
+    host_name = urlparse(host).hostname
+    return parsed.hostname == host_name and parsed.path.startswith("/login")
+
+
+def _merge_description(existing: str, addition: str) -> str:
+    addition = addition.strip()
+    if not addition:
+        return existing
+    if not existing:
+        return addition
+    if addition in existing:
+        return existing
+    return f"{existing}\n\n{addition}"
+
+
+def _truncate_text(text: str) -> str:
+    normalized = text.strip()
+    if len(normalized) <= _MAX_INGESTION_CHARS:
+        return normalized
+    return normalized[:_MAX_INGESTION_CHARS].rstrip()
