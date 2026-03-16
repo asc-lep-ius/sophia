@@ -1799,6 +1799,57 @@ async def quiz_explain(
         console.print("\n[dim]Explanation interrupted — partial progress saved.[/dim]")
 
 
+@quiz_app.command(name="export-anki")
+async def quiz_export_anki(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    *,
+    output: Annotated[str | None, cyclopts.Parameter(help="Output .apkg file path.")] = None,
+    blocked: Annotated[
+        bool, cyclopts.Parameter(help="Group cards by topic instead of interleaving.")
+    ] = False,
+    deck_name: Annotated[str | None, cyclopts.Parameter(help="Custom Anki deck name.")] = None,
+) -> None:
+    """Export flashcards as an Anki .apkg deck."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from sophia.domain.errors import AthenaError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_export import export_anki_deck
+
+    console = Console()
+    out_path = Path(output or f"sophia-{module_id}.apkg")
+
+    try:
+        async with create_app() as container:
+            count = await export_anki_deck(
+                container.db,
+                module_id,
+                out_path,
+                interleaved=not blocked,
+                deck_name=deck_name,
+            )
+
+            if count == 0:
+                console.print("[yellow]No flashcards found for this module.[/yellow]")
+            else:
+                order = "blocked (by topic)" if blocked else "interleaved (shuffled)"
+                console.print(
+                    Panel(
+                        f"Exported [bold]{count}[/bold] cards to [cyan]{out_path}[/cyan]\n"
+                        f"Card order: {order}",
+                        title="📤 Anki Export",
+                        style="green",
+                    )
+                )
+
+    except AthenaError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1) from None
+
+
 def main() -> None:
     """Entry point called by the `sophia` console script."""
     setup_logging(debug=True)

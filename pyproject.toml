@@ -45,6 +45,9 @@ hermes = [
     "sentence-transformers>=3.0",
     "openai>=1.50",
 ]
+athena = [
+    "genanki>=0.13",
+]
 
 [dependency-groups]
 dev = [

@@ -538,3 +538,55 @@ class TestQuizExplainCommand:
 
         command_names = [cmd for cmd in quiz_app]
         assert any("explain" in str(cmd) for cmd in command_names)
+
+
+class TestQuizExportAnkiCommand:
+    """The `sophia quiz export-anki` command exports flashcards as .apkg."""
+
+    @pytest.fixture
+    def mock_container(self) -> MagicMock:
+        container = MagicMock()
+        container.db = AsyncMock()
+        return container
+
+    @pytest.mark.asyncio
+    async def test_export_anki_success(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_export_anki
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_export.export_anki_deck",
+                return_value=5,
+            ) as mock_export,
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_export_anki(module_id=42)
+
+            mock_export.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_export_anki_no_cards(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_export_anki
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_export.export_anki_deck",
+                return_value=0,
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_export_anki(module_id=42)
+
+    @pytest.mark.asyncio
+    async def test_export_anki_registered(self) -> None:
+        """The export-anki command should be registered on quiz_app."""
+        from sophia.__main__ import quiz_app
+
+        command_names = [cmd for cmd in quiz_app]
+        assert any("export-anki" in str(cmd) for cmd in command_names)
