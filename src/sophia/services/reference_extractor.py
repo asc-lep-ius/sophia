@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from html import unescape
+from textwrap import dedent
 from typing import assert_never
 
 import isbnlib  # type: ignore[import-untyped]
@@ -591,8 +592,9 @@ def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasT
     refs: list[HasBareTitle | HasTitleAndAuthor] = []
     current_line = ""
     in_bibliography_block = False
+    has_seen_bibliography_entry = False
 
-    for raw_line in text.splitlines():
+    for raw_line in dedent(text).splitlines():
         line = raw_line.rstrip()
         stripped = line.strip()
 
@@ -611,6 +613,7 @@ def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasT
                     refs.append(parsed)
                 current_line = ""
             in_bibliography_block = True
+            has_seen_bibliography_entry = False
             continue
 
         starts_entry = _looks_like_plain_text_bibliography_entry(
@@ -623,6 +626,7 @@ def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasT
                 if parsed:
                     refs.append(parsed)
             current_line = _strip_bullet_prefix(stripped)
+            has_seen_bibliography_entry = True
             continue
 
         if current_line and line[:1].isspace() and in_bibliography_block:
@@ -635,8 +639,9 @@ def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasT
                 refs.append(parsed)
             current_line = ""
 
-        if in_bibliography_block and PLAIN_TEXT_BULLET_RE.match(line):
-            current_line = _strip_bullet_prefix(stripped)
+        if in_bibliography_block and has_seen_bibliography_entry and not line[:1].isspace():
+            in_bibliography_block = False
+            has_seen_bibliography_entry = False
 
     if current_line:
         parsed = _parse_section_item(current_line)

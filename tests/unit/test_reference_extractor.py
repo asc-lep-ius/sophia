@@ -447,6 +447,37 @@ class TestPlainTextPDFExtraction:
 
         assert refs == []
 
+    def test_pdf_bibliography_block_stops_before_admin_bullets(
+        self, extractor: RegexReferenceExtractor
+    ):
+        text = """
+        Literatur
+                - H. Mössenböck, Sprechen Sie Java? Eine Einführung in das systematische
+                    Programmieren, dpunkt.verlag, 5. Auflage, 2014
+        - C. Ullenboom, Java ist auch eine Insel, Rheinwerk Computing, 16. Auflage, 2021
+
+        Administrative notes
+        - submit assignment 1 by Friday
+        - office hours Tuesday 10:00
+        """
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        titles = {ref.title for ref in refs}
+        assert titles == {
+            "Sprechen Sie Java? Eine Einführung in das systematische Programmieren",
+            "Java ist auch eine Insel",
+        }
+        assert any(
+            r.title == "Sprechen Sie Java? Eine Einführung in das systematische Programmieren"
+            and r.authors == ["H. Mössenböck"]
+            for r in refs
+        )
+        assert any(
+            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"]
+            for r in refs
+        )
+
 
 class TestPDFISBNFiltering:
     def test_pdf_isbn_noise_without_context_is_ignored(
