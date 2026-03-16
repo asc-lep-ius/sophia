@@ -372,6 +372,83 @@ class TestSectionHeaderDetection:
         assert any(r.title == "Design Patterns" and r.authors == ["Gamma, Erich"] for r in refs)
 
 
+class TestPlainTextPDFExtraction:
+    def test_prose_book_cue_extracts_bare_title(self, extractor: RegexReferenceExtractor):
+        text = (
+            "Vorlage der Vorlesung ist das Buch Mathematik für Informatik, "
+            "Heldermann, 4. Auflage, 2014."
+        )
+
+        refs = extractor.extract(text, ReferenceSource.PAGE, COURSE_ID)
+
+        assert any(r.title == "Mathematik für Informatik" for r in refs)
+
+    def test_pdf_plain_text_bibliography_block_extracts_author_title_pairs(
+        self, extractor: RegexReferenceExtractor
+    ):
+        text = """
+        Literaturliste für EP1
+
+        Grundlagen
+                • H. Mössenböck, Sprechen Sie Java? Eine Einführung in das systematische
+                    Programmieren, dpunkt.verlag, 5. Auflage, 2014
+        • C. Ullenboom, Java ist auch eine Insel, Rheinwerk Computing, 16. Auflage, 2021
+        • J. Goll, C. Heinisch, Java als erste Programmiersprache, Springer Verlag, 8. Auflage, 2016
+        """
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        assert any(
+            r.title == "Sprechen Sie Java? Eine Einführung in das systematische Programmieren"
+            and r.authors == ["H. Mössenböck"]
+            for r in refs
+        )
+        assert any(
+            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"]
+            for r in refs
+        )
+        assert any(
+            r.title == "Java als erste Programmiersprache"
+            and r.authors == ["J. Goll, C. Heinisch"]
+            for r in refs
+        )
+
+    def test_pdf_plain_text_bibliography_merges_wrapped_lines(
+        self, extractor: RegexReferenceExtractor
+    ):
+        text = """
+        Literatur
+        • H. Mössenböck, Sprechen Sie Java? Eine Einführung in das systematische
+          Programmieren, dpunkt.verlag, 5. Auflage, 2014
+        """
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        assert any(
+            r.title == "Sprechen Sie Java? Eine Einführung in das systematische Programmieren"
+            and r.authors == ["H. Mössenböck"]
+            for r in refs
+        )
+
+
+class TestPDFISBNFiltering:
+    def test_pdf_isbn_noise_without_context_is_ignored(
+        self, extractor: RegexReferenceExtractor
+    ):
+        text = "Scan dump 113 204 9780201633610 555 902 without any book context"
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        assert all(r.isbn != "9780201633610" for r in refs)
+
+    def test_pdf_labeled_isbn_is_preserved(self, extractor: RegexReferenceExtractor):
+        text = "Recommended textbook. ISBN 978-0-201-63361-0."
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        assert any(r.isbn == "9780201633610" for r in refs)
+
+
 # ------------------------------------------------------------------
 # Resource name parsing
 # ------------------------------------------------------------------

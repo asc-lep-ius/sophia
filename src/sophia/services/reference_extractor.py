@@ -127,6 +127,49 @@ URL_OR_EMAIL_RE = re.compile(
 
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 
+EDITION_RE = re.compile(r"\b(?:\d+\.?\s*(?:auflage|edition)|revised|updated)\b", re.IGNORECASE)
+
+PUBLISHER_RE = re.compile(
+    r"\b(?:verlag|press|publishing|publisher|pearson|springer|rheinwerk|dpunkt|"
+    r"addison(?:-wesley)?|prentice|o['’]?reilly|wiley|cambridge|oxford|mit)\b",
+    re.IGNORECASE,
+)
+
+PLAIN_TEXT_BULLET_RE = re.compile(r"^\s*(?:[•*·▪◦-]|\d+[.)])\s+")
+
+PLAIN_TEXT_BIBLIOGRAPHY_HEADER_RE = re.compile(
+    r"\b(?:literatur(?:liste)?|bibliography|references|recommended reading|"
+    r"required textbooks|pflichtliteratur|empfohlene bücher|weiterführende literatur)\b",
+    re.IGNORECASE,
+)
+
+PROSE_BOOK_CUE_RE = re.compile(
+    r"\b(?:"
+    r"vorlage\s+der\s+vorlesung(?:\s+ist\s+das\s+buch)?|"
+    r"ist\s+das\s+buch|"
+    r"lehrbuch|"
+    r"textbook|"
+    r"pflichtliteratur"
+    r")\b\s*(?:[:\-]\s*|\s+)?(?P<remainder>[^\n]+)",
+    re.IGNORECASE,
+)
+
+PDF_ISBN_CONTEXT_RE = re.compile(
+    r"\b(?:isbn(?:-1[03])?|buch|book|textbook|lehrbuch|literatur|"
+    r"pflichtliteratur|recommended|required|vorlesung|auflage|edition|"
+    r"verlag|press|publisher)\b",
+    re.IGNORECASE,
+)
+
+PROSE_CUE_SOURCES = frozenset(
+    {
+        ReferenceSource.DESCRIPTION,
+        ReferenceSource.SYLLABUS,
+        ReferenceSource.PAGE,
+        ReferenceSource.TISS,
+    }
+)
+
 
 # --- Structural pattern-matching helpers ---
 
@@ -164,15 +207,29 @@ def _strip_html(html_content: str) -> str:
     return unescape(soup.get_text(separator=" ", strip=True))
 
 
-def _extract_isbns(text: str) -> list[str]:
+def _has_pdf_isbn_context(text: str, start: int, end: int) -> bool:
+    """Require nearby book-like context before accepting an ISBN from PDF text."""
+    window_start = max(0, start - 48)
+    window_end = min(len(text), end + 48)
+    window = text[window_start:window_end]
+    return bool(PDF_ISBN_CONTEXT_RE.search(window))
+
+
+def _extract_isbns(text: str, source: ReferenceSource) -> list[str]:
     """Extract and validate ISBNs using both regex and isbnlib."""
     candidates: set[str] = set()
 
-    for match in ISBN_REGEX.findall(text):
-        candidates.add(match)
+    for match in ISBN_REGEX.finditer(text):
+        raw = match.group(0)
+        if source == ReferenceSource.PDF and not _has_pdf_isbn_context(
+            text, match.start(), match.end()
+        ):
+            continue
+        candidates.add(raw)
 
-    for candidate in isbnlib.get_isbnlike(text):  # type: ignore[no-untyped-call]
-        candidates.add(str(candidate))  # pyright: ignore[reportUnknownArgumentType]
+    if source != ReferenceSource.PDF:
+        for candidate in isbnlib.get_isbnlike(text):  # type: ignore[no-untyped-call]
+            candidates.add(str(candidate))  # pyright: ignore[reportUnknownArgumentType]
 
     valid: list[str] = []
     seen: set[str] = set()
@@ -275,10 +332,84 @@ def _looks_like_title(title_candidate: str) -> bool:
 def _extract_title_segment(segment_text: str) -> str:
     """Extract the likely title segment from a bibliography remainder."""
     first_sentence = re.split(r"\.\s+", segment_text, maxsplit=1)[0]
-    cleaned = first_sentence.strip(" ,;:-.")
+    cleaned = _trim_bibliography_tail(first_sentence)
     if YEAR_RE.fullmatch(cleaned):
         return ""
     return cleaned
+
+
+def _strip_bullet_prefix(line: str) -> str:
+    """Strip plain-text bullet markers while preserving the entry content."""
+    return PLAIN_TEXT_BULLET_RE.sub("", line, count=1).strip()
+
+
+def _split_comma_segments(text: str) -> list[str]:
+    """Split a bibliography line on commas and drop empty fragments."""
+    return [segment.strip(" ,;:-.") for segment in text.split(",") if segment.strip(" ,;:-.")]
+
+
+def _is_bibliography_tail_segment(segment: str) -> bool:
+    """Return whether a comma-delimited fragment looks like metadata, not title text."""
+    stripped = segment.strip(" ,;:-.")
+    if not stripped:
+        return True
+    return bool(YEAR_RE.fullmatch(stripped) or EDITION_RE.search(stripped))
+
+
+def _looks_like_publisher_segment(segment: str) -> bool:
+    """Return whether a fragment likely names a publisher."""
+    stripped = segment.strip(" ,;:-.")
+    if not stripped or YEAR_RE.search(stripped) or EDITION_RE.search(stripped):
+        return False
+    if PUBLISHER_RE.search(stripped):
+        return True
+
+    words = [word for word in stripped.split() if word]
+    if not 1 <= len(words) <= 4:
+        return False
+    return all(re.fullmatch(r"[A-ZÄÖÜ][A-Za-zÄÖÜäöüß&'’-]*\.?", word) for word in words)
+
+
+def _trim_bibliography_tail(text: str) -> str:
+    """Trim publisher, edition, and year tails from title-like text."""
+    segments = _split_comma_segments(text)
+    if len(segments) < 2:
+        return text.strip(" ,;:-.")
+
+    trimmed_any = False
+    while segments and _is_bibliography_tail_segment(segments[-1]):
+        segments.pop()
+        trimmed_any = True
+
+    if trimmed_any and segments and _looks_like_publisher_segment(segments[-1]):
+        segments.pop()
+
+    cleaned = ", ".join(segments).strip(" ,;:-.")
+    return cleaned or text.strip(" ,;:-.")
+
+
+def _parse_comma_bibliography_line(item_text: str) -> tuple[str, str] | None:
+    """Parse bibliography lines in 'author, title, publisher, edition, year' form."""
+    segments = _split_comma_segments(item_text)
+    if len(segments) < 2:
+        return None
+
+    while segments and _is_bibliography_tail_segment(segments[-1]):
+        segments.pop()
+
+    if len(segments) >= 2 and _looks_like_publisher_segment(segments[-1]):
+        segments.pop()
+
+    if len(segments) < 2:
+        return None
+
+    for split_index in range(len(segments) - 1, 0, -1):
+        author = ", ".join(segments[:split_index]).strip(" ,;:-.")
+        title = ", ".join(segments[split_index:]).strip(" ,;:-.")
+        if _looks_like_author(author) and _looks_like_title(title):
+            return author, title
+
+    return None
 
 
 def _split_bibliography_sentences(item_text: str) -> list[str]:
@@ -325,6 +456,11 @@ def _parse_section_item(item_text: str) -> HasTitleAndAuthor | HasBareTitle | No
     normalized = _normalize_section_item(item_text)
     if _is_non_bibliography_line(normalized):
         return None
+
+    comma_author_and_title = _parse_comma_bibliography_line(normalized)
+    if comma_author_and_title:
+        author, title = comma_author_and_title
+        return HasTitleAndAuthor(title=title, author=author)
 
     colon_match = re.match(r"^(?P<author>[^:]{3,120}):\s*(?P<rest>.+)$", normalized)
     if colon_match:
@@ -373,6 +509,97 @@ def _extract_section_refs(html_content: str) -> list[HasBareTitle | HasTitleAndA
                 parsed = _parse_section_item(item_text)
                 if parsed:
                     refs.append(parsed)
+
+    return refs
+
+
+def _looks_like_plain_text_bibliography_header(line: str) -> bool:
+    """Return whether a plain-text line announces a bibliography section."""
+    return bool(PLAIN_TEXT_BIBLIOGRAPHY_HEADER_RE.search(line))
+
+
+def _looks_like_plain_text_bibliography_entry(line: str) -> bool:
+    """Return whether a plain-text line resembles a bibliography entry."""
+    stripped = _strip_bullet_prefix(line)
+    if stripped != line.strip():
+        return True
+    parsed = _parse_comma_bibliography_line(stripped)
+    if parsed:
+        return True
+    sentence_parts = _split_bibliography_sentences(stripped)
+    author_and_title = _extract_author_and_title_from_sentences(sentence_parts)
+    if author_and_title is None:
+        return False
+    author, title = author_and_title
+    return _looks_like_author(author) and _looks_like_title(title)
+
+
+def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasTitleAndAuthor]:
+    """Extract bibliography-like references from line-oriented plain text."""
+    refs: list[HasBareTitle | HasTitleAndAuthor] = []
+    current_line = ""
+    in_bibliography_block = False
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+
+        if not stripped:
+            if current_line:
+                parsed = _parse_section_item(current_line)
+                if parsed:
+                    refs.append(parsed)
+                current_line = ""
+            continue
+
+        if _looks_like_plain_text_bibliography_header(stripped):
+            if current_line:
+                parsed = _parse_section_item(current_line)
+                if parsed:
+                    refs.append(parsed)
+                current_line = ""
+            in_bibliography_block = True
+            continue
+
+        starts_entry = _looks_like_plain_text_bibliography_entry(line)
+        if starts_entry:
+            if current_line:
+                parsed = _parse_section_item(current_line)
+                if parsed:
+                    refs.append(parsed)
+            current_line = _strip_bullet_prefix(stripped)
+            continue
+
+        if current_line and line[:1].isspace() and in_bibliography_block:
+            current_line = f"{current_line} {stripped}"
+            continue
+
+        if current_line:
+            parsed = _parse_section_item(current_line)
+            if parsed:
+                refs.append(parsed)
+            current_line = ""
+
+        if in_bibliography_block and PLAIN_TEXT_BULLET_RE.match(line):
+            current_line = _strip_bullet_prefix(stripped)
+
+    if current_line:
+        parsed = _parse_section_item(current_line)
+        if parsed:
+            refs.append(parsed)
+
+    return refs
+
+
+def _extract_prose_cue_refs(text: str) -> list[HasBareTitle]:
+    """Extract bare titles from inline book-introducing cue phrases."""
+    refs: list[HasBareTitle] = []
+
+    for match in PROSE_BOOK_CUE_RE.finditer(text):
+        remainder = match.group("remainder").strip(" ,;:-.")
+        title = _trim_bibliography_tail(remainder)
+        if _looks_like_title(title):
+            refs.append(HasBareTitle(title=title))
 
     return refs
 
@@ -540,13 +767,21 @@ class RegexReferenceExtractor:
         plain_text = _strip_html(content)
 
         # Strategy 1: ISBN extraction
-        for isbn in _extract_isbns(plain_text):
+        for isbn in _extract_isbns(plain_text, source):
             raw_refs.append(_classify_isbn(isbn))
 
         # Strategy 2: Section header detection
         raw_refs.extend(_extract_section_refs(content))
 
-        # Strategy 3: Resource name parsing (only for resource_name source)
+        # Strategy 3: Plain-text bibliography extraction for PDF text
+        if source == ReferenceSource.PDF:
+            raw_refs.extend(_extract_plain_text_bibliography_refs(plain_text))
+
+        # Strategy 4: Cue-driven inline prose extraction for page-like text
+        if source in PROSE_CUE_SOURCES:
+            raw_refs.extend(_extract_prose_cue_refs(plain_text))
+
+        # Strategy 5: Resource name parsing (only for resource_name source)
         if source == ReferenceSource.RESOURCE_NAME:
             parsed = _parse_resource_name(content)
             if parsed:
