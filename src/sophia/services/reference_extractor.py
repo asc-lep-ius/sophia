@@ -98,6 +98,11 @@ NON_BIBLIO_BULLET_PREFIXES = frozenset(
     }
 )
 
+NON_BIBLIO_BULLET_PATTERNS = (
+    re.compile(r"^(?:todo|task|assignment|exercise|deadline|submit|abgabe|aufgabe)\s*(?::|-|\d\b)"),
+    re.compile(r"^(?:contact|email|link)\s*[:\-]"),
+)
+
 URL_OR_EMAIL_RE = re.compile(
     r"(?:https?://|www\.|mailto:|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b)",
     re.IGNORECASE,
@@ -180,12 +185,11 @@ def _normalize_section_item(item_text: str) -> str:
 def _is_non_bibliography_line(item_text: str) -> bool:
     """Reject obvious non-bibliography bullets in literature-like sections."""
     normalized = _normalize_section_item(item_text)
-    lowered = normalized.lower()
     if not normalized:
         return True
     if URL_OR_EMAIL_RE.search(normalized):
         return True
-    return any(lowered.startswith(prefix) for prefix in NON_BIBLIO_BULLET_PREFIXES)
+    return any(pattern.match(normalized.lower()) for pattern in NON_BIBLIO_BULLET_PATTERNS)
 
 
 def _looks_like_author(author_candidate: str) -> bool:
@@ -233,6 +237,45 @@ def _extract_title_segment(segment_text: str) -> str:
     return cleaned
 
 
+def _split_bibliography_sentences(item_text: str) -> list[str]:
+    """Split bibliography lines into sentence-like parts while preserving content."""
+    return [
+        part.strip(" ,;:-.")
+        for part in re.split(r"\.\s+", item_text)
+        if part.strip(" ,;:-.")
+    ]
+
+
+def _is_initial_fragment(part: str) -> bool:
+    """Return whether a sentence fragment is just an author initial."""
+    return bool(re.fullmatch(r"[A-ZÄÖÜ]", part.strip()))
+
+
+def _extract_author_and_title_from_sentences(
+    sentence_parts: list[str],
+) -> tuple[str, str] | None:
+    """Reconstruct author/title pairs from bibliography sentence fragments."""
+    if len(sentence_parts) < 2:
+        return None
+
+    author_parts = [sentence_parts[0]]
+    title_index = 1
+
+    if "," in sentence_parts[0]:
+        while title_index < len(sentence_parts) and _is_initial_fragment(
+            sentence_parts[title_index]
+        ):
+            author_parts.append(sentence_parts[title_index])
+            title_index += 1
+
+    if title_index >= len(sentence_parts):
+        return None
+
+    author = ". ".join(author_parts)
+    title = sentence_parts[title_index]
+    return author, title
+
+
 def _parse_section_item(item_text: str) -> HasTitleAndAuthor | HasBareTitle | None:
     """Parse a literature section list item into a conservative reference signal."""
     normalized = _normalize_section_item(item_text)
@@ -247,16 +290,22 @@ def _parse_section_item(item_text: str) -> HasTitleAndAuthor | HasBareTitle | No
         if _looks_like_author(author) and _looks_like_title(title):
             return HasTitleAndAuthor(title=title, author=author)
 
-    sentence_parts = [
-        part.strip(" ,;:-.")
-        for part in re.split(r"\.\s+", normalized)
-        if part.strip(" ,;:-.")
-    ]
+    sentence_parts = _split_bibliography_sentences(normalized)
+    author_and_title = _extract_author_and_title_from_sentences(sentence_parts)
+    if author_and_title:
+        author, title = author_and_title
+        if _looks_like_author(author) and _looks_like_title(title):
+            return HasTitleAndAuthor(title=title, author=author)
+
     if len(sentence_parts) >= 2:
         author = sentence_parts[0]
         title = sentence_parts[1]
         if _looks_like_author(author) and _looks_like_title(title):
             return HasTitleAndAuthor(title=title, author=author)
+
+    bare_title = _extract_title_segment(normalized)
+    if _looks_like_title(bare_title) and not _looks_like_author(bare_title):
+        return HasBareTitle(title=bare_title)
 
     return HasBareTitle(title=normalized)
 
@@ -380,6 +429,11 @@ def _merge_refs(a: BookReference, b: BookReference) -> BookReference:
     )
 
 
+def _authors_conflict(a: BookReference, b: BookReference) -> bool:
+    """Return whether two references carry incompatible author signals."""
+    return bool(a.authors and b.authors and a.authors != b.authors)
+
+
 def _deduplicate_by_title(refs: list[BookReference]) -> list[BookReference]:
     """Fuzzy-match titles and merge near-duplicates."""
     if not refs:
@@ -394,6 +448,8 @@ def _deduplicate_by_title(refs: list[BookReference]) -> list[BookReference]:
         merged = ref
         for j in range(i + 1, len(refs)):
             if j in used:
+                continue
+            if _authors_conflict(merged, refs[j]):
                 continue
             ratio = SequenceMatcher(None, merged.title.lower(), refs[j].title.lower()).ratio()
             if ratio >= FUZZY_TITLE_THRESHOLD:

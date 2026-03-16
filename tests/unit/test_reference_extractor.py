@@ -262,6 +262,53 @@ class TestSectionHeaderDetection:
         refs = extractor.extract(html, SOURCE, COURSE_ID)
         assert refs == []
 
+    @pytest.mark.parametrize(
+        "title",
+        [
+            "Task Analysis in Human-Computer Interaction",
+            "Link Prediction in Complex Networks",
+            "Exercise Physiology Fundamentals",
+            "Contact Mechanics",
+        ],
+    )
+    def test_legitimate_titles_with_guard_prefixes_are_preserved(
+        self,
+        extractor: RegexReferenceExtractor,
+        title: str,
+    ):
+        html = f"<h3>Bibliography</h3><ul><li>{title}. Springer, 2021.</li></ul>"
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert len(refs) == 1
+        assert refs[0].title == title
+
+    @pytest.mark.parametrize(
+        ("line", "author", "title"),
+        [
+            (
+                "Tanenbaum, A. S. Distributed Systems. Pearson, 2017.",
+                "Tanenbaum, A. S",
+                "Distributed Systems",
+            ),
+            (
+                "Knuth, D. E. The Art of Computer Programming. Addison-Wesley, 1968.",
+                "Knuth, D. E",
+                "The Art of Computer Programming",
+            ),
+        ],
+    )
+    def test_bibliography_line_with_spaced_initials_extracts_author_and_title(
+        self,
+        extractor: RegexReferenceExtractor,
+        line: str,
+        author: str,
+        title: str,
+    ):
+        html = f"<h3>Literatur</h3><ul><li>{line}</li></ul>"
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        ref = next(r for r in refs if r.title == title)
+        assert ref.authors == [author]
+        assert ref.confidence == 0.6
+
     def test_isbn_extraction_regression_with_bibliography_line(
         self, extractor: RegexReferenceExtractor
     ):
@@ -406,6 +453,26 @@ class TestDeduplication:
                 title="Design Patterns",
                 source=SOURCE,
                 course_id=COURSE_ID,
+            ),
+        ]
+        deduped = _deduplicate(refs)
+        assert len(deduped) == 2
+
+    def test_same_title_with_different_authors_is_not_deduplicated(self):
+        refs = [
+            BookReference(
+                title="Distributed Systems",
+                authors=["Tanenbaum, A. S"],
+                source=SOURCE,
+                course_id=COURSE_ID,
+                confidence=0.6,
+            ),
+            BookReference(
+                title="Distributed Systems",
+                authors=["Coulouris et al"],
+                source=SOURCE,
+                course_id=COURSE_ID,
+                confidence=0.6,
             ),
         ]
         deduped = _deduplicate(refs)
