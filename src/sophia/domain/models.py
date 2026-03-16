@@ -560,3 +560,26 @@ class TopicLectureLink(BaseModel, frozen=True):
     chunk_id: str
     episode_id: str
     score: float  # embedding similarity score
+
+
+class ConfidenceRating(BaseModel, frozen=True):
+    """A student's self-assessed confidence vs actual performance for a topic."""
+
+    topic: str
+    course_id: int
+    predicted: float  # 0.0 to 1.0 (from student's 1-5 rating mapped to 0-1)
+    actual: float | None = None  # populated later from card recall or quiz score
+    rated_at: str = ""  # ISO timestamp
+
+    @property
+    def calibration_error(self) -> float | None:
+        """Signed difference: predicted - actual. Positive = overconfident."""
+        if self.actual is None:
+            return None
+        return self.predicted - self.actual
+
+    @property
+    def is_blind_spot(self) -> bool:
+        """Topic where student is significantly overconfident (>0.2 delta)."""
+        err = self.calibration_error
+        return err is not None and err > 0.2

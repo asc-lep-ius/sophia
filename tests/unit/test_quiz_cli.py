@@ -1,4 +1,4 @@
-"""Tests for the quiz CLI command group (Athena Phase 4.0)."""
+"""Tests for the quiz CLI command group (Athena Phase 4.0+)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sophia.domain.models import KnowledgeChunk, TopicMapping, TopicSource
+from sophia.domain.models import ConfidenceRating, KnowledgeChunk, TopicMapping, TopicSource
 
 
 class TestQuizAppRegistration:
@@ -163,3 +163,108 @@ class TestQuizTopicsCommand:
 
             with pytest.raises(SystemExit, match="1"):
                 await quiz_topics(module_id=42)
+
+
+class TestQuizConfidenceCommand:
+    """The `sophia quiz confidence` command runs the confidence workflow."""
+
+    @pytest.fixture
+    def mock_container(self) -> MagicMock:
+        container = MagicMock()
+        container.db = AsyncMock()
+        return container
+
+    @pytest.fixture
+    def sample_topics(self) -> list[TopicMapping]:
+        return [
+            TopicMapping(topic="Sorting", course_id=42, source=TopicSource.LECTURE, frequency=3),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_confidence_no_topics_prints_message(self, mock_container: MagicMock) -> None:
+        """When no topics exist, print a helpful yellow message."""
+        from sophia.__main__ import quiz_confidence
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                return_value=[],
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_confidence(module_id=42)
+
+    @pytest.mark.asyncio
+    async def test_confidence_auth_error_exits_1(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_confidence
+        from sophia.domain.errors import AuthError
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                side_effect=AuthError("expired"),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            with pytest.raises(SystemExit, match="1"):
+                await quiz_confidence(module_id=42)
+
+    @pytest.mark.asyncio
+    async def test_confidence_error_exits_1(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_confidence
+        from sophia.domain.errors import ConfidenceError
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                side_effect=ConfidenceError("bad"),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            with pytest.raises(SystemExit, match="1"):
+                await quiz_confidence(module_id=42)
+
+    @pytest.mark.asyncio
+    async def test_confidence_rates_and_displays(
+        self,
+        mock_container: MagicMock,
+        sample_topics: list[TopicMapping],
+    ) -> None:
+        """Success path: rates topics, then shows table."""
+        from sophia.__main__ import quiz_confidence
+
+        rating = ConfidenceRating(
+            topic="Sorting", course_id=42, predicted=0.75, rated_at="2026-01-01T00:00:00"
+        )
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                return_value=sample_topics,
+            ),
+            patch("rich.prompt.IntPrompt.ask", return_value=4),
+            patch(
+                "sophia.services.athena_confidence.rate_confidence",
+                return_value=rating,
+            ) as mock_rate,
+            patch(
+                "sophia.services.athena_confidence.get_confidence_ratings",
+                return_value=[rating],
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_confidence(module_id=42)
+
+            mock_rate.assert_called_once_with(mock_container, "Sorting", 42, 4)

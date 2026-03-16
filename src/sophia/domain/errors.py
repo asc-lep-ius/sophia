@@ -67,3 +67,7 @@ class AthenaError(SophiaError):
 
 class TopicExtractionError(AthenaError):
     """Topic extraction from content failed."""
+
+
+class ConfidenceError(AthenaError):
+    """Confidence assessment workflow failed."""

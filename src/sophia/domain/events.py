@@ -189,3 +189,13 @@ class TopicLectureLinked:
     topic: str
     course_id: int
     chunk_count: int
+
+
+@dataclass(frozen=True)
+class ConfidenceAssessed:
+    """Emitted after a confidence-before-reveal cycle completes."""
+
+    course_id: int
+    topics_rated: int
+    blind_spots: int
+    avg_calibration_error: float

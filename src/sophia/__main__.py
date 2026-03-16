@@ -58,7 +58,8 @@ quiz_app = cyclopts.App(
         "Athena — Study companion and topic analysis.\n"
         "\n"
         "Workflow:\n"
-        " 1. topics  MODULE_ID  — extract topics from lecture transcripts\n"
+        " 1. topics     MODULE_ID  — extract topics from lecture transcripts\n"
+        " 2. confidence MODULE_ID  — rate your confidence per topic\n"
         "\n"
         "Requires Hermes lecture data. Run 'sophia lectures' pipeline first."
     ),
@@ -1322,6 +1323,102 @@ async def quiz_topics(
         raise SystemExit(1) from None
     except EmbeddingError as exc:
         console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@quiz_app.command(name="confidence")
+async def quiz_confidence(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (same as used in topics).")
+    ],
+) -> None:
+    """Rate your confidence per topic — discover blind spots through calibration."""
+    from rich.console import Console
+    from rich.prompt import IntPrompt
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, ConfidenceError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_confidence import (
+        format_calibration_feedback,
+        get_confidence_ratings,
+        rate_confidence,
+    )
+    from sophia.services.athena_study import get_course_topics
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            topics = await get_course_topics(container, module_id)
+
+            if not topics:
+                console.print("[yellow]No topics found. Run 'sophia quiz topics' first.[/yellow]")
+                return
+
+            console.print(
+                "[bold]Rate your confidence for each topic (1-5):[/bold]\n"
+                "  1 = No idea  2 = Vague  3 = Somewhat  4 = Good  5 = Confident\n"
+            )
+
+            for tm in topics:
+                rating = IntPrompt.ask(
+                    f"  {tm.topic}",
+                    choices=["1", "2", "3", "4", "5"],
+                    default=3,
+                    console=console,
+                )
+                await rate_confidence(container, tm.topic, module_id, rating)
+
+            console.print()
+
+            all_ratings = await get_confidence_ratings(container.db, module_id)
+
+            table = Table(title="📊 Confidence Assessment")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Predicted", justify="right")
+            table.add_column("Actual", justify="right")
+            table.add_column("Status")
+
+            for r in all_ratings:
+                predicted_str = f"{r.predicted:.0%}"
+                actual_str = f"{r.actual:.0%}" if r.actual is not None else "—"
+
+                err = r.calibration_error
+                if err is None:
+                    status = "⏳ Pending"
+                elif abs(err) <= 0.1:
+                    status = "✅ Calibrated"
+                elif err > 0.2:
+                    status = "🔍 Blind spot"
+                elif err > 0:
+                    status = "📈 Slightly over"
+                elif err < -0.2:
+                    status = "💪 Underestimate"
+                else:
+                    status = "📉 Slightly under"
+
+                table.add_row(r.topic, predicted_str, actual_str, status)
+
+            console.print(table)
+
+            has_actual = [r for r in all_ratings if r.actual is not None]
+            if has_actual:
+                console.print("\n[bold]Calibration Feedback:[/bold]")
+                for r in has_actual:
+                    console.print(format_calibration_feedback(r))
+            else:
+                console.print(
+                    "\n[dim]Actual scores will appear after you study and review cards.[/dim]"
+                )
+
+            console.print("\n💡 Next: sophia quiz study <module-id> <topic>")
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except ConfidenceError as exc:
+        console.print(f"[red]Confidence assessment failed:[/red] {exc}")
         raise SystemExit(1) from None
 
 
