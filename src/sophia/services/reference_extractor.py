@@ -82,6 +82,29 @@ GENERIC_PREFIXES = frozenset(
     }
 )
 
+NON_BIBLIO_BULLET_PREFIXES = frozenset(
+    {
+        "todo",
+        "task",
+        "assignment",
+        "exercise",
+        "deadline",
+        "submit",
+        "contact",
+        "email",
+        "link",
+        "abgabe",
+        "aufgabe",
+    }
+)
+
+URL_OR_EMAIL_RE = re.compile(
+    r"(?:https?://|www\.|mailto:|\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b)",
+    re.IGNORECASE,
+)
+
+YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
 
 # --- Structural pattern-matching helpers ---
 
@@ -149,10 +172,99 @@ def _classify_isbn(isbn: str) -> HasISBN13 | HasISBN10:
     return HasISBN10(isbn=isbn)
 
 
-def _extract_section_refs(html_content: str) -> list[HasBareTitle]:
-    """Find literature section headers in HTML and extract list items after them."""
+def _normalize_section_item(item_text: str) -> str:
+    """Normalize list-item text for bibliography parsing."""
+    return re.sub(r"\s+", " ", item_text).strip()
+
+
+def _is_non_bibliography_line(item_text: str) -> bool:
+    """Reject obvious non-bibliography bullets in literature-like sections."""
+    normalized = _normalize_section_item(item_text)
+    lowered = normalized.lower()
+    if not normalized:
+        return True
+    if URL_OR_EMAIL_RE.search(normalized):
+        return True
+    return any(lowered.startswith(prefix) for prefix in NON_BIBLIO_BULLET_PREFIXES)
+
+
+def _looks_like_author(author_candidate: str) -> bool:
+    """Check whether a prefix resembles an author string."""
+    author = author_candidate.strip(" ,;:-.")
+    if len(author) < 4 or re.search(r"\d", author):
+        return False
+
+    lowered = author.lower()
+    if any(lowered.startswith(prefix) for prefix in NON_BIBLIO_BULLET_PREFIXES):
+        return False
+
+    if "," in author or " et al" in lowered:
+        return True
+
+    words = [word for word in author.split() if word]
+    if len(words) < 2:
+        return False
+
+    capitalized_words = sum(
+        1
+        for word in words
+        if re.match(r"^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’-]*\.?$", word)
+    )
+    return capitalized_words >= 2
+
+
+def _looks_like_title(title_candidate: str) -> bool:
+    """Check whether a segment resembles a plausible title."""
+    title = title_candidate.strip(" ,;:-.")
+    if len(title) < 6:
+        return False
+    if URL_OR_EMAIL_RE.search(title):
+        return False
+    words = re.findall(r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß'’-]*", title)
+    return len(words) >= 2
+
+
+def _extract_title_segment(segment_text: str) -> str:
+    """Extract the likely title segment from a bibliography remainder."""
+    first_sentence = re.split(r"\.\s+", segment_text, maxsplit=1)[0]
+    cleaned = first_sentence.strip(" ,;:-.")
+    if YEAR_RE.fullmatch(cleaned):
+        return ""
+    return cleaned
+
+
+def _parse_section_item(item_text: str) -> HasTitleAndAuthor | HasBareTitle | None:
+    """Parse a literature section list item into a conservative reference signal."""
+    normalized = _normalize_section_item(item_text)
+    if _is_non_bibliography_line(normalized):
+        return None
+
+    colon_match = re.match(r"^(?P<author>[^:]{3,120}):\s*(?P<rest>.+)$", normalized)
+    if colon_match:
+        author = colon_match.group("author").strip(" ,;:-.")
+        rest = colon_match.group("rest")
+        title = _extract_title_segment(rest)
+        if _looks_like_author(author) and _looks_like_title(title):
+            return HasTitleAndAuthor(title=title, author=author)
+
+    sentence_parts = [
+        part.strip(" ,;:-.")
+        for part in re.split(r"\.\s+", normalized)
+        if part.strip(" ,;:-.")
+    ]
+    if len(sentence_parts) >= 2:
+        author = sentence_parts[0]
+        title = sentence_parts[1]
+        if _looks_like_author(author) and _looks_like_title(title):
+            return HasTitleAndAuthor(title=title, author=author)
+
+    return HasBareTitle(title=normalized)
+
+
+def _extract_section_refs(html_content: str) -> list[HasBareTitle | HasTitleAndAuthor]:
+    """Find literature section headers in HTML and extract bibliography-like list items."""
     soup = BeautifulSoup(html_content, "lxml")
-    refs: list[HasBareTitle] = []
+    refs: list[HasBareTitle | HasTitleAndAuthor] = []
 
     for tag in soup.find_all(HEADER_TAGS):
         header_text = tag.get_text(strip=True).lower().rstrip(":")
@@ -165,8 +277,9 @@ def _extract_section_refs(html_content: str) -> list[HasBareTitle]:
                 break
             if sibling.name == "li":
                 item_text = sibling.get_text(strip=True)
-                if item_text:
-                    refs.append(HasBareTitle(title=item_text))
+                parsed = _parse_section_item(item_text)
+                if parsed:
+                    refs.append(parsed)
 
     return refs
 

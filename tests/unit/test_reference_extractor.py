@@ -216,6 +216,68 @@ class TestSectionHeaderDetection:
         assert len(refs) >= 2
         assert any("Another Book" in t for t in titles)
 
+    def test_bibliography_line_without_isbn_extracts_author_and_title(
+        self, extractor: RegexReferenceExtractor
+    ):
+        html = """
+        <h3>Literatur</h3>
+        <ul>
+            <li>Tanenbaum, Andrew S.: Modern Operating Systems. Pearson, 2014.</li>
+        </ul>
+        """
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        ref = next(r for r in refs if "Modern Operating Systems" in r.title)
+        assert ref.authors == ["Tanenbaum, Andrew S"]
+        assert ref.confidence == 0.6
+
+    def test_uncertain_bibliography_line_falls_back_to_bare_title(
+        self, extractor: RegexReferenceExtractor
+    ):
+        html = """
+        <h3>Bibliography</h3>
+        <ul>
+            <li>Modern Operating Systems overview notes</li>
+        </ul>
+        """
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert len(refs) == 1
+        assert refs[0].title == "Modern Operating Systems overview notes"
+        assert refs[0].authors == []
+        assert refs[0].confidence == 0.5
+
+    @pytest.mark.parametrize(
+        "bullet",
+        [
+            "TODO: submit assignment 2 by Friday",
+            "Contact: prof@example.com",
+            "https://example.com/reading-list",
+        ],
+    )
+    def test_non_bibliography_task_or_link_bullets_are_ignored(
+        self,
+        extractor: RegexReferenceExtractor,
+        bullet: str,
+    ):
+        html = f"<h3>References</h3><ul><li>{bullet}</li></ul>"
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert refs == []
+
+    def test_isbn_extraction_regression_with_bibliography_line(
+        self, extractor: RegexReferenceExtractor
+    ):
+        html = """
+        <div>
+            <p>Textbook ISBN: 978-0-201-63361-0</p>
+            <h3>References</h3>
+            <ul>
+                <li>Gamma, Erich: Design Patterns. Addison-Wesley, 1995.</li>
+            </ul>
+        </div>
+        """
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert any(r.isbn == "9780201633610" for r in refs)
+        assert any(r.title == "Design Patterns" and r.authors == ["Gamma, Erich"] for r in refs)
+
 
 # ------------------------------------------------------------------
 # Resource name parsing
