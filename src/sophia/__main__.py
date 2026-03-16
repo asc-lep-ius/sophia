@@ -19,6 +19,7 @@ app = cyclopts.App(
     name="sophia",
     help="Σοφία — A student toolkit for TU Wien's TUWEL.",
     version=sophia.__version__,
+    help_epilogue="Run 'sophia <command> --help' for details on any command.",
 )
 
 books_app = cyclopts.App(name="books", help="Book discovery and download commands.")
@@ -46,11 +47,48 @@ register_app = cyclopts.App(
 )
 app.command(register_app)
 
-lectures_app = cyclopts.App(name="lectures", help="Hermes — Lecture knowledge base pipeline.")
+lectures_app = cyclopts.App(
+    name="lectures",
+    help=(
+        "Hermes — Lecture knowledge base pipeline.\n"
+        "\n"
+        "Workflow:\n"
+        " 1. setup                          — configure hardware and models\n"
+        " 2. list                           — discover lecture recordings\n"
+        " 3. download   MODULE_ID           — download recordings\n"
+        " 4. transcribe MODULE_ID           — transcribe with Whisper\n"
+        " 5. index      MODULE_ID           — build embedding index\n"
+        ' 6. search     "query" MODULE_ID   — semantic search in transcripts\n'
+        "\n"
+        "Run setup once, then follow steps 2–6 for each course."
+    ),
+)
 app.command(lectures_app)
 
 jobs_app = cyclopts.App(name="jobs", help="Manage scheduled jobs.")
 app.command(jobs_app)
+
+study_app = cyclopts.App(
+    name="study",
+    help=(
+        "Athena — Study companion and topic analysis.\n"
+        "\n"
+        "Workflow:\n"
+        " 1. topics     MODULE_ID          — extract topics from lecture transcripts\n"
+        " 2. confidence MODULE_ID          — rate your confidence per topic\n"
+        " 3. session    MODULE_ID [TOPIC]  — guided study: pre-test → study → post-test\n"
+        " 4. review     MODULE_ID [TOPIC]  — review flashcards with spaced repetition\n"
+        " 5. explain    MODULE_ID [TOPIC]  — self-explain wrong answers\n"
+        " 6. export     MODULE_ID          — export flashcards to Anki (.apkg)\n"
+        " 7. due        [MODULE_ID]        — show topics due for review\n"
+        "\n"
+        "Requires Hermes lecture data. Run 'sophia lectures' pipeline first."
+    ),
+)
+app.command(study_app)
+
+# Shell completion (sophia --install-completion)
+app.register_install_completion_command()  # type: ignore[reportUnknownMemberType]
 
 log = structlog.get_logger()
 
@@ -123,6 +161,9 @@ async def login(*, save_credentials: bool = False) -> None:
     import getpass
     import os
 
+    from rich.console import Console
+    from rich.prompt import Prompt
+
     from sophia.adapters.auth import (
         login_both,
         save_session,
@@ -132,9 +173,12 @@ async def login(*, save_credentials: bool = False) -> None:
     )
     from sophia.config import Settings
 
+    console = Console()
     settings = Settings()
 
-    username = os.environ.get("SOPHIA_TUWEL_USERNAME") or input("TU Wien username: ")
+    username = os.environ.get("SOPHIA_TUWEL_USERNAME") or Prompt.ask(
+        "TU Wien username", console=console
+    )
     password = getpass.getpass("TU Wien password: ")
 
     tuwel_creds, tiss_creds = await login_both(
@@ -142,7 +186,7 @@ async def login(*, save_credentials: bool = False) -> None:
     )
 
     save_session(tuwel_creds, session_path(settings.config_dir))
-    log.info("tuwel_login_complete", msg="TUWEL session saved.")
+    console.print("[green]TUWEL session saved.[/green]")
 
     if save_credentials:
         from sophia.adapters.auth import KeyringUnavailableError, save_credentials_to_keyring
@@ -150,19 +194,18 @@ async def login(*, save_credentials: bool = False) -> None:
         try:
             save_credentials_to_keyring(username, password)
         except KeyringUnavailableError:
-            log.warning(
-                "keyring_unavailable",
-                msg="No keyring backend found. Credentials NOT saved. "
-                "Install 'secretstorage' (Linux) or 'keyrings.alt' for file-based storage.",
+            console.print(
+                "[yellow]No keyring backend found. Credentials NOT saved.[/yellow]\n"
+                "Install 'secretstorage' (Linux) or 'keyrings.alt' for file-based storage."
             )
 
     if tiss_creds:
         save_tiss_session(tiss_creds, tiss_session_path(settings.config_dir))
-        log.info("tiss_login_complete", msg="TISS session saved.")
+        console.print("[green]TISS session saved.[/green]")
     else:
-        log.warning(
-            "tiss_login_failed",
-            msg="TUWEL login succeeded but TISS login failed. TISS features may be unavailable.",
+        console.print(
+            "[yellow]TUWEL login succeeded but TISS login failed. "
+            "TISS features may be unavailable.[/yellow]"
         )
 
 
@@ -171,16 +214,19 @@ async def status() -> None:
     """Check if the current session is valid."""
     from urllib.parse import urlparse
 
+    from rich.console import Console
+
     from sophia.adapters.auth import load_session, session_path
     from sophia.adapters.moodle import MoodleAdapter
     from sophia.config import Settings
     from sophia.domain.errors import AuthError
     from sophia.infra.http import http_session
 
+    console = Console()
     settings = Settings()
     creds = load_session(session_path(settings.config_dir))
     if creds is None:
-        log.error("not_logged_in", msg="No session found. Run: sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     async with http_session() as http:
@@ -195,15 +241,17 @@ async def status() -> None:
         )
         try:
             await adapter.check_session()
-            log.info("session_valid", msg="Session is active.")
+            console.print("[green]Session is active.[/green]")
         except AuthError:
-            log.error("session_expired", msg="Session expired. Run: sophia auth login")
+            console.print("[red]Not logged in — run:[/red] sophia auth login")
             raise SystemExit(1) from None
 
 
 @auth_app.command
 def logout() -> None:
     """Clear stored session credentials and keyring."""
+    from rich.console import Console
+
     from sophia.adapters.auth import (
         clear_credentials_from_keyring,
         clear_session,
@@ -213,11 +261,12 @@ def logout() -> None:
     )
     from sophia.config import Settings
 
+    console = Console()
     settings = Settings()
     clear_session(session_path(settings.config_dir))
     clear_tiss_session(tiss_session_path(settings.config_dir))
     clear_credentials_from_keyring()
-    log.info("logged_out", msg="Session and credentials cleared.")
+    console.print("[green]Session and credentials cleared.[/green]")
 
 
 # --- Kairos: TISS registration commands ---
@@ -564,6 +613,7 @@ def lectures_setup() -> None:
     """Detect hardware and configure the lecture knowledge base pipeline."""
     from rich.console import Console
     from rich.panel import Panel
+    from rich.prompt import Confirm
     from rich.table import Table
 
     from sophia.config import Settings
@@ -728,8 +778,7 @@ def lectures_setup() -> None:
         console.print("\n[bold green]✓ Hermes dependencies already installed[/bold green]")
     else:
         console.print(f"\n[yellow]Missing Hermes dependencies: {', '.join(missing)}[/yellow]")
-        answer = input("Install Hermes dependencies now? [Y/n] ").strip().lower()
-        if answer in ("", "y", "yes"):
+        if Confirm.ask("Install Hermes dependencies now?", default=True, console=console):
             console.print("[dim]Installing sophia[hermes]… (output streamed below)[/dim]")
             ok, msg = install_hermes_extras()
             if ok:
@@ -741,7 +790,7 @@ def lectures_setup() -> None:
             console.print("  [cyan]uv pip install -e '.[hermes]'[/cyan]")
 
     console.print("\n[dim]Next step:[/dim]")
-    console.print("  Process a lecture: [cyan]sophia lectures process <audio-file>[/cyan]")
+    console.print("  [cyan]sophia lectures list[/cyan]")
 
 
 @lectures_app.command(name="status")
@@ -847,9 +896,12 @@ async def lectures_list() -> None:
                 )
 
             console.print(table)
+            console.print(
+                "\n[dim]Next step:[/dim] [cyan]sophia lectures download <module-id>[/cyan]"
+            )
 
     except AuthError:
-        console.print("[red]Session expired — run:[/red] sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
 
 
@@ -909,9 +961,12 @@ async def lectures_download(
                 )
 
             console.print(table)
+            console.print(
+                "\n[dim]Next step:[/dim] [cyan]sophia lectures transcribe <module-id>[/cyan]"
+            )
 
     except AuthError:
-        console.print("[red]Session expired — run:[/red] sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
 
 
@@ -964,9 +1019,10 @@ async def lectures_transcribe(
                 )
 
             console.print(table)
+            console.print("\n[dim]Next step:[/dim] [cyan]sophia lectures index <module-id>[/cyan]")
 
     except AuthError:
-        console.print("[red]Session expired — run:[/red] sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
     except TranscriptionError as exc:
         console.print(f"[red]Transcription error:[/red] {exc}")
@@ -1020,9 +1076,12 @@ async def lectures_index(
                 )
 
             console.print(table)
+            console.print(
+                '\n[dim]Next step:[/dim] [cyan]sophia lectures search "query" <module-id>[/cyan]'
+            )
 
     except AuthError:
-        console.print("[red]Session expired — run:[/red] sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
     except EmbeddingError as exc:
         console.print(f"[red]Embedding error:[/red] {exc}")
@@ -1067,7 +1126,7 @@ async def lectures_search(
                 console.print(Panel(r.chunk_text, title=f"Result {i}", subtitle=header))
 
     except AuthError:
-        console.print("[red]Session expired — run:[/red] sophia auth login")
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
     except EmbeddingError as exc:
         console.print(f"[red]Embedding error:[/red] {exc}")
@@ -1162,7 +1221,7 @@ async def cancel(job_id: str) -> None:
 # --- Internal: job runner ---
 
 
-@app.command(name="_run-job")
+@app.command(name="_run-job", group=cyclopts.Group("Internal", show=False))
 async def run_job(job_id: str) -> None:
     """Internal: Execute a scheduled job with auto-relogin. Not for direct use."""
     import shlex
@@ -1219,6 +1278,674 @@ async def run_job(job_id: str) -> None:
         raise SystemExit(1) from None
     finally:
         await db.close()
+
+
+# ---------------------------------------------------------------------------
+# Athena — Quiz / Study companion
+# ---------------------------------------------------------------------------
+
+
+@study_app.command(name="topics")
+async def study_topics(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+) -> None:
+    """Extract topics from lecture transcripts and cross-reference with lectures."""
+    from rich.console import Console
+    from rich.status import Status
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, EmbeddingError, TopicExtractionError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        extract_topics_from_lectures,
+        link_topics_to_lectures,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            with Status("Extracting topics from lectures…", console=console):
+                topics = await extract_topics_from_lectures(container, module_id)
+
+            if not topics:
+                console.print(
+                    "[yellow]No topics extracted. Ensure lectures are indexed first.[/yellow]"
+                )
+                console.print("  Run: sophia lectures download/transcribe/index <module-id>")
+                return
+
+            console.print(f"[green]Extracted {len(topics)} topics.[/green]\n")
+
+            topic_labels = [t.topic for t in topics]
+            with Status("Cross-referencing with lecture content…", console=console):
+                links = await link_topics_to_lectures(
+                    container,
+                    module_id,
+                    module_id,
+                    topic_labels,
+                )
+
+            # Build episode title mapping for display
+            episode_ids: set[str] = set()
+            for chunks in links.values():
+                for chunk, _score in chunks:
+                    episode_ids.add(chunk.episode_id)
+
+            title_map: dict[str, str] = {}
+            if episode_ids:
+                placeholders = ",".join("?" for _ in episode_ids)
+                cursor = await container.db.execute(
+                    f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
+                    f" WHERE episode_id IN ({placeholders})",
+                    tuple(episode_ids),
+                )
+                for row in await cursor.fetchall():
+                    title_map[row[0]] = row[1]
+
+            table = Table(title="Topic Analysis")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Freq", justify="right")
+            table.add_column("Lecture Coverage", style="dim")
+
+            for tm in topics:
+                lecture_refs: list[str] = []
+                for chunk, _score in links.get(tm.topic, [])[:3]:
+                    title = title_map.get(chunk.episode_id, "Unknown")
+                    mm, ss = divmod(int(chunk.start_time), 60)
+                    lecture_refs.append(f"{title} ({mm:02d}:{ss:02d})")
+                coverage = ", ".join(lecture_refs) if lecture_refs else "⚠ No lecture match"
+                table.add_row(tm.topic, str(tm.frequency), coverage)
+
+            console.print(table)
+            console.print("\n[dim]Next:[/dim] [cyan]sophia study confidence <module-id>[/cyan]")
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TopicExtractionError as exc:
+        console.print(f"[red]Topic extraction failed:[/red] {exc}")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@study_app.command(name="confidence")
+async def study_confidence(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (same as used in topics).")
+    ],
+) -> None:
+    """Rate your confidence per topic — discover blind spots through calibration."""
+    from rich.console import Console
+    from rich.prompt import IntPrompt
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, ConfidenceError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_confidence import (
+        format_calibration_feedback,
+        get_confidence_ratings,
+        rate_confidence,
+    )
+    from sophia.services.athena_study import get_course_topics
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            topics = await get_course_topics(container, module_id)
+
+            if not topics:
+                console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
+                return
+
+            console.print(
+                "[bold]Rate your confidence for each topic (1-5):[/bold]\n"
+                "  1 = No idea  2 = Vague  3 = Somewhat  4 = Good  5 = Confident\n"
+            )
+
+            for tm in topics:
+                rating = IntPrompt.ask(
+                    f"  {tm.topic}",
+                    choices=["1", "2", "3", "4", "5"],
+                    default=3,
+                    console=console,
+                )
+                await rate_confidence(container, tm.topic, module_id, rating)
+
+            console.print()
+
+            all_ratings = await get_confidence_ratings(container.db, module_id)
+
+            table = Table(title="Confidence Assessment")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Predicted", justify="right")
+            table.add_column("Actual", justify="right")
+            table.add_column("Status")
+
+            for r in all_ratings:
+                predicted_str = f"{r.predicted:.0%}"
+                actual_str = f"{r.actual:.0%}" if r.actual is not None else "—"
+
+                err = r.calibration_error
+                if err is None:
+                    status = "⏳ Pending"
+                elif abs(err) <= 0.1:
+                    status = "✅ Calibrated"
+                elif err > 0.2:
+                    status = "🔍 Blind spot"
+                elif err > 0:
+                    status = "📈 Slightly over"
+                elif err < -0.2:
+                    status = "💪 Underestimate"
+                else:
+                    status = "📉 Slightly under"
+
+                table.add_row(r.topic, predicted_str, actual_str, status)
+
+            console.print(table)
+
+            has_actual = [r for r in all_ratings if r.actual is not None]
+            if has_actual:
+                console.print("\n[bold]Calibration Feedback:[/bold]")
+                for r in has_actual:
+                    console.print(format_calibration_feedback(r))
+            else:
+                console.print(
+                    "\n[dim]Actual scores will appear after you study and review cards.[/dim]"
+                )
+
+            console.print(
+                "\n[dim]Next:[/dim] [cyan]sophia study session <module-id> [topic][/cyan]"
+            )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except ConfidenceError as exc:
+        console.print(f"[red]Confidence assessment failed:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@study_app.command(name="session")
+async def study_session(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    topic: Annotated[
+        str | None, cyclopts.Parameter(help="Topic to study. Defaults to weakest.")
+    ] = None,
+) -> None:
+    """Guided study: pre-test → lecture review → post-test → flashcard creation."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Confirm, Prompt
+    from rich.status import Status
+
+    from sophia.domain.errors import AuthError, StudySessionError, TopicExtractionError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        complete_study_session,
+        generate_study_questions,
+        get_course_topics,
+        save_flashcard,
+        start_study_session,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            # --- Load topics ---
+            topics = await get_course_topics(container, module_id)
+            if not topics:
+                console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
+                return
+
+            # --- Select topic ---
+            if topic is None:
+                # Try to pick weakest blind spot, otherwise first topic
+                try:
+                    from sophia.services.athena_confidence import get_blind_spots
+
+                    blind_spots = await get_blind_spots(container.db, module_id)
+                    if blind_spots:
+                        topic = blind_spots[0].topic
+                        console.print(f"[dim]Auto-selected blind spot:[/dim] [bold]{topic}[/bold]")
+                except Exception:
+                    pass
+                if topic is None:
+                    topic = topics[0].topic
+                    console.print(f"[dim]Auto-selected first topic:[/dim] [bold]{topic}[/bold]")
+
+            console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
+
+            # --- Start session ---
+            session = await start_study_session(container.db, module_id, topic)
+
+            # --- PRE-TEST ---
+            console.print("[bold cyan]Phase 1: Pre-Test[/bold cyan]")
+            try:
+                with Status("Generating pre-test questions…", console=console):
+                    pre_questions = await generate_study_questions(
+                        container, module_id, topic, count=3
+                    )
+            except TopicExtractionError:
+                console.print("[yellow]LLM unavailable — using generic questions.[/yellow]")
+                pre_questions = [f"Explain the concept of {topic} in your own words."] * 3
+
+            pre_correct = 0
+            for i, q in enumerate(pre_questions, 1):
+                console.print(f"\n  [bold]Q{i}:[/bold] {q}")
+                answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
+                if answer.strip().lower() == "skip":
+                    continue
+                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
+                if self_grade:
+                    pre_correct += 1
+
+            pre_score = pre_correct / len(pre_questions) if pre_questions else 0.0
+            console.print(
+                f"\n  Pre-test score: [bold]{pre_score:.0%}[/bold]"
+                f" ({pre_correct}/{len(pre_questions)})"
+            )
+
+            if not Confirm.ask("\nContinue to study phase?", default=True, console=console):
+                await complete_study_session(container.db, session.id, pre_score, pre_score)
+                console.print("[dim]Session saved with pre-test only.[/dim]")
+                return
+
+            # --- STUDY PHASE ---
+            console.print("\n[bold cyan]Phase 2: Lecture Review[/bold cyan]")
+            with Status("Fetching lecture content…", console=console):
+                from sophia.services.athena_study import get_lecture_context
+
+                lecture_text = await get_lecture_context(container, module_id, topic)
+
+            if lecture_text:
+                console.print(
+                    Panel(
+                        lecture_text[:2000],
+                        title=f"Lecture Notes: {topic}",
+                        expand=False,
+                    )
+                )
+            else:
+                console.print("[yellow]No lecture content found for this topic.[/yellow]")
+
+            if not Confirm.ask("\nContinue to post-test?", default=True, console=console):
+                await complete_study_session(container.db, session.id, pre_score, pre_score)
+                console.print("[dim]Session saved with pre-test only.[/dim]")
+                return
+
+            # --- POST-TEST ---
+            console.print("\n[bold cyan]Phase 3: Post-Test[/bold cyan]")
+            try:
+                with Status("Generating post-test questions…", console=console):
+                    post_questions = await generate_study_questions(
+                        container, module_id, topic, count=3
+                    )
+            except TopicExtractionError:
+                post_questions = [f"Explain the concept of {topic} in your own words."] * 3
+
+            post_correct = 0
+            for i, q in enumerate(post_questions, 1):
+                console.print(f"\n  [bold]Q{i}:[/bold] {q}")
+                answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
+                if answer.strip().lower() == "skip":
+                    continue
+                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
+                if self_grade:
+                    post_correct += 1
+
+            post_score = post_correct / len(post_questions) if post_questions else 0.0
+            console.print(
+                f"\n  Post-test score: [bold]{post_score:.0%}[/bold]"
+                f" ({post_correct}/{len(post_questions)})"
+            )
+
+            # --- Show improvement ---
+            improvement = post_score - pre_score
+            if improvement > 0:
+                console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
+            elif improvement < 0:
+                console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
+            else:
+                console.print("\n  [dim]➡ No change in score.[/dim]")
+
+            # --- Complete session ---
+            await complete_study_session(container.db, session.id, pre_score, post_score)
+
+            # --- Optional flashcard creation ---
+            if Confirm.ask("\nCreate a flashcard for this topic?", default=True, console=console):
+                front = Prompt.ask("  Front (question)", console=console)
+                back = Prompt.ask("  Back (answer)", console=console)
+                if front.strip() and back.strip():
+                    await save_flashcard(
+                        container.db, module_id, topic, front.strip(), back.strip()
+                    )
+                    console.print("[green]✅ Flashcard saved![/green]")
+                else:
+                    console.print("[dim]Skipped — empty flashcard.[/dim]")
+
+            console.print("\n[bold green]✅ Study session complete![/bold green]")
+            console.print("\n[dim]Next:[/dim] [cyan]sophia study review <module-id> [topic][/cyan]")
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TopicExtractionError as exc:
+        console.print(f"[yellow]LLM unavailable:[/yellow] {exc}")
+        console.print("Study with lecture material directly instead.")
+        raise SystemExit(1) from None
+    except StudySessionError as exc:
+        console.print(f"[red]Study session error:[/red] {exc}")
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        console.print("\n[dim]Session interrupted — partial progress saved.[/dim]")
+
+
+@study_app.command(name="review")
+async def study_review(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    topic: Annotated[
+        str | None, cyclopts.Parameter(help="Topic to review. Defaults to all.")
+    ] = None,
+    count: Annotated[int, cyclopts.Parameter(help="Max cards to review.")] = 10,
+) -> None:
+    """Review flashcards and auto-calibrate confidence from results."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Confirm, Prompt
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, CardReviewError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        get_due_cards,
+        get_review_stats,
+        save_review_attempt,
+        update_topic_calibration,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            cards = await get_due_cards(container.db, module_id, topic=topic, limit=count)
+
+            if not cards:
+                console.print(
+                    "[yellow]No flashcards to review. "
+                    "Create some with 'sophia study session' first.[/yellow]"
+                )
+                return
+
+            console.print(f"\n[bold]🃏 Card Review: {len(cards)} card(s)[/bold]\n")
+
+            correct = 0
+            reviewed_topics: set[str] = set()
+
+            for i, card in enumerate(cards, 1):
+                console.print(Panel(card.front, title=f"Card {i}/{len(cards)} — {card.topic}"))
+                Prompt.ask("Press Enter to reveal answer", default="", console=console)
+                console.print(Panel(card.back, title="Answer", style="green"))
+
+                success = Confirm.ask("Did you get it right?", default=False, console=console)
+                if success:
+                    correct += 1
+
+                await save_review_attempt(container.db, flashcard_id=card.id, success=success)
+                reviewed_topics.add(card.topic)
+                console.print()
+
+            # Calibrate all reviewed topics
+            for t in reviewed_topics:
+                await update_topic_calibration(container.db, course_id=module_id, topic=t)
+
+            # Summary
+            accuracy = correct / len(cards) if cards else 0.0
+            console.print("[bold]📊 Review Complete[/bold]")
+            console.print(f"  Total: {len(cards)}  Correct: {correct}  Accuracy: {accuracy:.0%}\n")
+
+            table = Table(title="Per-Topic Breakdown")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Reviews", justify="right")
+            table.add_column("Correct", justify="right")
+            table.add_column("Rate", justify="right")
+
+            for t in sorted(reviewed_topics):
+                stats = await get_review_stats(container.db, module_id, topic=t)
+                table.add_row(
+                    t,
+                    str(stats["total_reviews"]),
+                    str(stats["success_count"]),
+                    f"{stats['success_rate']:.0%}",
+                )
+
+            console.print(table)
+            console.print(
+                "\n[dim]Next:[/dim] [cyan]sophia study explain <module-id> [topic][/cyan]"
+            )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except CardReviewError as exc:
+        console.print(f"[red]Card review error:[/red] {exc}")
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        console.print("\n[dim]Review interrupted — partial progress saved.[/dim]")
+
+
+@study_app.command(name="explain")
+async def study_explain(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    topic: Annotated[
+        str | None, cyclopts.Parameter(help="Topic to filter. Defaults to all.")
+    ] = None,
+    count: Annotated[int, cyclopts.Parameter(help="Max cards to explain.")] = 5,
+) -> None:
+    """Self-explain wrong answers with fading scaffolds."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        get_explanation_count,
+        get_failed_review_cards,
+        get_lecture_context,
+        get_scaffold_level,
+        get_scaffold_prompts,
+        save_self_explanation,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            cards = await get_failed_review_cards(container.db, module_id, topic=topic, limit=count)
+
+            if not cards:
+                console.print(
+                    "[yellow]No wrong answers to explain. "
+                    "Review cards with 'sophia study review' first.[/yellow]"
+                )
+                return
+
+            exp_count = await get_explanation_count(container.db, module_id)
+            level = get_scaffold_level(exp_count)
+            prompts = get_scaffold_prompts(level)
+
+            scaffold_labels = {3: "full", 1: "minimal", 0: "open"}
+            console.print(
+                f"\n[bold]🧠 Self-Explanation: {len(cards)} card(s), "
+                f"scaffold={scaffold_labels.get(level, str(level))}[/bold]\n"
+            )
+
+            saved = 0
+            for i, card in enumerate(cards, 1):
+                console.print(Panel(card.front, title=f"Card {i}/{len(cards)} — {card.topic}"))
+                console.print(Panel(card.back, title="Correct Answer", style="green"))
+
+                # Collect explanation based on scaffold level
+                parts: list[str] = []
+                if prompts:
+                    for prompt_text in prompts:
+                        answer = Prompt.ask(f"[cyan]{prompt_text}[/cyan]", console=console)
+                        parts.append(answer)
+                else:
+                    answer = Prompt.ask("[cyan]Explain in your own words:[/cyan]", console=console)
+                    parts.append(answer)
+
+                explanation_text = "\n".join(parts)
+
+                await save_self_explanation(
+                    container.db,
+                    flashcard_id=card.id,
+                    student_explanation=explanation_text,
+                    scaffold_level=level,
+                )
+                saved += 1
+
+                # Show lecture context
+                context = await get_lecture_context(container, module_id, card.topic)
+                if context:
+                    console.print(Panel(context, title="Lecture Context", style="dim"))
+                console.print()
+
+            console.print(
+                f"[bold]✅ {saved} explanation(s) recorded (scaffold level {level})[/bold]"
+            )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        console.print("\n[dim]Explanation interrupted — partial progress saved.[/dim]")
+
+
+@study_app.command(name="export")
+async def study_export(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    *,
+    output: Annotated[str | None, cyclopts.Parameter(help="Output .apkg file path.")] = None,
+    blocked: Annotated[
+        bool, cyclopts.Parameter(help="Group cards by topic instead of interleaving.")
+    ] = False,
+    deck_name: Annotated[str | None, cyclopts.Parameter(help="Custom Anki deck name.")] = None,
+) -> None:
+    """Export flashcards as an Anki .apkg deck."""
+    from pathlib import Path
+
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from sophia.domain.errors import AthenaError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_export import export_anki_deck
+
+    console = Console()
+    out_path = Path(output or f"sophia-{module_id}.apkg")
+
+    try:
+        async with create_app() as container:
+            count = await export_anki_deck(
+                container.db,
+                module_id,
+                out_path,
+                interleaved=not blocked,
+                deck_name=deck_name,
+            )
+
+            if count == 0:
+                console.print("[yellow]No flashcards found for this module.[/yellow]")
+            else:
+                order = "blocked (by topic)" if blocked else "interleaved (shuffled)"
+                console.print(
+                    Panel(
+                        f"Exported [bold]{count}[/bold] cards to [cyan]{out_path}[/cyan]\n"
+                        f"Card order: {order}",
+                        title="Anki Export",
+                        style="green",
+                    )
+                )
+
+    except AthenaError as exc:
+        console.print(f"[red]Export failed:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@study_app.command(name="due")
+async def study_due(
+    module_id: Annotated[
+        int | None, cyclopts.Parameter(help="Opencast module ID. Omit for all courses.")
+    ] = None,
+) -> None:
+    """Show topics due for spaced review and upcoming reviews."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.infra.di import create_app
+    from sophia.services.athena_review import get_due_reviews, get_upcoming_reviews
+
+    console = Console()
+
+    async with create_app() as container:
+        course_id = module_id
+        due = await get_due_reviews(container.db, course_id=course_id)
+        upcoming = await get_upcoming_reviews(container.db, course_id=course_id, days_ahead=3)
+
+        if not due and not upcoming:
+            console.print(
+                "[yellow]No reviews scheduled. "
+                "Start studying with:[/yellow] sophia study session <module-id>"
+            )
+            return
+
+        if due:
+            table = Table(title="Reviews Due Today", show_lines=True)
+            table.add_column("Topic", style="bold")
+            table.add_column("Course", justify="right")
+            table.add_column("Review #", justify="center")
+            table.add_column("Last Score", justify="center")
+
+            for sched in due:
+                score = sched.score_at_last_review
+                if score is None:
+                    status = "[dim]new[/dim]"
+                elif score >= 0.8:
+                    status = f"[green]{score:.0%} advancing[/green]"
+                elif score >= 0.5:
+                    status = f"[yellow]{score:.0%} repeating[/yellow]"
+                else:
+                    status = f"[red]{score:.0%} reset![/red]"
+
+                table.add_row(
+                    sched.topic,
+                    str(sched.course_id),
+                    str(sched.interval_index + 1),
+                    status,
+                )
+            console.print(table)
+
+        if upcoming:
+            table = Table(title="Upcoming Reviews (next 3 days)", show_lines=True)
+            table.add_column("Topic", style="bold")
+            table.add_column("Course", justify="right")
+            table.add_column("Due", justify="center")
+            table.add_column("Interval", justify="center")
+
+            for sched in upcoming:
+                table.add_row(
+                    sched.topic,
+                    str(sched.course_id),
+                    sched.next_review_at[:10],
+                    f"{sched.interval_days}d",
+                )
+            console.print(table)
 
 
 def main() -> None:

@@ -59,3 +59,23 @@ class TranscriptionError(HermesError):
 
 class EmbeddingError(HermesError):
     """Embedding or knowledge base indexing failed."""
+
+
+class AthenaError(SophiaError):
+    """Athena study companion error."""
+
+
+class TopicExtractionError(AthenaError):
+    """Topic extraction from content failed."""
+
+
+class ConfidenceError(AthenaError):
+    """Confidence assessment workflow failed."""
+
+
+class StudySessionError(AthenaError):
+    """Study session workflow failed."""
+
+
+class CardReviewError(AthenaError):
+    """Card review workflow failed."""

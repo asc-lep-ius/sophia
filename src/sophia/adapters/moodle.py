@@ -177,16 +177,32 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_course_books(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/book/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="book"))
+        return results
 
     async def get_course_pages(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/page/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="page"))
+        return results
 
     async def get_course_resources(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/resource/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="resource"))
+        return results
 
     async def get_course_urls(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/url/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="url"))
+        return results
 
     # ------------------------------------------------------------------
     # AssignmentProvider
@@ -407,6 +423,29 @@ def _parse_grade_report(html: str) -> list[GradeItem]:
         )
 
     return items
+
+
+def _parse_mod_index(html: str, *, modname: str) -> list[ModuleInfo]:
+    """Parse a Moodle mod/*/index.php page into ModuleInfo objects.
+
+    TUWEL uses the same ``course-overview-table`` layout for all module
+    index pages (books, pages, resources, URLs, assignments).  Each row
+    carries its cmid in ``data-mdl-overview-cmid`` and the activity name
+    in ``td[data-mdl-overview-item='name']``.
+    """
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.course-overview-table")
+    if not table:
+        return []
+    modules: list[ModuleInfo] = []
+    for row in table.select("tbody > tr[data-mdl-overview-cmid]"):
+        cmid = int(row["data-mdl-overview-cmid"])  # type: ignore[arg-type]
+        name_td = row.select_one("td[data-mdl-overview-item='name']")
+        name = str(name_td.get("data-mdl-overview-value", "")) if name_td else ""
+        link = row.select_one("a.activityname[href]")
+        url: str | None = str(link["href"]) if link else None
+        modules.append(ModuleInfo(id=cmid, name=name, modname=modname, url=url))
+    return modules
 
 
 def _parse_assignment_index(html: str, course_id: int) -> list[AssignmentInfo]:

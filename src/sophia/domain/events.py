@@ -98,7 +98,73 @@ class LectureDownloadStarted:
 
     episode_id: str
     title: str
-    track_url: str
+
+
+@dataclass(frozen=True)
+class StudySessionStarted:
+    """Emitted when a study session begins."""
+
+    course_id: int
+    topic: str
+
+
+@dataclass(frozen=True)
+class StudySessionCompleted:
+    """Emitted when a study session finishes."""
+
+    course_id: int
+    topic: str
+    pre_test_score: float
+    post_test_score: float
+    improvement: float
+
+
+@dataclass(frozen=True)
+class FlashcardCreated:
+    """Emitted when a student creates a flashcard."""
+
+    course_id: int
+    topic: str
+    source: str
+
+
+@dataclass(frozen=True)
+class CardReviewed:
+    """Emitted when a flashcard is reviewed."""
+
+    course_id: int
+    topic: str
+    flashcard_id: int
+    success: bool
+
+
+@dataclass(frozen=True)
+class SelfExplanationRecorded:
+    """Emitted when a student records a self-explanation."""
+
+    course_id: int
+    topic: str
+    flashcard_id: int
+    scaffold_level: int
+
+
+@dataclass(frozen=True)
+class ReviewDue:
+    """Emitted when a topic review is due."""
+
+    topic: str
+    course_id: int
+    interval_days: int
+
+
+@dataclass(frozen=True)
+class ReviewCompleted:
+    """Emitted when a topic review is completed."""
+
+    topic: str
+    course_id: int
+    score: float
+    next_interval_days: int
 
 
 @dataclass(frozen=True)
@@ -171,3 +237,31 @@ class IndexingFailed:
     episode_id: str
     title: str
     error: str
+
+
+@dataclass(frozen=True)
+class TopicsExtracted:
+    """Emitted after topics are extracted from course content."""
+
+    course_id: int
+    topic_count: int
+    source: str  # "lecture" or "quiz"
+
+
+@dataclass(frozen=True)
+class TopicLectureLinked:
+    """Emitted when a topic is cross-referenced with lecture chunks."""
+
+    topic: str
+    course_id: int
+    chunk_count: int
+
+
+@dataclass(frozen=True)
+class ConfidenceAssessed:
+    """Emitted after a confidence-before-reveal cycle completes."""
+
+    course_id: int
+    topics_rated: int
+    blind_spots: int
+    avg_calibration_error: float

@@ -122,17 +122,17 @@ class OpencastAdapter:
             # Skip whitespace
             while start < len(html) and html[start].isspace():
                 start += 1
-            if start >= len(html) or html[start] != '{':
+            if start >= len(html) or html[start] != "{":
                 return None
             depth = 0
             for i in range(start, len(html)):
-                if html[i] == '{':
+                if html[i] == "{":
                     depth += 1
-                elif html[i] == '}':
+                elif html[i] == "}":
                     depth -= 1
                     if depth == 0:
                         try:
-                            return json.loads(html[start:i + 1])
+                            return json.loads(html[start : i + 1])
                         except json.JSONDecodeError:
                             return None
             return None

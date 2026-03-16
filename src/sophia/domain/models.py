@@ -528,3 +528,143 @@ class LectureSearchResult(BaseModel, frozen=True):
     start_time: float
     end_time: float
     score: float
+
+
+# ---------------------------------------------------------------------------
+# Athena — Study companion models
+# ---------------------------------------------------------------------------
+
+
+class TopicSource(StrEnum):
+    """Origin of a topic mapping."""
+
+    LECTURE = "lecture"
+    QUIZ = "quiz"
+    MANUAL = "manual"
+
+
+class TopicMapping(BaseModel, frozen=True):
+    """A topic extracted from course content (lecture or quiz)."""
+
+    topic: str
+    course_id: int
+    source: TopicSource = TopicSource.LECTURE
+    frequency: int = 1
+
+
+class TopicLectureLink(BaseModel, frozen=True):
+    """Links a topic to a specific lecture transcript chunk."""
+
+    topic: str
+    course_id: int
+    chunk_id: str
+    episode_id: str
+    score: float  # embedding similarity score
+
+
+class ConfidenceRating(BaseModel, frozen=True):
+    """A student's self-assessed confidence vs actual performance for a topic."""
+
+    topic: str
+    course_id: int
+    predicted: float  # 0.0 to 1.0 (from student's 1-5 rating mapped to 0-1)
+    actual: float | None = None  # populated later from card recall or quiz score
+    rated_at: str = ""  # ISO timestamp
+
+    @property
+    def calibration_error(self) -> float | None:
+        """Signed difference: predicted - actual. Positive = overconfident."""
+        if self.actual is None:
+            return None
+        return self.predicted - self.actual
+
+    @property
+    def is_blind_spot(self) -> bool:
+        """Topic where student is significantly overconfident (>0.2 delta)."""
+        err = self.calibration_error
+        return err is not None and err > 0.2
+
+
+class StudySession(BaseModel, frozen=True):
+    """A pre-test → study → post-test learning session."""
+
+    id: int = 0
+    course_id: int
+    topic: str
+    pre_test_score: float | None = None  # 0.0-1.0
+    post_test_score: float | None = None  # 0.0-1.0
+    started_at: str = ""
+    completed_at: str | None = None
+
+    @property
+    def improvement(self) -> float | None:
+        """Post-test score minus pre-test score. Positive = learned."""
+        if self.pre_test_score is None or self.post_test_score is None:
+            return None
+        return self.post_test_score - self.pre_test_score
+
+
+class FlashcardSource(StrEnum):
+    """Origin of a flashcard."""
+
+    STUDY = "study"
+    LECTURE = "lecture"
+    MANUAL = "manual"
+
+
+class StudentFlashcard(BaseModel, frozen=True):
+    """A flashcard authored or adopted by the student."""
+
+    id: int = 0
+    course_id: int
+    topic: str
+    front: str  # question
+    back: str  # answer
+    source: FlashcardSource = FlashcardSource.STUDY
+    created_at: str = ""
+
+
+class CardReviewAttempt(BaseModel, frozen=True):
+    """Record of a single flashcard review attempt."""
+
+    id: int = 0
+    flashcard_id: int
+    success: bool
+    reviewed_at: str = ""
+
+
+class SelfExplanation(BaseModel, frozen=True):
+    """A student's self-explanation of why they got a question wrong."""
+
+    id: int = 0
+    flashcard_id: int
+    student_explanation: str
+    scaffold_level: int = 3  # 3=full, 1=minimal, 0=open
+    created_at: str = ""
+
+
+_REVIEW_INTERVALS = [1, 3, 7, 14, 30]  # days
+
+
+class ReviewSchedule(BaseModel, frozen=True):
+    """Spaced review schedule for a topic."""
+
+    topic: str
+    course_id: int
+    interval_index: int = 0  # index into _REVIEW_INTERVALS
+    last_reviewed_at: str | None = None
+    next_review_at: str
+    score_at_last_review: float | None = None
+
+    @property
+    def interval_days(self) -> int:
+        """Current interval in days."""
+        idx = min(self.interval_index, len(_REVIEW_INTERVALS) - 1)
+        return _REVIEW_INTERVALS[idx]
+
+    @property
+    def is_due(self) -> bool:
+        """Whether review is due (next_review_at <= now)."""
+        from datetime import UTC, datetime
+
+        return datetime.fromisoformat(self.next_review_at) <= datetime.now(UTC)
