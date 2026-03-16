@@ -201,30 +201,40 @@ class TestParseTopics:
     """Tests for _parse_topics helper."""
 
     def test_numbered_list(self) -> None:
-        from sophia.adapters.topic_extractor import _parse_topics
+        from sophia.adapters.topic_extractor import (
+            _parse_topics,  # pyright: ignore[reportPrivateUsage]
+        )
 
         text = "1. Linear Algebra\n2. Calculus\n3. Statistics"
         assert _parse_topics(text) == ["Linear Algebra", "Calculus", "Statistics"]
 
     def test_bullet_list(self) -> None:
-        from sophia.adapters.topic_extractor import _parse_topics
+        from sophia.adapters.topic_extractor import (
+            _parse_topics,  # pyright: ignore[reportPrivateUsage]
+        )
 
         text = "- Linear Algebra\n- Calculus\n- Statistics"
         assert _parse_topics(text) == ["Linear Algebra", "Calculus", "Statistics"]
 
     def test_strips_whitespace(self) -> None:
-        from sophia.adapters.topic_extractor import _parse_topics
+        from sophia.adapters.topic_extractor import (
+            _parse_topics,  # pyright: ignore[reportPrivateUsage]
+        )
 
         text = "  1.  Linear Algebra  \n  2. Calculus  "
         assert _parse_topics(text) == ["Linear Algebra", "Calculus"]
 
     def test_empty_input(self) -> None:
-        from sophia.adapters.topic_extractor import _parse_topics
+        from sophia.adapters.topic_extractor import (
+            _parse_topics,  # pyright: ignore[reportPrivateUsage]
+        )
 
         assert _parse_topics("") == []
 
     def test_deduplicates_case_insensitive(self) -> None:
-        from sophia.adapters.topic_extractor import _parse_topics
+        from sophia.adapters.topic_extractor import (
+            _parse_topics,  # pyright: ignore[reportPrivateUsage]
+        )
 
         text = "1. Linear Algebra\n2. linear algebra\n3. Calculus"
         result = _parse_topics(text)
@@ -255,7 +265,10 @@ class TestGenerateQuestion:
 
     @pytest.mark.asyncio
     async def test_generate_question_uses_question_system_prompt(self) -> None:
-        from sophia.adapters.topic_extractor import _QUESTION_SYSTEM_PROMPT, LLMTopicExtractor
+        from sophia.adapters.topic_extractor import (
+            _QUESTION_SYSTEM_PROMPT,  # pyright: ignore[reportPrivateUsage]
+            LLMTopicExtractor,
+        )
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -309,7 +322,10 @@ class TestGenerateQuestion:
     @pytest.mark.asyncio
     async def test_extract_topics_still_works_after_refactor(self) -> None:
         """Ensure extract_topics still uses the topic extraction system prompt."""
-        from sophia.adapters.topic_extractor import _SYSTEM_PROMPT, LLMTopicExtractor
+        from sophia.adapters.topic_extractor import (
+            _SYSTEM_PROMPT,  # pyright: ignore[reportPrivateUsage]
+            LLMTopicExtractor,
+        )
 
         mock_response = MagicMock()
         mock_response.choices = [MagicMock()]
@@ -333,7 +349,9 @@ class TestQuestionUserTemplate:
     """Tests for _QUESTION_USER_TEMPLATE formatting."""
 
     def test_template_formatting(self) -> None:
-        from sophia.adapters.topic_extractor import _QUESTION_USER_TEMPLATE
+        from sophia.adapters.topic_extractor import (
+            _QUESTION_USER_TEMPLATE,  # pyright: ignore[reportPrivateUsage]
+        )
 
         result = _QUESTION_USER_TEMPLATE.format(
             topic="Sorting", lecture_context="Quicksort uses pivots."

@@ -101,7 +101,7 @@ class TestCompleteReview:
         result = await complete_review(db, "Sorting", course_id=42, score=0.9)
 
         assert result.interval_index == 1
-        assert result.score_at_last_review == pytest.approx(0.9)
+        assert result.score_at_last_review == pytest.approx(0.9)  # pyright: ignore[reportUnknownMemberType]
         assert result.last_reviewed_at is not None
 
     @pytest.mark.asyncio
@@ -131,7 +131,8 @@ class TestCompleteReview:
 
         await schedule_review(db, "Sorting", course_id=42)
         # Advance through all intervals: 0→1→2→3→4
-        for _ in range(5):
+        result = await complete_review(db, "Sorting", course_id=42, score=0.9)
+        for _ in range(4):
             result = await complete_review(db, "Sorting", course_id=42, score=0.9)
 
         assert result.interval_index == 4

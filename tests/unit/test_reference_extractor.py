@@ -404,12 +404,10 @@ class TestPlainTextPDFExtraction:
             for r in refs
         )
         assert any(
-            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"]
-            for r in refs
+            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"] for r in refs
         )
         assert any(
-            r.title == "Java als erste Programmiersprache"
-            and r.authors == ["J. Goll, C. Heinisch"]
+            r.title == "Java als erste Programmiersprache" and r.authors == ["J. Goll, C. Heinisch"]
             for r in refs
         )
 
@@ -474,15 +472,12 @@ class TestPlainTextPDFExtraction:
             for r in refs
         )
         assert any(
-            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"]
-            for r in refs
+            r.title == "Java ist auch eine Insel" and r.authors == ["C. Ullenboom"] for r in refs
         )
 
 
 class TestPDFISBNFiltering:
-    def test_pdf_isbn_noise_without_context_is_ignored(
-        self, extractor: RegexReferenceExtractor
-    ):
+    def test_pdf_isbn_noise_without_context_is_ignored(self, extractor: RegexReferenceExtractor):
         text = "Scan dump 113 204 9780201633610 555 902 without any book context"
 
         refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)

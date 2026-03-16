@@ -27,7 +27,7 @@ class TestStudyAppRegistration:
     def test_study_app_help_mentions_athena(self) -> None:
         from sophia.__main__ import study_app
 
-        help_text = study_app.help if isinstance(study_app.help, str) else ""
+        help_text = study_app.help if isinstance(study_app.help, str) else ""  # pyright: ignore[reportUnnecessaryIsInstance]
         assert "Athena" in help_text
 
 

@@ -43,15 +43,15 @@ class TestConfidenceRatingModel:
 
     def test_calibration_error_overconfident(self) -> None:
         r = ConfidenceRating(topic="X", course_id=1, predicted=0.75, actual=0.5)
-        assert r.calibration_error == pytest.approx(0.25)
+        assert r.calibration_error == pytest.approx(0.25)  # pyright: ignore[reportUnknownMemberType]
 
     def test_calibration_error_underconfident(self) -> None:
         r = ConfidenceRating(topic="X", course_id=1, predicted=0.25, actual=0.75)
-        assert r.calibration_error == pytest.approx(-0.5)
+        assert r.calibration_error == pytest.approx(-0.5)  # pyright: ignore[reportUnknownMemberType]
 
     def test_calibration_error_perfect(self) -> None:
         r = ConfidenceRating(topic="X", course_id=1, predicted=0.5, actual=0.5)
-        assert r.calibration_error == pytest.approx(0.0)
+        assert r.calibration_error == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
 
     def test_is_blind_spot_true(self) -> None:
         r = ConfidenceRating(topic="X", course_id=1, predicted=0.8, actual=0.3)
@@ -94,19 +94,19 @@ class TestRatingToScore:
     def test_valid_ratings(self, rating: int, expected: float) -> None:
         from sophia.services.athena_confidence import rating_to_score
 
-        assert rating_to_score(rating) == pytest.approx(expected)
+        assert rating_to_score(rating) == pytest.approx(expected)  # pyright: ignore[reportUnknownMemberType]
 
     def test_clamps_below_minimum(self) -> None:
         from sophia.services.athena_confidence import rating_to_score
 
-        assert rating_to_score(0) == pytest.approx(0.0)
-        assert rating_to_score(-5) == pytest.approx(0.0)
+        assert rating_to_score(0) == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
+        assert rating_to_score(-5) == pytest.approx(0.0)  # pyright: ignore[reportUnknownMemberType]
 
     def test_clamps_above_maximum(self) -> None:
         from sophia.services.athena_confidence import rating_to_score
 
-        assert rating_to_score(6) == pytest.approx(1.0)
-        assert rating_to_score(100) == pytest.approx(1.0)
+        assert rating_to_score(6) == pytest.approx(1.0)  # pyright: ignore[reportUnknownMemberType]
+        assert rating_to_score(100) == pytest.approx(1.0)  # pyright: ignore[reportUnknownMemberType]
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +124,7 @@ class TestRateConfidence:
         assert isinstance(result, ConfidenceRating)
         assert result.topic == "Sorting"
         assert result.course_id == 42
-        assert result.predicted == pytest.approx(0.75)
+        assert result.predicted == pytest.approx(0.75)  # pyright: ignore[reportUnknownMemberType]
         assert result.actual is None
         assert result.rated_at != ""
 
@@ -137,10 +137,10 @@ class TestRateConfidence:
         await rate_confidence(app_container, "Hashing", course_id=42, rating=2)
 
         cursor = await db.execute("SELECT topic, predicted FROM confidence_ratings")
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
         assert len(rows) == 1
         assert rows[0][0] == "Hashing"
-        assert rows[0][1] == pytest.approx(0.25)
+        assert rows[0][1] == pytest.approx(0.25)  # pyright: ignore[reportUnknownMemberType]
 
 
 # ---------------------------------------------------------------------------
@@ -179,8 +179,8 @@ class TestGetConfidenceRatings:
         assert len(result) == 2
 
         by_topic = {r.topic: r for r in result}
-        assert by_topic["Sorting"].predicted == pytest.approx(0.75)
-        assert by_topic["Hashing"].predicted == pytest.approx(0.5)
+        assert by_topic["Sorting"].predicted == pytest.approx(0.75)  # pyright: ignore[reportUnknownMemberType]
+        assert by_topic["Hashing"].predicted == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
     async def test_filters_by_course_id(self, db: aiosqlite.Connection) -> None:
@@ -315,9 +315,9 @@ class TestUpdateActualScore:
         await update_actual_score(db, "Sorting", course_id=42, actual=0.6)
 
         cursor = await db.execute("SELECT predicted, actual FROM confidence_ratings ORDER BY id")
-        rows = await cursor.fetchall()
+        rows = list(await cursor.fetchall())
         assert len(rows) == 2
         # First rating should be untouched
         assert rows[0][1] is None
         # Second (latest) should be updated
-        assert rows[1][1] == pytest.approx(0.6)
+        assert rows[1][1] == pytest.approx(0.6)  # pyright: ignore[reportUnknownMemberType]

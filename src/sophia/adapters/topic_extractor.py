@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -71,7 +71,7 @@ def _parse_topics(text: str) -> list[str]:
 
 def _build_user_prompt(text: str, course_context: str) -> str:
     """Build the user prompt, injecting course context if provided."""
-    parts = []
+    parts: list[str] = []
     if course_context:
         parts.append(f"Course: {course_context}\n")
     parts.append(f"Content:\n{text}")
@@ -150,8 +150,8 @@ class LLMTopicExtractor:
                 "openai not installed — run: uv pip install openai"
             ) from None
 
-        client = AsyncOpenAI(base_url=base_url, api_key=api_key)
-        response = await client.chat.completions.create(
+        client: Any = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        response: Any = await client.chat.completions.create(
             model=self._config.model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -171,8 +171,8 @@ class LLMTopicExtractor:
             ) from None
 
         api_key = os.environ.get(self._config.api_key_env, "")
-        client = genai.Client(api_key=api_key)
-        response = await client.aio.models.generate_content(
+        client: Any = genai.Client(api_key=api_key)
+        response: Any = await client.aio.models.generate_content(
             model=self._config.model,
             contents=f"{system_prompt}\n\n{user_prompt}",
         )
@@ -186,8 +186,8 @@ class LLMTopicExtractor:
             raise TopicExtractionError("groq not installed — run: uv pip install groq") from None
 
         api_key = os.environ.get(self._config.api_key_env, "")
-        client = AsyncGroq(api_key=api_key)
-        response = await client.chat.completions.create(
+        client: Any = AsyncGroq(api_key=api_key)
+        response: Any = await client.chat.completions.create(
             model=self._config.model,
             messages=[
                 {"role": "system", "content": system_prompt},

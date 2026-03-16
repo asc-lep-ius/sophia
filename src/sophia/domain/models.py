@@ -643,7 +643,7 @@ class SelfExplanation(BaseModel, frozen=True):
     created_at: str = ""
 
 
-_REVIEW_INTERVALS = [1, 3, 7, 14, 30]  # days
+REVIEW_INTERVALS = [1, 3, 7, 14, 30]  # days
 
 
 class ReviewSchedule(BaseModel, frozen=True):
@@ -651,7 +651,7 @@ class ReviewSchedule(BaseModel, frozen=True):
 
     topic: str
     course_id: int
-    interval_index: int = 0  # index into _REVIEW_INTERVALS
+    interval_index: int = 0  # index into REVIEW_INTERVALS
     last_reviewed_at: str | None = None
     next_review_at: str
     score_at_last_review: float | None = None
@@ -659,8 +659,8 @@ class ReviewSchedule(BaseModel, frozen=True):
     @property
     def interval_days(self) -> int:
         """Current interval in days."""
-        idx = min(self.interval_index, len(_REVIEW_INTERVALS) - 1)
-        return _REVIEW_INTERVALS[idx]
+        idx = min(self.interval_index, len(REVIEW_INTERVALS) - 1)
+        return REVIEW_INTERVALS[idx]
 
     @property
     def is_due(self) -> bool:

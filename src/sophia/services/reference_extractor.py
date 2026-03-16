@@ -115,7 +115,9 @@ NUMBERED_TASK_STRUCTURE_RE = re.compile(
 )
 
 ADMIN_REMAINDER_PATTERNS = (
-    re.compile(r"^(?:submit|read|watch|complete|solve|prepare|review|visit|open|download|upload|contact|email)\b"),
+    re.compile(
+        r"^(?:submit|read|watch|complete|solve|prepare|review|visit|open|download|upload|contact|email)\b"
+    ),
     re.compile(r"\b(?:due|deadline|submission|submit|abgabe|einreichen|upload(?:ed)?|hand\s+in)\b"),
     re.compile(r"^(?:assignment|worksheet|slides?|lecture slides|forum|moodle|canvas|portal)\b"),
     re.compile(r"^(?:\(?\d+\)?|[ivxlcdm]+|[a-z])[.):-]\s+"),
@@ -312,9 +314,7 @@ def _looks_like_author(author_candidate: str) -> bool:
         return False
 
     capitalized_words = sum(
-        1
-        for word in words
-        if re.match(r"^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’-]*\.?$", word)
+        1 for word in words if re.match(r"^[A-ZÄÖÜ][A-Za-zÄÖÜäöüß'’-]*\.?$", word)
     )
     return capitalized_words >= 2
 
@@ -415,11 +415,7 @@ def _parse_comma_bibliography_line(item_text: str) -> tuple[str, str] | None:
 
 def _split_bibliography_sentences(item_text: str) -> list[str]:
     """Split bibliography lines into sentence-like parts while preserving content."""
-    return [
-        part.strip(" ,;:-.")
-        for part in re.split(r"\.\s+", item_text)
-        if part.strip(" ,;:-.")
-    ]
+    return [part.strip(" ,;:-.") for part in re.split(r"\.\s+", item_text) if part.strip(" ,;:-.")]
 
 
 def _is_initial_fragment(part: str) -> bool:

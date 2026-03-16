@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import random
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sophia.domain.errors import AthenaError
 from sophia.services.athena_study import get_flashcards
@@ -29,7 +29,7 @@ async def export_anki_deck(
     Raises AthenaError if genanki is not installed.
     """
     try:
-        import genanki
+        import genanki  # pyright: ignore[reportMissingTypeStubs]
     except ImportError as e:
         raise AthenaError(
             "Anki export requires the 'athena' extra: uv pip install sophia[athena]"
@@ -46,7 +46,7 @@ async def export_anki_deck(
     model_id = _stable_id("model")
     deck_id = _stable_id("deck")
 
-    model = genanki.Model(
+    model: Any = genanki.Model(
         model_id,
         "Sophia Flashcard",
         fields=[
@@ -66,12 +66,12 @@ async def export_anki_deck(
     )
 
     name = deck_name or f"Sophia — Course {course_id}"
-    deck = genanki.Deck(deck_id, name)
+    deck: Any = genanki.Deck(deck_id, name)
 
-    notes = []
+    notes: list[Any] = []
     for card in cards:
         tag_topic = card.topic.replace(" ", "_")
-        note = genanki.Note(
+        note: Any = genanki.Note(
             model=model,
             fields=[card.front, card.back, card.topic, card.source.value, card.created_at],
             tags=[tag_topic, card.source.value],
@@ -81,12 +81,12 @@ async def export_anki_deck(
     if interleaved:
         random.Random(course_id).shuffle(notes)
     else:
-        notes.sort(key=lambda n: n.fields[2])  # fields[2] = Topic
+        notes.sort(key=lambda n: n.fields[2])  # pyright: ignore[reportUnknownLambdaType, reportUnknownMemberType]
 
     for note in notes:
         deck.add_note(note)
 
-    package = genanki.Package(deck)
+    package: Any = genanki.Package(deck)
     package.write_to_file(str(output_path))
 
     return len(notes)

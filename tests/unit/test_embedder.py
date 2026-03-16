@@ -2,13 +2,33 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock, patch
 
-import numpy as np
 import pytest
 
 from sophia.domain.errors import EmbeddingError
 from sophia.domain.models import EmbeddingProvider, HermesEmbeddingConfig
+
+
+class _FakeNdArray:
+    """Minimal ndarray stand-in for testing: supports iteration, indexing, and tolist()."""
+
+    def __init__(self, data: list[Any]) -> None:
+        self._data = data
+
+    def __iter__(self):  # pyright: ignore[reportUnknownParameterType]
+        return iter(_FakeNdArray(row) if isinstance(row, list) else row for row in self._data)  # pyright: ignore[reportUnknownArgumentType]
+
+    def __getitem__(self, idx: int) -> _FakeNdArray:
+        item = self._data[idx]
+        return _FakeNdArray(item) if isinstance(item, list) else item  # pyright: ignore[reportReturnType, reportUnknownArgumentType]
+
+    def tolist(self) -> list[Any]:
+        return self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
 
 
 def _make_config(model: str = "intfloat/multilingual-e5-large") -> HermesEmbeddingConfig:
@@ -32,7 +52,7 @@ class TestSentenceTransformerEmbedder:
         from sophia.adapters.embedder import SentenceTransformerEmbedder
 
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([[0.1, 0.2], [0.3, 0.4]])
+        mock_model.encode.return_value = _FakeNdArray([[0.1, 0.2], [0.3, 0.4]])
 
         embedder = SentenceTransformerEmbedder(_make_config("intfloat/multilingual-e5-large"))
         embedder._model = mock_model  # pyright: ignore[reportPrivateUsage]
@@ -46,7 +66,7 @@ class TestSentenceTransformerEmbedder:
         from sophia.adapters.embedder import SentenceTransformerEmbedder
 
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([[0.1, 0.2]])
+        mock_model.encode.return_value = _FakeNdArray([[0.1, 0.2]])
 
         embedder = SentenceTransformerEmbedder(_make_config("all-MiniLM-L6-v2"))
         embedder._model = mock_model  # pyright: ignore[reportPrivateUsage]
@@ -60,7 +80,7 @@ class TestSentenceTransformerEmbedder:
         from sophia.adapters.embedder import SentenceTransformerEmbedder
 
         mock_model = MagicMock()
-        mock_model.encode.return_value = np.array([[0.5, 0.6]])
+        mock_model.encode.return_value = _FakeNdArray([[0.5, 0.6]])
 
         embedder = SentenceTransformerEmbedder(_make_config())
         embedder._model = mock_model  # pyright: ignore[reportPrivateUsage]

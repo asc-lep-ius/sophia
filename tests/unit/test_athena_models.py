@@ -58,7 +58,7 @@ class TestTopicLectureLink:
         )
         assert link.topic == "Sorting"
         assert link.chunk_id == "ep1_3"
-        assert link.score == pytest.approx(0.87)
+        assert link.score == pytest.approx(0.87)  # pyright: ignore[reportUnknownMemberType]
 
 
 class TestAthenaErrors:
@@ -244,7 +244,7 @@ class TestReviewSchedule:
             score_at_last_review=0.85,
         )
         assert sched.interval_index == 3
-        assert sched.score_at_last_review == pytest.approx(0.85)
+        assert sched.score_at_last_review == pytest.approx(0.85)  # pyright: ignore[reportUnknownMemberType]
 
     def test_frozen(self) -> None:
         from sophia.domain.models import ReviewSchedule
@@ -313,7 +313,7 @@ class TestReviewCompletedEvent:
 
         event = ReviewCompleted(topic="Sorting", course_id=42, score=0.85, next_interval_days=7)
         assert event.topic == "Sorting"
-        assert event.score == pytest.approx(0.85)
+        assert event.score == pytest.approx(0.85)  # pyright: ignore[reportUnknownMemberType]
         assert event.next_interval_days == 7
 
     def test_frozen(self) -> None:

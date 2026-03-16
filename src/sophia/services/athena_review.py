@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from sophia.domain.models import _REVIEW_INTERVALS, ReviewSchedule
+from sophia.domain.models import REVIEW_INTERVALS, ReviewSchedule
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -23,7 +23,7 @@ def compute_next_interval(current_index: int, score: float) -> int:
     Score < 0.5: reset to first interval
     """
     if score >= 0.8:
-        return min(current_index + 1, len(_REVIEW_INTERVALS) - 1)
+        return min(current_index + 1, len(REVIEW_INTERVALS) - 1)
     if score >= 0.5:
         return current_index
     return 0
@@ -39,7 +39,7 @@ async def schedule_review(
     Sets next_review_at to now + first interval (1 day).
     """
     now = datetime.now(UTC)
-    next_at = (now + timedelta(days=_REVIEW_INTERVALS[0])).isoformat()
+    next_at = (now + timedelta(days=REVIEW_INTERVALS[0])).isoformat()
     await db.execute(
         "INSERT INTO review_schedule (topic, course_id, interval_index, next_review_at) "
         "VALUES (?, ?, 0, ?) "
@@ -79,7 +79,7 @@ async def complete_review(
 
     new_index = compute_next_interval(current_index, score)
     now = datetime.now(UTC)
-    interval_days = _REVIEW_INTERVALS[min(new_index, len(_REVIEW_INTERVALS) - 1)]
+    interval_days = REVIEW_INTERVALS[min(new_index, len(REVIEW_INTERVALS) - 1)]
     next_at = (now + timedelta(days=interval_days)).isoformat()
 
     await db.execute(
@@ -106,7 +106,7 @@ async def complete_review(
     )
 
 
-def _rows_to_schedules(rows: list[tuple]) -> list[ReviewSchedule]:
+def _rows_to_schedules(rows: list[Any]) -> list[ReviewSchedule]:
     return [
         ReviewSchedule(
             topic=row[0],
@@ -146,7 +146,7 @@ async def get_due_reviews(
             "WHERE next_review_at <= ? ORDER BY next_review_at ASC",
             (now,),
         )
-    rows = await cursor.fetchall()
+    rows = list(await cursor.fetchall())
     return _rows_to_schedules(rows)
 
 
@@ -173,7 +173,7 @@ async def get_upcoming_reviews(
             "ORDER BY next_review_at ASC",
             (now_str, future),
         )
-    rows = await cursor.fetchall()
+    rows = list(await cursor.fetchall())
     return _rows_to_schedules(rows)
 
 
@@ -187,5 +187,5 @@ async def get_all_schedules(
         "WHERE course_id = ? ORDER BY next_review_at ASC",
         (course_id,),
     )
-    rows = await cursor.fetchall()
+    rows = list(await cursor.fetchall())
     return _rows_to_schedules(rows)

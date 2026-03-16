@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import zipfile
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
 import aiosqlite
@@ -145,7 +145,7 @@ class TestExportMissingGenankiRaises:
 
         real_import = builtins.__import__
 
-        def mock_import(name: str, *args, **kwargs):
+        def mock_import(name: str, *args: Any, **kwargs: Any) -> Any:
             if name == "genanki":
                 raise ImportError("No module named 'genanki'")
             return real_import(name, *args, **kwargs)

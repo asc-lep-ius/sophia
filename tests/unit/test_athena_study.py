@@ -267,20 +267,20 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: aiosqlite.Con
         ),
         patch(
             "sophia.services.athena_study.asyncio.to_thread",
-            side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
         result = await link_topics_to_lectures(app, course_id=42, module_id=42, topics=["Sorting"])
 
     assert "Sorting" in result
     assert len(result["Sorting"]) == 1
-    assert result["Sorting"][0][1] == pytest.approx(0.92)
+    assert result["Sorting"][0][1] == pytest.approx(0.92)  # pyright: ignore[reportUnknownMemberType]
 
     # Verify persisted to DB
     cursor = await db.execute(
         "SELECT topic, chunk_id, score FROM topic_lecture_links WHERE course_id = 42"
     )
-    rows = await cursor.fetchall()
+    rows = list(await cursor.fetchall())
     assert len(rows) == 1
     assert rows[0][0] == "Sorting"
     assert rows[0][1] == "ep-001_0"
@@ -296,7 +296,7 @@ class TestStudySessionModel:
 
     def test_improvement_both_scores(self) -> None:
         s = StudySession(course_id=1, topic="X", pre_test_score=0.33, post_test_score=0.67)
-        assert s.improvement == pytest.approx(0.34)
+        assert s.improvement == pytest.approx(0.34)  # pyright: ignore[reportUnknownMemberType]
 
     def test_improvement_none_when_missing_pre(self) -> None:
         s = StudySession(course_id=1, topic="X", post_test_score=0.67)
@@ -386,8 +386,8 @@ async def test_complete_study_session(db: aiosqlite.Connection) -> None:
     )
     row = await cursor.fetchone()
     assert row is not None
-    assert row[0] == pytest.approx(0.33)
-    assert row[1] == pytest.approx(0.67)
+    assert row[0] == pytest.approx(0.33)  # pyright: ignore[reportUnknownMemberType]
+    assert row[1] == pytest.approx(0.67)  # pyright: ignore[reportUnknownMemberType]
     assert row[2] is not None  # completed_at set
 
 
@@ -545,7 +545,7 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.C
         ),
         patch(
             "sophia.services.athena_study.asyncio.to_thread",
-            side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
         questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
@@ -610,7 +610,7 @@ async def test_generate_study_questions_llm_partial_failure(
         ),
         patch(
             "sophia.services.athena_study.asyncio.to_thread",
-            side_effect=lambda fn, *a, **kw: fn(*a, **kw),
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
         questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
@@ -667,7 +667,7 @@ class TestCardReview:
         stats = await get_review_stats(db, course_id=42, topic="Sorting")
         assert stats["total_reviews"] == 3
         assert stats["success_count"] == 2
-        assert stats["success_rate"] == pytest.approx(2 / 3)
+        assert stats["success_rate"] == pytest.approx(2 / 3)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
     async def test_get_review_stats_per_topic(self, db: aiosqlite.Connection) -> None:
@@ -756,7 +756,7 @@ class TestCardReview:
         )
         row = await cursor.fetchone()
         assert row is not None
-        assert row[0] == pytest.approx(0.5)
+        assert row[0] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
     async def test_update_topic_calibration_no_reviews(self, db: aiosqlite.Connection) -> None:

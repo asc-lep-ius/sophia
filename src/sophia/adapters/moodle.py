@@ -30,7 +30,7 @@ from sophia.domain.models import (
 )
 
 try:
-    import fitz  # pyright: ignore[reportMissingTypeStubs]
+    import fitz  # pyright: ignore[reportMissingImports, reportMissingTypeStubs]
 except ImportError:  # pragma: no cover - optional dependency
     fitz = None
 
@@ -675,9 +675,7 @@ def _extract_outbound_url(html: str, *, base_url: str, host: str) -> str | None:
     seen: set[str] = set()
 
     containers = [
-        container
-        for selector in _URL_CONTENT_SELECTORS
-        for container in soup.select(selector)
+        container for selector in _URL_CONTENT_SELECTORS for container in soup.select(selector)
     ]
 
     if not containers:
