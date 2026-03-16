@@ -9,7 +9,7 @@ variables:
   image: python:${PYTHON_VERSION}-slim
   before_script:
     - pip install uv
-    - uv sync --extra dev
+    - uv sync --group dev
   cache:
     key:
       prefix: uv-${PYTHON_VERSION}
@@ -35,7 +35,7 @@ typecheck:
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends libatomic1
     - pip install uv
-    - uv sync --extra dev
+    - uv sync --group dev
   script:
     - uv run pyright
 
