@@ -38,6 +38,37 @@ log = structlog.get_logger()
 
 _MAX_INGESTION_CHARS = 20_000
 _MAX_PDF_PAGES = 5
+_URL_CONTENT_SELECTORS = (
+    ".urlworkaround",
+    "#region-main",
+    "main",
+    ".activity-description",
+    ".box.generalbox",
+)
+_MOODLE_INTERNAL_PATH_PREFIXES = (
+    "/admin/",
+    "/badges/",
+    "/blog/",
+    "/calendar/",
+    "/comment/",
+    "/competency/",
+    "/course/",
+    "/enrol/",
+    "/files/",
+    "/grade/",
+    "/group/",
+    "/lib/",
+    "/local/",
+    "/login/",
+    "/message/",
+    "/mod/",
+    "/my/",
+    "/notes/",
+    "/question/",
+    "/report/",
+    "/theme/",
+    "/user/",
+)
 
 # Error codes indicating an expired or invalid session
 _AUTH_ERROR_CODES = frozenset(
@@ -641,14 +672,36 @@ def _parse_assignment_index(html: str, course_id: int) -> list[AssignmentInfo]:
 def _extract_outbound_url(html: str, *, base_url: str, host: str) -> str | None:
     soup = BeautifulSoup(html, "lxml")
     host_name = urlparse(host).hostname or ""
+    seen: set[str] = set()
+
+    containers = [
+        container
+        for selector in _URL_CONTENT_SELECTORS
+        for container in soup.select(selector)
+    ]
+
+    if not containers:
+        containers = [soup]
+
+    for container in containers:
+        for anchor in container.select("a[href]"):
+            href = urljoin(base_url, str(anchor["href"]))
+            if href in seen or not _is_http_url(href):
+                continue
+            seen.add(href)
+
+            parsed = urlparse(href)
+            if parsed.hostname == host_name and _is_moodle_internal_path(parsed.path):
+                continue
+            return href
 
     for anchor in soup.select("a[href]"):
         href = urljoin(base_url, str(anchor["href"]))
-        if not _is_http_url(href):
+        if href in seen or not _is_http_url(href):
             continue
 
         parsed = urlparse(href)
-        if parsed.hostname == host_name and parsed.path.startswith("/mod/url/view.php"):
+        if parsed.hostname == host_name and _is_moodle_internal_path(parsed.path):
             continue
         return href
 
@@ -695,7 +748,10 @@ def _extract_pdf_text(content: bytes) -> str:
         total_length = 0
         page_count = int(document.page_count)
         for page_index in range(min(page_count, _MAX_PDF_PAGES)):
-            text = str(document.load_page(page_index).get_text("text")).strip()
+            try:
+                text = str(document.load_page(page_index).get_text("text")).strip()
+            except Exception:  # noqa: BLE001
+                continue
             if not text:
                 continue
             parts.append(text)
@@ -747,6 +803,14 @@ def _response_mimetype(response: httpx.Response | None) -> str:
 
 def _response_is_html(response: httpx.Response) -> bool:
     return _response_mimetype(response) == "text/html"
+
+
+def _is_moodle_internal_path(path: str) -> bool:
+    normalized_path = path.rstrip("/") or "/"
+    return any(
+        normalized_path == prefix.rstrip("/") or normalized_path.startswith(prefix)
+        for prefix in _MOODLE_INTERNAL_PATH_PREFIXES
+    )
 
 
 def _response_has_extractable_text(response: httpx.Response) -> bool:
