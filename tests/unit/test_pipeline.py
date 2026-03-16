@@ -491,6 +491,32 @@ async def test_tiss_failure_graceful() -> None:
     assert result[0].isbn == "9780134685991"
 
 
+async def test_tiss_fallback_uses_fullname_prefix_and_shortname_suffix() -> None:
+    """Fallback parsing enables TISS extraction for non-standard shortnames."""
+    tiss_desc = "Lehrbuch: Introduction to Algorithms"
+    tiss_info = TissCourseInfo(
+        course_number="185.A91",
+        semester="2026S",
+        description_de=tiss_desc,
+    )
+    course = Course(
+        id=1,
+        fullname="185.A91 Algorithmen und Datenstrukturen",
+        shortname="AlgoDat-2026S",
+    )
+    ref = _make_ref("Introduction to Algorithms", course_id=1, source=ReferenceSource.TISS)
+
+    course_provider = FakeCourseProvider([course])
+    resource_provider = FakeResourceProvider()
+    extractor = FakeExtractor({tiss_desc: [ref]})
+    metadata = FakeMetadataProvider({("185.A91", "2026S"): tiss_info})
+
+    result = await discover_books(course_provider, resource_provider, extractor, metadata=metadata)
+
+    assert len(result) == 1
+    assert result[0].title == "Introduction to Algorithms"
+
+
 # --- URL classification integration tests ---
 
 

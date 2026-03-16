@@ -12,6 +12,7 @@ from sophia.adapters.tiss import (
     extract_course_info,
     parse_course_xml,
     parse_exam_dates_xml,
+    resolve_course_info,
 )
 from sophia.domain.errors import TissError
 from sophia.domain.models import TissCourseInfo, TissExamDate
@@ -126,6 +127,54 @@ class TestExtractCourseInfo:
     )
     def test_invalid_shortnames(self, shortname: str) -> None:
         assert extract_course_info(shortname) is None
+
+
+class TestResolveCourseInfo:
+    @pytest.mark.parametrize(
+        ("shortname", "fullname", "expected"),
+        [
+            (
+                "185.A91-2026S",
+                "185.A91 Algorithmen und Datenstrukturen",
+                ("185.A91", "2026S"),
+            ),
+            (
+                "280.A69-2026S",
+                "280.A69 Software Engineering",
+                ("280.A69", "2026S"),
+            ),
+            (
+                "AlgoDat-2026S",
+                "185.A91 Algorithmen und Datenstrukturen",
+                ("185.A91", "2026S"),
+            ),
+        ],
+    )
+    def test_fallback_parses_shortname_suffix_and_fullname_prefix(
+        self,
+        shortname: str,
+        fullname: str,
+        expected: tuple[str, str],
+    ) -> None:
+        assert resolve_course_info(shortname, fullname) == expected
+
+    def test_fallback_uses_semester_at_end_of_fullname(self) -> None:
+        shortname = "AlgoDat"
+        fullname = "185.A91 Algorithmen und Datenstrukturen 2026S"
+
+        assert resolve_course_info(shortname, fullname) == ("185.A91", "2026S")
+
+    def test_fallback_returns_none_if_course_number_unresolved(self) -> None:
+        shortname = "AlgoDat-2026S"
+        fullname = "Algorithmen und Datenstrukturen"
+
+        assert resolve_course_info(shortname, fullname) is None
+
+    def test_keeps_existing_shortname_parser_as_first_attempt(self) -> None:
+        shortname = "186.866 Algorithmen und Datenstrukturen 2026S"
+        fullname = "185.A91 Some Other Course 2025W"
+
+        assert resolve_course_info(shortname, fullname) == ("186.866", "2026S")
 
 
 # ------------------------------------------------------------------

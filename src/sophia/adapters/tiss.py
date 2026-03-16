@@ -19,6 +19,9 @@ log = structlog.get_logger()
 
 # Matches course number + semester from TUWEL shortnames like "186.866 ... 2026S"
 _SHORTNAME_RE = re.compile(r"(\d{3}\.\d{3})\b.*\b(20\d{2}[SW])\b")
+_SHORTNAME_SEMESTER_SUFFIX_RE = re.compile(r"-(20\d{2}[SW])$")
+_FULLNAME_SEMESTER_SUFFIX_RE = re.compile(r"(20\d{2}[SW])$")
+_FULLNAME_COURSE_PREFIX_RE = re.compile(r"^(\d{3}\.[A-Za-z0-9]{3})\b")
 
 # XML namespaces used in real TISS API responses
 NS_COURSE = "https://tiss.tuwien.ac.at/api/schemas/course/v10"
@@ -40,6 +43,50 @@ def extract_course_info(shortname: str) -> tuple[str, str] | None:
     if not match:
         return None
     return match.group(1), match.group(2)
+
+
+def _extract_semester_from_shortname_suffix(shortname: str) -> str | None:
+    match = _SHORTNAME_SEMESTER_SUFFIX_RE.search(shortname.strip())
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_semester_from_fullname_suffix(fullname: str) -> str | None:
+    match = _FULLNAME_SEMESTER_SUFFIX_RE.search(fullname.strip())
+    if not match:
+        return None
+    return match.group(1)
+
+
+def _extract_course_number_from_fullname_prefix(fullname: str) -> str | None:
+    match = _FULLNAME_COURSE_PREFIX_RE.search(fullname.strip())
+    if not match:
+        return None
+    return match.group(1)
+
+
+def resolve_course_info(shortname: str, fullname: str) -> tuple[str, str] | None:
+    """Resolve (course_number, semester) from TUWEL shortname/fullname metadata.
+
+    Uses existing shortname parsing first, then falls back to:
+    - semester from shortname suffix "-YYYYS/-YYYYW"
+    - else semester token at end of fullname
+    - course number from fullname prefix "NNN.XXX"
+    """
+    direct = extract_course_info(shortname)
+    if direct is not None:
+        return direct
+
+    semester = _extract_semester_from_shortname_suffix(shortname)
+    if semester is None:
+        semester = _extract_semester_from_fullname_suffix(fullname)
+
+    course_number = _extract_course_number_from_fullname_prefix(fullname)
+    if course_number is None or semester is None:
+        return None
+
+    return course_number, semester
 
 
 def _find(root: ET.Element, tag: str) -> ET.Element | None:

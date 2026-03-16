@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import structlog
 
-from sophia.adapters.tiss import extract_course_info
+from sophia.adapters.tiss import resolve_course_info
 from sophia.domain.events import ExtractionReport
 from sophia.domain.models import BookReference, CourseSection, ModuleInfo, ReferenceSource
 from sophia.services.resource_classifier import classify_modules, is_book_resource
@@ -153,7 +153,13 @@ async def _process_course(
     refs.extend(resource_refs)
 
     # TISS teaching content: description + objectives as additional reference source
-    tiss_refs = await _try_tiss_extraction(course_shortname, course_id, metadata, extractor)
+    tiss_refs = await _try_tiss_extraction(
+        course_shortname,
+        course_name,
+        course_id,
+        metadata,
+        extractor,
+    )
     refs.extend(tiss_refs)
 
     # URL classification: extract book-related URLs from course sections
@@ -201,21 +207,27 @@ async def _try_resource_extraction(
 
 async def _try_tiss_extraction(
     course_shortname: str,
+    course_fullname: str,
     course_id: int,
     metadata: CourseMetadataProvider | None,
     extractor: ReferenceExtractor,
 ) -> list[BookReference]:
     """Extract references from TISS teaching content (best-effort).
 
-    Parses the TUWEL shortname to get course number + semester, then fetches
-    TISS course details. Description and objectives are fed to the extractor.
+    Resolves course number + semester from TUWEL shortname/fullname metadata,
+    then fetches TISS course details. Description and objectives are fed to
+    the extractor.
     """
     if metadata is None:
         return []
 
-    info = extract_course_info(course_shortname)
+    info = resolve_course_info(course_shortname, course_fullname)
     if info is None:
-        logger.debug("tiss_shortname_no_match", shortname=course_shortname)
+        logger.debug(
+            "tiss_course_info_unresolved",
+            shortname=course_shortname,
+            fullname=course_fullname,
+        )
         return []
 
     course_number, semester = info
