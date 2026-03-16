@@ -177,16 +177,32 @@ class MoodleAdapter:
     # ------------------------------------------------------------------
 
     async def get_course_books(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/book/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="book"))
+        return results
 
     async def get_course_pages(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/page/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="page"))
+        return results
 
     async def get_course_resources(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/resource/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="resource"))
+        return results
 
     async def get_course_urls(self, course_ids: list[int]) -> list[ModuleInfo]:
-        raise NotImplementedError("WS transport removed; scraping replacement pending")
+        results: list[ModuleInfo] = []
+        for cid in course_ids:
+            html = await self._scrape("/mod/url/index.php", {"id": cid})
+            results.extend(_parse_mod_index(html, modname="url"))
+        return results
 
     # ------------------------------------------------------------------
     # AssignmentProvider
@@ -407,6 +423,32 @@ def _parse_grade_report(html: str) -> list[GradeItem]:
         )
 
     return items
+
+
+def _extract_id_param(url: str) -> int | None:
+    """Extract the 'id' query parameter from a Moodle URL."""
+    match = re.search(r"[?&]id=(\d+)", url)
+    return int(match.group(1)) if match else None
+
+
+def _parse_mod_index(html: str, *, modname: str) -> list[ModuleInfo]:
+    """Parse a Moodle mod/*/index.php page into ModuleInfo objects."""
+    soup = BeautifulSoup(html, "lxml")
+    table = soup.select_one("table.generaltable")
+    if not table:
+        return []
+    modules: list[ModuleInfo] = []
+    for row in table.select("tbody > tr"):
+        link = row.select_one("td a[href]")
+        if not link:
+            continue
+        href = str(link["href"])
+        mid = _extract_id_param(href)
+        if mid is None:
+            continue
+        name = link.get_text(strip=True)
+        modules.append(ModuleInfo(id=mid, name=name, modname=modname, url=href))
+    return modules
 
 
 def _parse_assignment_index(html: str, course_id: int) -> list[AssignmentInfo]:

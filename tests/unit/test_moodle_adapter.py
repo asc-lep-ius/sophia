@@ -16,6 +16,7 @@ from sophia.domain.models import (
     Course,
     CourseSection,
     GradeItem,
+    ModuleInfo,
 )
 from sophia.domain.ports import AssignmentProvider, CourseProvider, ResourceProvider
 
@@ -301,12 +302,95 @@ class TestGetCourseContent:
 # ------------------------------------------------------------------
 
 
-class TestNotImplementedMethods:
-    """WS-dependent methods raise NotImplementedError until scraping replacements land."""
+class TestModIndex:
+    """Tests for scraping-based module index methods."""
 
-    async def test_get_course_books(self, adapter: MoodleAdapter):
-        with pytest.raises(NotImplementedError, match="scraping replacement pending"):
-            await adapter.get_course_books([1])
+    @respx.mock
+    async def test_parses_books(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "book_index.html").read_text()
+        respx.route(method="GET", path=BOOK_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        books = await adapter.get_course_books([42])
+        assert len(books) == 2
+        assert all(isinstance(b, ModuleInfo) for b in books)
+        assert books[0].id == 2850001
+        assert books[0].name == "Analysis 1 - Grundlagen"
+        assert books[0].modname == "book"
+        assert books[0].url == "https://tuwel.tuwien.ac.at/mod/book/view.php?id=2850001"
+        assert books[1].id == 2850002
+        assert books[1].name == "Übungsbeispiele Sammlung"
+
+    @respx.mock
+    async def test_parses_pages(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "page_index.html").read_text()
+        respx.route(method="GET", path=PAGE_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        pages = await adapter.get_course_pages([42])
+        assert len(pages) == 2
+        assert all(isinstance(p, ModuleInfo) for p in pages)
+        assert pages[0].id == 2860010
+        assert pages[0].name == "Organisatorisches"
+        assert pages[0].modname == "page"
+        assert pages[1].id == 2860020
+        assert pages[1].name == "Literaturliste"
+
+    @respx.mock
+    async def test_parses_resources(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "resource_index.html").read_text()
+        respx.route(method="GET", path=RESOURCE_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        resources = await adapter.get_course_resources([42])
+        assert len(resources) == 2
+        assert all(isinstance(r, ModuleInfo) for r in resources)
+        assert resources[0].id == 2870001
+        assert resources[0].name == "Vorlesungsfolien Kapitel 1"
+        assert resources[0].modname == "resource"
+        assert resources[1].id == 2870002
+        assert resources[1].name == "Übungsblatt 1"
+
+    @respx.mock
+    async def test_parses_urls(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "url_index.html").read_text()
+        respx.route(method="GET", path=URL_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        urls = await adapter.get_course_urls([42])
+        assert len(urls) == 2
+        assert all(isinstance(u, ModuleInfo) for u in urls)
+        assert urls[0].id == 2880001
+        assert urls[0].name == "TISS Kursseite"
+        assert urls[0].modname == "url"
+        assert urls[1].id == 2880002
+        assert urls[1].name == "Visualgo"
+
+    @respx.mock
+    async def test_handles_empty_table(self, adapter: MoodleAdapter):
+        empty_html = "<html><body><p>No books</p></body></html>"
+        respx.route(method="GET", path=BOOK_INDEX_PATH).mock(
+            return_value=httpx.Response(200, text=empty_html)
+        )
+        books = await adapter.get_course_books([1])
+        assert books == []
+
+    @respx.mock
+    async def test_multiple_courses(self, adapter: MoodleAdapter):
+        html = (FIXTURES_DIR / "book_index.html").read_text()
+        empty_html = "<html><body><p>No books</p></body></html>"
+        respx.route(method="GET", path=BOOK_INDEX_PATH, params={"id": "10"}).mock(
+            return_value=httpx.Response(200, text=html)
+        )
+        respx.route(method="GET", path=BOOK_INDEX_PATH, params={"id": "20"}).mock(
+            return_value=httpx.Response(200, text=empty_html)
+        )
+        results = await adapter.get_course_books([10, 20])
+        assert len(results) == 2
+
+
+class TestNotImplementedMethods:
+    """WS-dependent methods that still need scraping replacements."""
 
     async def test_get_quizzes(self, adapter: MoodleAdapter):
         with pytest.raises(NotImplementedError, match="scraping replacement pending"):
@@ -378,6 +462,10 @@ class TestProtocolConformance:
 FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
 GRADE_REPORT_PATH = "/grade/report/user/index.php"
 ASSIGN_INDEX_PATH = "/mod/assign/index.php"
+BOOK_INDEX_PATH = "/mod/book/index.php"
+PAGE_INDEX_PATH = "/mod/page/index.php"
+RESOURCE_INDEX_PATH = "/mod/resource/index.php"
+URL_INDEX_PATH = "/mod/url/index.php"
 
 
 # ------------------------------------------------------------------
