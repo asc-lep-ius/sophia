@@ -250,6 +250,7 @@ class TestSectionHeaderDetection:
         [
             "TODO: submit assignment 2 by Friday",
             "Task: submit assignment 2 by Friday",
+            "Task 1: submit assignment 2 by Friday",
             "Contact: prof@example.com",
             "https://example.com/reading-list",
         ],
@@ -282,6 +283,30 @@ class TestSectionHeaderDetection:
         refs = extractor.extract(html, SOURCE, COURSE_ID)
         assert len(refs) == 1
         assert refs[0].title == line.rsplit(".", maxsplit=2)[0]
+
+    @pytest.mark.parametrize(
+        ("line", "expected_title"),
+        [
+            (
+                "Task 1: A Practical Introduction to Research. Springer, 2021.",
+                "Task 1: A Practical Introduction to Research",
+            ),
+            (
+                "Exercise II: Theory and Practice. Springer, 2021.",
+                "Exercise II: Theory and Practice",
+            ),
+        ],
+    )
+    def test_numbered_prefixed_bibliography_lines_are_preserved(
+        self,
+        extractor: RegexReferenceExtractor,
+        line: str,
+        expected_title: str,
+    ):
+        html = f"<h3>Bibliography</h3><ul><li>{line}</li></ul>"
+        refs = extractor.extract(html, SOURCE, COURSE_ID)
+        assert len(refs) == 1
+        assert refs[0].title == expected_title
 
     @pytest.mark.parametrize(
         "title",

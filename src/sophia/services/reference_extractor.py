@@ -109,7 +109,7 @@ GUARDED_NON_BIBLIO_PREFIX_RE = re.compile(
 )
 
 NUMBERED_TASK_STRUCTURE_RE = re.compile(
-    r"^(?:task|exercise)\s+(?:\(?\d+\)?|[ivxlcdm]+|[a-z])(?:[.):-]\s*|\s*:\s*).+$",
+    r"^(?P<prefix>task|exercise)\s+(?P<label>\(?\d+\)?|[ivxlcdm]+|[a-z])\s*(?P<separator>[.):-]|:)\s*(?P<remainder>.+)$",
     re.IGNORECASE,
 )
 
@@ -213,8 +213,9 @@ def _looks_like_admin_remainder(item_text: str) -> bool:
 def _matches_guarded_non_bibliography_prefix(item_text: str) -> bool:
     """Match guarded task-like prefixes only when the remainder is administrative."""
     normalized = _normalize_section_item(item_text)
-    if NUMBERED_TASK_STRUCTURE_RE.match(normalized):
-        return True
+    numbered_match = NUMBERED_TASK_STRUCTURE_RE.match(normalized)
+    if numbered_match:
+        return _looks_like_admin_remainder(numbered_match.group("remainder"))
 
     match = GUARDED_NON_BIBLIO_PREFIX_RE.match(normalized)
     if not match:
