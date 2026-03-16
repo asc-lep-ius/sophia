@@ -430,6 +430,23 @@ class TestPlainTextPDFExtraction:
             for r in refs
         )
 
+    def test_pdf_plain_text_legal_prose_lines_do_not_extract_references(
+        self, extractor: RegexReferenceExtractor
+    ):
+        text = """
+        Datenschutz-Grundverordnung (DSGVO)
+
+        1. Die Verarbeitung ist nur rechtmäßig, wenn mindestens eine der nachstehenden
+           Bedingungen erfüllt ist (Art. 6 Abs. 1 DSGVO).
+        2. Verantwortliche und Auftragsverarbeiter treffen geeignete technische und
+           organisatorische Maßnahmen gemäß Art. 32 DSGVO.
+        3. Betroffene Personen haben die Rechte aus Art. 15 bis 22 DSGVO.
+        """
+
+        refs = extractor.extract(text, ReferenceSource.PDF, COURSE_ID)
+
+        assert refs == []
+
 
 class TestPDFISBNFiltering:
     def test_pdf_isbn_noise_without_context_is_ignored(

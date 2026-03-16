@@ -518,20 +518,72 @@ def _looks_like_plain_text_bibliography_header(line: str) -> bool:
     return bool(PLAIN_TEXT_BIBLIOGRAPHY_HEADER_RE.search(line))
 
 
-def _looks_like_plain_text_bibliography_entry(line: str) -> bool:
-    """Return whether a plain-text line resembles a bibliography entry."""
-    stripped = _strip_bullet_prefix(line)
-    if stripped != line.strip():
-        return True
+def _count_plain_text_citation_signals(line: str) -> int:
+    """Count citation-specific metadata cues in a plain-text candidate line."""
+    return sum(
+        (
+            int(bool(YEAR_RE.search(line))),
+            int(bool(EDITION_RE.search(line))),
+            int(bool(PUBLISHER_RE.search(line))),
+            int(bool(ISBN_REGEX.search(line))),
+        )
+    )
+
+
+def _has_strong_plain_text_author_prefix(line: str) -> bool:
+    """Require compact person-like prefixes before punctuation delimiters."""
+    match = re.match(r"^(?P<prefix>[^,:.]{2,80})[,:.]\s+.+$", line)
+    if not match:
+        return False
+
+    prefix = match.group("prefix").strip(" ,;:-.")
+    if not _looks_like_author(prefix):
+        return False
+
+    words = re.findall(r"[A-Za-zÄÖÜäöüß'’-]+\.?", prefix)
+    if not 1 <= len(words) <= 5:
+        return False
+
+    return bool(
+        "," in prefix
+        or re.search(r"\b[A-ZÄÖÜ]\.", prefix)
+        or re.search(r"\bet\s+al\b", prefix, re.IGNORECASE)
+    )
+
+
+def _looks_like_plain_text_bibliography_entry(line: str, *, in_bibliography_block: bool) -> bool:
+    """Return whether a plain-text line has sufficient bibliography structure."""
+    normalized = line.strip()
+    stripped = _strip_bullet_prefix(normalized)
+    has_list_marker = stripped != normalized
+
+    if _is_non_bibliography_line(stripped):
+        return False
+
+    citation_signals = _count_plain_text_citation_signals(stripped)
+
     parsed = _parse_comma_bibliography_line(stripped)
     if parsed:
-        return True
-    sentence_parts = _split_bibliography_sentences(stripped)
-    author_and_title = _extract_author_and_title_from_sentences(sentence_parts)
-    if author_and_title is None:
-        return False
-    author, title = author_and_title
-    return _looks_like_author(author) and _looks_like_title(title)
+        has_author_title = True
+    else:
+        sentence_parts = _split_bibliography_sentences(stripped)
+        author_and_title = _extract_author_and_title_from_sentences(sentence_parts)
+        has_author_title = False
+        if author_and_title is not None:
+            author, title = author_and_title
+            has_author_title = _looks_like_author(author) and _looks_like_title(title)
+
+    strong_author_prefix = _has_strong_plain_text_author_prefix(stripped)
+
+    if in_bibliography_block:
+        if has_list_marker:
+            return has_author_title or citation_signals >= 1
+        return has_author_title and citation_signals >= 1
+
+    if has_list_marker:
+        return citation_signals >= 2 and (has_author_title or strong_author_prefix)
+
+    return has_author_title and strong_author_prefix and citation_signals >= 1
 
 
 def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasTitleAndAuthor]:
@@ -561,7 +613,10 @@ def _extract_plain_text_bibliography_refs(text: str) -> list[HasBareTitle | HasT
             in_bibliography_block = True
             continue
 
-        starts_entry = _looks_like_plain_text_bibliography_entry(line)
+        starts_entry = _looks_like_plain_text_bibliography_entry(
+            line,
+            in_bibliography_block=in_bibliography_block,
+        )
         if starts_entry:
             if current_line:
                 parsed = _parse_section_item(current_line)
