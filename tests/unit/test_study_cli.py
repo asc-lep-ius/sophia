@@ -88,7 +88,16 @@ class TestStudyTopicsCommand:
 
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[("ep1", "Lecture 1")])
-        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+
+        # study_topics now makes additional DB calls:
+        # 1. episode title lookup (fetchall)
+        # 2. series title lookup (fetchone → single row)
+        # 3. get_course_references query (fetchall → empty)
+        series_cursor = AsyncMock()
+        series_cursor.fetchone = AsyncMock(return_value=("Lecture 1",))
+        refs_cursor = AsyncMock()
+        refs_cursor.fetchall = AsyncMock(return_value=[])
+        mock_container.db.execute = AsyncMock(side_effect=[mock_cursor, series_cursor, refs_cursor])
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,

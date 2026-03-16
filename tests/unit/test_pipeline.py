@@ -673,3 +673,130 @@ async def test_enriched_pdf_description_uses_pdf_source() -> None:
         ReferenceSource.PDF,
         1,
     ) in extractor.calls
+
+
+# --- Persistence tests ---
+
+
+class TestPersistReferences:
+    """Tests for reference persistence to SQLite."""
+
+    @pytest.fixture
+    async def db(self):
+        import aiosqlite
+
+        from sophia.infra.persistence import run_migrations
+
+        db_conn = await aiosqlite.connect(":memory:")
+        await db_conn.execute("PRAGMA foreign_keys=ON")
+        await run_migrations(db_conn)
+        yield db_conn
+        await db_conn.close()
+
+    async def test_persist_and_retrieve(self, db):
+        from sophia.services.pipeline import get_course_references, persist_references
+
+        refs = [
+            BookReference(
+                title="Introduction to Algorithms",
+                authors=["Cormen", "Leiserson"],
+                isbn="978-0262033848",
+                source=ReferenceSource.DESCRIPTION,
+                course_id=123,
+                course_name="AlgoDat 2026S",
+            ),
+        ]
+        saved = await persist_references(db, refs)
+        assert saved == 1
+
+        loaded = await get_course_references(db, course_id=123)
+        assert len(loaded) == 1
+        assert loaded[0].title == "Introduction to Algorithms"
+        assert loaded[0].authors == ["Cormen", "Leiserson"]
+        assert loaded[0].isbn == "978-0262033848"
+
+    async def test_persist_upsert_updates_existing(self, db):
+        from sophia.services.pipeline import get_course_references, persist_references
+
+        ref1 = BookReference(
+            title="Test Book",
+            authors=["Author A"],
+            isbn=None,
+            source=ReferenceSource.DESCRIPTION,
+            course_id=100,
+            course_name="Test Course",
+            confidence=0.5,
+        )
+        await persist_references(db, [ref1])
+
+        ref2 = BookReference(
+            title="Test Book",
+            authors=["Author A", "Author B"],
+            isbn="978-1234567890",
+            source=ReferenceSource.DESCRIPTION,
+            course_id=100,
+            course_name="Test Course",
+            confidence=0.8,
+        )
+        await persist_references(db, [ref2])
+
+        loaded = await get_course_references(db, course_id=100)
+        assert len(loaded) == 1
+        assert loaded[0].isbn == "978-1234567890"
+        assert loaded[0].confidence == 0.8
+        assert loaded[0].authors == ["Author A", "Author B"]
+
+    async def test_persist_empty_list(self, db):
+        from sophia.services.pipeline import persist_references
+
+        saved = await persist_references(db, [])
+        assert saved == 0
+
+    async def test_get_by_course_name(self, db):
+        from sophia.services.pipeline import get_course_references, persist_references
+
+        refs = [
+            BookReference(
+                title="Book A",
+                authors=[],
+                isbn=None,
+                source=ReferenceSource.TISS,
+                course_id=100,
+                course_name="EP1 - Einführung in die Programmierung 1",
+            ),
+            BookReference(
+                title="Book B",
+                authors=[],
+                isbn=None,
+                source=ReferenceSource.TISS,
+                course_id=200,
+                course_name="AlgoDat 2026S",
+            ),
+        ]
+        await persist_references(db, refs)
+
+        results = await get_course_references(db, course_name="EP1")
+        assert len(results) == 1
+        assert results[0].title == "Book A"
+
+    async def test_get_all_references(self, db):
+        from sophia.services.pipeline import get_course_references, persist_references
+
+        refs = [
+            BookReference(
+                title="A",
+                authors=[],
+                source=ReferenceSource.DESCRIPTION,
+                course_id=1,
+            ),
+            BookReference(
+                title="B",
+                authors=[],
+                source=ReferenceSource.TISS,
+                course_id=2,
+            ),
+        ]
+        await persist_references(db, refs)
+
+        results = await get_course_references(db)
+        assert len(results) == 2

@@ -15,6 +15,8 @@ from sophia.domain.models import BookReference, CourseSection, ModuleInfo, Refer
 from sophia.services.resource_classifier import classify_modules, is_book_resource
 
 if TYPE_CHECKING:
+    import aiosqlite
+
     from sophia.domain.ports import (
         CourseMetadataProvider,
         CourseProvider,
@@ -417,3 +419,80 @@ def _deduplicate_by_title(refs: list[BookReference]) -> list[BookReference]:
         result.append(merged)
 
     return result
+
+
+# --- Persistence ---
+
+
+async def persist_references(
+    db: aiosqlite.Connection,
+    refs: list[BookReference],
+) -> int:
+    """Persist discovered references to SQLite. Returns count of new/updated rows."""
+    import json
+
+    count = 0
+    for ref in refs:
+        result = await db.execute(
+            "INSERT INTO discovered_references"
+            " (title, authors, isbn, source, course_id, course_name, confidence)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(title, course_id, source) DO UPDATE SET"
+            " authors = excluded.authors,"
+            " isbn = COALESCE(excluded.isbn, discovered_references.isbn),"
+            " confidence = MAX(excluded.confidence, discovered_references.confidence),"
+            " course_name = COALESCE("
+            "   NULLIF(excluded.course_name, ''), discovered_references.course_name),"
+            " discovered_at = CURRENT_TIMESTAMP",
+            (
+                ref.title,
+                json.dumps(ref.authors),
+                ref.isbn,
+                ref.source.value,
+                ref.course_id,
+                ref.course_name,
+                ref.confidence,
+            ),
+        )
+        if result.rowcount:
+            count += result.rowcount
+    await db.commit()
+    return count
+
+
+async def get_course_references(
+    db: aiosqlite.Connection,
+    *,
+    course_id: int | None = None,
+    course_name: str | None = None,
+) -> list[BookReference]:
+    """Load persisted references filtered by course_id or course_name."""
+    import json
+
+    query = (
+        "SELECT title, authors, isbn, source, course_id, course_name, confidence "
+        "FROM discovered_references"
+    )
+    params: tuple[int | str, ...] = ()
+
+    if course_id is not None:
+        query += " WHERE course_id = ?"
+        params = (course_id,)
+    elif course_name is not None:
+        query += " WHERE course_name LIKE ?"
+        params = (f"%{course_name}%",)
+
+    cursor = await db.execute(query, params)
+    rows = await cursor.fetchall()
+    return [
+        BookReference(
+            title=row[0],
+            authors=json.loads(row[1]),
+            isbn=row[2],
+            source=ReferenceSource(row[3]),
+            course_id=row[4],
+            course_name=row[5],
+            confidence=row[6],
+        )
+        for row in rows
+    ]

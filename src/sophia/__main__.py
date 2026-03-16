@@ -124,13 +124,17 @@ async def discover() -> None:
                 extractor=extractor,
                 metadata=container.tiss,
             )
+
+            if not refs:
+                console.print("[yellow]No book references found in enrolled courses.[/yellow]")
+                return
+
+            from sophia.services.pipeline import persist_references
+
+            saved = await persist_references(container.db, refs)
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
-
-    if not refs:
-        console.print("[yellow]No book references found in enrolled courses.[/yellow]")
-        return
 
     table = Table(title="Discovered Book References")
     table.add_column("Title", style="cyan", no_wrap=False)
@@ -149,6 +153,7 @@ async def discover() -> None:
         )
 
     console.print(table)
+    console.print(f"\n[dim]{saved} references persisted to database.[/dim]")
 
 
 @auth_app.command
@@ -1358,6 +1363,44 @@ async def study_topics(
                 table.add_row(tm.topic, str(tm.frequency), coverage)
 
             console.print(table)
+
+            # Show recommended reading from discovered references
+            from sophia.services.pipeline import get_course_references
+
+            series_title = ""
+            cursor = await container.db.execute(
+                "SELECT DISTINCT title FROM lecture_downloads WHERE module_id = ? LIMIT 1",
+                (module_id,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                series_title = row[0].split(" - ")[0].split(" – ")[0].strip() if row[0] else ""
+
+            reading = (
+                await get_course_references(container.db, course_name=series_title)
+                if series_title
+                else []
+            )
+            if reading:
+                reading_table = Table(title="Recommended Reading")
+                reading_table.add_column("Title", style="cyan", no_wrap=False)
+                reading_table.add_column("Author(s)", style="green")
+                reading_table.add_column("ISBN", style="magenta")
+                reading_table.add_column("Source", style="blue")
+                for ref in reading:
+                    reading_table.add_row(
+                        ref.title or "—",
+                        ", ".join(ref.authors) if ref.authors else "—",
+                        ref.isbn or "—",
+                        ref.source.value,
+                    )
+                console.print(reading_table)
+            else:
+                console.print(
+                    "\n[dim]No reading material found. Run:[/dim] "
+                    "[cyan]sophia books discover[/cyan] [dim]to find course books.[/dim]"
+                )
+
             console.print("\n[dim]Next:[/dim] [cyan]sophia study confidence <module-id>[/cyan]")
 
     except AuthError:
