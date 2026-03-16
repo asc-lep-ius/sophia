@@ -1691,6 +1691,114 @@ async def quiz_review(
         console.print("\n[dim]Review interrupted — partial progress saved.[/dim]")
 
 
+@quiz_app.command(name="explain")
+async def quiz_explain(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    topic: Annotated[
+        str | None, cyclopts.Parameter(help="Topic to filter. Defaults to all.")
+    ] = None,
+    count: Annotated[int, cyclopts.Parameter(help="Max cards to explain.")] = 5,
+) -> None:
+    """Self-explain wrong answers with fading scaffolds."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        get_explanation_count,
+        get_lecture_context,
+        get_scaffold_level,
+        get_scaffold_prompts,
+        save_self_explanation,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            # Get cards that were reviewed and failed
+            query = (
+                "SELECT sf.id, sf.course_id, sf.topic, sf.front, sf.back, sf.source, sf.created_at "
+                "FROM student_flashcards sf "
+                "JOIN card_review_attempts cra ON cra.flashcard_id = sf.id "
+                "WHERE sf.course_id = ? AND cra.success = 0 "
+            )
+            params: list[int | str] = [module_id]
+            if topic:
+                query += "AND sf.topic = ? "
+                params.append(topic)
+            query += "GROUP BY sf.id ORDER BY MAX(cra.reviewed_at) DESC LIMIT ?"
+            params.append(count)
+
+            cursor = await container.db.execute(query, params)
+            rows = await cursor.fetchall()
+
+            if not rows:
+                console.print(
+                    "[yellow]No wrong answers to explain. "
+                    "Review cards with 'sophia quiz review' first.[/yellow]"
+                )
+                return
+
+            exp_count = await get_explanation_count(container.db, module_id)
+            level = get_scaffold_level(exp_count)
+            prompts = get_scaffold_prompts(level)
+
+            scaffold_labels = {3: "full", 1: "minimal", 0: "open"}
+            console.print(
+                f"\n[bold]🧠 Self-Explanation: {len(rows)} card(s), "
+                f"scaffold={scaffold_labels.get(level, str(level))}[/bold]\n"
+            )
+
+            saved = 0
+            for i, row in enumerate(rows, 1):
+                card_id, _course_id, card_topic = row[0], row[1], row[2]
+                front, back = row[3], row[4]
+
+                console.print(Panel(front, title=f"Card {i}/{len(rows)} — {card_topic}"))
+                console.print(Panel(back, title="Correct Answer", style="green"))
+
+                # Collect explanation based on scaffold level
+                parts: list[str] = []
+                if prompts:
+                    for prompt_text in prompts:
+                        answer = Prompt.ask(f"[cyan]{prompt_text}[/cyan]", console=console)
+                        parts.append(answer)
+                else:
+                    answer = Prompt.ask("[cyan]Explain in your own words:[/cyan]", console=console)
+                    parts.append(answer)
+
+                explanation_text = "\n".join(parts)
+
+                await save_self_explanation(
+                    container.db,
+                    flashcard_id=card_id,
+                    student_explanation=explanation_text,
+                    scaffold_level=level,
+                )
+                saved += 1
+
+                # Show lecture context
+                context = await get_lecture_context(container, module_id, card_topic)
+                if context:
+                    console.print(
+                        Panel(context, title="📚 Here's what the lecture says:", style="dim")
+                    )
+                console.print()
+
+            console.print(
+                f"[bold]✅ {saved} explanation(s) recorded (scaffold level {level})[/bold]"
+            )
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        console.print("\n[dim]Explanation interrupted — partial progress saved.[/dim]")
+
+
 def main() -> None:
     """Entry point called by the `sophia` console script."""
     setup_logging(debug=True)

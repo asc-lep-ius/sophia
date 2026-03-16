@@ -160,6 +160,63 @@ class TestCardReviewError:
         assert str(err) == "review failed"
 
 
+class TestSelfExplanation:
+    """SelfExplanation frozen model."""
+
+    def test_required_fields(self) -> None:
+        from sophia.domain.models import SelfExplanation
+
+        exp = SelfExplanation(flashcard_id=7, student_explanation="I confused X with Y")
+        assert exp.flashcard_id == 7
+        assert exp.student_explanation == "I confused X with Y"
+        assert exp.id == 0
+        assert exp.scaffold_level == 3
+        assert exp.created_at == ""
+
+    def test_custom_fields(self) -> None:
+        from sophia.domain.models import SelfExplanation
+
+        exp = SelfExplanation(
+            id=5,
+            flashcard_id=7,
+            student_explanation="Wrong because...",
+            scaffold_level=1,
+            created_at="2026-03-16T12:00:00",
+        )
+        assert exp.id == 5
+        assert exp.scaffold_level == 1
+        assert exp.created_at == "2026-03-16T12:00:00"
+
+    def test_frozen(self) -> None:
+        from sophia.domain.models import SelfExplanation
+
+        exp = SelfExplanation(flashcard_id=1, student_explanation="text")
+        with pytest.raises(ValidationError):
+            exp.student_explanation = "new"  # type: ignore[misc]
+
+
+class TestSelfExplanationRecordedEvent:
+    """SelfExplanationRecorded event."""
+
+    def test_fields(self) -> None:
+        from sophia.domain.events import SelfExplanationRecorded
+
+        event = SelfExplanationRecorded(
+            course_id=42, topic="Sorting", flashcard_id=7, scaffold_level=3
+        )
+        assert event.course_id == 42
+        assert event.topic == "Sorting"
+        assert event.flashcard_id == 7
+        assert event.scaffold_level == 3
+
+    def test_frozen(self) -> None:
+        from sophia.domain.events import SelfExplanationRecorded
+
+        event = SelfExplanationRecorded(course_id=1, topic="T", flashcard_id=1, scaffold_level=0)
+        with pytest.raises(AttributeError):
+            event.scaffold_level = 2  # type: ignore[misc]
+
+
 class TestTopicExtractorProtocol:
     """TopicExtractor protocol existence check."""
 

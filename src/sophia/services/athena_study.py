@@ -14,6 +14,7 @@ from sophia.domain.models import (
     CardReviewAttempt,
     FlashcardSource,
     KnowledgeChunk,
+    SelfExplanation,
     StudentFlashcard,
     StudySession,
     TopicMapping,
@@ -559,3 +560,100 @@ async def update_topic_calibration(
         course_id=course_id,
         success_rate=success_rate,
     )
+
+
+# ---------------------------------------------------------------------------
+# Self-explanation
+# ---------------------------------------------------------------------------
+
+_FULL_SCAFFOLD_PROMPTS = [
+    "What fact, rule, or concept did you apply to your answer?",
+    "What is different about the correct answer compared to yours?",
+    "Give a concrete example that illustrates the correct concept.",
+]
+
+_MEDIUM_SCAFFOLD_PROMPTS = [
+    "Why was your answer wrong?",
+]
+
+
+async def get_explanation_count(db: aiosqlite.Connection, course_id: int) -> int:
+    """Count total self-explanations across all topics for a course."""
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM self_explanations se "
+        "JOIN student_flashcards sf ON se.flashcard_id = sf.id "
+        "WHERE sf.course_id = ?",
+        (course_id,),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0
+
+
+def get_scaffold_level(explanation_count: int) -> int:
+    """Determine scaffold level based on experience.
+
+    0-9 explanations: level 3 (full scaffolding)
+    10-19 explanations: level 1 (minimal scaffolding)
+    20+: level 0 (open — student self-regulates)
+    """
+    if explanation_count < 10:
+        return 3
+    if explanation_count < 20:
+        return 1
+    return 0
+
+
+def get_scaffold_prompts(level: int) -> list[str]:
+    """Get the explanation prompts for a given scaffold level."""
+    if level >= 3:
+        return list(_FULL_SCAFFOLD_PROMPTS)
+    if level >= 1:
+        return list(_MEDIUM_SCAFFOLD_PROMPTS)
+    return []
+
+
+async def save_self_explanation(
+    db: aiosqlite.Connection,
+    flashcard_id: int,
+    student_explanation: str,
+    scaffold_level: int,
+) -> SelfExplanation:
+    """Save a student's self-explanation for a flashcard."""
+    now = datetime.now(UTC).isoformat()
+    cursor = await db.execute(
+        "INSERT INTO self_explanations "
+        "(flashcard_id, student_explanation, scaffold_level, created_at) "
+        "VALUES (?, ?, ?, ?)",
+        (flashcard_id, student_explanation, scaffold_level, now),
+    )
+    await db.commit()
+    return SelfExplanation(
+        id=cursor.lastrowid or 0,
+        flashcard_id=flashcard_id,
+        student_explanation=student_explanation,
+        scaffold_level=scaffold_level,
+        created_at=now,
+    )
+
+
+async def get_self_explanations(
+    db: aiosqlite.Connection,
+    flashcard_id: int,
+) -> list[SelfExplanation]:
+    """Get all self-explanations for a flashcard."""
+    cursor = await db.execute(
+        "SELECT id, flashcard_id, student_explanation, scaffold_level, created_at "
+        "FROM self_explanations WHERE flashcard_id = ? ORDER BY created_at DESC",
+        (flashcard_id,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        SelfExplanation(
+            id=row[0],
+            flashcard_id=row[1],
+            student_explanation=row[2],
+            scaffold_level=row[3],
+            created_at=row[4] or "",
+        )
+        for row in rows
+    ]

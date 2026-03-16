@@ -765,3 +765,132 @@ class TestCardReview:
 
         # Should not raise
         await update_topic_calibration(db, course_id=42, topic="Nonexistent")
+
+
+# ---------------------------------------------------------------------------
+# Self-explanation
+# ---------------------------------------------------------------------------
+
+
+class TestSelfExplanation:
+    """Self-explanation service functions."""
+
+    @pytest.mark.asyncio
+    async def test_save_self_explanation(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import save_flashcard, save_self_explanation
+
+        card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
+        exp = await save_self_explanation(
+            db,
+            flashcard_id=card.id,
+            student_explanation="I confused quicksort with mergesort",
+            scaffold_level=3,
+        )
+
+        assert exp.id > 0
+        assert exp.flashcard_id == card.id
+        assert exp.student_explanation == "I confused quicksort with mergesort"
+        assert exp.scaffold_level == 3
+        assert exp.created_at != ""
+
+    @pytest.mark.asyncio
+    async def test_get_self_explanations(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            get_self_explanations,
+            save_flashcard,
+            save_self_explanation,
+        )
+
+        card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
+        await save_self_explanation(
+            db,
+            flashcard_id=card.id,
+            student_explanation="First",
+            scaffold_level=3,
+        )
+        await save_self_explanation(
+            db,
+            flashcard_id=card.id,
+            student_explanation="Second",
+            scaffold_level=1,
+        )
+
+        explanations = await get_self_explanations(db, flashcard_id=card.id)
+        assert len(explanations) == 2
+        # Reverse chronological — most recent first
+        assert explanations[0].student_explanation == "Second"
+        assert explanations[1].student_explanation == "First"
+
+    @pytest.mark.asyncio
+    async def test_get_explanation_count(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            get_explanation_count,
+            save_flashcard,
+            save_self_explanation,
+        )
+
+        card1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        card2 = await save_flashcard(db, course_id=42, topic="Graphs", front="Q2", back="A2")
+        card_other = await save_flashcard(db, course_id=99, topic="Other", front="Q3", back="A3")
+
+        await save_self_explanation(
+            db,
+            flashcard_id=card1.id,
+            student_explanation="E1",
+            scaffold_level=3,
+        )
+        await save_self_explanation(
+            db,
+            flashcard_id=card2.id,
+            student_explanation="E2",
+            scaffold_level=3,
+        )
+        await save_self_explanation(
+            db,
+            flashcard_id=card_other.id,
+            student_explanation="E3",
+            scaffold_level=3,
+        )
+
+        count = await get_explanation_count(db, course_id=42)
+        assert count == 2
+
+    def test_get_scaffold_level_full(self) -> None:
+        from sophia.services.athena_study import get_scaffold_level
+
+        assert get_scaffold_level(0) == 3
+        assert get_scaffold_level(5) == 3
+        assert get_scaffold_level(9) == 3
+
+    def test_get_scaffold_level_medium(self) -> None:
+        from sophia.services.athena_study import get_scaffold_level
+
+        assert get_scaffold_level(10) == 1
+        assert get_scaffold_level(15) == 1
+        assert get_scaffold_level(19) == 1
+
+    def test_get_scaffold_level_open(self) -> None:
+        from sophia.services.athena_study import get_scaffold_level
+
+        assert get_scaffold_level(20) == 0
+        assert get_scaffold_level(50) == 0
+        assert get_scaffold_level(100) == 0
+
+    def test_get_scaffold_prompts_full(self) -> None:
+        from sophia.services.athena_study import get_scaffold_prompts
+
+        prompts = get_scaffold_prompts(3)
+        assert len(prompts) == 3
+        assert all(isinstance(p, str) for p in prompts)
+
+    def test_get_scaffold_prompts_medium(self) -> None:
+        from sophia.services.athena_study import get_scaffold_prompts
+
+        prompts = get_scaffold_prompts(1)
+        assert len(prompts) == 1
+
+    def test_get_scaffold_prompts_open(self) -> None:
+        from sophia.services.athena_study import get_scaffold_prompts
+
+        prompts = get_scaffold_prompts(0)
+        assert prompts == []

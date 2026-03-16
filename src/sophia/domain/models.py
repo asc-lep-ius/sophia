@@ -631,3 +631,13 @@ class CardReviewAttempt(BaseModel, frozen=True):
     flashcard_id: int
     success: bool
     reviewed_at: str = ""
+
+
+class SelfExplanation(BaseModel, frozen=True):
+    """A student's self-explanation of why they got a question wrong."""
+
+    id: int = 0
+    flashcard_id: int
+    student_explanation: str
+    scaffold_level: int = 3  # 3=full, 1=minimal, 0=open
+    created_at: str = ""

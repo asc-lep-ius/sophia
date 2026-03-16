@@ -139,6 +139,16 @@ class CardReviewed:
 
 
 @dataclass(frozen=True)
+class SelfExplanationRecorded:
+    """Emitted when a student records a self-explanation."""
+
+    course_id: int
+    topic: str
+    flashcard_id: int
+    scaffold_level: int
+
+
+@dataclass(frozen=True)
 class LectureDownloadCompleted:
     """Emitted when a lecture download finishes successfully."""
 

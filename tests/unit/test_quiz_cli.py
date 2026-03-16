@@ -392,3 +392,149 @@ class TestQuizReviewCommand:
         command_names = [cmd for cmd in quiz_app]
         # quiz_app is a cyclopts App — check it has a "review" command
         assert any("review" in str(cmd) for cmd in command_names)
+
+
+class TestQuizExplainCommand:
+    """The `sophia quiz explain` command prompts students to self-explain wrong answers."""
+
+    @pytest.fixture
+    def mock_container(self) -> MagicMock:
+        container = MagicMock()
+        container.db = AsyncMock()
+        return container
+
+    @pytest.fixture
+    def sample_wrong_cards(self) -> list[StudentFlashcard]:
+        return [
+            StudentFlashcard(
+                id=1,
+                course_id=42,
+                topic="Sorting",
+                front="What is quicksort?",
+                back="Divide-and-conquer sort",
+                source=FlashcardSource.STUDY,
+                created_at="2026-01-01",
+            ),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_explain_no_wrong_cards_prints_message(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_explain
+
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+
+        with patch("sophia.infra.di.create_app") as mock_create:
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_explain(module_id=42)
+
+    @pytest.mark.asyncio
+    async def test_explain_full_scaffold_collects_3_responses(
+        self,
+        mock_container: MagicMock,
+        sample_wrong_cards: list[StudentFlashcard],
+    ) -> None:
+        from sophia.__main__ import quiz_explain
+
+        mock_cursor = AsyncMock()
+        # Return raw DB rows matching student_flashcards columns
+        mock_cursor.fetchall = AsyncMock(
+            return_value=[
+                (
+                    1,
+                    42,
+                    "Sorting",
+                    "What is quicksort?",
+                    "Divide-and-conquer sort",
+                    "study",
+                    "2026-01-01",
+                ),
+            ]
+        )
+        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+
+        mock_exp = MagicMock()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_explanation_count",
+                return_value=5,
+            ),
+            patch(
+                "sophia.services.athena_study.save_self_explanation",
+                return_value=mock_exp,
+            ) as mock_save,
+            patch(
+                "sophia.services.athena_study.get_lecture_context",
+                return_value="Lecture says quicksort is...",
+            ),
+            patch("rich.prompt.Prompt.ask", return_value="My explanation"),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_explain(module_id=42)
+
+            mock_save.assert_called_once()
+            # scaffold_level=3 for count=5
+            assert mock_save.call_args.kwargs["scaffold_level"] == 3
+
+    @pytest.mark.asyncio
+    async def test_explain_open_scaffold_at_20_explanations(
+        self,
+        mock_container: MagicMock,
+    ) -> None:
+        from sophia.__main__ import quiz_explain
+
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(
+            return_value=[
+                (
+                    1,
+                    42,
+                    "Sorting",
+                    "What is quicksort?",
+                    "Divide-and-conquer sort",
+                    "study",
+                    "2026-01-01",
+                ),
+            ]
+        )
+        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+
+        mock_exp = MagicMock()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_study.get_explanation_count",
+                return_value=25,
+            ),
+            patch(
+                "sophia.services.athena_study.save_self_explanation",
+                return_value=mock_exp,
+            ) as mock_save,
+            patch(
+                "sophia.services.athena_study.get_lecture_context",
+                return_value="Lecture context...",
+            ),
+            patch("rich.prompt.Prompt.ask", return_value="My open explanation"),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_explain(module_id=42)
+
+            mock_save.assert_called_once()
+            # At 25 explanations, scaffold_level should be 0
+            assert mock_save.call_args.kwargs["scaffold_level"] == 0
+
+    @pytest.mark.asyncio
+    async def test_explain_command_registered(self) -> None:
+        """The explain command should be registered on quiz_app."""
+        from sophia.__main__ import quiz_app
+
+        command_names = [cmd for cmd in quiz_app]
+        assert any("explain" in str(cmd) for cmd in command_names)
