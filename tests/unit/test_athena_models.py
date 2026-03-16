@@ -217,6 +217,113 @@ class TestSelfExplanationRecordedEvent:
             event.scaffold_level = 2  # type: ignore[misc]
 
 
+class TestReviewSchedule:
+    """ReviewSchedule frozen model."""
+
+    def test_required_fields(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(
+            topic="Sorting", course_id=42, next_review_at="2026-03-17T12:00:00+00:00"
+        )
+        assert sched.topic == "Sorting"
+        assert sched.course_id == 42
+        assert sched.interval_index == 0
+        assert sched.last_reviewed_at is None
+        assert sched.score_at_last_review is None
+
+    def test_custom_fields(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(
+            topic="Hashing",
+            course_id=7,
+            interval_index=3,
+            last_reviewed_at="2026-03-15T12:00:00+00:00",
+            next_review_at="2026-03-29T12:00:00+00:00",
+            score_at_last_review=0.85,
+        )
+        assert sched.interval_index == 3
+        assert sched.score_at_last_review == pytest.approx(0.85)
+
+    def test_frozen(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(topic="T", course_id=1, next_review_at="2026-03-17T12:00:00+00:00")
+        with pytest.raises(ValidationError):
+            sched.topic = "Changed"  # type: ignore[misc]
+
+    def test_interval_days_property(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        for idx, expected in enumerate([1, 3, 7, 14, 30]):
+            sched = ReviewSchedule(
+                topic="T",
+                course_id=1,
+                interval_index=idx,
+                next_review_at="2026-03-17T12:00:00+00:00",
+            )
+            assert sched.interval_days == expected
+
+    def test_interval_days_caps_at_max(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(
+            topic="T", course_id=1, interval_index=99, next_review_at="2026-03-17T12:00:00+00:00"
+        )
+        assert sched.interval_days == 30
+
+    def test_is_due_past(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(topic="T", course_id=1, next_review_at="2020-01-01T00:00:00+00:00")
+        assert sched.is_due is True
+
+    def test_is_due_future(self) -> None:
+        from sophia.domain.models import ReviewSchedule
+
+        sched = ReviewSchedule(topic="T", course_id=1, next_review_at="2099-01-01T00:00:00+00:00")
+        assert sched.is_due is False
+
+
+class TestReviewDueEvent:
+    """ReviewDue event."""
+
+    def test_fields(self) -> None:
+        from sophia.domain.events import ReviewDue
+
+        event = ReviewDue(topic="Sorting", course_id=42, interval_days=7)
+        assert event.topic == "Sorting"
+        assert event.course_id == 42
+        assert event.interval_days == 7
+
+    def test_frozen(self) -> None:
+        from sophia.domain.events import ReviewDue
+
+        event = ReviewDue(topic="T", course_id=1, interval_days=1)
+        with pytest.raises(AttributeError):
+            event.topic = "Changed"  # type: ignore[misc]
+
+
+class TestReviewCompletedEvent:
+    """ReviewCompleted event."""
+
+    def test_fields(self) -> None:
+        from sophia.domain.events import ReviewCompleted
+
+        event = ReviewCompleted(topic="Sorting", course_id=42, score=0.85, next_interval_days=7)
+        assert event.topic == "Sorting"
+        assert event.score == pytest.approx(0.85)
+        assert event.next_interval_days == 7
+
+    def test_frozen(self) -> None:
+        from sophia.domain.events import ReviewCompleted
+
+        event = ReviewCompleted(topic="T", course_id=1, score=0.5, next_interval_days=3)
+        with pytest.raises(AttributeError):
+            event.score = 1.0  # type: ignore[misc]
+
+
 class TestTopicExtractorProtocol:
     """TopicExtractor protocol existence check."""
 

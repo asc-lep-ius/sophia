@@ -1850,6 +1850,76 @@ async def quiz_export_anki(
         raise SystemExit(1) from None
 
 
+@quiz_app.command(name="review-check")
+async def quiz_review_check(
+    module_id: Annotated[
+        int | None, cyclopts.Parameter(help="Opencast module ID. Omit for all courses.")
+    ] = None,
+) -> None:
+    """Show topics due for spaced review and upcoming reviews."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.infra.di import create_app
+    from sophia.services.athena_review import get_due_reviews, get_upcoming_reviews
+
+    console = Console()
+
+    async with create_app() as container:
+        course_id = module_id
+        due = await get_due_reviews(container.db, course_id=course_id)
+        upcoming = await get_upcoming_reviews(container.db, course_id=course_id, days_ahead=3)
+
+        if not due and not upcoming:
+            console.print(
+                "[yellow]No reviews scheduled. "
+                "Start studying with:[/yellow] sophia quiz study <module-id>"
+            )
+            return
+
+        if due:
+            table = Table(title="📋 Reviews Due Today", show_lines=True)
+            table.add_column("Topic", style="bold")
+            table.add_column("Course", justify="right")
+            table.add_column("Review #", justify="center")
+            table.add_column("Last Score", justify="center")
+
+            for sched in due:
+                score = sched.score_at_last_review
+                if score is None:
+                    status = "[dim]new[/dim]"
+                elif score >= 0.8:
+                    status = f"[green]{score:.0%} advancing[/green]"
+                elif score >= 0.5:
+                    status = f"[yellow]{score:.0%} repeating[/yellow]"
+                else:
+                    status = f"[red]{score:.0%} reset![/red]"
+
+                table.add_row(
+                    sched.topic,
+                    str(sched.course_id),
+                    str(sched.interval_index + 1),
+                    status,
+                )
+            console.print(table)
+
+        if upcoming:
+            table = Table(title="🔜 Upcoming (next 3 days)", show_lines=True)
+            table.add_column("Topic", style="bold")
+            table.add_column("Course", justify="right")
+            table.add_column("Due", justify="center")
+            table.add_column("Interval", justify="center")
+
+            for sched in upcoming:
+                table.add_row(
+                    sched.topic,
+                    str(sched.course_id),
+                    sched.next_review_at[:10],
+                    f"{sched.interval_days}d",
+                )
+            console.print(table)
+
+
 def main() -> None:
     """Entry point called by the `sophia` console script."""
     setup_logging(debug=True)

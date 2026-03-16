@@ -39,8 +39,12 @@ async def export_anki_deck(
     if not cards:
         return 0
 
-    model_id = int(hashlib.sha256(f"sophia-model-{course_id}".encode()).hexdigest()[:8], 16) & 0x7FFFFFFF
-    deck_id = int(hashlib.sha256(f"sophia-deck-{course_id}".encode()).hexdigest()[:8], 16) & 0x7FFFFFFF
+    def _stable_id(label: str) -> int:
+        digest = hashlib.sha256(f"sophia-{label}-{course_id}".encode()).hexdigest()
+        return int(digest[:8], 16) & 0x7FFFFFFF
+
+    model_id = _stable_id("model")
+    deck_id = _stable_id("deck")
 
     model = genanki.Model(
         model_id,

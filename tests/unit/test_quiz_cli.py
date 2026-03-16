@@ -590,3 +590,106 @@ class TestQuizExportAnkiCommand:
 
         command_names = [cmd for cmd in quiz_app]
         assert any("export-anki" in str(cmd) for cmd in command_names)
+
+
+class TestQuizReviewCheckCommand:
+    """The `sophia quiz review-check` command shows due and upcoming reviews."""
+
+    @pytest.fixture
+    def mock_container(self) -> MagicMock:
+        container = MagicMock()
+        container.db = AsyncMock()
+        return container
+
+    @pytest.mark.asyncio
+    async def test_review_check_with_due_reviews(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_review_check
+        from sophia.domain.models import ReviewSchedule
+
+        due = [
+            ReviewSchedule(
+                topic="Sorting",
+                course_id=42,
+                interval_index=1,
+                next_review_at="2026-03-15T00:00:00+00:00",
+                score_at_last_review=0.85,
+            ),
+        ]
+        upcoming = [
+            ReviewSchedule(
+                topic="Hashing",
+                course_id=42,
+                interval_index=0,
+                next_review_at="2026-03-18T00:00:00+00:00",
+            ),
+        ]
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_review.get_due_reviews",
+                return_value=due,
+            ) as mock_due,
+            patch(
+                "sophia.services.athena_review.get_upcoming_reviews",
+                return_value=upcoming,
+            ) as mock_upcoming,
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_review_check()
+
+            mock_due.assert_called_once()
+            mock_upcoming.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_review_check_no_reviews(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_review_check
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_review.get_due_reviews",
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_review.get_upcoming_reviews",
+                return_value=[],
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_review_check()
+
+    @pytest.mark.asyncio
+    async def test_review_check_with_module_filter(self, mock_container: MagicMock) -> None:
+        from sophia.__main__ import quiz_review_check
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch(
+                "sophia.services.athena_review.get_due_reviews",
+                return_value=[],
+            ) as mock_due,
+            patch(
+                "sophia.services.athena_review.get_upcoming_reviews",
+                return_value=[],
+            ) as mock_upcoming,
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await quiz_review_check(module_id=42)
+
+            mock_due.assert_called_once_with(mock_container.db, course_id=42)
+            mock_upcoming.assert_called_once_with(mock_container.db, course_id=42, days_ahead=3)
+
+    @pytest.mark.asyncio
+    async def test_review_check_command_registered(self) -> None:
+        """The review-check command should be registered on quiz_app."""
+        from sophia.__main__ import quiz_app
+
+        command_names = [cmd for cmd in quiz_app]
+        assert any("review-check" in str(cmd) for cmd in command_names)

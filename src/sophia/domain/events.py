@@ -149,6 +149,25 @@ class SelfExplanationRecorded:
 
 
 @dataclass(frozen=True)
+class ReviewDue:
+    """Emitted when a topic review is due."""
+
+    topic: str
+    course_id: int
+    interval_days: int
+
+
+@dataclass(frozen=True)
+class ReviewCompleted:
+    """Emitted when a topic review is completed."""
+
+    topic: str
+    course_id: int
+    score: float
+    next_interval_days: int
+
+
+@dataclass(frozen=True)
 class LectureDownloadCompleted:
     """Emitted when a lecture download finishes successfully."""
 
