@@ -622,3 +622,12 @@ class StudentFlashcard(BaseModel, frozen=True):
     back: str  # answer
     source: FlashcardSource = FlashcardSource.STUDY
     created_at: str = ""
+
+
+class CardReviewAttempt(BaseModel, frozen=True):
+    """Record of a single flashcard review attempt."""
+
+    id: int = 0
+    flashcard_id: int
+    success: bool
+    reviewed_at: str = ""

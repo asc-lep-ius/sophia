@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 from sophia.adapters.topic_extractor import LLMTopicExtractor
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.models import (
+    CardReviewAttempt,
     FlashcardSource,
     KnowledgeChunk,
     StudentFlashcard,
@@ -431,3 +432,130 @@ async def get_flashcards(
         )
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Card reviews
+# ---------------------------------------------------------------------------
+
+
+async def save_review_attempt(
+    db: aiosqlite.Connection,
+    flashcard_id: int,
+    success: bool,
+) -> CardReviewAttempt:
+    """Insert a review attempt and return the model."""
+    now = datetime.now(UTC).isoformat()
+    cursor = await db.execute(
+        "INSERT INTO card_review_attempts (flashcard_id, success, reviewed_at) VALUES (?, ?, ?)",
+        (flashcard_id, success, now),
+    )
+    await db.commit()
+    return CardReviewAttempt(
+        id=cursor.lastrowid or 0,
+        flashcard_id=flashcard_id,
+        success=success,
+        reviewed_at=now,
+    )
+
+
+async def get_review_stats(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str | None = None,
+) -> dict[str, Any]:
+    """Get per-topic review stats: total_reviews, success_count, success_rate."""
+    if topic:
+        cursor = await db.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN cra.success THEN 1 ELSE 0 END) "
+            "FROM card_review_attempts cra "
+            "JOIN student_flashcards sf ON cra.flashcard_id = sf.id "
+            "WHERE sf.course_id = ? AND sf.topic = ?",
+            (course_id, topic),
+        )
+    else:
+        cursor = await db.execute(
+            "SELECT COUNT(*), SUM(CASE WHEN cra.success THEN 1 ELSE 0 END) "
+            "FROM card_review_attempts cra "
+            "JOIN student_flashcards sf ON cra.flashcard_id = sf.id "
+            "WHERE sf.course_id = ?",
+            (course_id,),
+        )
+    row = await cursor.fetchone()
+    total = row[0] if row else 0
+    success_count = int(row[1] or 0) if row else 0
+    return {
+        "total_reviews": total,
+        "success_count": success_count,
+        "success_rate": success_count / total if total > 0 else 0.0,
+    }
+
+
+async def get_due_cards(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str | None = None,
+    limit: int = 10,
+) -> list[StudentFlashcard]:
+    """Get cards due for review — never-reviewed first, then oldest reviewed."""
+    base = (
+        "SELECT sf.id, sf.course_id, sf.topic, sf.front, sf.back, sf.source, sf.created_at "
+        "FROM student_flashcards sf "
+        "LEFT JOIN card_review_attempts cra ON sf.id = cra.flashcard_id "
+        "WHERE sf.course_id = ?"
+    )
+    params: list[int | str] = [course_id]
+    if topic:
+        base += " AND sf.topic = ?"
+        params.append(topic)
+    base += (
+        " GROUP BY sf.id "
+        "ORDER BY MAX(cra.reviewed_at) IS NOT NULL, MAX(cra.reviewed_at) ASC "
+        "LIMIT ?"
+    )
+    params.append(limit)
+    cursor = await db.execute(base, params)
+    rows = await cursor.fetchall()
+    return [
+        StudentFlashcard(
+            id=row[0],
+            course_id=row[1],
+            topic=row[2],
+            front=row[3],
+            back=row[4],
+            source=FlashcardSource(row[5]),
+            created_at=row[6] or "",
+        )
+        for row in rows
+    ]
+
+
+async def update_topic_calibration(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str,
+) -> None:
+    """Compute review success rate and auto-populate confidence actual_score."""
+    cursor = await db.execute(
+        "SELECT COUNT(*), SUM(CASE WHEN cra.success THEN 1 ELSE 0 END) "
+        "FROM card_review_attempts cra "
+        "JOIN student_flashcards sf ON cra.flashcard_id = sf.id "
+        "WHERE sf.course_id = ? AND sf.topic = ?",
+        (course_id, topic),
+    )
+    row = await cursor.fetchone()
+    if row is None or row[0] == 0:
+        return
+
+    success_count = int(row[1] or 0)
+    success_rate = success_count / row[0]
+
+    from sophia.services.athena_confidence import update_actual_score
+
+    await update_actual_score(db, topic, course_id, success_rate)
+    log.info(
+        "topic_calibration_updated",
+        topic=topic,
+        course_id=course_id,
+        success_rate=success_rate,
+    )

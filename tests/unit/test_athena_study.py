@@ -619,3 +619,149 @@ async def test_generate_study_questions_llm_partial_failure(
     assert questions[0] == "One question?"
     # Remaining should be fallback
     assert "Sorting" in questions[1]
+
+
+# ---------------------------------------------------------------------------
+# Card reviews
+# ---------------------------------------------------------------------------
+
+
+class TestCardReview:
+    """Card review service functions."""
+
+    @pytest.mark.asyncio
+    async def test_save_review_attempt(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import save_flashcard, save_review_attempt
+
+        card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
+        attempt = await save_review_attempt(db, flashcard_id=card.id, success=True)
+
+        assert attempt.id > 0
+        assert attempt.flashcard_id == card.id
+        assert attempt.success is True
+        assert attempt.reviewed_at != ""
+
+    @pytest.mark.asyncio
+    async def test_get_review_stats_no_reviews(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import get_review_stats
+
+        stats = await get_review_stats(db, course_id=99)
+        assert stats["total_reviews"] == 0
+        assert stats["success_count"] == 0
+        assert stats["success_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_get_review_stats_with_reviews(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            get_review_stats,
+            save_flashcard,
+            save_review_attempt,
+        )
+
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q2", back="A2")
+        await save_review_attempt(db, flashcard_id=c1.id, success=True)
+        await save_review_attempt(db, flashcard_id=c2.id, success=False)
+        await save_review_attempt(db, flashcard_id=c1.id, success=True)
+
+        stats = await get_review_stats(db, course_id=42, topic="Sorting")
+        assert stats["total_reviews"] == 3
+        assert stats["success_count"] == 2
+        assert stats["success_rate"] == pytest.approx(2 / 3)
+
+    @pytest.mark.asyncio
+    async def test_get_review_stats_per_topic(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            get_review_stats,
+            save_flashcard,
+            save_review_attempt,
+        )
+
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Graphs", front="Q2", back="A2")
+        await save_review_attempt(db, flashcard_id=c1.id, success=True)
+        await save_review_attempt(db, flashcard_id=c2.id, success=False)
+
+        stats = await get_review_stats(db, course_id=42, topic="Sorting")
+        assert stats["total_reviews"] == 1
+        assert stats["success_count"] == 1
+
+    @pytest.mark.asyncio
+    async def test_get_due_cards_unreviewed_first(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            get_due_cards,
+            save_flashcard,
+            save_review_attempt,
+        )
+
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q2", back="A2")
+        # Review c1 but not c2
+        await save_review_attempt(db, flashcard_id=c1.id, success=True)
+
+        due = await get_due_cards(db, course_id=42)
+        assert len(due) == 2
+        # Unreviewed card (c2) should come first
+        assert due[0].id == c2.id
+
+    @pytest.mark.asyncio
+    async def test_get_due_cards_with_topic_filter(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import get_due_cards, save_flashcard
+
+        await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        await save_flashcard(db, course_id=42, topic="Graphs", front="Q2", back="A2")
+
+        due = await get_due_cards(db, course_id=42, topic="Graphs")
+        assert len(due) == 1
+        assert due[0].topic == "Graphs"
+
+    @pytest.mark.asyncio
+    async def test_get_due_cards_respects_limit(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import get_due_cards, save_flashcard
+
+        for i in range(5):
+            await save_flashcard(db, course_id=42, topic="Sorting", front=f"Q{i}", back=f"A{i}")
+
+        due = await get_due_cards(db, course_id=42, limit=3)
+        assert len(due) == 3
+
+    @pytest.mark.asyncio
+    async def test_update_topic_calibration(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import (
+            save_flashcard,
+            save_review_attempt,
+            update_topic_calibration,
+        )
+
+        # Insert a confidence rating for the topic
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.75, "2026-01-01T00:00:00"),
+        )
+        await db.commit()
+
+        # Create flashcards and review them
+        c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
+        c2 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q2", back="A2")
+        await save_review_attempt(db, flashcard_id=c1.id, success=True)
+        await save_review_attempt(db, flashcard_id=c2.id, success=False)
+
+        # Calibrate — should update actual to 0.5 (1/2)
+        await update_topic_calibration(db, course_id=42, topic="Sorting")
+
+        cursor = await db.execute(
+            "SELECT actual FROM confidence_ratings WHERE topic = ? AND course_id = ?",
+            ("Sorting", 42),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_update_topic_calibration_no_reviews(self, db: aiosqlite.Connection) -> None:
+        """No reviews → no calibration update (no crash)."""
+        from sophia.services.athena_study import update_topic_calibration
+
+        # Should not raise
+        await update_topic_calibration(db, course_id=42, topic="Nonexistent")

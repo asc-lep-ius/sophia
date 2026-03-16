@@ -75,3 +75,7 @@ class ConfidenceError(AthenaError):
 
 class StudySessionError(AthenaError):
     """Study session workflow failed."""
+
+
+class CardReviewError(AthenaError):
+    """Card review workflow failed."""

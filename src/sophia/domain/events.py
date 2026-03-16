@@ -129,6 +129,16 @@ class FlashcardCreated:
 
 
 @dataclass(frozen=True)
+class CardReviewed:
+    """Emitted when a flashcard is reviewed."""
+
+    course_id: int
+    topic: str
+    flashcard_id: int
+    success: bool
+
+
+@dataclass(frozen=True)
 class LectureDownloadCompleted:
     """Emitted when a lecture download finishes successfully."""
 

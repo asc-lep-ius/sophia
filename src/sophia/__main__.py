@@ -1598,6 +1598,99 @@ async def quiz_study(
         console.print("\n[dim]Session interrupted — partial progress saved.[/dim]")
 
 
+@quiz_app.command(name="review")
+async def quiz_review(
+    module_id: Annotated[int, cyclopts.Parameter(help="Opencast module ID.")],
+    topic: Annotated[
+        str | None, cyclopts.Parameter(help="Topic to review. Defaults to all.")
+    ] = None,
+    count: Annotated[int, cyclopts.Parameter(help="Max cards to review.")] = 10,
+) -> None:
+    """Review flashcards and auto-calibrate confidence from results."""
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.prompt import Prompt
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, CardReviewError
+    from sophia.infra.di import create_app
+    from sophia.services.athena_study import (
+        get_due_cards,
+        get_review_stats,
+        save_review_attempt,
+        update_topic_calibration,
+    )
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            cards = await get_due_cards(container.db, module_id, topic=topic, limit=count)
+
+            if not cards:
+                console.print(
+                    "[yellow]No flashcards to review. "
+                    "Create some with 'sophia quiz study' first.[/yellow]"
+                )
+                return
+
+            console.print(f"\n[bold]🃏 Card Review: {len(cards)} card(s)[/bold]\n")
+
+            correct = 0
+            reviewed_topics: set[str] = set()
+
+            for i, card in enumerate(cards, 1):
+                console.print(Panel(card.front, title=f"Card {i}/{len(cards)} — {card.topic}"))
+                Prompt.ask("Press Enter to reveal answer", default="", console=console)
+                console.print(Panel(card.back, title="Answer", style="green"))
+
+                answer = Prompt.ask(
+                    "Did you get it right? [y/n]", choices=["y", "n"], console=console
+                )
+                success = answer == "y"
+                if success:
+                    correct += 1
+
+                await save_review_attempt(container.db, flashcard_id=card.id, success=success)
+                reviewed_topics.add(card.topic)
+                console.print()
+
+            # Calibrate all reviewed topics
+            for t in reviewed_topics:
+                await update_topic_calibration(container.db, course_id=module_id, topic=t)
+
+            # Summary
+            accuracy = correct / len(cards) if cards else 0.0
+            console.print("[bold]📊 Review Complete[/bold]")
+            console.print(f"  Total: {len(cards)}  Correct: {correct}  Accuracy: {accuracy:.0%}\n")
+
+            table = Table(title="Per-Topic Breakdown")
+            table.add_column("Topic", style="cyan")
+            table.add_column("Reviews", justify="right")
+            table.add_column("Correct", justify="right")
+            table.add_column("Rate", justify="right")
+
+            for t in sorted(reviewed_topics):
+                stats = await get_review_stats(container.db, module_id, topic=t)
+                table.add_row(
+                    t,
+                    str(stats["total_reviews"]),
+                    str(stats["success_count"]),
+                    f"{stats['success_rate']:.0%}",
+                )
+
+            console.print(table)
+
+    except AuthError:
+        console.print("[red]Session expired — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except CardReviewError as exc:
+        console.print(f"[red]Card review error:[/red] {exc}")
+        raise SystemExit(1) from None
+    except KeyboardInterrupt:
+        console.print("\n[dim]Review interrupted — partial progress saved.[/dim]")
+
+
 def main() -> None:
     """Entry point called by the `sophia` console script."""
     setup_logging(debug=True)

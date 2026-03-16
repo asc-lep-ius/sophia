@@ -95,6 +95,71 @@ class TestAthenaEvents:
         assert event.chunk_count == 3
 
 
+class TestCardReviewAttempt:
+    """CardReviewAttempt frozen model."""
+
+    def test_required_fields(self) -> None:
+        from sophia.domain.models import CardReviewAttempt
+
+        attempt = CardReviewAttempt(flashcard_id=7, success=True)
+        assert attempt.flashcard_id == 7
+        assert attempt.success is True
+        assert attempt.id == 0
+        assert attempt.reviewed_at == ""
+
+    def test_custom_fields(self) -> None:
+        from sophia.domain.models import CardReviewAttempt
+
+        attempt = CardReviewAttempt(
+            id=1, flashcard_id=7, success=False, reviewed_at="2026-03-16T12:00:00"
+        )
+        assert attempt.id == 1
+        assert attempt.success is False
+        assert attempt.reviewed_at == "2026-03-16T12:00:00"
+
+    def test_frozen(self) -> None:
+        from sophia.domain.models import CardReviewAttempt
+
+        attempt = CardReviewAttempt(flashcard_id=1, success=True)
+        with pytest.raises(ValidationError):
+            attempt.success = False  # type: ignore[misc]
+
+
+class TestCardReviewedEvent:
+    """CardReviewed event."""
+
+    def test_fields(self) -> None:
+        from sophia.domain.events import CardReviewed
+
+        event = CardReviewed(course_id=42, topic="Sorting", flashcard_id=7, success=True)
+        assert event.course_id == 42
+        assert event.topic == "Sorting"
+        assert event.flashcard_id == 7
+        assert event.success is True
+
+    def test_frozen(self) -> None:
+        from sophia.domain.events import CardReviewed
+
+        event = CardReviewed(course_id=1, topic="T", flashcard_id=1, success=True)
+        with pytest.raises(AttributeError):
+            event.success = False  # type: ignore[misc]
+
+
+class TestCardReviewError:
+    """CardReviewError is in the Athena error hierarchy."""
+
+    def test_is_athena_error(self) -> None:
+        from sophia.domain.errors import CardReviewError
+
+        assert issubclass(CardReviewError, AthenaError)
+
+    def test_message(self) -> None:
+        from sophia.domain.errors import CardReviewError
+
+        err = CardReviewError("review failed")
+        assert str(err) == "review failed"
+
+
 class TestTopicExtractorProtocol:
     """TopicExtractor protocol existence check."""
 
