@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+import sys
+from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.models import HermesLLMConfig, LLMProvider
+
+# Ensure optional LLM modules are importable so unittest.mock.patch() can
+# resolve dotted targets even when the real packages aren't installed.
+if "openai" not in sys.modules:
+    _openai = ModuleType("openai")
+    _openai.AsyncOpenAI = MagicMock  # type: ignore[attr-defined]
+    sys.modules["openai"] = _openai
+
+if "groq" not in sys.modules:
+    _groq = ModuleType("groq")
+    _groq.AsyncGroq = MagicMock  # type: ignore[attr-defined]
+    sys.modules["groq"] = _groq
+
+if "google" not in sys.modules:
+    sys.modules["google"] = ModuleType("google")
+if "google.genai" not in sys.modules:
+    _genai = ModuleType("google.genai")
+    _genai.Client = MagicMock  # type: ignore[attr-defined]
+    sys.modules["google.genai"] = _genai
+    sys.modules["google"].genai = _genai  # type: ignore[attr-defined]
 
 
 def _make_config(

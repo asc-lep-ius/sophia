@@ -14,6 +14,13 @@ from sophia.infra.persistence import run_migrations
 if TYPE_CHECKING:
     from pathlib import Path
 
+import importlib.util
+
+_requires_genanki = pytest.mark.skipif(
+    importlib.util.find_spec("genanki") is None,
+    reason="genanki not installed (optional 'athena' extra)",
+)
+
 
 @pytest.fixture
 async def db():
@@ -41,6 +48,7 @@ async def _insert_flashcard(
     await db.commit()
 
 
+@_requires_genanki
 class TestExportCreatesApkgFile:
     @pytest.mark.asyncio
     async def test_export_creates_apkg_file(self, db: aiosqlite.Connection, tmp_path: Path) -> None:
@@ -59,6 +67,7 @@ class TestExportCreatesApkgFile:
             assert "collection.anki2" in zf.namelist()
 
 
+@_requires_genanki
 class TestExportNoCardsReturnsZero:
     @pytest.mark.asyncio
     async def test_export_no_cards_returns_zero(
@@ -73,6 +82,7 @@ class TestExportNoCardsReturnsZero:
         assert not output.exists()
 
 
+@_requires_genanki
 class TestExportInterleavedShuffles:
     @pytest.mark.asyncio
     async def test_export_interleaved_shuffles(
@@ -95,6 +105,7 @@ class TestExportInterleavedShuffles:
             assert "collection.anki2" in zf.namelist()
 
 
+@_requires_genanki
 class TestExportBlockedGroupsByTopic:
     @pytest.mark.asyncio
     async def test_export_blocked_groups_by_topic(
@@ -115,6 +126,7 @@ class TestExportBlockedGroupsByTopic:
             assert "collection.anki2" in zf.namelist()
 
 
+@_requires_genanki
 class TestExportCardsHaveTopicTags:
     @pytest.mark.asyncio
     async def test_export_cards_have_topic_tags(
@@ -162,6 +174,7 @@ class TestExportMissingGenankiRaises:
                 )
 
 
+@_requires_genanki
 class TestExportCustomDeckName:
     @pytest.mark.asyncio
     async def test_export_custom_deck_name(self, db: aiosqlite.Connection, tmp_path: Path) -> None:

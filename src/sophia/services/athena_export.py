@@ -29,7 +29,7 @@ async def export_anki_deck(
     Raises AthenaError if genanki is not installed.
     """
     try:
-        import genanki  # pyright: ignore[reportMissingTypeStubs]
+        import genanki  # pyright: ignore[reportMissingImports, reportMissingTypeStubs]
     except ImportError as e:
         raise AthenaError(
             "Anki export requires the 'athena' extra: uv pip install sophia[athena]"
@@ -46,7 +46,7 @@ async def export_anki_deck(
     model_id = _stable_id("model")
     deck_id = _stable_id("deck")
 
-    model: Any = genanki.Model(
+    model: Any = genanki.Model(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         model_id,
         "Sophia Flashcard",
         fields=[
@@ -66,12 +66,12 @@ async def export_anki_deck(
     )
 
     name = deck_name or f"Sophia — Course {course_id}"
-    deck: Any = genanki.Deck(deck_id, name)
+    deck: Any = genanki.Deck(deck_id, name)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     notes: list[Any] = []
     for card in cards:
         tag_topic = card.topic.replace(" ", "_")
-        note: Any = genanki.Note(
+        note: Any = genanki.Note(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
             model=model,
             fields=[card.front, card.back, card.topic, card.source.value, card.created_at],
             tags=[tag_topic, card.source.value],
@@ -84,9 +84,9 @@ async def export_anki_deck(
         notes.sort(key=lambda n: n.fields[2])  # pyright: ignore[reportUnknownLambdaType, reportUnknownMemberType]
 
     for note in notes:
-        deck.add_note(note)
+        deck.add_note(note)  # pyright: ignore[reportUnknownMemberType]
 
-    package: Any = genanki.Package(deck)
-    package.write_to_file(str(output_path))
+    package: Any = genanki.Package(deck)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    package.write_to_file(str(output_path))  # pyright: ignore[reportUnknownMemberType]
 
     return len(notes)

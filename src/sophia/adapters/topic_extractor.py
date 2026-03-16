@@ -150,8 +150,8 @@ class LLMTopicExtractor:
                 "openai not installed — run: uv pip install openai"
             ) from None
 
-        client: Any = AsyncOpenAI(base_url=base_url, api_key=api_key)
-        response: Any = await client.chat.completions.create(
+        client: Any = AsyncOpenAI(base_url=base_url, api_key=api_key)  # pyright: ignore[reportUnknownVariableType]
+        response: Any = await client.chat.completions.create(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
             model=self._config.model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -159,7 +159,7 @@ class LLMTopicExtractor:
             ],
             temperature=0.3,
         )
-        return response.choices[0].message.content or ""
+        return response.choices[0].message.content or ""  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     async def _call_gemini(self, user_prompt: str, *, system_prompt: str = _SYSTEM_PROMPT) -> str:
         """Call the Google Gemini API."""
@@ -171,12 +171,12 @@ class LLMTopicExtractor:
             ) from None
 
         api_key = os.environ.get(self._config.api_key_env, "")
-        client: Any = genai.Client(api_key=api_key)
-        response: Any = await client.aio.models.generate_content(
+        client: Any = genai.Client(api_key=api_key)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        response: Any = await client.aio.models.generate_content(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
             model=self._config.model,
             contents=f"{system_prompt}\n\n{user_prompt}",
         )
-        return response.text or ""
+        return response.text or ""  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     async def _call_groq(self, user_prompt: str, *, system_prompt: str = _SYSTEM_PROMPT) -> str:
         """Call the Groq API."""
@@ -186,8 +186,8 @@ class LLMTopicExtractor:
             raise TopicExtractionError("groq not installed — run: uv pip install groq") from None
 
         api_key = os.environ.get(self._config.api_key_env, "")
-        client: Any = AsyncGroq(api_key=api_key)
-        response: Any = await client.chat.completions.create(
+        client: Any = AsyncGroq(api_key=api_key)  # pyright: ignore[reportUnknownVariableType]
+        response: Any = await client.chat.completions.create(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
             model=self._config.model,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -195,4 +195,4 @@ class LLMTopicExtractor:
             ],
             temperature=0.3,
         )
-        return response.choices[0].message.content or ""
+        return response.choices[0].message.content or ""  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
