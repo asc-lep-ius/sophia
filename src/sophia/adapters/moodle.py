@@ -425,29 +425,26 @@ def _parse_grade_report(html: str) -> list[GradeItem]:
     return items
 
 
-def _extract_id_param(url: str) -> int | None:
-    """Extract the 'id' query parameter from a Moodle URL."""
-    match = re.search(r"[?&]id=(\d+)", url)
-    return int(match.group(1)) if match else None
-
-
 def _parse_mod_index(html: str, *, modname: str) -> list[ModuleInfo]:
-    """Parse a Moodle mod/*/index.php page into ModuleInfo objects."""
+    """Parse a Moodle mod/*/index.php page into ModuleInfo objects.
+
+    TUWEL uses the same ``course-overview-table`` layout for all module
+    index pages (books, pages, resources, URLs, assignments).  Each row
+    carries its cmid in ``data-mdl-overview-cmid`` and the activity name
+    in ``td[data-mdl-overview-item='name']``.
+    """
     soup = BeautifulSoup(html, "lxml")
-    table = soup.select_one("table.generaltable")
+    table = soup.select_one("table.course-overview-table")
     if not table:
         return []
     modules: list[ModuleInfo] = []
-    for row in table.select("tbody > tr"):
-        link = row.select_one("td a[href]")
-        if not link:
-            continue
-        href = str(link["href"])
-        mid = _extract_id_param(href)
-        if mid is None:
-            continue
-        name = link.get_text(strip=True)
-        modules.append(ModuleInfo(id=mid, name=name, modname=modname, url=href))
+    for row in table.select("tbody > tr[data-mdl-overview-cmid]"):
+        cmid = int(row["data-mdl-overview-cmid"])  # type: ignore[arg-type]
+        name_td = row.select_one("td[data-mdl-overview-item='name']")
+        name = str(name_td.get("data-mdl-overview-value", "")) if name_td else ""
+        link = row.select_one("a.activityname[href]")
+        url: str | None = str(link["href"]) if link else None
+        modules.append(ModuleInfo(id=cmid, name=name, modname=modname, url=url))
     return modules
 
 
