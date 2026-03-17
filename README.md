@@ -4,12 +4,15 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional, Kairos (registration with scheduler) and Hermes (lecture knowledge base) are functional. Hermes now includes silence detection, a full one-command pipeline (`lectures process`), and lecture management (discard/restore/purge). Bücherwurm download/library features are in progress. Chronos and Athena are planned.
+**Status:** Early development (v0.1.14). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base) and Athena (uses lecture knowledge base for topic extraction, confidence calibration, guided sessions, spaced review, anki deck export) are functional, but not tested extensively. Bücherwurm download/library features are in progress. Chronos is planned. 
 
-| Section | What's There |
-|---------|-------------|
-| [Getting Started](#getting-started) | Step-by-step setup from zero to running |
-| [What Sophia Does](#what-sophia-does) | The three modules and what each one handles |
+| Abschnitt | Inhalt |
+|-----------|--------|
+| [Schnellstart: Kairos — Lehrveranstaltungsanmeldung](#schnellstart-kairos--lehrveranstaltungsanmeldung) | Kairos einrichten und automatische LV-Anmeldung planen |
+| [Schnellstart: Hermes + Athena — Anki-Deck aus Vorlesungen](#schnellstart-hermes--athena--anki-deck-aus-vorlesungen) | Vorlesung verarbeiten und Lernkarten exportieren |
+| [Getting Started: Kairos — Course Registration](#getting-started-kairos--course-registration) | Set up Kairos and schedule automatic course registration |
+| [Getting Started: Hermes + Athena — Anki Deck from Lectures](#getting-started-hermes--athena--anki-deck-from-lectures) | Process a lecture and export flashcards |
+| [What Sophia Does](#what-sophia-does) | The modules and what each one handles |
 | [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
 | [Architecture](#architecture) | Hexagonal design, protocols, async |
 | [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
@@ -22,141 +25,379 @@ A student toolkit for TU Wien that automates the tedious parts of academic life 
 
 ---
 
-## Getting Started
+## Schnellstart: Kairos — Lehrveranstaltungsanmeldung
 
-This section is written for you if you've never opened a terminal, cloned a repository, or installed a developer tool. Every step is explained from scratch, no prior knowledge assumed. You'll be up and running in about ten minutes.
+Das ist Sophias stärkstes Feature. Anstatt um Mitternacht den Browser offen zu halten und F5 zu hämmern, installierst du einen System-Timer — und Sophia meldet dich auf TISS an, sobald das Fenster aufgeht. Du musst nicht mal wach sein.
 
-> 💡 If you already know your way around a terminal, skip to [Step 6](#step-6-log-in-to-tuwel). You just need `uv sync` and `uv run sophia auth login`.
+> 💡 Schon Terminal, Python und uv installiert? Direkt zu [Schritt 4](#deutsch-schritt-4-sophia-installieren) springen.
 
-### Step 1: Open a Terminal
+### (Deutsch) Schritt 1: Terminal öffnen
 
-A terminal (also called a command line, console, or shell) is a text-based interface to your computer. Instead of clicking buttons in a graphical window, you type short commands and press Enter. It sounds old-fashioned, but it's by far the fastest way to install and run developer tools, and once you get the hang of it you'll wonder how you lived without it.
+Ein Terminal ist eine textbasierte Oberfläche für deinen Computer — du tippst kurze Befehle statt Buttons zu klicken.
 
-You'll only need a handful of commands for Sophia. Here's how to open a terminal on your system:
+- **Windows 10/11:** `Win + R`, dann `wt` eingeben und Enter drücken. Falls das nicht klappt, nach „PowerShell" im Startmenü suchen.
+- **macOS:** `Cmd + Space`, „Terminal" tippen, Enter.
+- **Linux:** `Strg + Alt + T`, oder „Terminal" im App-Menü suchen.
 
-- **Windows 10/11:** Press `Win + R`, type `wt`, and press Enter to open Windows Terminal. If that doesn't work, search for "PowerShell" in the Start menu and open it. Either one works.
-- **macOS:** Press `Cmd + Space` to open Spotlight, type "Terminal", and press Enter.
-- **Linux:** Press `Ctrl + Alt + T` on most distributions, or find "Terminal" in your application menu.
+✅ Ein Fenster mit einem blinkenden Cursor erscheint.
 
-✅ You should see a window with a blinking cursor waiting for input. That's your terminal. Don't close it; you'll use it for the next steps.
-
-### Step 2: Install Python 3.12+
-
-Sophia requires Python 3.12 or newer. Check if you already have it by typing this into your terminal and pressing Enter:
+### (Deutsch) Schritt 2: Python 3.12+ installieren
 
 ```bash
 python3 --version
 ```
 
-On Windows, you may need to use `python` instead of `python3`:
+Wenn `Python 3.12.x` oder höher angezeigt wird — gut, weiter zu Schritt 3. Sonst Python von [python.org/downloads](https://www.python.org/downloads/) installieren.
 
-```powershell
-python --version
-```
+> 💡 **Windows:** Beim Installieren das Häkchen bei **„Add Python to PATH"** setzen.
 
-If you see `Python 3.12.x` or higher, you're set. Skip to the next step. If the version is older, or if you get a "command not found" error, download Python from [python.org/downloads](https://www.python.org/downloads/) and install it.
-
-> 💡 **Windows users:** During installation, there's a checkbox at the bottom of the first screen that says **"Add Python to PATH"**. Check it. If you miss this, Python won't be available in your terminal and you'll have to reinstall.
-
-✅ `python3 --version` (or `python --version`) prints 3.12 or higher.
-
-### Step 3: Install uv (the Package Manager)
-
-uv is a fast Python package manager. Think of it as an app store for Python projects that downloads everything Sophia needs to run.
+### (Deutsch) Schritt 3: uv (Paketmanager) installieren
 
 **macOS / Linux:**
-
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 **Windows (PowerShell):**
-
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
-After installing, **close and reopen your terminal** so the `uv` command becomes available.
+Nach der Installation: Terminal schließen und neu öffnen.
 
-✅ `uv --version` prints a version number.
+✅ `uv --version` zeigt eine Versionsnummer.
 
-### Step 4: Clone the Repository
-
-"Cloning" means downloading a copy of the project's source code to your computer. It's the standard way to get code from a repository like GitLab.
-
-First, make sure you have Git installed:
-
-```bash
-git --version
-```
-
-If you get an error, install Git from [git-scm.com/downloads](https://git-scm.com/downloads). On Windows, the installer has many options, but the defaults are fine. Just click through.
-
-Once Git is ready, run this command to download Sophia:
+### (Deutsch) Schritt 4: Sophia installieren
 
 ```bash
 git clone https://gitlab.com/mipkovich/sophia.git && cd sophia
-```
-
-This does two things: `git clone` downloads the project into a new folder called `sophia`, and `cd sophia` moves your terminal into that folder.
-
-> 💡 The `&&` between commands means "run the second command only if the first one succeeded." You'll see this pattern a lot in terminal instructions.
-
-✅ You're now inside the `sophia` directory. You can verify by typing `pwd` (Linux/macOS) or `cd` (Windows). It should end with `/sophia`.
-
-### Step 5: Install Sophia
-
-```bash
 uv sync
 ```
 
-This reads the project's dependency list and installs everything Sophia needs into a local virtual environment. Think of it as installing an app. You only do this once (and again after updates). The virtual environment means nothing is installed globally on your system; everything stays neatly inside the project folder.
+✅ Die Ausgabe endet mit etwas wie „Resolved ... packages".
 
-> 💡 If you see a message about creating a `.venv`, that's normal. It's the virtual environment where Sophia's dependencies live.
-
-✅ You see output ending with something like "Resolved ... packages" or "Audited ... packages".
-
-### Step 6: Log in to TUWEL
+### (Deutsch) Schritt 5: Einloggen
 
 ```bash
 uv run sophia auth login
 ```
 
-You'll be prompted for your TU Wien credentials, the same username and password you use for TUWEL and TISS. Sophia saves a session cookie on your machine so it can access TUWEL on your behalf. Nothing is sent anywhere except to TU Wien's own servers.
+Du wirst nach deinen TU Wien-Zugangsdaten gefragt (dieselben wie für TUWEL und TISS). Sophia speichert ein Session-Cookie lokal. Nichts wird weitergeleitet außer an TU Wiens eigene Server.
 
-✅ You see a success message with your name.
+✅ Erfolgsmeldung mit deinem Namen erscheint.
 
-### Step 7: Discover Books
+### (Deutsch) Schritt 6: Verfügbare Gruppen ansehen
 
 ```bash
-uv run sophia books discover
+uv run sophia register groups 186.813
 ```
 
-Sophia scans your enrolled TUWEL courses, extracts textbook references from course descriptions and resources, and prints a table of everything it found. The output looks something like this:
+Ersetze `186.813` durch deine LVA-Nummer. Sophia zeigt dir alle Gruppen mit Wochentag, Uhrzeit, Raum und aktuellem Belegungsstand.
 
-```
-                        Discovered Book References
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Title                       ┃ Author(s)     ┃ ISBN           ┃ Source   ┃ Course                     ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ Introduction to Algorithms  │ Cormen et al. │ 978-0-262-046… │ syllabus │ Algorithms & Data Struc.   │
-│ Algorithm Design            │ Kleinberg, T. │ 978-0-321-295… │ resource │ Algorithms & Data Struc.   │
-│ Principles of Math. Anal.   │ Rudin, W.     │ 978-0-07-054…  │ syllabus │ Analysis 1                 │
-└─────────────────────────────┴───────────────┴────────────────┴──────────┴────────────────────────────┘
+### (Deutsch) Schritt 7: Anmeldung planen — kein offenes Terminal nötig
+
+Das ist der entscheidende Schritt. Dieser Befehl installiert einen systemweiten Timer (systemd unter Linux, launchd unter macOS, Aufgabenplanung unter Windows), der genau dann feuert, wenn das Anmeldefenster aufgeht:
+
+```bash
+uv run sophia register go 186.813 --preferences "1,3" --schedule
 ```
 
-✅ A table of textbook references appears. You're done. Welcome to Sophia.
+- `--preferences "1,3"` — deine Wunschreihenfolge (Indizes aus der Gruppen-Tabelle). Ist Gruppe 1 voll, versucht Sophia automatisch Gruppe 3.
+- `--schedule` — kein offenes Terminal nötig. Sophia meldet sich selbst an.
+
+```bash
+uv run sophia jobs list              # geplante Jobs anzeigen
+uv run sophia jobs cancel <job-id>   # Job stornieren
+```
+
+✅ Du bist fertig. Sophia kümmert sich um die Anmeldung.
+
+### (Deutsch) Problemlösungen
+
+| Problem | Lösung |
+|---------|--------|
+| `command not found` nach uv-Installation | Terminal schließen und neu öffnen. |
+| Python-Version zu alt | Python 3.12+ von [python.org](https://www.python.org/downloads/) installieren. Unter Linux: `sudo apt install python3.12`. |
+| Login schlägt fehl | Zugangsdaten prüfen. Bei weiteren Fehlern: `uv run sophia auth login --debug`. |
+| `git` nicht gefunden | Git von [git-scm.com/downloads](https://git-scm.com/downloads) installieren, dann Terminal neu starten. |
+
+---
+
+## Schnellstart: Hermes + Athena — Anki-Deck aus Vorlesungen
+
+Dieser Leitfaden führt dich vom Einrichten bis zum fertigen Anki-Deck: Vorlesung herunterladen → transkribieren → Themen extrahieren → Lernkarten erstellen → als `.apkg` exportieren und in Anki importieren.
+
+> 💡 Noch nicht eingerichtet? Erst [Schritte 1–4 oben](#deutsch-schritt-1-terminal-öffnen) durchführen und einloggen, dann hierher zurückkehren.
+
+### (Deutsch) Schritt A: Hermes/Athena-Abhängigkeiten installieren und konfigurieren
+
+```bash
+uv sync --extra hermes --extra llm --extra athena
+uv run sophia lectures setup
+```
+
+Der Setup-Wizard erkennt deine GPU automatisch, empfiehlt ein passendes Whisper-Modell und fragt nach einem LLM-Anbieter für die Themenextraktion. Einmalig nötig.
+
+**LLM-Anbieter wählen (einer reicht):**
+
+| Anbieter | Kosten | Setup |
+|----------|--------|-------|
+| Gemini | Kostenloses Kontingent | API-Key von [aistudio.google.com](https://aistudio.google.com/apikey), in `.env` als `SOPHIA_GEMINI_API_KEY=...` eintragen |
+| Groq | Kostenloses Kontingent | API-Key von [console.groq.com](https://console.groq.com/keys), als `SOPHIA_GROQ_API_KEY=...` |
+| Ollama | Kostenlos, lokal | [Ollama](https://ollama.com/) installieren, `ollama pull llama3` ausführen — kein API-Key nötig |
+
+### (Deutsch) Schritt B: Vorlesungen entdecken
+
+```bash
+uv run sophia lectures list
+```
+
+Sophia zeigt alle Opencast-Aufzeichnungen deiner angemeldeten TUWEL-Kurse. Notiere dir die **Modul-ID** (erste Spalte).
+
+### (Deutsch) Schritt C: Vorlesung verarbeiten (eine Zeile)
+
+```bash
+uv run sophia lectures process <modul-id>
+```
+
+Führt die gesamte Pipeline aus: herunterladen → Stille erkennen → mit Whisper transkribieren → Vektoren einbetten und indizieren. Je nach GPU und Länge der Aufzeichnungen dauert das 5–30 Minuten.
+
+### (Deutsch) Schritt D: Themen extrahieren
+
+```bash
+uv run sophia study topics <modul-id>
+```
+
+Hermes liefert den transkribierten Text, Athena ruft das LLM auf und extrahiert 5–15 akademische Themenbezeichnungen. Die Themen werden mit den zugehörigen Vorlesungsabschnitten per semantischer Suche verknüpft.
+
+### (Deutsch) Schritt E: Selbsteinschätzung
+
+```bash
+uv run sophia study confidence <modul-id>
+```
+
+Sophia fragt dich für jedes Thema: „Wie sicher bist du? (1–5)" — bevor du studiert hast. Diese Vorhersage ist der Startpunkt der Kalibrierung.
+
+### (Deutsch) Schritt F: Geführte Lernsession
+
+```bash
+uv run sophia study session <modul-id>
+```
+
+Sophia wählt automatisch das Thema mit dem größten blinden Fleck. Die Session läuft in drei Phasen: Pre-Test → Studieren der relevanten Vorlesungsabschnitte → Post-Test + Lernkartenerstellung. Du formulierst die Karten selbst.
+
+### (Deutsch) Schritt G: Anki-Deck exportieren
+
+```bash
+uv run sophia study export <modul-id>
+```
+
+Erzeugt `sophia-<modul-id>.apkg` im aktuellen Verzeichnis — bereit zum Import in Anki.
+
+```bash
+# Optionale Flags:
+uv run sophia study export <modul-id> --output meine-karten.apkg
+uv run sophia study export <modul-id> --deck-name "Algorithmen 2026S"
+```
+
+Anki von [apps.ankiweb.net](https://apps.ankiweb.net/) installieren, `.apkg` per Doppelklick importieren — fertig.
+
+### (Deutsch) Problemlösungen Hermes/Athena
+
+| Problem | Lösung |
+|---------|--------|
+| `sophia lectures setup` läuft lange | Normal — beim ersten Mal werden Whisper und sentence-transformers heruntergeladen (1–5 GB). |
+| GPU wird nicht erkannt | `nvidia-smi` prüfen. Unter WSL: WSL2 mit GPU-Passthrough aktivieren. Sophia fällt auf CPU zurück. |
+| Keine Themen extrahiert | Sicherstellen, dass `sophia lectures process` abgeschlossen ist. LLM-Konfiguration mit `sophia lectures status` prüfen. |
+| Anki-Export schlägt fehl | `uv sync --extra athena` ausführen — das `genanki`-Paket fehlt. |
+
+---
+
+## Getting Started: Kairos — Course Registration
+
+This is Sophia's strongest feature. Instead of having your browser open at midnight mashing F5, you install a system timer — and Sophia submits your registration the instant the window opens. You don't even need to be awake.
+
+> 💡 Already have a terminal, Python, and uv installed? Skip to [Step 4](#step-4-install-sophia).
+
+### Step 1: Open a Terminal
+
+A terminal (also called a command line, console, or shell) is a text-based interface to your computer. Instead of clicking buttons in a graphical window, you type short commands and press Enter.
+
+- **Windows 10/11:** Press `Win + R`, type `wt`, and press Enter to open Windows Terminal. If that doesn't work, search for "PowerShell" in the Start menu.
+- **macOS:** Press `Cmd + Space` to open Spotlight, type "Terminal", and press Enter.
+- **Linux:** Press `Ctrl + Alt + T`, or find "Terminal" in your application menu.
+
+✅ A window with a blinking cursor appears.
+
+### Step 2: Install Python 3.12+
+
+```bash
+python3 --version
+```
+
+If you see `Python 3.12.x` or higher — great, move to Step 3. Otherwise install Python from [python.org/downloads](https://www.python.org/downloads/).
+
+> 💡 **Windows:** During installation, check **"Add Python to PATH"** at the bottom of the first screen.
+
+### Step 3: Install uv (the Package Manager)
+
+**macOS / Linux:**
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+After installing, close and reopen your terminal.
+
+✅ `uv --version` prints a version number.
+
+### Step 4: Install Sophia
+
+```bash
+git clone https://gitlab.com/mipkovich/sophia.git && cd sophia
+uv sync
+```
+
+✅ Output ends with something like "Resolved ... packages".
+
+### Step 5: Log in
+
+```bash
+uv run sophia auth login
+```
+
+You'll be prompted for your TU Wien credentials — the same ones you use for TUWEL and TISS. Sophia saves a session cookie locally. Nothing is sent anywhere except to TU Wien's own servers.
+
+✅ A success message with your name appears.
+
+### Step 6: Browse available groups
+
+```bash
+uv run sophia register groups 186.813
+```
+
+Replace `186.813` with your course number. Sophia shows all groups with their day, time, location, and current enrollment.
+
+### Step 7: Schedule registration — no open terminal needed
+
+This is the key step. This command installs a system timer (systemd on Linux, launchd on macOS, Task Scheduler on Windows) that fires exactly when the registration window opens:
+
+```bash
+uv run sophia register go 186.813 --preferences "1,3" --schedule
+```
+
+- `--preferences "1,3"` — your priority order (indices from the groups table). If group 1 is full, Sophia automatically tries group 3.
+- `--schedule` — no terminal needs to stay open. Sophia registers itself.
+
+```bash
+uv run sophia jobs list              # show scheduled jobs
+uv run sophia jobs cancel <job-id>   # cancel a job
+```
+
+✅ Done. Sophia handles the registration.
 
 ### Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
-| `command not found` after installing uv | Close your terminal and open a new one. The install script updated your PATH, but the current terminal doesn't know yet. |
-| Python version is too old | Install Python 3.12+ from [python.org](https://www.python.org/downloads/). On Linux, you may need `sudo apt install python3.12`. |
-| Login fails | Double-check your credentials. If it still fails, try `uv run sophia auth login --debug` for more details. |
+| `command not found` after installing uv | Close your terminal and open a new one. |
+| Python version is too old | Install Python 3.12+ from [python.org](https://www.python.org/downloads/). On Linux: `sudo apt install python3.12`. |
+| Login fails | Double-check your credentials. For more details: `uv run sophia auth login --debug`. |
 | `git` not found | Install Git from [git-scm.com/downloads](https://git-scm.com/downloads), then restart your terminal. |
-| `sophia lectures setup` is slow | The first run downloads large models (Whisper, sentence-transformers, CUDA libraries). This is normal and only happens once. Expect 1–5 GB depending on model size. |
-| GPU not detected during Hermes setup | Ensure NVIDIA drivers are installed (`nvidia-smi` should show your GPU). On WSL, you need WSL2 with GPU passthrough enabled. The setup wizard falls back to CPU mode if no GPU is found. |
+
+---
+
+## Getting Started: Hermes + Athena — Anki Deck from Lectures
+
+This guide takes you from setup to a finished Anki deck: download a lecture → transcribe → extract topics → build flashcards → export as `.apkg` and import into Anki.
+
+> 💡 Not set up yet? Run [Steps 1–4 above](#step-1-open-a-terminal) and log in first, then come back here.
+
+### Step A: Install Hermes/Athena dependencies and configure
+
+```bash
+uv sync --extra hermes --extra llm --extra athena
+uv run sophia lectures setup
+```
+
+The setup wizard auto-detects your GPU, recommends a Whisper model, and asks you to pick an LLM provider for topic extraction. Run once.
+
+**Pick one LLM provider:**
+
+| Provider | Cost | Setup |
+|----------|------|-------|
+| Gemini | Free tier | Get key at [aistudio.google.com](https://aistudio.google.com/apikey), add `SOPHIA_GEMINI_API_KEY=...` to `.env` |
+| Groq | Free tier | Get key at [console.groq.com](https://console.groq.com/keys), add `SOPHIA_GROQ_API_KEY=...` |
+| Ollama | Free, local | Install [Ollama](https://ollama.com/), run `ollama pull llama3` — no API key needed |
+
+### Step B: Discover lecture recordings
+
+```bash
+uv run sophia lectures list
+```
+
+Sophia shows all Opencast recordings from your enrolled TUWEL courses. Note the **module ID** (first column).
+
+### Step C: Process the lecture (one command)
+
+```bash
+uv run sophia lectures process <module-id>
+```
+
+Runs the full pipeline: download → silence detection → transcribe with Whisper → embed and index. Depending on your GPU and recording length, expect 5–30 minutes.
+
+### Step D: Extract topics
+
+```bash
+uv run sophia study topics <module-id>
+```
+
+Hermes supplies the indexed transcripts; Athena calls the LLM to extract 5–15 academic topic labels, then cross-references them with lecture segments via semantic search.
+
+### Step E: Rate your confidence
+
+```bash
+uv run sophia study confidence <module-id>
+```
+
+Sophia asks you to rate each topic 1–5 *before* you've studied it. This prediction is the baseline for calibration.
+
+### Step F: Guided study session
+
+```bash
+uv run sophia study session <module-id>
+```
+
+Sophia auto-selects the topic where your gap is largest. The session runs: pre-test → study the relevant lecture segments → post-test + flashcard creation. You write the cards in your own words.
+
+### Step G: Export to Anki
+
+```bash
+uv run sophia study export <module-id>
+```
+
+Generates `sophia-<module-id>.apkg` in the current directory, ready to import into Anki.
+
+```bash
+# Optional flags:
+uv run sophia study export <module-id> --output my-cards.apkg
+uv run sophia study export <module-id> --deck-name "Algorithms 2026S"
+```
+
+Install Anki from [apps.ankiweb.net](https://apps.ankiweb.net/), double-click the `.apkg` to import — done.
+
+### Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| `sophia lectures setup` is slow | Normal — Whisper and sentence-transformers download on first run (1–5 GB). |
+| GPU not detected | Run `nvidia-smi`. On WSL, you need WSL2 with GPU passthrough. Sophia falls back to CPU. |
+| No topics extracted | Make sure `sophia lectures process` completed. Check LLM config with `sophia lectures status`. |
+| Anki export fails | Run `uv sync --extra athena` — the `genanki` package is missing. |
 
 ---
 
@@ -170,7 +411,7 @@ Sophia is organized into modules, each named for a concept that matches its purp
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
 | **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, silence detection, transcribe with Whisper, semantic search, discard/restore/purge management | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
-| **Athena** 🎓 | `sophia study` | Study companion: topic extraction, confidence calibration, guided sessions, spaced review | ✅ Functional |
+| **Athena** 🎓 | `sophia study` | Study layer over Hermes: LLM topic extraction from transcripts, confidence calibration, guided pre/post-test sessions, spaced flashcard review, self-explanation, Anki `.apkg` export | ✅ Functional |
 
 ### Bücherwurm in Action
 
@@ -275,11 +516,32 @@ Step 1 only needs to happen once. The setup wizard detects your GPU, recommends 
 - **`sophia lectures restore <module-id> <episode-id>`** — undo a discard and re-queue the episode for processing
 - **`sophia lectures purge <module-id> <episode-id>`** — remove all indexed content for an episode from the knowledge base (ChromaDB chunks, transcript segments, index records)
 
-### What's Coming: Chronos and Athena
+### Athena in Action
+
+Athena (Ἀθηνᾶ — goddess of wisdom and strategy) turns Hermes's indexed lecture transcripts into an active study workflow. Hermes is responsible for getting the knowledge in; Athena is responsible for getting it into your head.
+
+**Division of labour between Hermes and Athena:**
+
+| Responsibility | Module |
+|---------------|--------|
+| Download and transcribe recordings | Hermes |
+| Build the semantic search index (ChromaDB) | Hermes |
+| Detect silence, skip empty lectures | Hermes |
+| Call the LLM to extract topic labels from transcripts | Athena (`study topics`) |
+| Cross-reference topics with lecture chunks via embedding search | Athena (`study topics`) |
+| Track confidence predictions per topic | Athena (`study confidence`) |
+| Run guided pre-test → study → post-test sessions | Athena (`study session`) |
+| Generate and schedule flashcard spaced review | Athena (`study review`) |
+| Self-explanation exercises for wrong answers | Athena (`study explain`) |
+| Export flashcard deck as Anki `.apkg` | Athena (`study export`) |
+
+Athena does not re-download or re-transcribe anything. It reads directly from what Hermes has already indexed. Running `sophia lectures process <module-id>` is the only prerequisite.
+
+**Anki export detail:** `sophia study export <module-id>` generates a `.apkg` deck file using `genanki`. Cards are tagged by topic and source (lecture/session), and the deck is shuffled by default so topics are interleaved (better for long-term retention than blocked review). Use `--output` and `--deck-name` to customise.
+
+### What's Coming: Chronos
 
 **Chronos** will pull assignment deadlines from TUWEL and TISS, but it won't just list them in a calendar. TUWEL already does that, and students still miss deadlines. The problem isn't information, it's planning. Chronos asks you to estimate how long each task will take *before* you start, tracks your actual time, and helps you see where your estimates fall short. Over a semester, you develop better planning intuition, a skill that transfers far beyond university.
-
-**Athena** is now functional! It extracts topics from lecture transcripts, asks you to rate your confidence per topic, then runs guided study sessions with pre/post testing to measure actual learning. Flashcards are generated during study and reviewed with spaced repetition. Self-explanation exercises with fading scaffolds deepen understanding. Export to Anki for mobile review.
 
 ---
 
@@ -373,7 +635,11 @@ src/sophia/
 │   ├── hermes_transcribe.py   # Whisper transcription with VAD and hallucination filtering
 │   ├── hermes_index.py        # Chunking, embeddings, semantic search orchestration
 │   ├── hermes_manage.py       # Discard/restore/purge and pipeline status
-│   └── hermes_pipeline.py     # E2E pipeline orchestration (download → transcribe → index)
+│   ├── hermes_pipeline.py     # E2E pipeline orchestration (download → transcribe → index)
+│   ├── athena_study.py        # Topic extraction, session management, flashcard creation
+│   ├── athena_confidence.py   # Confidence rating and calibration tracking
+│   ├── athena_review.py       # Spaced repetition scheduling (adaptive intervals)
+│   └── athena_export.py       # Anki .apkg deck generation (genanki)
 ├── adapters/         # External world implementations
 │   ├── moodle.py     # TUWEL/Moodle AJAX adapter
 │   ├── tiss.py       # TISS public API adapter
@@ -383,12 +649,14 @@ src/sophia/
 │   ├── lecture_downloader.py  # Recording download adapter
 │   ├── transcriber.py         # Whisper adapter (faster-whisper)
 │   ├── embedder.py            # Embedding adapter (sentence-transformers)
-│   └── knowledge_store.py     # Vector store adapter (ChromaDB)
+│   ├── knowledge_store.py     # Vector store adapter (ChromaDB)
+│   └── topic_extractor.py     # LLM topic extraction (Gemini/Groq/GitHub Models/Ollama)
 ├── infra/            # Cross-cutting concerns
 │   ├── http.py       # Shared HTTP client with retry logic
 │   ├── persistence.py # SQLite via aiosqlite
 │   ├── di.py         # Dependency injection container
-│   └── logging.py    # Structured logging (structlog)
+│   ├── logging.py    # Structured logging (structlog)
+│   └── scheduler.py  # OS-native job scheduler (systemd/launchd/Task Scheduler)
 └── ui/               # User interfaces (future)
     ├── tui/          # Terminal UI via Textual
     └── web/          # Web UI via Gradio
@@ -648,7 +916,7 @@ See the `Makefile` for additional convenience targets (`make test`, `make lint`,
 | ✅ Done | **Hermes: Lectures** | Lecture download, Whisper transcription (GPU/CPU), semantic search via embeddings |
 | ✅ Done | **Hermes: Silence detection & management** | Auto-detect empty recordings via ffmpeg, `lectures process` E2E pipeline, discard/restore/purge management, knowledge base purge |
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
-| 📋 Planned | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq), Typst-rendered reading reports |
+| � In Progress | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq — LLM adapter already built in `topic_extractor.py`), Typst-rendered reading reports |
 | 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
 | ✅ Done | **Athena: Study** | Topic extraction, confidence calibration, guided study sessions, flashcard review, self-explanation, Anki export |
 | 📋 Planned | **M5: Polish & Ship** | Textual TUI, Gradio web interface, comprehensive documentation, stable public release |
