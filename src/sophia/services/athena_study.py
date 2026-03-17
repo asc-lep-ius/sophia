@@ -109,15 +109,40 @@ async def extract_topics_from_lectures(
     module_id: int,
     *,
     on_progress: Callable[[str], None] | None = None,
+    force: bool = False,
 ) -> list[TopicMapping]:
     """Extract topics from indexed lecture transcripts for a module.
 
-    1. Load transcript segments from DB for the module
-    2. Concatenate representative text (budgeted to _MAX_TRANSCRIPT_CHARS)
-    3. Call LLM TopicExtractor to get topic labels
-    4. Persist to topic_mappings table
-    5. Return the extracted topics
+    When ``force=False`` (default) and topics already exist in the DB for this
+    module, the LLM call is skipped and the cached topics are returned.  This
+    prevents the pipeline and the ``study topics`` CLI command from produing
+    mixed-language duplicates when both are run against the same module.
+
+    Pass ``force=True`` (used by the full pipeline after fresh transcription)
+    to delete existing topics and re-extract.
+
+    1. Return cached topics if present (unless force=True)
+    2. Load transcript segments from DB for the module
+    3. Concatenate representative text (budgeted to _MAX_TRANSCRIPT_CHARS)
+    4. Call LLM TopicExtractor to get topic labels
+    5. Persist to topic_mappings table
+    6. Return the extracted topics
     """
+    course_id = module_id
+
+    if not force:
+        existing = await get_course_topics(app, course_id)
+        if existing:
+            log.info("topics_cached", module_id=module_id, count=len(existing))
+            return existing
+
+    if force:
+        await app.db.execute(
+            "DELETE FROM topic_mappings WHERE course_id = ? AND source = ?",
+            (course_id, TopicSource.LECTURE.value),
+        )
+        await app.db.commit()
+
     text = await _get_transcript_text(app.db, module_id)
     if not text:
         log.info("no_transcripts_for_topics", module_id=module_id)
@@ -128,8 +153,6 @@ async def extract_topics_from_lectures(
 
     extractor = _create_topic_extractor(app)
 
-    # Use module_id as course_id (Moodle module context)
-    course_id = module_id
     series_title = await _get_series_title(app.db, module_id)
     topic_labels = await extractor.extract_topics(text, course_context=series_title)
 

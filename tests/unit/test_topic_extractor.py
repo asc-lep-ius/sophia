@@ -219,6 +219,17 @@ class TestLLMTopicExtractor:
         assert "localhost:11434" in call_kwargs["base_url"]
 
 
+    def test_system_prompt_requires_content_language(self) -> None:
+        """_SYSTEM_PROMPT must instruct the LLM to match the content language."""
+        from sophia.adapters.topic_extractor import (
+            _SYSTEM_PROMPT,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        # Must contain an explicit language-mirroring instruction so the LLM
+        # returns German topics for German lectures (not English by default).
+        assert "same language" in _SYSTEM_PROMPT.lower()
+
+
 class TestParseTopics:
     """Tests for _parse_topics helper."""
 
