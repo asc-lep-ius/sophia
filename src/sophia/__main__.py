@@ -799,8 +799,13 @@ def lectures_setup() -> None:
 
 
 @lectures_app.command(name="status")
-def lectures_status() -> None:
-    """Show current Hermes configuration."""
+async def lectures_status(
+    module_id: Annotated[
+        int | None,
+        cyclopts.Parameter(help="Opencast module ID. Without it, show Hermes config."),
+    ] = None,
+) -> None:
+    """Show Hermes configuration or per-episode pipeline status for a module."""
     from rich.console import Console
     from rich.table import Table
 
@@ -810,30 +815,122 @@ def lectures_status() -> None:
     console = Console()
     settings = Settings()
 
-    config = load_hermes_config(settings.config_dir)
-    if config is None:
-        console.print("[yellow]Hermes is not configured.[/yellow]")
-        console.print("Run [cyan]sophia lectures setup[/cyan] to get started.")
+    if module_id is None:
+        config = load_hermes_config(settings.config_dir)
+        if config is None:
+            console.print("[yellow]Hermes is not configured.[/yellow]")
+            console.print("Run [cyan]sophia lectures setup[/cyan] to get started.")
+            return
+
+        table = Table(title="Hermes Configuration")
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Whisper model", config.whisper.model.value)
+        table.add_row("Device", config.whisper.device.value)
+        table.add_row("Compute type", config.whisper.compute_type.value)
+        table.add_row("VAD filter", str(config.whisper.vad_filter))
+        table.add_row("Language", config.whisper.language)
+        table.add_row("", "")
+        table.add_row("LLM provider", config.llm.provider.value)
+        table.add_row("LLM model", config.llm.model)
+        table.add_row("API key env", config.llm.api_key_env or "(none)")
+        table.add_row("", "")
+        table.add_row("Embedding provider", config.embeddings.provider.value)
+        table.add_row("Embedding model", config.embeddings.model)
+
+        console.print(table)
         return
 
-    table = Table(title="Hermes Configuration")
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import get_pipeline_status
 
-    table.add_row("Whisper model", config.whisper.model.value)
-    table.add_row("Device", config.whisper.device.value)
-    table.add_row("Compute type", config.whisper.compute_type.value)
-    table.add_row("VAD filter", str(config.whisper.vad_filter))
-    table.add_row("Language", config.whisper.language)
-    table.add_row("", "")
-    table.add_row("LLM provider", config.llm.provider.value)
-    table.add_row("LLM model", config.llm.model)
-    table.add_row("API key env", config.llm.api_key_env or "(none)")
-    table.add_row("", "")
-    table.add_row("Embedding provider", config.embeddings.provider.value)
-    table.add_row("Embedding model", config.embeddings.model)
+    async with create_app() as container:
+        statuses = await get_pipeline_status(container.db, module_id)
+
+    if not statuses:
+        console.print(f"[yellow]No episodes found for module {module_id}.[/yellow]")
+        return
+
+    table = Table(title=f"Pipeline Status — Module {module_id}")
+    table.add_column("Episode ID", style="dim", max_width=12)
+    table.add_column("Title", style="cyan")
+    table.add_column("Download", style="green")
+    table.add_column("Transcription", style="green")
+    table.add_column("Index", style="green")
+    table.add_column("Skip Reason", style="yellow")
+
+    for ep in statuses:
+        table.add_row(
+            ep.episode_id[:12],
+            ep.title,
+            ep.download_status,
+            ep.transcription_status or "—",
+            ep.index_status or "—",
+            ep.skip_reason or "",
+        )
 
     console.print(table)
+
+
+@lectures_app.command(name="discard")
+async def lectures_discard(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to discard.")
+    ],
+) -> None:
+    """Mark an episode as discarded, preventing further processing."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import discard_episode
+
+    console = Console()
+
+    async with create_app() as container:
+        ok = await discard_episode(container.db, module_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} discarded.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {module_id} "
+            f"(or not in a discardable state).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@lectures_app.command(name="restore")
+async def lectures_restore(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to restore.")
+    ],
+) -> None:
+    """Undo discard — re-queue an episode for processing."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import restore_episode
+
+    console = Console()
+
+    async with create_app() as container:
+        ok = await restore_episode(container.db, module_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} restored to queue.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {module_id} "
+            f"(or not currently discarded).[/red]"
+        )
+        raise SystemExit(1)
 
 
 @lectures_app.command(name="list")

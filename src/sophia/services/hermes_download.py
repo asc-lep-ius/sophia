@@ -52,11 +52,11 @@ async def download_lectures(
     if not episodes:
         return []
 
-    completed_ids = await _get_completed_ids(app.db, module_id)
+    skip_ids = await _get_skip_ids(app.db, module_id)
     results: list[LectureDownloadResult] = []
 
     for ep in episodes:
-        if ep.episode_id in completed_ids:
+        if ep.episode_id in skip_ids:
             results.append(
                 LectureDownloadResult(
                     episode_id=ep.episode_id,
@@ -73,11 +73,11 @@ async def download_lectures(
     return results
 
 
-async def _get_completed_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
-    """Return episode IDs that are already completed or skipped."""
+async def _get_skip_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
+    """Return episode IDs that should be skipped (completed, skipped, or discarded)."""
     cursor = await db.execute(
         "SELECT episode_id FROM lecture_downloads"
-        " WHERE module_id = ? AND status IN ('completed', 'skipped')",
+        " WHERE module_id = ? AND status IN ('completed', 'skipped', 'discarded')",
         (module_id,),
     )
     rows = await cursor.fetchall()

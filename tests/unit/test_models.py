@@ -42,6 +42,7 @@ class TestEnums:
             DownloadStatus.COMPLETED,
             DownloadStatus.SKIPPED,
             DownloadStatus.FAILED,
+            DownloadStatus.DISCARDED,
         }
 
     def test_strenum_string_values(self):
@@ -245,3 +246,36 @@ class TestDownloadJob:
         job.transition(DownloadStatus.FAILED)
         job.transition(DownloadStatus.QUEUED)
         assert job.status == DownloadStatus.QUEUED
+
+    @pytest.mark.parametrize(
+        "via_status",
+        [DownloadStatus.COMPLETED, DownloadStatus.SKIPPED, DownloadStatus.FAILED],
+        ids=["completed", "skipped", "failed"],
+    )
+    def test_valid_transition_to_discarded(self, via_status: DownloadStatus):
+        job = _make_job()
+        job.transition(DownloadStatus.DOWNLOADING)
+        job.transition(via_status)
+        job.transition(DownloadStatus.DISCARDED)
+        assert job.status == DownloadStatus.DISCARDED
+
+    def test_valid_transition_discarded_to_queued(self):
+        job = _make_job()
+        job.transition(DownloadStatus.DOWNLOADING)
+        job.transition(DownloadStatus.COMPLETED)
+        job.transition(DownloadStatus.DISCARDED)
+        job.transition(DownloadStatus.QUEUED)
+        assert job.status == DownloadStatus.QUEUED
+        assert job.progress_bytes == 0
+
+    @pytest.mark.parametrize(
+        "from_status",
+        [DownloadStatus.QUEUED, DownloadStatus.DOWNLOADING],
+        ids=["queued", "downloading"],
+    )
+    def test_invalid_transition_to_discarded(self, from_status: DownloadStatus):
+        job = _make_job()
+        if from_status == DownloadStatus.DOWNLOADING:
+            job.transition(DownloadStatus.DOWNLOADING)
+        with pytest.raises(ValueError, match="Invalid transition"):
+            job.transition(DownloadStatus.DISCARDED)

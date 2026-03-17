@@ -54,6 +54,7 @@ class DownloadStatus(StrEnum):
     COMPLETED = "completed"
     SKIPPED = "skipped"
     FAILED = "failed"
+    DISCARDED = "discarded"
 
 
 # --- Value objects (Pydantic models) ---
@@ -316,9 +317,10 @@ _ALLOWED_TRANSITIONS: dict[DownloadStatus, set[DownloadStatus]] = {
         DownloadStatus.SKIPPED,
         DownloadStatus.FAILED,
     },
-    DownloadStatus.COMPLETED: set(),
-    DownloadStatus.SKIPPED: {DownloadStatus.QUEUED},
-    DownloadStatus.FAILED: {DownloadStatus.QUEUED},
+    DownloadStatus.COMPLETED: {DownloadStatus.DISCARDED},
+    DownloadStatus.SKIPPED: {DownloadStatus.QUEUED, DownloadStatus.DISCARDED},
+    DownloadStatus.FAILED: {DownloadStatus.QUEUED, DownloadStatus.DISCARDED},
+    DownloadStatus.DISCARDED: {DownloadStatus.QUEUED},
 }
 
 
