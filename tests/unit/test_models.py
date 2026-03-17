@@ -40,6 +40,7 @@ class TestEnums:
             DownloadStatus.QUEUED,
             DownloadStatus.DOWNLOADING,
             DownloadStatus.COMPLETED,
+            DownloadStatus.SKIPPED,
             DownloadStatus.FAILED,
         }
 

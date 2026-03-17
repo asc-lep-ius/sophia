@@ -52,6 +52,7 @@ class DownloadStatus(StrEnum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
+    SKIPPED = "skipped"
     FAILED = "failed"
 
 
@@ -310,8 +311,13 @@ class DownloadProgressEvent(BaseModel):
 
 _ALLOWED_TRANSITIONS: dict[DownloadStatus, set[DownloadStatus]] = {
     DownloadStatus.QUEUED: {DownloadStatus.DOWNLOADING, DownloadStatus.FAILED},
-    DownloadStatus.DOWNLOADING: {DownloadStatus.COMPLETED, DownloadStatus.FAILED},
+    DownloadStatus.DOWNLOADING: {
+        DownloadStatus.COMPLETED,
+        DownloadStatus.SKIPPED,
+        DownloadStatus.FAILED,
+    },
     DownloadStatus.COMPLETED: set(),
+    DownloadStatus.SKIPPED: {DownloadStatus.QUEUED},
     DownloadStatus.FAILED: {DownloadStatus.QUEUED},
 }
 
