@@ -1825,6 +1825,17 @@ async def study_session(
 
             # --- PRE-TEST ---
             console.print("[bold cyan]Phase 1: Pre-Test[/bold cyan]")
+            console.print(
+                Panel(
+                    "Answer from [bold]memory only[/bold] — no peeking at your notes.\n"
+                    "The lecture source will be shown after the pre-test (Phase 2).\n"
+                    "[dim]Self-grade honestly: did your answer cover the key points?\n"
+                    "Skipped questions are excluded from your score.[/dim]",
+                    title="How this works",
+                    border_style="dim",
+                    expand=False,
+                )
+            )
             try:
                 with Status("Generating pre-test questions…", console=console):
                     pre_questions = await generate_study_questions(
@@ -1835,19 +1846,27 @@ async def study_session(
                 pre_questions = [f"Explain the concept of {topic} in your own words."] * 3
 
             pre_correct = 0
+            pre_answered = 0
             for i, q in enumerate(pre_questions, 1):
                 console.print(f"\n  [bold]Q{i}:[/bold] {q}")
                 answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
                 if answer.strip().lower() == "skip":
                     continue
-                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
+                pre_answered += 1
+                self_grade = Confirm.ask(
+                    "  Self-grade: did your answer cover the key points?",
+                    default=False,
+                    console=console,
+                )
                 if self_grade:
                     pre_correct += 1
 
-            pre_score = pre_correct / len(pre_questions) if pre_questions else 0.0
+            pre_score = pre_correct / pre_answered if pre_answered else 0.0
+            skipped_pre = len(pre_questions) - pre_answered
+            skipped_note = f", {skipped_pre} skipped" if skipped_pre else ""
             console.print(
                 f"\n  Pre-test score: [bold]{pre_score:.0%}[/bold]"
-                f" ({pre_correct}/{len(pre_questions)})"
+                f" ({pre_correct}/{pre_answered} answered{skipped_note})"
             )
 
             if not Confirm.ask("\nContinue to study phase?", default=True, console=console):
@@ -1889,19 +1908,27 @@ async def study_session(
                 post_questions = [f"Explain the concept of {topic} in your own words."] * 3
 
             post_correct = 0
+            post_answered = 0
             for i, q in enumerate(post_questions, 1):
                 console.print(f"\n  [bold]Q{i}:[/bold] {q}")
                 answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
                 if answer.strip().lower() == "skip":
                     continue
-                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
+                post_answered += 1
+                self_grade = Confirm.ask(
+                    "  Self-grade: did your answer cover the key points?",
+                    default=False,
+                    console=console,
+                )
                 if self_grade:
                     post_correct += 1
 
-            post_score = post_correct / len(post_questions) if post_questions else 0.0
+            post_score = post_correct / post_answered if post_answered else 0.0
+            skipped_post = len(post_questions) - post_answered
+            skipped_note = f", {skipped_post} skipped" if skipped_post else ""
             console.print(
                 f"\n  Post-test score: [bold]{post_score:.0%}[/bold]"
-                f" ({post_correct}/{len(post_questions)})"
+                f" ({post_correct}/{post_answered} answered{skipped_note})"
             )
 
             # --- Show improvement ---
