@@ -28,6 +28,7 @@ downloads/
 
 # IDE
 .idea/
+.conductor/
 .vscode/
 *.swp
 *.swo
