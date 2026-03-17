@@ -162,6 +162,8 @@ class KnowledgeStore(Protocol):
 
     def has_episode(self, episode_id: str) -> bool: ...
 
+    def delete_episode(self, episode_id: str) -> int: ...
+
 
 class TopicExtractor(Protocol):
     """Uses LLM to extract topic labels from text content."""

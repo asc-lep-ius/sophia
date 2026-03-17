@@ -118,3 +118,13 @@ class ChromaKnowledgeStore:
             include=[],
         )
         return bool(results["ids"])
+
+    def delete_episode(self, episode_id: str) -> int:
+        """Remove all chunks for an episode. Returns the number of chunks deleted."""
+        collection = self._ensure_collection()
+        results = collection.get(where={"episode_id": episode_id}, include=[])
+        chunk_ids: list[str] = results["ids"]
+        if chunk_ids:
+            collection.delete(ids=chunk_ids)
+            log.info("chromadb_episode_deleted", episode_id=episode_id, chunks=len(chunk_ids))
+        return len(chunk_ids)

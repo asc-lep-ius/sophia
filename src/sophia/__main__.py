@@ -934,6 +934,58 @@ async def lectures_restore(
         raise SystemExit(1)
 
 
+@lectures_app.command(name="purge")
+async def lectures_purge(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to purge indexed content for.")
+    ],
+) -> None:
+    """Remove indexed content (ChromaDB chunks, transcripts, knowledge index) for an episode."""
+    from rich.console import Console
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import purge_episode
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+            store = ChromaKnowledgeStore(container.settings.data_dir / "knowledge")
+            result = await purge_episode(
+                container.db,
+                store,
+                module_id,
+                episode_id,
+            )
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+
+    total = (
+        result.knowledge_chunks
+        + result.transcript_segments
+        + result.transcriptions
+        + result.knowledge_index
+    )
+    if total == 0:
+        console.print(
+            f"[yellow]No indexed content found for episode {episode_id} "
+            f"in module {module_id}.[/yellow]"
+        )
+    else:
+        console.print(f"[green]Purged episode {episode_id}:[/green]")
+        console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
+        console.print(f"  Transcript segments removed: {result.transcript_segments}")
+        console.print(f"  Transcription records removed: {result.transcriptions}")
+        console.print(f"  Knowledge index records removed: {result.knowledge_index}")
+
+
 @lectures_app.command(name="list")
 async def lectures_list() -> None:
     """Discover lecture recordings from enrolled courses."""

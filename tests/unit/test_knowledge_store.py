@@ -149,6 +149,39 @@ class TestChromaKnowledgeStore:
         call_kwargs = mock_collection.query.call_args[1]
         assert call_kwargs.get("where") is None
 
+    def test_delete_episode_removes_chunks(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        mock_collection.get.return_value = {"ids": ["ep-001_0", "ep-001_1", "ep-001_2"]}
+
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        count = store.delete_episode("ep-001")
+
+        assert count == 3
+        mock_collection.get.assert_called_once_with(
+            where={"episode_id": "ep-001"}, include=[]
+        )
+        mock_collection.delete.assert_called_once_with(
+            ids=["ep-001_0", "ep-001_1", "ep-001_2"]
+        )
+
+    def test_delete_episode_returns_zero_for_nonexistent(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        mock_collection.get.return_value = {"ids": []}
+
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        count = store.delete_episode("no-such-ep")
+
+        assert count == 0
+        mock_collection.delete.assert_not_called()
+
     def test_has_episode_true(self, tmp_path: Path) -> None:
         from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 
