@@ -222,6 +222,83 @@ async def test_extract_topics_idempotent(app: MagicMock, db: aiosqlite.Connectio
     assert row[0] == 1
 
 
+@pytest.mark.asyncio
+async def test_extract_topics_skips_llm_when_cached(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """With force=False (default), a pre-existing topic set skips the LLM call.
+
+    This is the regression guard for the mixed-language duplicate bug: if
+    ``lectures process`` already stored German topics, a subsequent
+    ``study topics`` run must NOT call the LLM and must NOT insert English
+    duplicates.
+    """
+    from sophia.services.athena_study import extract_topics_from_lectures
+
+    # Pre-seed German topics (as lectures process would have done)
+    await db.execute(
+        "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
+        ("Mathematische Aussagen", 42, "lecture", 1),
+    )
+    await db.execute(
+        "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
+        ("Direkter Beweis", 42, "lecture", 1),
+    )
+    await db.commit()
+
+    mock_create_extractor = MagicMock()
+
+    with patch(
+        "sophia.services.athena_study._create_topic_extractor",
+        mock_create_extractor,
+    ):
+        result = await extract_topics_from_lectures(app, module_id=42)
+
+    # LLM extractor must never be instantiated
+    mock_create_extractor.assert_not_called()
+    # Existing German topics are returned as-is
+    assert len(result) == 2
+    assert {r.topic for r in result} == {"Mathematische Aussagen", "Direkter Beweis"}
+
+
+@pytest.mark.asyncio
+async def test_extract_topics_force_replaces_cached(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """With force=True the existing topics are deleted and the LLM is called."""
+    from sophia.services.athena_study import extract_topics_from_lectures
+
+    await _insert_download(db, episode_id="ep-001", module_id=42)
+    await _insert_transcription(db, episode_id="ep-001", module_id=42)
+    await _insert_segments(db, episode_id="ep-001", count=3)
+
+    # Pre-seed stale topics
+    await db.execute(
+        "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
+        ("Old Topic", 42, "lecture", 1),
+    )
+    await db.commit()
+
+    mock_extractor = AsyncMock()
+    mock_extractor.extract_topics = AsyncMock(return_value=["Neues Thema"])
+
+    with patch(
+        "sophia.services.athena_study._create_topic_extractor",
+        return_value=mock_extractor,
+    ):
+        result = await extract_topics_from_lectures(app, module_id=42, force=True)
+
+    assert len(result) == 1
+    assert result[0].topic == "Neues Thema"
+    # Old stale topic must be gone
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Old Topic'"
+    )
+    row = await cursor.fetchone()
+    assert row is not None
+    assert row[0] == 0
+
+
 # ---------------------------------------------------------------------------
 # link_topics_to_lectures
 # ---------------------------------------------------------------------------

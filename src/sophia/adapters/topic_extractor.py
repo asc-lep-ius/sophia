@@ -25,6 +25,8 @@ _SYSTEM_PROMPT = (
     "extract 5-15 distinct academic topic labels that represent the key concepts discussed. "
     "Return ONLY a numbered list of topic labels, one per line. "
     "Each topic should be a concise noun phrase (1-5 words). "
+    "Always respond in the same language as the lecture content — "
+    "if the content is in German, all topic labels must be in German. "
     "Do NOT include student names, IDs, or any personal information."
 )
 

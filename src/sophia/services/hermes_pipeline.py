@@ -65,7 +65,7 @@ async def run_pipeline(
     )
 
     result.topics = await extract_topics_from_lectures(
-        app, module_id, on_progress=on_topic_progress
+        app, module_id, on_progress=on_topic_progress, force=True
     )
 
     log.info(
