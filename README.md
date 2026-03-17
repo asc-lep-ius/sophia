@@ -31,7 +31,7 @@ Das ist Sophias stärkstes Feature. Anstatt um Mitternacht den Browser offen zu 
 
 > 💡 Schon Terminal, Python und uv installiert? Direkt zu [Schritt 4](#deutsch-schritt-4-sophia-installieren) springen.
 
-### (Deutsch) Schritt 1: Terminal öffnen
+### Schritt 1: Terminal öffnen
 
 Ein Terminal ist eine textbasierte Oberfläche für deinen Computer — du tippst kurze Befehle statt Buttons zu klicken.
 
@@ -41,7 +41,7 @@ Ein Terminal ist eine textbasierte Oberfläche für deinen Computer — du tipps
 
 ✅ Ein Fenster mit einem blinkenden Cursor erscheint.
 
-### (Deutsch) Schritt 2: Python 3.12+ installieren
+### Schritt 2: Python 3.12+ installieren
 
 ```bash
 python3 --version
@@ -51,7 +51,7 @@ Wenn `Python 3.12.x` oder höher angezeigt wird — gut, weiter zu Schritt 3. So
 
 > 💡 **Windows:** Beim Installieren das Häkchen bei **„Add Python to PATH"** setzen.
 
-### (Deutsch) Schritt 3: uv (Paketmanager) installieren
+### Schritt 3: uv (Paketmanager) installieren
 
 **macOS / Linux:**
 ```bash
@@ -67,7 +67,7 @@ Nach der Installation: Terminal schließen und neu öffnen.
 
 ✅ `uv --version` zeigt eine Versionsnummer.
 
-### (Deutsch) Schritt 4: Sophia installieren
+### Schritt 4: Sophia installieren
 
 ```bash
 git clone https://gitlab.com/mipkovich/sophia.git && cd sophia
@@ -76,7 +76,7 @@ uv sync
 
 ✅ Die Ausgabe endet mit etwas wie „Resolved ... packages".
 
-### (Deutsch) Schritt 5: Einloggen
+### Schritt 5: Einloggen
 
 ```bash
 uv run sophia auth login
@@ -86,7 +86,7 @@ Du wirst nach deinen TU Wien-Zugangsdaten gefragt (dieselben wie für TUWEL und 
 
 ✅ Erfolgsmeldung mit deinem Namen erscheint.
 
-### (Deutsch) Schritt 6: Verfügbare Gruppen ansehen
+### Schritt 6: Verfügbare Gruppen ansehen
 
 ```bash
 uv run sophia register groups 186.813
@@ -94,7 +94,7 @@ uv run sophia register groups 186.813
 
 Ersetze `186.813` durch deine LVA-Nummer. Sophia zeigt dir alle Gruppen mit Wochentag, Uhrzeit, Raum und aktuellem Belegungsstand.
 
-### (Deutsch) Schritt 7: Anmeldung planen — kein offenes Terminal nötig
+### Schritt 7: Anmeldung planen — kein offenes Terminal nötig
 
 Das ist der entscheidende Schritt. Dieser Befehl installiert einen systemweiten Timer (systemd unter Linux, launchd unter macOS, Aufgabenplanung unter Windows), der genau dann feuert, wenn das Anmeldefenster aufgeht:
 
@@ -112,7 +112,7 @@ uv run sophia jobs cancel <job-id>   # Job stornieren
 
 ✅ Du bist fertig. Sophia kümmert sich um die Anmeldung.
 
-### (Deutsch) Problemlösungen
+### Problemlösungen
 
 | Problem | Lösung |
 |---------|--------|
@@ -129,7 +129,7 @@ Dieser Leitfaden führt dich vom Einrichten bis zum fertigen Anki-Deck: Vorlesun
 
 > 💡 Noch nicht eingerichtet? Erst [Schritte 1–4 oben](#deutsch-schritt-1-terminal-öffnen) durchführen und einloggen, dann hierher zurückkehren.
 
-### (Deutsch) Schritt A: Hermes/Athena-Abhängigkeiten installieren und konfigurieren
+### Schritt A: Hermes/Athena-Abhängigkeiten installieren und konfigurieren
 
 ```bash
 uv sync --extra hermes --extra llm --extra athena
@@ -146,7 +146,7 @@ Der Setup-Wizard erkennt deine GPU automatisch, empfiehlt ein passendes Whisper-
 | Groq | Kostenloses Kontingent | API-Key von [console.groq.com](https://console.groq.com/keys), als `SOPHIA_GROQ_API_KEY=...` |
 | Ollama | Kostenlos, lokal | [Ollama](https://ollama.com/) installieren, `ollama pull llama3` ausführen — kein API-Key nötig |
 
-### (Deutsch) Schritt B: Vorlesungen entdecken
+### Schritt B: Vorlesungen entdecken
 
 ```bash
 uv run sophia lectures list
@@ -154,7 +154,7 @@ uv run sophia lectures list
 
 Sophia zeigt alle Opencast-Aufzeichnungen deiner angemeldeten TUWEL-Kurse. Notiere dir die **Modul-ID** (erste Spalte).
 
-### (Deutsch) Schritt C: Vorlesung verarbeiten (eine Zeile)
+### Schritt C: Vorlesung verarbeiten (eine Zeile)
 
 ```bash
 uv run sophia lectures process <modul-id>
@@ -162,7 +162,7 @@ uv run sophia lectures process <modul-id>
 
 Führt die gesamte Pipeline aus: herunterladen → Stille erkennen → mit Whisper transkribieren → Vektoren einbetten und indizieren. Je nach GPU und Länge der Aufzeichnungen dauert das 5–30 Minuten.
 
-### (Deutsch) Schritt D: Themen extrahieren
+### Schritt D: Themen extrahieren
 
 ```bash
 uv run sophia study topics <modul-id>
@@ -170,7 +170,7 @@ uv run sophia study topics <modul-id>
 
 Hermes liefert den transkribierten Text, Athena ruft das LLM auf und extrahiert 5–15 akademische Themenbezeichnungen. Die Themen werden mit den zugehörigen Vorlesungsabschnitten per semantischer Suche verknüpft.
 
-### (Deutsch) Schritt E: Selbsteinschätzung
+### Schritt E: Selbsteinschätzung
 
 ```bash
 uv run sophia study confidence <modul-id>
@@ -178,7 +178,7 @@ uv run sophia study confidence <modul-id>
 
 Sophia fragt dich für jedes Thema: „Wie sicher bist du? (1–5)" — bevor du studiert hast. Diese Vorhersage ist der Startpunkt der Kalibrierung.
 
-### (Deutsch) Schritt F: Geführte Lernsession
+### Schritt F: Geführte Lernsession
 
 ```bash
 uv run sophia study session <modul-id>
@@ -186,7 +186,7 @@ uv run sophia study session <modul-id>
 
 Sophia wählt automatisch das Thema mit dem größten blinden Fleck. Die Session läuft in drei Phasen: Pre-Test → Studieren der relevanten Vorlesungsabschnitte → Post-Test + Lernkartenerstellung. Du formulierst die Karten selbst.
 
-### (Deutsch) Schritt G: Anki-Deck exportieren
+### Schritt G: Anki-Deck exportieren
 
 ```bash
 uv run sophia study export <modul-id>
@@ -202,7 +202,7 @@ uv run sophia study export <modul-id> --deck-name "Algorithmen 2026S"
 
 Anki von [apps.ankiweb.net](https://apps.ankiweb.net/) installieren, `.apkg` per Doppelklick importieren — fertig.
 
-### (Deutsch) Problemlösungen Hermes/Athena
+### Problemlösungen Hermes/Athena
 
 | Problem | Lösung |
 |---------|--------|
