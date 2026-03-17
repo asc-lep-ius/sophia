@@ -7,6 +7,7 @@ lecture media with resume support and optional ffmpeg audio extraction.
 from __future__ import annotations
 
 import asyncio
+import re
 import shutil
 import time
 from typing import TYPE_CHECKING
@@ -104,6 +105,72 @@ async def extract_audio(video_path: Path) -> Path | None:
 
     video_path.unlink()
     return audio_path
+
+
+async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool:
+    """Return True if *audio_path* is mostly silent (empty-room recording).
+
+    Uses ffprobe for duration and ffmpeg silencedetect for silence spans.
+    Fails open: returns False if tools are missing or fail, so downloads
+    are never blocked by detection errors.
+    """
+    if not shutil.which("ffprobe") or not shutil.which("ffmpeg"):
+        log.warning("ffprobe/ffmpeg not found, skipping silence detection")
+        return False
+
+    # Get total duration via ffprobe
+    probe = await asyncio.create_subprocess_exec(
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(audio_path),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await probe.communicate()
+    if probe.returncode != 0:
+        log.warning("ffprobe failed", path=str(audio_path))
+        return False
+
+    try:
+        total_duration = float(stdout.strip())
+    except (ValueError, TypeError):
+        log.warning("could not parse duration", raw=stdout)
+        return False
+
+    if total_duration <= 0:
+        return False
+
+    # Run silencedetect
+    proc = await asyncio.create_subprocess_exec(
+        "ffmpeg",
+        "-i", str(audio_path),
+        "-af", "silencedetect=noise=-30dB:d=2",
+        "-f", "null", "-",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, stderr = await proc.communicate()
+
+    if proc.returncode != 0:
+        log.warning("ffmpeg silencedetect failed", path=str(audio_path))
+        return False
+
+    # Sum silence durations from stderr lines like:
+    # [silencedetect @ 0x...] silence_end: 120.5 | silence_duration: 120.5
+    total_silence = 0.0
+    for match in re.finditer(r"silence_duration:\s*([\d.]+)", stderr.decode(errors="replace")):
+        total_silence += float(match.group(1))
+
+    silence_ratio = total_silence / total_duration
+    log.info(
+        "silence detection complete",
+        path=str(audio_path),
+        silence_ratio=round(silence_ratio, 3),
+        threshold=threshold_ratio,
+    )
+    return silence_ratio > threshold_ratio
 
 
 class HttpLectureDownloader:

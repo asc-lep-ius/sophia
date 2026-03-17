@@ -52,7 +52,9 @@ class DownloadStatus(StrEnum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
     COMPLETED = "completed"
+    SKIPPED = "skipped"
     FAILED = "failed"
+    DISCARDED = "discarded"
 
 
 # --- Value objects (Pydantic models) ---
@@ -310,9 +312,15 @@ class DownloadProgressEvent(BaseModel):
 
 _ALLOWED_TRANSITIONS: dict[DownloadStatus, set[DownloadStatus]] = {
     DownloadStatus.QUEUED: {DownloadStatus.DOWNLOADING, DownloadStatus.FAILED},
-    DownloadStatus.DOWNLOADING: {DownloadStatus.COMPLETED, DownloadStatus.FAILED},
-    DownloadStatus.COMPLETED: set(),
-    DownloadStatus.FAILED: {DownloadStatus.QUEUED},
+    DownloadStatus.DOWNLOADING: {
+        DownloadStatus.COMPLETED,
+        DownloadStatus.SKIPPED,
+        DownloadStatus.FAILED,
+    },
+    DownloadStatus.COMPLETED: {DownloadStatus.DISCARDED},
+    DownloadStatus.SKIPPED: {DownloadStatus.QUEUED, DownloadStatus.DISCARDED},
+    DownloadStatus.FAILED: {DownloadStatus.QUEUED, DownloadStatus.DISCARDED},
+    DownloadStatus.DISCARDED: {DownloadStatus.QUEUED},
 }
 
 

@@ -55,12 +55,13 @@ lectures_app = cyclopts.App(
         "Workflow:\n"
         " 1. setup                          — configure hardware and models\n"
         " 2. list                           — discover lecture recordings\n"
-        " 3. download   MODULE_ID           — download recordings\n"
-        " 4. transcribe MODULE_ID           — transcribe with Whisper\n"
-        " 5. index      MODULE_ID           — build embedding index\n"
-        ' 6. search     "query" MODULE_ID   — semantic search in transcripts\n'
+        " 3. process    MODULE_ID           — full pipeline (all stages)\n"
+        " 4. download   MODULE_ID           — download recordings only\n"
+        " 5. transcribe MODULE_ID           — transcribe with Whisper\n"
+        " 6. index      MODULE_ID           — build embedding index\n"
+        ' 7. search     "query" MODULE_ID   — semantic search in transcripts\n'
         "\n"
-        "Run setup once, then follow steps 2–6 for each course."
+        "Run setup once, then use 'process' for the full pipeline or steps 4–7 individually."
     ),
 )
 app.command(lectures_app)
@@ -799,8 +800,13 @@ def lectures_setup() -> None:
 
 
 @lectures_app.command(name="status")
-def lectures_status() -> None:
-    """Show current Hermes configuration."""
+async def lectures_status(
+    module_id: Annotated[
+        int | None,
+        cyclopts.Parameter(help="Opencast module ID. Without it, show Hermes config."),
+    ] = None,
+) -> None:
+    """Show Hermes configuration or per-episode pipeline status for a module."""
     from rich.console import Console
     from rich.table import Table
 
@@ -810,30 +816,174 @@ def lectures_status() -> None:
     console = Console()
     settings = Settings()
 
-    config = load_hermes_config(settings.config_dir)
-    if config is None:
-        console.print("[yellow]Hermes is not configured.[/yellow]")
-        console.print("Run [cyan]sophia lectures setup[/cyan] to get started.")
+    if module_id is None:
+        config = load_hermes_config(settings.config_dir)
+        if config is None:
+            console.print("[yellow]Hermes is not configured.[/yellow]")
+            console.print("Run [cyan]sophia lectures setup[/cyan] to get started.")
+            return
+
+        table = Table(title="Hermes Configuration")
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="green")
+
+        table.add_row("Whisper model", config.whisper.model.value)
+        table.add_row("Device", config.whisper.device.value)
+        table.add_row("Compute type", config.whisper.compute_type.value)
+        table.add_row("VAD filter", str(config.whisper.vad_filter))
+        table.add_row("Language", config.whisper.language)
+        table.add_row("", "")
+        table.add_row("LLM provider", config.llm.provider.value)
+        table.add_row("LLM model", config.llm.model)
+        table.add_row("API key env", config.llm.api_key_env or "(none)")
+        table.add_row("", "")
+        table.add_row("Embedding provider", config.embeddings.provider.value)
+        table.add_row("Embedding model", config.embeddings.model)
+
+        console.print(table)
         return
 
-    table = Table(title="Hermes Configuration")
-    table.add_column("Setting", style="cyan")
-    table.add_column("Value", style="green")
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import get_pipeline_status
 
-    table.add_row("Whisper model", config.whisper.model.value)
-    table.add_row("Device", config.whisper.device.value)
-    table.add_row("Compute type", config.whisper.compute_type.value)
-    table.add_row("VAD filter", str(config.whisper.vad_filter))
-    table.add_row("Language", config.whisper.language)
-    table.add_row("", "")
-    table.add_row("LLM provider", config.llm.provider.value)
-    table.add_row("LLM model", config.llm.model)
-    table.add_row("API key env", config.llm.api_key_env or "(none)")
-    table.add_row("", "")
-    table.add_row("Embedding provider", config.embeddings.provider.value)
-    table.add_row("Embedding model", config.embeddings.model)
+    async with create_app() as container:
+        statuses = await get_pipeline_status(container.db, module_id)
+
+    if not statuses:
+        console.print(f"[yellow]No episodes found for module {module_id}.[/yellow]")
+        return
+
+    table = Table(title=f"Pipeline Status — Module {module_id}")
+    table.add_column("Episode ID", style="dim", max_width=12)
+    table.add_column("Title", style="cyan")
+    table.add_column("Download", style="green")
+    table.add_column("Transcription", style="green")
+    table.add_column("Index", style="green")
+    table.add_column("Skip Reason", style="yellow")
+
+    for ep in statuses:
+        table.add_row(
+            ep.episode_id[:12],
+            ep.title,
+            ep.download_status,
+            ep.transcription_status or "—",
+            ep.index_status or "—",
+            ep.skip_reason or "",
+        )
 
     console.print(table)
+
+
+@lectures_app.command(name="discard")
+async def lectures_discard(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to discard.")
+    ],
+) -> None:
+    """Mark an episode as discarded, preventing further processing."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import discard_episode
+
+    console = Console()
+
+    async with create_app() as container:
+        ok = await discard_episode(container.db, module_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} discarded.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {module_id} "
+            f"(or not in a discardable state).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@lectures_app.command(name="restore")
+async def lectures_restore(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to restore.")
+    ],
+) -> None:
+    """Undo discard — re-queue an episode for processing."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import restore_episode
+
+    console = Console()
+
+    async with create_app() as container:
+        ok = await restore_episode(container.db, module_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} restored to queue.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {module_id} "
+            f"(or not currently discarded).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@lectures_app.command(name="purge")
+async def lectures_purge(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID.")
+    ],
+    episode_id: Annotated[
+        str, cyclopts.Parameter(help="Episode ID to purge indexed content for.")
+    ],
+) -> None:
+    """Remove indexed content (ChromaDB chunks, transcripts, knowledge index) for an episode."""
+    from rich.console import Console
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import purge_episode
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+            store = ChromaKnowledgeStore(container.settings.data_dir / "knowledge")
+            result = await purge_episode(
+                container.db,
+                store,
+                module_id,
+                episode_id,
+            )
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+
+    total = (
+        result.knowledge_chunks
+        + result.transcript_segments
+        + result.transcriptions
+        + result.knowledge_index
+    )
+    if total == 0:
+        console.print(
+            f"[yellow]No indexed content found for episode {episode_id} "
+            f"in module {module_id}.[/yellow]"
+        )
+    else:
+        console.print(f"[green]Purged episode {episode_id}:[/green]")
+        console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
+        console.print(f"  Transcript segments removed: {result.transcript_segments}")
+        console.print(f"  Transcription records removed: {result.transcriptions}")
+        console.print(f"  Knowledge index records removed: {result.knowledge_index}")
 
 
 @lectures_app.command(name="list")
@@ -1087,6 +1237,113 @@ async def lectures_index(
 
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@lectures_app.command(name="process")
+async def lectures_process(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (from 'sophia lectures list').")
+    ],
+) -> None:
+    """Run the full lecture pipeline: download → transcribe → index → extract topics."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, EmbeddingError, TranscriptionError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_pipeline import PipelineResult, run_pipeline
+
+    console = Console()
+    _STATUS_STYLES = {"completed": "green", "skipped": "yellow", "failed": "red"}
+
+    try:
+        async with create_app() as container:
+            console.print(f"\n[bold]Pipeline for module {module_id}[/bold]\n")
+
+            result: PipelineResult = await run_pipeline(container, module_id)
+
+            # ── Summary table ─────────────────────────────────────────
+            console.print("\n")
+            table = Table(title="Pipeline Summary")
+            table.add_column("Episode", style="cyan", no_wrap=False)
+            table.add_column("Download", style="white")
+            table.add_column("Transcribe", style="white")
+            table.add_column("Index", style="white")
+
+            # Build per-episode rows from downloads (source of episode IDs)
+            transcribe_map = {r.episode_id: r for r in result.transcriptions}
+            index_map = {r.episode_id: r for r in result.indexing}
+
+            completed = {"download": 0, "transcribe": 0, "index": 0}
+            skipped = {"download": 0, "transcribe": 0, "index": 0}
+            failed = {"download": 0, "transcribe": 0, "index": 0}
+
+            for dl in result.downloads:
+                dl_style = _STATUS_STYLES.get(dl.status, "white")
+                dl_cell = f"[{dl_style}]{dl.status}[/{dl_style}]"
+
+                tr = transcribe_map.get(dl.episode_id)
+                tr_status = tr.status if tr else "—"
+                tr_style = _STATUS_STYLES.get(tr_status, "dim")
+                tr_cell = f"[{tr_style}]{tr_status}[/{tr_style}]"
+
+                ix = index_map.get(dl.episode_id)
+                ix_status = ix.status if ix else "—"
+                ix_style = _STATUS_STYLES.get(ix_status, "dim")
+                ix_cell = f"[{ix_style}]{ix_status}[/{ix_style}]"
+
+                table.add_row(dl.title, dl_cell, tr_cell, ix_cell)
+
+                for stage, status in [
+                    ("download", dl.status),
+                    ("transcribe", tr_status),
+                    ("index", ix_status),
+                ]:
+                    if status == "completed":
+                        completed[stage] += 1
+                    elif status == "skipped":
+                        skipped[stage] += 1
+                    elif status == "failed":
+                        failed[stage] += 1
+
+            # Totals row
+            table.add_section()
+            table.add_row(
+                "[bold]Total[/bold]",
+                f"[green]{completed['download']}[/green] / "
+                f"[yellow]{skipped['download']}[/yellow] / "
+                f"[red]{failed['download']}[/red]",
+                f"[green]{completed['transcribe']}[/green] / "
+                f"[yellow]{skipped['transcribe']}[/yellow] / "
+                f"[red]{failed['transcribe']}[/red]",
+                f"[green]{completed['index']}[/green] / "
+                f"[yellow]{skipped['index']}[/yellow] / "
+                f"[red]{failed['index']}[/red]",
+            )
+
+            console.print(table)
+
+            if result.topics:
+                console.print(
+                    f"\n[bold]Topics extracted:[/bold] {len(result.topics)}"
+                )
+                for t in result.topics:
+                    console.print(f"  • {t.topic}")
+
+            console.print(
+                "\n[dim]Next step:[/dim]"
+                ' [cyan]sophia lectures search "query" <module-id>[/cyan]'
+            )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TranscriptionError as exc:
+        console.print(f"[red]Transcription error:[/red] {exc}")
         raise SystemExit(1) from None
     except EmbeddingError as exc:
         console.print(f"[red]Embedding error:[/red] {exc}")

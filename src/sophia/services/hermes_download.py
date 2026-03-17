@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from sophia.adapters.lecture_downloader import ext_from_mimetype, extract_audio, select_best_track
+from sophia.adapters.lecture_downloader import (
+    detect_silence,
+    ext_from_mimetype,
+    extract_audio,
+    select_best_track,
+)
 from sophia.domain.errors import LectureDownloadError
 
 if TYPE_CHECKING:
@@ -47,11 +52,11 @@ async def download_lectures(
     if not episodes:
         return []
 
-    completed_ids = await _get_completed_ids(app.db, module_id)
+    skip_ids = await _get_skip_ids(app.db, module_id)
     results: list[LectureDownloadResult] = []
 
     for ep in episodes:
-        if ep.episode_id in completed_ids:
+        if ep.episode_id in skip_ids:
             results.append(
                 LectureDownloadResult(
                     episode_id=ep.episode_id,
@@ -68,10 +73,11 @@ async def download_lectures(
     return results
 
 
-async def _get_completed_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
-    """Return episode IDs that are already fully downloaded."""
+async def _get_skip_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
+    """Return episode IDs that should be skipped (completed, skipped, or discarded)."""
     cursor = await db.execute(
-        "SELECT episode_id FROM lecture_downloads WHERE module_id = ? AND status = 'completed'",
+        "SELECT episode_id FROM lecture_downloads"
+        " WHERE module_id = ? AND status IN ('completed', 'skipped', 'discarded')",
         (module_id,),
     )
     rows = await cursor.fetchall()
@@ -132,6 +138,13 @@ async def _download_episode(
             if extracted is not None:
                 final_path = extracted
 
+        if await detect_silence(final_path):
+            log.info("silent recording detected, skipping", episode_id=episode_id)
+            await _mark_skipped(app.db, episode_id, "silent_recording")
+            return LectureDownloadResult(
+                episode_id=episode_id, title=title, file_path=final_path, status="skipped"
+            )
+
         file_size = final_path.stat().st_size if final_path.exists() else 0
         await _mark_completed(app.db, episode_id, str(final_path), file_size)
 
@@ -183,5 +196,13 @@ async def _mark_failed(db: aiosqlite.Connection, episode_id: str, error: str) ->
     await db.execute(
         "UPDATE lecture_downloads SET status='failed', error=? WHERE episode_id=?",
         (error, episode_id),
+    )
+    await db.commit()
+
+
+async def _mark_skipped(db: aiosqlite.Connection, episode_id: str, skip_reason: str) -> None:
+    await db.execute(
+        "UPDATE lecture_downloads SET status='skipped', skip_reason=? WHERE episode_id=?",
+        (skip_reason, episode_id),
     )
     await db.commit()
