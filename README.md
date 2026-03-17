@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.14). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base) and Athena (uses lecture knowledge base for topic extraction, confidence calibration, guided sessions, spaced review, anki deck export) are functional, but not tested extensively. Bücherwurm download/library features are in progress. Chronos is planned. 
+**Status:** Early development (v0.1.14). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base) and Athena (uses lecture knowledge base for topic extraction, confidence calibration, guided sessions, spaced review, anki deck export) are functional, but not tested extensively in a production context. Bücherwurm download/library features are in progress. Chronos is planned. 
 
 | Abschnitt | Inhalt |
 |-----------|--------|
