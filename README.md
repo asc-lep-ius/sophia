@@ -2,7 +2,7 @@
 
 *"I am the love of wisdom, the spirit that kindles the flame of truth in those who seek it."*
 
-A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
+A student toolkit for TU Wien that automates the tedious parts of academic life (getting a spot in the desired group, finding + aquiring textbooks, forcing yourself to confront unfamiliar fields of knowledge, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
 **Status:** Early development (v0.1.14). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base) and Athena (uses lecture knowledge base for topic extraction, confidence calibration, guided sessions, spaced review, anki deck export) are functional, but not tested extensively in a production context. Bücherwurm download/library features are in progress. Chronos is planned. 
 
