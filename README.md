@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (finding+ aquiring textbooks, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional, Kairos (registration with scheduler) and Hermes (lecture knowledge base) are functional. Bücherwurm download/library features are in progress. Chronos and Athena are planned.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery) is functional, Kairos (registration with scheduler) and Hermes (lecture knowledge base) are functional. Hermes now includes silence detection, a full one-command pipeline (`lectures process`), and lecture management (discard/restore/purge). Bücherwurm download/library features are in progress. Chronos and Athena are planned.
 
 | Section | What's There |
 |---------|-------------|
@@ -168,7 +168,7 @@ Sophia is organized into modules, each named for a concept that matches its purp
 |--------|---------|--------------|--------|
 | **Bücherwurm** 📚 | `sophia books` | Discovers textbook references from enrolled TUWEL courses (ISBN extraction, metadata enrichment) | ✅ Discovery |
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
-| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, transcribe with Whisper, semantic search | ✅ Functional |
+| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, silence detection, transcribe with Whisper, semantic search, discard/restore/purge management | ✅ Functional |
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
 | **Athena** 🎓 | `sophia study` | Study companion: topic extraction, confidence calibration, guided sessions, spaced review | ✅ Functional |
 
@@ -257,12 +257,23 @@ Hermes (Ἑρμῆς — the messenger who carries knowledge between realms) tur
 
 1. **`sophia lectures setup`** — detect hardware (GPU/CPU), choose Whisper model, configure LLM and embedding providers
 2. **`sophia lectures list`** — discover lecture recordings from enrolled courses
-3. **`sophia lectures download <module-id>`** — download recordings (prefers audio for efficiency)
-4. **`sophia lectures transcribe <module-id>`** — transcribe with Whisper, VAD filtering, hallucination detection
-5. **`sophia lectures index <module-id>`** — chunk transcripts and build embedding index
-6. **`sophia lectures search "topic" <module-id>`** — semantic search within a lecture's transcripts
+3. **`sophia lectures process <module-id>`** — run the full pipeline in one command: download → silence detection → transcribe → index
+4. **`sophia lectures search "topic" <module-id>`** — semantic search within a lecture's transcripts
+
+Or run each stage individually:
+
+- **`sophia lectures download <module-id>`** — download recordings (prefers audio for efficiency); silently skips empty recordings detected by ffmpeg silence analysis
+- **`sophia lectures transcribe <module-id>`** — transcribe with Whisper, VAD filtering, hallucination detection
+- **`sophia lectures index <module-id>`** — chunk transcripts and build embedding index
 
 Step 1 only needs to happen once. The setup wizard detects your GPU, recommends a Whisper model based on VRAM, lets you choose an LLM provider (GitHub Models, Gemini, Groq, or Ollama), and automatically installs the heavy dependencies (`faster-whisper`, `chromadb`, `sentence-transformers`) when needed.
+
+**Lecture management:**
+
+- **`sophia lectures status <module-id>`** — per-episode table showing download, transcription, index status, and the skip reason for any silently-detected empty recordings
+- **`sophia lectures discard <module-id> <episode-id>`** — manually mark an episode as discarded so it won't be processed again
+- **`sophia lectures restore <module-id> <episode-id>`** — undo a discard and re-queue the episode for processing
+- **`sophia lectures purge <module-id> <episode-id>`** — remove all indexed content for an episode from the knowledge base (ChromaDB chunks, transcript segments, index records)
 
 ### What's Coming: Chronos and Athena
 
@@ -358,9 +369,11 @@ src/sophia/
 │   ├── registration.py        # Kairos preference-based registration
 │   ├── job_runner.py          # Cross-platform job scheduler (systemd/launchd/Task Scheduler)
 │   ├── hermes_setup.py        # Hardware detection, config wizard
-│   ├── hermes_download.py     # Lecture download with audio extraction
+│   ├── hermes_download.py     # Lecture download with audio extraction and silence detection
 │   ├── hermes_transcribe.py   # Whisper transcription with VAD and hallucination filtering
-│   └── hermes_index.py        # Chunking, embeddings, semantic search orchestration
+│   ├── hermes_index.py        # Chunking, embeddings, semantic search orchestration
+│   ├── hermes_manage.py       # Discard/restore/purge and pipeline status
+│   └── hermes_pipeline.py     # E2E pipeline orchestration (download → transcribe → index)
 ├── adapters/         # External world implementations
 │   ├── moodle.py     # TUWEL/Moodle AJAX adapter
 │   ├── tiss.py       # TISS public API adapter
@@ -609,7 +622,7 @@ uv run sophia lectures setup       # configure Hermes for your hardware (GPU, mo
 # The lectures setup wizard auto-installs hermes deps when needed
 
 # Run the test suite
-uv run pytest                      # 420 tests currently passing
+uv run pytest                      # 708 tests currently passing
 uv run pytest --cov=sophia     # with coverage report
 uv run pytest -x               # stop on first failure (useful when debugging)
 
@@ -633,6 +646,7 @@ See the `Makefile` for additional convenience targets (`make test`, `make lint`,
 | ✅ Done | **Kairos: Registration** | TISS course & group registration with preference lists, watch mode for auto-submit |
 | ✅ Done | **Kairos: Scheduler** | Cross-platform job scheduler (systemd/launchd/Task Scheduler) — `--schedule` and `sophia jobs` |
 | ✅ Done | **Hermes: Lectures** | Lecture download, Whisper transcription (GPU/CPU), semantic search via embeddings |
+| ✅ Done | **Hermes: Silence detection & management** | Auto-detect empty recordings via ffmpeg, `lectures process` E2E pipeline, discard/restore/purge management, knowledge base purge |
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
 | 📋 Planned | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq), Typst-rendered reading reports |
 | 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
@@ -666,10 +680,15 @@ uv run sophia register go 186.813 --preferences "1,3" --schedule  # install syst
 # Lectures (Hermes)
 uv run sophia lectures setup               # configure hardware, models, providers
 uv run sophia lectures list                # discover lecture recordings
-uv run sophia lectures download <module-id>  # download recordings
+uv run sophia lectures process <module-id>   # full pipeline: download → transcribe → index
+uv run sophia lectures status <module-id>    # per-episode status table (with skip reasons)
+uv run sophia lectures download <module-id>  # download recordings (with silence detection)
 uv run sophia lectures transcribe <module-id> # transcribe with Whisper
 uv run sophia lectures index <module-id>   # build embedding index
 uv run sophia lectures search "topic" <module-id>  # semantic search within a lecture
+uv run sophia lectures discard <module-id> <episode-id>  # mark episode as discarded
+uv run sophia lectures restore <module-id> <episode-id>  # undo discard
+uv run sophia lectures purge <module-id> <episode-id>    # remove episode from knowledge base
 
 # Study (Athena)
 uv run sophia study topics <module-id>              # extract topics from transcripts
