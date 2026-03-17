@@ -55,12 +55,13 @@ lectures_app = cyclopts.App(
         "Workflow:\n"
         " 1. setup                          — configure hardware and models\n"
         " 2. list                           — discover lecture recordings\n"
-        " 3. download   MODULE_ID           — download recordings\n"
-        " 4. transcribe MODULE_ID           — transcribe with Whisper\n"
-        " 5. index      MODULE_ID           — build embedding index\n"
-        ' 6. search     "query" MODULE_ID   — semantic search in transcripts\n'
+        " 3. process    MODULE_ID           — full pipeline (all stages)\n"
+        " 4. download   MODULE_ID           — download recordings only\n"
+        " 5. transcribe MODULE_ID           — transcribe with Whisper\n"
+        " 6. index      MODULE_ID           — build embedding index\n"
+        ' 7. search     "query" MODULE_ID   — semantic search in transcripts\n'
         "\n"
-        "Run setup once, then follow steps 2–6 for each course."
+        "Run setup once, then use 'process' for the full pipeline or steps 4–7 individually."
     ),
 )
 app.command(lectures_app)
@@ -1184,6 +1185,113 @@ async def lectures_index(
 
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except EmbeddingError as exc:
+        console.print(f"[red]Embedding error:[/red] {exc}")
+        raise SystemExit(1) from None
+
+
+@lectures_app.command(name="process")
+async def lectures_process(
+    module_id: Annotated[
+        int, cyclopts.Parameter(help="Opencast module ID (from 'sophia lectures list').")
+    ],
+) -> None:
+    """Run the full lecture pipeline: download → transcribe → index → extract topics."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError, EmbeddingError, TranscriptionError
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_pipeline import PipelineResult, run_pipeline
+
+    console = Console()
+    _STATUS_STYLES = {"completed": "green", "skipped": "yellow", "failed": "red"}
+
+    try:
+        async with create_app() as container:
+            console.print(f"\n[bold]Pipeline for module {module_id}[/bold]\n")
+
+            result: PipelineResult = await run_pipeline(container, module_id)
+
+            # ── Summary table ─────────────────────────────────────────
+            console.print("\n")
+            table = Table(title="Pipeline Summary")
+            table.add_column("Episode", style="cyan", no_wrap=False)
+            table.add_column("Download", style="white")
+            table.add_column("Transcribe", style="white")
+            table.add_column("Index", style="white")
+
+            # Build per-episode rows from downloads (source of episode IDs)
+            transcribe_map = {r.episode_id: r for r in result.transcriptions}
+            index_map = {r.episode_id: r for r in result.indexing}
+
+            completed = {"download": 0, "transcribe": 0, "index": 0}
+            skipped = {"download": 0, "transcribe": 0, "index": 0}
+            failed = {"download": 0, "transcribe": 0, "index": 0}
+
+            for dl in result.downloads:
+                dl_style = _STATUS_STYLES.get(dl.status, "white")
+                dl_cell = f"[{dl_style}]{dl.status}[/{dl_style}]"
+
+                tr = transcribe_map.get(dl.episode_id)
+                tr_status = tr.status if tr else "—"
+                tr_style = _STATUS_STYLES.get(tr_status, "dim")
+                tr_cell = f"[{tr_style}]{tr_status}[/{tr_style}]"
+
+                ix = index_map.get(dl.episode_id)
+                ix_status = ix.status if ix else "—"
+                ix_style = _STATUS_STYLES.get(ix_status, "dim")
+                ix_cell = f"[{ix_style}]{ix_status}[/{ix_style}]"
+
+                table.add_row(dl.title, dl_cell, tr_cell, ix_cell)
+
+                for stage, status in [
+                    ("download", dl.status),
+                    ("transcribe", tr_status),
+                    ("index", ix_status),
+                ]:
+                    if status == "completed":
+                        completed[stage] += 1
+                    elif status == "skipped":
+                        skipped[stage] += 1
+                    elif status == "failed":
+                        failed[stage] += 1
+
+            # Totals row
+            table.add_section()
+            table.add_row(
+                "[bold]Total[/bold]",
+                f"[green]{completed['download']}[/green] / "
+                f"[yellow]{skipped['download']}[/yellow] / "
+                f"[red]{failed['download']}[/red]",
+                f"[green]{completed['transcribe']}[/green] / "
+                f"[yellow]{skipped['transcribe']}[/yellow] / "
+                f"[red]{failed['transcribe']}[/red]",
+                f"[green]{completed['index']}[/green] / "
+                f"[yellow]{skipped['index']}[/yellow] / "
+                f"[red]{failed['index']}[/red]",
+            )
+
+            console.print(table)
+
+            if result.topics:
+                console.print(
+                    f"\n[bold]Topics extracted:[/bold] {len(result.topics)}"
+                )
+                for t in result.topics:
+                    console.print(f"  • {t.topic}")
+
+            console.print(
+                "\n[dim]Next step:[/dim]"
+                ' [cyan]sophia lectures search "query" <module-id>[/cyan]'
+            )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
+    except TranscriptionError as exc:
+        console.print(f"[red]Transcription error:[/red] {exc}")
         raise SystemExit(1) from None
     except EmbeddingError as exc:
         console.print(f"[red]Embedding error:[/red] {exc}")
