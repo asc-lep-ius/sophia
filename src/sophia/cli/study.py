@@ -188,8 +188,12 @@ async def study_confidence(
                 return
 
             console.print(
-                "[bold]Rate your confidence for each topic (1-5):[/bold]\n"
-                "  1 = No idea  2 = Vague  3 = Somewhat  4 = Good  5 = Confident\n"
+                "[bold]Rate your confidence for each topic:[/bold]\n"
+                "  [bold cyan]1[/bold cyan] Never heard of it        "
+                "[bold cyan]2[/bold cyan] Vaguely familiar\n"
+                "  [bold cyan]3[/bold cyan] Understand somewhat      "
+                "[bold cyan]4[/bold cyan] Know it well\n"
+                "  [bold cyan]5[/bold cyan] Could teach it\n"
             )
 
             for tm in topics:
@@ -316,7 +320,7 @@ async def study_session(
             session = await start_study_session(container.db, resolved_id, topic)
 
             # --- PRE-TEST ---
-            console.print("[bold cyan]Phase 1: Pre-Test[/bold cyan]")
+            console.rule("[bold blue]Phase 1/4: Pre-Test[/bold blue]")
             try:
                 with Status("Generating pre-test questions…", console=console):
                     pre_questions = await generate_study_questions(
@@ -348,7 +352,7 @@ async def study_session(
                 return
 
             # --- STUDY PHASE ---
-            console.print("\n[bold cyan]Phase 2: Lecture Review[/bold cyan]")
+            console.rule("[bold green]Phase 2/4: Study[/bold green]")
             with Status("Fetching lecture content…", console=console):
                 from sophia.services.athena_study import get_lecture_context
 
@@ -371,7 +375,7 @@ async def study_session(
                 return
 
             # --- POST-TEST ---
-            console.print("\n[bold cyan]Phase 3: Post-Test[/bold cyan]")
+            console.rule("[bold yellow]Phase 3/4: Post-Test[/bold yellow]")
             try:
                 with Status("Generating post-test questions…", console=console):
                     post_questions = await generate_study_questions(
@@ -409,6 +413,7 @@ async def study_session(
             await complete_study_session(container.db, session.id, pre_score, post_score)
 
             # --- Optional flashcard creation ---
+            console.rule("[bold magenta]Phase 4/4: Flashcard[/bold magenta]")
             if Confirm.ask("\nCreate a flashcard for this topic?", default=True, console=console):
                 front = Prompt.ask("  Front (question)", console=console)
                 back = Prompt.ask("  Back (answer)", console=console)
