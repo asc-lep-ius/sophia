@@ -190,3 +190,121 @@ class TestExportCustomDeckName:
         assert count == 1
         with zipfile.ZipFile(output) as zf:
             assert "collection.anki2" in zf.namelist()
+
+
+# ---------------------------------------------------------------------------
+# Lecture-scoped export (episode_id filter)
+# ---------------------------------------------------------------------------
+
+
+async def _link_topic_to_episode(
+    db: aiosqlite.Connection,
+    *,
+    topic: str,
+    course_id: int,
+    episode_id: str,
+    chunk_id: str = "chunk-1",
+) -> None:
+    await db.execute(
+        "INSERT OR IGNORE INTO topic_lecture_links (topic, course_id, chunk_id, episode_id) "
+        "VALUES (?, ?, ?, ?)",
+        (topic, course_id, chunk_id, episode_id),
+    )
+    await db.commit()
+
+
+@_requires_genanki
+class TestExportLectureScopedDeck:
+    @pytest.mark.asyncio
+    async def test_export_lecture_scoped_deck(
+        self, db: aiosqlite.Connection, tmp_path: Path
+    ) -> None:
+        """Only flashcards whose topics are linked to the given episode appear."""
+        course = 42
+        # Flashcards for two topics
+        await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")
+        await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q2", back="A2")
+        await _insert_flashcard(db, course_id=course, topic="Hashing", front="Q3", back="A3")
+
+        # Link only "Sorting" to episode "ep-10"
+        await _link_topic_to_episode(db, topic="Sorting", course_id=course, episode_id="ep-10")
+        # Link "Hashing" to a different episode
+        await _link_topic_to_episode(db, topic="Hashing", course_id=course, episode_id="ep-20")
+
+        from sophia.services.athena_export import export_anki_deck
+
+        output = tmp_path / "scoped.apkg"
+        count = await export_anki_deck(
+            db, course_id=course, output_path=output, episode_id="ep-10"
+        )
+
+        assert count == 2  # only the two "Sorting" cards
+
+    @pytest.mark.asyncio
+    async def test_export_lecture_scoped_no_duplicates(
+        self, db: aiosqlite.Connection, tmp_path: Path
+    ) -> None:
+        """A topic linked via multiple chunks to the same episode yields each card once."""
+        course = 42
+        await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")
+        # Two chunks for the same topic + episode
+        await _link_topic_to_episode(
+            db, topic="Sorting", course_id=course, episode_id="ep-10", chunk_id="c1"
+        )
+        await _link_topic_to_episode(
+            db, topic="Sorting", course_id=course, episode_id="ep-10", chunk_id="c2"
+        )
+
+        from sophia.services.athena_export import export_anki_deck
+
+        output = tmp_path / "no-dup.apkg"
+        count = await export_anki_deck(
+            db, course_id=course, output_path=output, episode_id="ep-10"
+        )
+
+        assert count == 1
+
+
+@_requires_genanki
+class TestExportLectureScopedEmpty:
+    @pytest.mark.asyncio
+    async def test_export_lecture_scoped_empty(
+        self, db: aiosqlite.Connection, tmp_path: Path
+    ) -> None:
+        """Episode with no linked flashcards returns 0."""
+        course = 42
+        await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")
+        await _link_topic_to_episode(db, topic="Sorting", course_id=course, episode_id="ep-10")
+
+        from sophia.services.athena_export import export_anki_deck
+
+        output = tmp_path / "empty-ep.apkg"
+        count = await export_anki_deck(
+            db, course_id=course, output_path=output, episode_id="ep-99"
+        )
+
+        assert count == 0
+        assert not output.exists()
+
+
+@_requires_genanki
+class TestExportDefaultStillCourseWide:
+    @pytest.mark.asyncio
+    async def test_export_default_still_course_wide(
+        self, db: aiosqlite.Connection, tmp_path: Path
+    ) -> None:
+        """Without episode_id, all flashcards for the course are exported (backward compat)."""
+        course = 42
+        await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")
+        await _insert_flashcard(db, course_id=course, topic="Hashing", front="Q2", back="A2")
+        await _insert_flashcard(db, course_id=course, topic="Graphs", front="Q3", back="A3")
+
+        # Link only one topic to an episode — should not affect unscoped export
+        await _link_topic_to_episode(db, topic="Sorting", course_id=course, episode_id="ep-10")
+
+        from sophia.services.athena_export import export_anki_deck
+
+        output = tmp_path / "all.apkg"
+        count = await export_anki_deck(db, course_id=course, output_path=output)
+
+        assert count == 3
