@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+# Generous flat ceiling — no duration metadata available at this point
+_TRANSCRIPTION_TIMEOUT_S: float = 1800.0
+
 
 @dataclass
 class TranscriptionResult:
@@ -136,8 +139,9 @@ async def _transcribe_episode(
     await db.commit()
 
     try:
-        segments: list[TranscriptSegment] = await asyncio.to_thread(
-            transcriber.transcribe, audio_path
+        segments: list[TranscriptSegment] = await asyncio.wait_for(
+            asyncio.to_thread(transcriber.transcribe, audio_path),
+            timeout=_TRANSCRIPTION_TIMEOUT_S,
         )
 
         srt_content = segments_to_srt(segments)
@@ -164,6 +168,28 @@ async def _transcribe_episode(
             srt_path=srt_path,
             segment_count=len(segments),
             status="completed",
+        )
+
+    except TimeoutError:
+        msg = f"transcription timed out after {_TRANSCRIPTION_TIMEOUT_S}s"
+        await db.execute(
+            "UPDATE transcriptions SET status='failed', error=? WHERE episode_id=?",
+            (msg, episode_id),
+        )
+        await db.commit()
+
+        log.error(
+            "transcription_timed_out",
+            episode_id=episode_id,
+            timeout=_TRANSCRIPTION_TIMEOUT_S,
+        )
+        return TranscriptionResult(
+            episode_id=episode_id,
+            title=title,
+            srt_path=None,
+            segment_count=0,
+            status="failed",
+            error=msg,
         )
 
     except (TranscriptionError, OSError) as exc:

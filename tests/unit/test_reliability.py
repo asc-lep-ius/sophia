@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -401,3 +402,36 @@ async def test_create_app_timeout() -> None:
     ):
         async with create_app():
             pass  # pragma: no cover
+
+
+# ------------------------------------------------------------------
+# Whisper transcription — timeout on hang
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_transcription_timeout() -> None:
+    """_transcribe_episode marks episode as failed when Whisper hangs past timeout."""
+    from pathlib import Path
+
+    from sophia.services.hermes_transcribe import _transcribe_episode
+
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+
+    transcriber = MagicMock()
+    transcriber.transcribe = lambda _path: time.sleep(10)  # blocks, but not forever
+
+    with patch("sophia.services.hermes_transcribe._TRANSCRIPTION_TIMEOUT_S", 0.05):
+        result = await _transcribe_episode(
+            db,
+            transcriber,
+            episode_id="ep-hang",
+            module_id=42,
+            title="Hanging Lecture",
+            audio_path=Path("/tmp/fake.m4a"),
+        )
+
+    assert result.status == "failed"
+    assert "timed out" in result.error
