@@ -38,6 +38,7 @@ log = structlog.get_logger()
 
 _MAX_INGESTION_CHARS = 20_000
 _MAX_PDF_PAGES = 5
+_MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 _URL_CONTENT_SELECTORS = (
     ".urlworkaround",
     "#region-main",
@@ -251,14 +252,38 @@ class MoodleAdapter:
     async def _enrich_resource_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        return list(
+        result = list(
             await asyncio.gather(*(self._enrich_resource_module(module) for module in modules))
         )
+        enriched = sum(
+            1 for original, updated in zip(modules, result, strict=True)
+            if updated is not original
+        )
+        log.info(
+            "resource_enrichment_complete",
+            total=len(modules),
+            enriched=enriched,
+            skipped=len(modules) - enriched,
+        )
+        return result
 
     async def _enrich_url_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        return list(await asyncio.gather(*(self._enrich_url_module(module) for module in modules)))
+        result = list(
+            await asyncio.gather(*(self._enrich_url_module(module) for module in modules))
+        )
+        enriched = sum(
+            1 for original, updated in zip(modules, result, strict=True)
+            if updated is not original
+        )
+        log.info(
+            "url_enrichment_complete",
+            total=len(modules),
+            enriched=enriched,
+            skipped=len(modules) - enriched,
+        )
+        return result
 
     async def _enrich_url_module(self, module: ModuleInfo) -> ModuleInfo:
         if not module.url:
@@ -270,7 +295,7 @@ class MoodleAdapter:
         except AuthError:
             raise
         except Exception as exc:  # noqa: BLE001
-            log.debug("url_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            log.warning("url_module_enrichment_skipped", module_id=module.id, error=str(exc))
             return module
 
         if not target_url:
@@ -299,7 +324,7 @@ class MoodleAdapter:
         except AuthError:
             raise
         except Exception as exc:  # noqa: BLE001
-            log.debug("resource_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            log.warning("resource_module_enrichment_skipped", module_id=module.id, error=str(exc))
             return module
 
         if not file_url:
@@ -307,9 +332,17 @@ class MoodleAdapter:
 
         description = module.description
         if file_response is not None and _response_is_pdf(file_response, file_url):
-            pdf_text = _extract_pdf_text(file_response.content)
-            if pdf_text:
-                description = _merge_description(description, pdf_text)
+            if len(file_response.content) > _MAX_PDF_SIZE_BYTES:
+                log.warning(
+                    "pdf_too_large_skipping",
+                    module_id=module.id,
+                    size=len(file_response.content),
+                    limit=_MAX_PDF_SIZE_BYTES,
+                )
+            else:
+                pdf_text = _extract_pdf_text(file_response.content)
+                if pdf_text:
+                    description = _merge_description(description, pdf_text)
 
         return module.model_copy(
             update={

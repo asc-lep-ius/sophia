@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Downloads
     preferred_formats: list[str] = ["pdf", "epub"]
     max_concurrent_downloads: int = 2
+    max_download_size_bytes: int = 5 * 1024**3  # 5 GB
 
     # FlareSolverr (optional, for scraping fallback)
     flaresolverr_url: str = "http://localhost:8191"
@@ -44,6 +45,11 @@ class Settings(BaseSettings):
 
     # Typst (optional, auto-detected)
     typst_path: str = "typst"
+
+    def ensure_dirs(self) -> None:
+        """Create application directories with restrictive permissions."""
+        for d in (self.data_dir, self.config_dir, self.cache_dir):
+            d.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     @property
     def db_path(self) -> Path:

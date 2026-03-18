@@ -7,9 +7,9 @@ management, group scraping, and preference-based registration attempts.
 from __future__ import annotations
 
 import re
+import secrets
 import warnings
 from datetime import UTC, datetime
-from random import randint
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunsplit
 
@@ -72,8 +72,8 @@ def _build_deltaspike_url(base_url: str, redirect_path: str, http: httpx.AsyncCl
     3. Set a short-lived ``dsrwid-<token>`` cookie mapping to the window ID.
     4. Append both params to the redirect URL.
     """
-    window_id = str(randint(1000, 9999))
-    request_token = str(randint(0, 998))
+    window_id = str(secrets.randbelow(9000) + 1000)
+    request_token = str(secrets.randbelow(999))
     http.cookies.set(f"dsrwid-{request_token}", window_id)
 
     full_url = urljoin(base_url, redirect_path)

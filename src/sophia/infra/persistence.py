@@ -52,12 +52,23 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
             version = int(sql_file.stem.split("_")[0])
             if version > current_version:
                 sql = sql_file.read_text()
-                for statement in sql.split(";"):
-                    statement = statement.strip()
-                    if statement:
-                        await db.execute(statement)
-                await db.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
-                log.info("migration_applied", version=version, file=sql_file.name)
+                try:
+                    for statement in sql.split(";"):
+                        statement = statement.strip()
+                        if statement:
+                            await db.execute(statement)
+                    await db.execute(
+                        "INSERT INTO schema_version (version) VALUES (?)", (version,)
+                    )
+                    log.info("migration_applied", version=version, file=sql_file.name)
+                except Exception:
+                    log.error(
+                        "migration_failed",
+                        version=version,
+                        file=sql_file.name,
+                        sql=sql[:500],
+                    )
+                    raise
         await db.commit()
     except Exception:
         await db.rollback()
