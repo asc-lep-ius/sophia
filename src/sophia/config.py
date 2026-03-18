@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Typst (optional, auto-detected)
     typst_path: str = "typst"
 
+    def ensure_dirs(self) -> None:
+        """Create application directories with restrictive permissions."""
+        for d in (self.data_dir, self.config_dir, self.cache_dir):
+            d.mkdir(parents=True, exist_ok=True, mode=0o700)
+
     @property
     def db_path(self) -> Path:
         """Path to the SQLite database file."""

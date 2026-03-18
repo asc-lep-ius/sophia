@@ -442,3 +442,35 @@ class TestPDFSizeLimit:
             result = await client._enrich_resource_module(module)  # pyright: ignore[reportPrivateUsage]
             mock_extract.assert_not_called()
             assert result.id == module.id
+
+
+class TestEnsureDirs:
+    """Verify Settings.ensure_dirs creates directories with restrictive permissions."""
+
+    def test_ensure_dirs_creates_with_restrictive_permissions(self, tmp_path: Path) -> None:
+        from sophia.config import Settings
+
+        settings = Settings(
+            data_dir=tmp_path / "data",
+            config_dir=tmp_path / "config",
+            cache_dir=tmp_path / "cache",
+        )
+        settings.ensure_dirs()
+
+        for d in (settings.data_dir, settings.config_dir, settings.cache_dir):
+            assert d.exists()
+            assert d.stat().st_mode & 0o777 == 0o700
+
+    def test_ensure_dirs_idempotent(self, tmp_path: Path) -> None:
+        from sophia.config import Settings
+
+        settings = Settings(
+            data_dir=tmp_path / "data",
+            config_dir=tmp_path / "config",
+            cache_dir=tmp_path / "cache",
+        )
+        settings.ensure_dirs()
+        settings.ensure_dirs()  # must not raise
+
+        for d in (settings.data_dir, settings.config_dir, settings.cache_dir):
+            assert d.exists()
