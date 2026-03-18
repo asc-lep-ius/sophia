@@ -66,6 +66,7 @@ class ChromaKnowledgeStore:
                         "chunk_index": c.chunk_index,
                         "start_time": c.start_time,
                         "end_time": c.end_time,
+                        "source": c.source,
                     }
                     for c in batch_chunks
                 ],
@@ -77,10 +78,17 @@ class ChromaKnowledgeStore:
         *,
         n_results: int = 5,
         episode_ids: list[str] | None = None,
+        source_filter: str | None = None,
     ) -> list[tuple[KnowledgeChunk, float]]:
         """Search for similar chunks. Returns (chunk, score) pairs sorted by relevance."""
         collection = self._ensure_collection()
-        where = {"episode_id": {"$in": episode_ids}} if episode_ids else None
+        where: dict[str, Any] | None = None
+        if episode_ids and source_filter:
+            where = {"$and": [{"episode_id": {"$in": episode_ids}}, {"source": source_filter}]}
+        elif episode_ids:
+            where = {"episode_id": {"$in": episode_ids}}
+        elif source_filter:
+            where = {"source": source_filter}
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=n_results,
@@ -104,6 +112,7 @@ class ChromaKnowledgeStore:
                 text=doc,
                 start_time=meta["start_time"],
                 end_time=meta["end_time"],
+                source=meta.get("source", "lecture"),
             )
             pairs.append((chunk, score))
 

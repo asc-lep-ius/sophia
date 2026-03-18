@@ -199,3 +199,92 @@ class TestChromaKnowledgeStore:
         store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
 
         assert store.has_episode("ep-001") is False
+
+    def test_add_chunks_includes_source_in_metadata(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        chunks = [
+            _make_chunk(chunk_index=0),
+            KnowledgeChunk(
+                chunk_id="ep-001_1",
+                episode_id="ep-001",
+                chunk_index=1,
+                text="PDF content",
+                start_time=5.0,
+                end_time=10.0,
+                source="pdf",
+            ),
+        ]
+        embeddings = [[0.1, 0.2], [0.3, 0.4]]
+        store.add_chunks(chunks, embeddings)
+
+        call_kwargs = mock_collection.upsert.call_args[1]
+        metadatas = call_kwargs["metadatas"]
+        assert metadatas[0]["source"] == "lecture"
+        assert metadatas[1]["source"] == "pdf"
+
+    def test_search_with_source_filter_only(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = {
+            "ids": [[]],
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        store.search([0.5, 0.6], source_filter="pdf")
+
+        call_kwargs = mock_collection.query.call_args[1]
+        assert call_kwargs["where"] == {"source": "pdf"}
+
+    def test_search_with_episode_ids_and_source_filter(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = {
+            "ids": [[]],
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        store.search([0.5, 0.6], episode_ids=["ep-001"], source_filter="pdf")
+
+        call_kwargs = mock_collection.query.call_args[1]
+        assert call_kwargs["where"] == {
+            "$and": [
+                {"episode_id": {"$in": ["ep-001"]}},
+                {"source": "pdf"},
+            ]
+        }
+
+    def test_search_without_source_filter_backward_compat(self, tmp_path: Path) -> None:
+        from sophia.adapters.knowledge_store import ChromaKnowledgeStore
+
+        mock_collection = MagicMock()
+        mock_collection.query.return_value = {
+            "ids": [[]],
+            "documents": [[]],
+            "metadatas": [[]],
+            "distances": [[]],
+        }
+
+        store = ChromaKnowledgeStore(tmp_path / "chroma")
+        store._collection = mock_collection  # pyright: ignore[reportPrivateUsage]
+
+        store.search([0.5, 0.6], episode_ids=["ep-001"])
+
+        call_kwargs = mock_collection.query.call_args[1]
+        assert call_kwargs["where"] == {"episode_id": {"$in": ["ep-001"]}}
