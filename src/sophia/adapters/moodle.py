@@ -39,6 +39,7 @@ log = structlog.get_logger()
 _MAX_INGESTION_CHARS = 20_000
 _MAX_PDF_PAGES = 5
 _MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
+_ENRICHMENT_TIMEOUT_S = 60
 _URL_CONTENT_SELECTORS = (
     ".urlworkaround",
     "#region-main",
@@ -83,6 +84,41 @@ _AUTH_ERROR_CODES = frozenset(
         "usernotfullysetup",
     }
 )
+
+
+async def _gather_enrichments(
+    tasks: list[asyncio.Task[ModuleInfo]],
+    originals: list[ModuleInfo],
+    kind: str,
+) -> list[ModuleInfo]:
+    """Run enrichment tasks with a timeout, returning partial results on failure.
+
+    Each task corresponds positionally to an original module. On timeout or
+    exception the original module is returned as-is, so enrichment never blocks
+    or loses data.
+    """
+    done, pending = await asyncio.wait(tasks, timeout=_ENRICHMENT_TIMEOUT_S)
+    if pending:
+        for task in pending:
+            task.cancel()
+        log.warning("enrichment_timeout", kind=kind, timed_out=len(pending), completed=len(done))
+
+    # Build index of completed tasks → results
+    task_results: dict[int, ModuleInfo] = {}
+    for i, task in enumerate(tasks):
+        if task in done:
+            exc = task.exception()
+            if exc is not None:
+                log.warning(
+                    "enrichment_failed",
+                    kind=kind,
+                    module_id=originals[i].id,
+                    error=str(exc),
+                )
+            else:
+                task_results[i] = task.result()
+
+    return [task_results.get(i, originals[i]) for i in range(len(originals))]
 
 
 class MoodleAdapter:
@@ -252,9 +288,8 @@ class MoodleAdapter:
     async def _enrich_resource_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        result = list(
-            await asyncio.gather(*(self._enrich_resource_module(module) for module in modules))
-        )
+        tasks = [asyncio.ensure_future(self._enrich_resource_module(m)) for m in modules]
+        result = await _gather_enrichments(tasks, modules, "resource")
         enriched = sum(
             1 for original, updated in zip(modules, result, strict=True)
             if updated is not original
@@ -270,9 +305,8 @@ class MoodleAdapter:
     async def _enrich_url_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        result = list(
-            await asyncio.gather(*(self._enrich_url_module(module) for module in modules))
-        )
+        tasks = [asyncio.ensure_future(self._enrich_url_module(m)) for m in modules]
+        result = await _gather_enrichments(tasks, modules, "url")
         enriched = sum(
             1 for original, updated in zip(modules, result, strict=True)
             if updated is not original

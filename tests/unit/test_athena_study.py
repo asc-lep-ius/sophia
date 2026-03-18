@@ -335,11 +335,11 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: aiosqlite.Con
 
     with (
         patch(
-            "sophia.services.athena_study._create_embedder",
+            "sophia.services.athena_study._get_or_create_embedder",
             return_value=mock_embedder,
         ),
         patch(
-            "sophia.services.athena_study._create_store",
+            "sophia.services.athena_study._get_or_create_store",
             return_value=mock_store,
         ),
         patch(
@@ -614,8 +614,8 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.C
     )
 
     with (
-        patch("sophia.services.athena_study._create_embedder", return_value=mock_embedder),
-        patch("sophia.services.athena_study._create_store", return_value=mock_store),
+        patch("sophia.services.athena_study._get_or_create_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study._create_topic_extractor",
             return_value=mock_extractor,
@@ -679,8 +679,8 @@ async def test_generate_study_questions_llm_partial_failure(
     )
 
     with (
-        patch("sophia.services.athena_study._create_embedder", return_value=mock_embedder),
-        patch("sophia.services.athena_study._create_store", return_value=mock_store),
+        patch("sophia.services.athena_study._get_or_create_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study._create_topic_extractor",
             return_value=mock_extractor,

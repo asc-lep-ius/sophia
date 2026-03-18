@@ -43,20 +43,31 @@ def _create_topic_extractor(app: AppContainer) -> LLMTopicExtractor:
     return LLMTopicExtractor(config.llm)
 
 
-def _create_embedder(app: AppContainer) -> SentenceTransformerEmbedder:
+# Module-level caches — one instance per CLI session, not per function call.
+# The ~500 MB embedding model is expensive to reload; ChromaDB benefits from
+# persistent client reuse as well.
+_embedder_cache: SentenceTransformerEmbedder | None = None
+_store_cache: ChromaKnowledgeStore | None = None
+
+
+def _get_or_create_embedder(config: Any) -> SentenceTransformerEmbedder:
+    """Return a cached embedder, creating it on first call."""
     from sophia.adapters.embedder import SentenceTransformerEmbedder
-    from sophia.domain.models import HermesConfig
 
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        config = HermesConfig()
-    return SentenceTransformerEmbedder(config.embeddings)
+    global _embedder_cache
+    if _embedder_cache is None:
+        _embedder_cache = SentenceTransformerEmbedder(config.embeddings)
+    return _embedder_cache
 
 
-def _create_store(app: AppContainer) -> ChromaKnowledgeStore:
+def _get_or_create_store(settings: Any) -> ChromaKnowledgeStore:
+    """Return a cached knowledge store, creating it on first call."""
     from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 
-    return ChromaKnowledgeStore(app.settings.data_dir / "knowledge")
+    global _store_cache
+    if _store_cache is None:
+        _store_cache = ChromaKnowledgeStore(settings.data_dir / "knowledge")
+    return _store_cache
 
 
 async def _get_episode_ids(db: aiosqlite.Connection, module_id: int) -> list[str]:
@@ -201,8 +212,13 @@ async def link_topics_to_lectures(
         log.info("no_episodes_for_linking", module_id=module_id)
         return {}
 
-    embedder = _create_embedder(app)
-    store = _create_store(app)
+    config = load_hermes_config(app.settings.config_dir)
+    if config is None:
+        from sophia.domain.models import HermesConfig
+
+        config = HermesConfig()
+    embedder = _get_or_create_embedder(config)
+    store = _get_or_create_store(app.settings)
 
     results: dict[str, list[tuple[KnowledgeChunk, float]]] = {}
 
@@ -350,8 +366,13 @@ async def get_lecture_context(
     if not episode_ids:
         return ""
 
-    embedder = _create_embedder(app)
-    store = _create_store(app)
+    config = load_hermes_config(app.settings.config_dir)
+    if config is None:
+        from sophia.domain.models import HermesConfig
+
+        config = HermesConfig()
+    embedder = _get_or_create_embedder(config)
+    store = _get_or_create_store(app.settings)
     query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
     search_results = await asyncio.to_thread(
         store.search, query_embedding, n_results=n_results, episode_ids=episode_ids

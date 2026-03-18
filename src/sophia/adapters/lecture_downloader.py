@@ -28,6 +28,10 @@ log = structlog.get_logger()
 _CHUNK_SIZE = 65_536  # 64 KiB
 _DEFAULT_MAX_DOWNLOAD_BYTES = 5 * 1024**3  # 5 GB
 
+_FFMPEG_EXTRACT_TIMEOUT_S = 600  # 10 minutes for audio extraction
+_FFPROBE_TIMEOUT_S = 60  # 1 minute for duration detection
+_FFMPEG_SILENCE_TIMEOUT_S = 300  # 5 minutes for silence detection
+
 _MIMETYPE_EXT: dict[str, str] = {
     "video/mp4": ".mp4",
     "video/webm": ".webm",
@@ -98,7 +102,13 @@ async def extract_audio(video_path: Path) -> Path | None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=_FFMPEG_EXTRACT_TIMEOUT_S)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        msg = f"ffmpeg timed out after {_FFMPEG_EXTRACT_TIMEOUT_S}s extracting audio"
+        raise LectureDownloadError(msg) from None
 
     if proc.returncode != 0:
         log.warning("ffmpeg failed", stderr=stderr.decode(errors="replace"))
@@ -132,7 +142,13 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, _ = await probe.communicate()
+    try:
+        stdout, _ = await asyncio.wait_for(probe.communicate(), timeout=_FFPROBE_TIMEOUT_S)
+    except TimeoutError:
+        probe.kill()
+        await probe.wait()
+        log.warning("ffprobe timed out", path=str(audio_path), timeout=_FFPROBE_TIMEOUT_S)
+        return False
     if probe.returncode != 0:
         log.warning("ffprobe failed", path=str(audio_path))
         return False
@@ -159,7 +175,17 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=_FFMPEG_SILENCE_TIMEOUT_S)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        log.warning(
+            "ffmpeg silencedetect timed out",
+            path=str(audio_path),
+            timeout=_FFMPEG_SILENCE_TIMEOUT_S,
+        )
+        return False
 
     if proc.returncode != 0:
         log.warning("ffmpeg silencedetect failed", path=str(audio_path))

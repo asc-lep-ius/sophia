@@ -18,6 +18,13 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlparse, urlunsplit
 import httpx
 import structlog
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
+from tenacity import (
+    retry,
+    retry_if_exception,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -258,6 +265,22 @@ async def login_with_credentials(host: str, username: str, password: str) -> Ses
         return _build_credentials(client, dashboard_resp, base)
 
 
+def _should_retry_sso(exc: BaseException) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500
+
+
+_sso_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
+    retry=(
+        retry_if_exception_type((httpx.TransportError, httpx.TimeoutException))
+        | retry_if_exception(_should_retry_sso)
+    ),
+    reraise=True,
+)
+
+
+@_sso_retry
 async def _initiate_sso(client: httpx.AsyncClient, base: str) -> httpx.Response:
     """GET the SSO login URL; follows redirects to the IdP login form."""
     url = f"{base}{_SSO_LOGIN_PATH}"
@@ -268,6 +291,7 @@ async def _initiate_sso(client: httpx.AsyncClient, base: str) -> httpx.Response:
     return resp
 
 
+@_sso_retry
 async def _submit_credentials(
     client: httpx.AsyncClient,
     idp_resp: httpx.Response,
@@ -297,6 +321,7 @@ async def _submit_credentials(
     return resp
 
 
+@_sso_retry
 async def _relay_saml_response(client: httpx.AsyncClient, resp: httpx.Response) -> httpx.Response:
     """Find and POST the SAMLResponse (+ optional RelayState) back to the SP.
 
