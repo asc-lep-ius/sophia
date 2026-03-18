@@ -194,3 +194,109 @@ async def test_enrichment_all_fail_gracefully() -> None:
     # Originals should be returned unchanged
     assert result[0].id == 1
     assert result[1].id == 2
+
+
+# ------------------------------------------------------------------
+# Model & resource caching — embedder and store singletons
+# ------------------------------------------------------------------
+
+
+class TestEmbedderCaching:
+    """Verify SentenceTransformerEmbedder is created once and reused."""
+
+    def setup_method(self) -> None:
+        from sophia.services import athena_study
+
+        athena_study._embedder_cache = None
+
+    def teardown_method(self) -> None:
+        from sophia.services import athena_study
+
+        athena_study._embedder_cache = None
+
+    def test_embedder_cached_across_calls(self) -> None:
+        from sophia.services.athena_study import _get_or_create_embedder
+
+        fake_config = MagicMock()
+
+        with patch(
+            "sophia.adapters.embedder.SentenceTransformerEmbedder"
+        ) as mock_cls:
+            mock_cls.return_value = MagicMock(name="embedder_instance")
+
+            first = _get_or_create_embedder(fake_config)
+            second = _get_or_create_embedder(fake_config)
+
+        assert first is second
+        mock_cls.assert_called_once()
+
+    def test_embedder_cache_reset(self) -> None:
+        from sophia.services import athena_study
+        from sophia.services.athena_study import _get_or_create_embedder
+
+        fake_config = MagicMock()
+
+        with patch(
+            "sophia.adapters.embedder.SentenceTransformerEmbedder"
+        ) as mock_cls:
+            mock_cls.return_value = MagicMock(name="instance_a")
+            first = _get_or_create_embedder(fake_config)
+
+            # Reset cache
+            athena_study._embedder_cache = None
+
+            mock_cls.return_value = MagicMock(name="instance_b")
+            after_reset = _get_or_create_embedder(fake_config)
+
+        assert first is not after_reset
+        assert mock_cls.call_count == 2
+
+
+class TestStoreCaching:
+    """Verify ChromaKnowledgeStore is created once and reused."""
+
+    def setup_method(self) -> None:
+        from sophia.services import athena_study
+
+        athena_study._store_cache = None
+
+    def teardown_method(self) -> None:
+        from sophia.services import athena_study
+
+        athena_study._store_cache = None
+
+    def test_store_cached_across_calls(self) -> None:
+        from sophia.services.athena_study import _get_or_create_store
+
+        fake_settings = MagicMock()
+
+        with patch(
+            "sophia.adapters.knowledge_store.ChromaKnowledgeStore"
+        ) as mock_cls:
+            mock_cls.return_value = MagicMock(name="store_instance")
+
+            first = _get_or_create_store(fake_settings)
+            second = _get_or_create_store(fake_settings)
+
+        assert first is second
+        mock_cls.assert_called_once()
+
+    def test_store_cache_reset(self) -> None:
+        from sophia.services import athena_study
+        from sophia.services.athena_study import _get_or_create_store
+
+        fake_settings = MagicMock()
+
+        with patch(
+            "sophia.adapters.knowledge_store.ChromaKnowledgeStore"
+        ) as mock_cls:
+            mock_cls.return_value = MagicMock(name="store_a")
+            first = _get_or_create_store(fake_settings)
+
+            athena_study._store_cache = None
+
+            mock_cls.return_value = MagicMock(name="store_b")
+            after_reset = _get_or_create_store(fake_settings)
+
+        assert first is not after_reset
+        assert mock_cls.call_count == 2
