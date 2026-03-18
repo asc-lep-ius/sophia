@@ -244,6 +244,8 @@ async def search_lectures(
     query: str,
     *,
     n_results: int = 5,
+    source_filter: str | None = None,
+    course_id: int | None = None,
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
@@ -257,12 +259,29 @@ async def search_lectures(
     title_map = {row[0]: row[1] for row in rows}
     episode_ids = list(title_map.keys())
 
+    # Include material episode IDs when filtering for PDFs or all sources
+    if source_filter != "lecture" and course_id is not None:
+        mat_cursor = await app.db.execute(
+            "SELECT id, name FROM course_materials WHERE course_id = ?",
+            (course_id,),
+        )
+        mat_rows = await mat_cursor.fetchall()
+        for mat_row in mat_rows:
+            mat_ep_id = f"mat-{mat_row[0]}"
+            episode_ids.append(mat_ep_id)
+            title_map[mat_ep_id] = mat_row[1]
+
     embedder = _create_embedder(app)
     store = _create_store(app)
 
     query_embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
+    effective_filter = source_filter if source_filter and source_filter != "all" else None
     search_results = await asyncio.to_thread(
-        store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
+        store.search,
+        query_embedding,
+        n_results=n_results,
+        episode_ids=episode_ids,
+        source_filter=effective_filter,
     )
 
     if not search_results:
@@ -276,6 +295,7 @@ async def search_lectures(
             start_time=chunk.start_time,
             end_time=chunk.end_time,
             score=score,
+            source=chunk.source,
         )
         for chunk, score in search_results
     ]

@@ -57,6 +57,13 @@ class DownloadStatus(StrEnum):
     DISCARDED = "discarded"
 
 
+class MaterialSource(StrEnum):
+    """Origin type of a course material chunk."""
+
+    LECTURE = "lecture"
+    PDF = "pdf"
+
+
 # --- Value objects (Pydantic models) ---
 
 
@@ -299,6 +306,21 @@ class ReportData(BaseModel):
     content: str = ""
 
 
+class CourseMaterial(BaseModel, frozen=True):
+    """A PDF or other file resource from a Moodle course."""
+
+    id: int
+    course_id: int
+    module_id: int
+    name: str
+    url: str | None = None
+    mimetype: str | None = None
+    file_size_bytes: int | None = None
+    status: str = "pending"
+    chunk_count: int = 0
+    created_at: str | None = None
+
+
 class DownloadProgressEvent(BaseModel):
     """Progress update yielded during a download."""
 
@@ -525,6 +547,7 @@ class KnowledgeChunk(BaseModel, frozen=True):
     text: str
     start_time: float
     end_time: float
+    source: str = "lecture"
 
 
 class LectureSearchResult(BaseModel, frozen=True):
@@ -536,6 +559,7 @@ class LectureSearchResult(BaseModel, frozen=True):
     start_time: float
     end_time: float
     score: float
+    source: str = "lecture"
 
 
 # ---------------------------------------------------------------------------

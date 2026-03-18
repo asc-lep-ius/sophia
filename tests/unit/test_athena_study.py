@@ -1007,3 +1007,138 @@ class TestSelfExplanation:
 
         prompts = get_scaffold_prompts(0)
         assert prompts == []
+
+
+# ---------------------------------------------------------------------------
+# get_lecture_context — dual-source (include_materials)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_lecture_context_include_materials(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """With include_materials=True, both lecture and PDF chunks appear with provenance.
+
+    Uses distinct module_id (42) and course_id (999) to verify the correct ID
+    reaches _search_material_chunks (which expects course_id, not module_id).
+    """
+    from sophia.services.athena_study import get_lecture_context
+
+    await _insert_download(db, episode_id="ep-001", module_id=42)
+
+    # Insert a course material — note course_id=999 differs from module_id=42
+    await db.execute(
+        "INSERT INTO course_materials (id, course_id, module_id, name, url, status, chunk_count) "
+        "VALUES (?, ?, ?, ?, ?, 'completed', 5)",
+        (10, 999, 42, "Algorithms.pdf", "https://example.com/algo.pdf"),
+    )
+    await db.commit()
+
+    lecture_chunk = KnowledgeChunk(
+        chunk_id="ep-001_0",
+        episode_id="ep-001",
+        chunk_index=0,
+        text="Sorting is a fundamental operation",
+        start_time=60.0,
+        end_time=75.0,
+        source="lecture",
+    )
+    pdf_chunk = KnowledgeChunk(
+        chunk_id="mat-10_2",
+        episode_id="mat-10",
+        chunk_index=2,
+        text="Quicksort runs in O(n log n) average case",
+        start_time=0.0,
+        end_time=0.0,
+        source="pdf",
+    )
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.1, 0.2, 0.3]
+
+    mock_store = MagicMock()
+    # First call: lecture search; second call: PDF search
+    mock_store.search.side_effect = [
+        [(lecture_chunk, 0.9)],
+        [(pdf_chunk, 0.85)],
+    ]
+
+    with (
+        patch(
+            "sophia.services.athena_study._get_or_create_embedder",
+            return_value=mock_embedder,
+        ),
+        patch(
+            "sophia.services.athena_study._get_or_create_store",
+            return_value=mock_store,
+        ),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
+        ),
+    ):
+        result = await get_lecture_context(
+            app,
+            module_id=42,
+            course_id=999,
+            topic="Sorting",
+            with_provenance=True,
+            include_materials=True,
+        )
+
+    # Lecture chunk should appear with title provenance
+    assert "Sorting is a fundamental operation" in result
+    # PDF chunk should appear with [PDF: ...] provenance
+    assert "[PDF: Algorithms.pdf" in result
+    assert "Quicksort runs in O(n log n)" in result
+
+
+@pytest.mark.asyncio
+async def test_get_lecture_context_without_materials_flag(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """Default call (include_materials=False) does NOT search PDF chunks."""
+    from sophia.services.athena_study import get_lecture_context
+
+    await _insert_download(db, episode_id="ep-001", module_id=42)
+
+    lecture_chunk = KnowledgeChunk(
+        chunk_id="ep-001_0",
+        episode_id="ep-001",
+        chunk_index=0,
+        text="Binary trees are hierarchical",
+        start_time=30.0,
+        end_time=45.0,
+        source="lecture",
+    )
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.1, 0.2, 0.3]
+
+    mock_store = MagicMock()
+    mock_store.search.return_value = [(lecture_chunk, 0.88)]
+
+    with (
+        patch(
+            "sophia.services.athena_study._get_or_create_embedder",
+            return_value=mock_embedder,
+        ),
+        patch(
+            "sophia.services.athena_study._get_or_create_store",
+            return_value=mock_store,
+        ),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
+        ),
+    ):
+        result = await get_lecture_context(
+            app,
+            module_id=42,
+            topic="Trees",
+        )
+
+    assert "Binary trees are hierarchical" in result
+    # store.search called exactly once (only lecture, no PDF query)
+    assert mock_store.search.call_count == 1

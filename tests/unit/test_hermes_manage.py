@@ -1,4 +1,4 @@
-"""Tests for hermes_manage service — discard, restore, pipeline status."""
+"""Tests for hermes_manage service — discard, restore, pipeline status, lecture numbering."""
 
 from __future__ import annotations
 
@@ -394,3 +394,172 @@ class TestPurgeEpisode:
             await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-2'")
         ).fetchone()
         assert row[0] == 4
+
+
+# ------------------------------------------------------------------
+# infer_lecture_number
+# ------------------------------------------------------------------
+
+
+class TestInferLectureNumber:
+    def test_english_title(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("Lecture 3: Sorting") == 3
+
+    def test_german_title(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("Vorlesung 7: Analysis") == 7
+
+    def test_hash_prefix(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("#5 Fourier") == 5
+
+    def test_no_number_returns_none(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("Introduction to Algorithms") is None
+
+    def test_vo_abbreviation(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("VO 12 Logik") == 12
+
+    def test_lva_abbreviation(self) -> None:
+        from sophia.services.hermes_manage import infer_lecture_number
+
+        assert infer_lecture_number("LVA 2: Grundlagen") == 2
+
+
+# ------------------------------------------------------------------
+# assign_lecture_numbers
+# ------------------------------------------------------------------
+
+
+class TestAssignLectureNumbers:
+    async def test_mixed_parseable_and_unparseable(self, db: aiosqlite.Connection) -> None:
+        """Episodes with parseable titles get those numbers; gaps filled by order."""
+        from sophia.services.hermes_manage import assign_lecture_numbers
+
+        # Insert in creation order (created_at varies)
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-a", 100, "Introduction", "2025-01-01 09:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-b", 100, "Lecture 3: Trees", "2025-01-02 09:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-c", 100, "Sorting overview", "2025-01-03 09:00:00"),
+        )
+        await db.commit()
+
+        await assign_lecture_numbers(db, 100)
+
+        cursor = await db.execute(
+            "SELECT episode_id, lecture_number FROM lecture_downloads "
+            "WHERE module_id = 100 ORDER BY lecture_number"
+        )
+        rows = await cursor.fetchall()
+        numbers = {row[0]: row[1] for row in rows}
+
+        # "Lecture 3: Trees" → 3
+        assert numbers["ep-b"] == 3
+        # The other two get sequential numbers skipping 3: 1, 2
+        assert numbers["ep-a"] == 1
+        assert numbers["ep-c"] == 2
+
+    async def test_all_parseable(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import assign_lecture_numbers
+
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-1", 100, "Lecture 2: B", "2025-01-01 09:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-2", 100, "Lecture 1: A", "2025-01-02 09:00:00"),
+        )
+        await db.commit()
+
+        await assign_lecture_numbers(db, 100)
+
+        cursor = await db.execute(
+            "SELECT episode_id, lecture_number FROM lecture_downloads WHERE module_id = 100"
+        )
+        rows = await cursor.fetchall()
+        numbers = {row[0]: row[1] for row in rows}
+        assert numbers["ep-1"] == 2
+        assert numbers["ep-2"] == 1
+
+    async def test_all_unparseable(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import assign_lecture_numbers
+
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-x", 100, "Overview", "2025-01-01 09:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, created_at) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-y", 100, "Summary", "2025-01-02 09:00:00"),
+        )
+        await db.commit()
+
+        await assign_lecture_numbers(db, 100)
+
+        cursor = await db.execute(
+            "SELECT episode_id, lecture_number FROM lecture_downloads "
+            "WHERE module_id = 100 ORDER BY lecture_number"
+        )
+        rows = await cursor.fetchall()
+        numbers = {row[0]: row[1] for row in rows}
+        assert numbers["ep-x"] == 1
+        assert numbers["ep-y"] == 2
+
+
+# ------------------------------------------------------------------
+# EpisodeStatus.lecture_number
+# ------------------------------------------------------------------
+
+
+class TestEpisodeStatusLectureNumber:
+    async def test_field_exists_and_populated(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_pipeline_status
+
+        await db.execute(
+            "INSERT INTO lecture_downloads "
+            "(episode_id, module_id, title, track_url, track_mimetype, status, lecture_number) "
+            "VALUES (?, ?, ?, '', '', 'completed', ?)",
+            ("ep-num", 100, "Lecture 5", 5),
+        )
+        await db.commit()
+
+        statuses = await get_pipeline_status(db, 100)
+        assert len(statuses) == 1
+        assert statuses[0].lecture_number == 5
+
+    async def test_field_none_when_unset(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_pipeline_status
+
+        await _insert_download(db, "ep-no-num", 100, title="No Number")
+        statuses = await get_pipeline_status(db, 100)
+        assert len(statuses) == 1
+        assert statuses[0].lecture_number is None

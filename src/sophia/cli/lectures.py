@@ -265,25 +265,36 @@ async def lectures_status(
             resolved_id = await resolve_module_id(module_id, container.moodle)
         statuses = await get_pipeline_status(container.db, resolved_id)
 
+        mat_cursor = await container.db.execute(
+            "SELECT COUNT(*) FROM course_materials WHERE module_id = ?",
+            (resolved_id,),
+        )
+        mat_row = await mat_cursor.fetchone()
+        mat_count = str(mat_row[0]) if mat_row and mat_row[0] else "0"
+
     if not statuses:
         console.print(f"[yellow]No episodes found for module {resolved_id}.[/yellow]")
         return
 
     table = Table(title=f"Pipeline Status — Module {resolved_id}")
+    table.add_column("#", style="dim", width=4, justify="right")
     table.add_column("Episode ID", style="dim", max_width=12)
     table.add_column("Title", style="cyan")
     table.add_column("Download", style="green")
     table.add_column("Transcription", style="green")
     table.add_column("Index", style="green")
+    table.add_column("Materials", justify="right")
     table.add_column("Skip Reason", style="yellow")
 
     for ep in statuses:
         table.add_row(
+            str(ep.lecture_number) if ep.lecture_number is not None else "",
             ep.episode_id[:12],
             ep.title,
             ep.download_status,
             ep.transcription_status or "—",
             ep.index_status or "—",
+            mat_count,
             ep.skip_reason or "",
         )
 
@@ -403,6 +414,73 @@ async def lectures_purge(
         console.print(f"  Transcript segments removed: {result.transcript_segments}")
         console.print(f"  Transcription records removed: {result.transcriptions}")
         console.print(f"  Knowledge index records removed: {result.knowledge_index}")
+
+
+@app.command(name="materials")
+async def materials(
+    course_id: Annotated[int, cyclopts.Parameter(help="TUWEL course ID")],
+    *,
+    index: bool = False,
+) -> None:
+    """Scrape and list course materials from TUWEL."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.material_index import scrape_course_materials
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            new = await scrape_course_materials(container, course_id)
+            if new:
+                console.print(f"[green]Discovered {len(new)} new material(s).[/green]")
+
+            cursor = await container.db.execute(
+                "SELECT name, url, mimetype, file_size_bytes, status, chunk_count"
+                " FROM course_materials WHERE course_id = ?",
+                (course_id,),
+            )
+            rows = await cursor.fetchall()
+
+            if not rows:
+                console.print("[yellow]No materials found for this course.[/yellow]")
+                return
+
+            table = Table(title=f"Course Materials — {course_id}")
+            table.add_column("Name", style="cyan", no_wrap=False)
+            table.add_column("URL", style="dim", no_wrap=False, max_width=40)
+            table.add_column("MIME", style="white")
+            table.add_column("Size", justify="right")
+            table.add_column("Status", style="green")
+            table.add_column("Chunks", justify="right")
+
+            for name, url, mime, size, status, chunks in rows:
+                size_str = f"{size // 1024} KiB" if size else "—"
+                table.add_row(
+                    name,
+                    (url or "")[:40],
+                    mime or "—",
+                    size_str,
+                    status,
+                    str(chunks),
+                )
+
+            console.print(table)
+
+            if index:
+                from sophia.services.material_index import index_materials
+
+                chunk_count = await index_materials(container, course_id)
+                console.print(
+                    f"[green]Indexed {chunk_count} chunk(s) from course materials.[/green]"
+                )
+
+    except AuthError:
+        console.print("[red]Not logged in — run:[/red] sophia auth login")
+        raise SystemExit(1) from None
 
 
 @app.command(name="list")
@@ -740,6 +818,14 @@ async def lectures_process(
         str,
         cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
+    *,
+    materials_flag: Annotated[
+        bool,
+        cyclopts.Parameter(
+            help="Index course materials (PDFs) after the pipeline.",
+            name=["--materials", "--no-materials"],
+        ),
+    ] = False,
 ) -> None:
     """Run the full lecture pipeline: download → transcribe → index → extract topics."""
     from types import SimpleNamespace
@@ -765,6 +851,22 @@ async def lectures_process(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             console.print(f"\n[bold]Pipeline for module {resolved_id}[/bold]\n")
+
+            # Resolve course_id when --materials is requested
+            _course_id: int | None = None
+            if materials_flag:
+                courses = await container.moodle.get_enrolled_courses()
+                for course in courses:
+                    sections = await container.moodle.get_course_content(course.id)
+                    for section in sections:
+                        for mod in section.modules:
+                            if mod.id == resolved_id:
+                                _course_id = course.id
+                                break
+                        if _course_id is not None:
+                            break
+                    if _course_id is not None:
+                        break
 
             state = SimpleNamespace(
                 tr_task=None,
@@ -858,6 +960,8 @@ async def lectures_process(
                 result: PipelineResult = await run_pipeline(
                     container,
                     resolved_id,
+                    index_materials=materials_flag,
+                    course_id=_course_id,
                     on_download_progress=_on_dl,
                     on_transcribe_start=_on_tr_start,
                     on_transcribe_complete=_on_tr_complete,
@@ -963,6 +1067,9 @@ async def lectures_process(
                 for t in result.topics:
                     console.print(f"  • {t.topic}")
 
+            if result.material_chunks:
+                console.print(f"\n[bold]Materials indexed:[/bold] {result.material_chunks} chunks")
+
             console.print(
                 '\n[dim]Next step:[/dim] [cyan]sophia lectures search "query" <module-id>[/cyan]'
             )
@@ -988,6 +1095,10 @@ async def lectures_search(
     count: Annotated[
         int, cyclopts.Parameter(help="Number of results.", name=["--count", "-n"])
     ] = 5,
+    source: Annotated[
+        str,
+        cyclopts.Parameter(help="Source filter: lecture, pdf, or all.", name="--source"),
+    ] = "all",
 ) -> None:
     """Search lecture transcripts by semantic similarity."""
     from rich.console import Console
@@ -1000,11 +1111,15 @@ async def lectures_search(
 
     console = Console()
 
+    source_filter = source if source != "all" else None
+
     try:
         async with create_app() as container:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            results = await search_lectures(container, resolved_id, query, n_results=count)
+            results = await search_lectures(
+                container, resolved_id, query, n_results=count, source_filter=source_filter
+            )
 
             if not results:
                 console.print("[yellow]No results found.[/yellow]")
@@ -1015,6 +1130,7 @@ async def lectures_search(
                 end_mm, end_ss = divmod(int(r.end_time), 60)
                 header = (
                     f"[cyan]{r.title}[/cyan]  "
+                    f"[magenta]{r.source}[/magenta]  "
                     f"[dim]{start_mm:02d}:{start_ss:02d} – {end_mm:02d}:{end_ss:02d}[/dim]  "
                     f"[green]score: {r.score:.2f}[/green]"
                 )

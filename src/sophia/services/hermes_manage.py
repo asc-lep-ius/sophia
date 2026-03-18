@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -14,6 +15,59 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+_LECTURE_NUM_RE = re.compile(
+    r"(?:lecture|vorlesung|vo|lva|#)\s*(\d+)",
+    re.IGNORECASE,
+)
+
+
+def infer_lecture_number(title: str) -> int | None:
+    """Parse lecture number from title. Returns None if not parseable."""
+    m = _LECTURE_NUM_RE.search(title)
+    return int(m.group(1)) if m else None
+
+
+async def assign_lecture_numbers(db: aiosqlite.Connection, module_id: int) -> None:
+    """Assign lecture_number to all episodes in a module.
+
+    Strategy: parse from title first, then fill gaps by created_at ordering.
+    """
+    cursor = await db.execute(
+        "SELECT episode_id, title, created_at FROM lecture_downloads "
+        "WHERE module_id = ? ORDER BY created_at",
+        (module_id,),
+    )
+    rows = await cursor.fetchall()
+
+    # Phase 1: titles that parse → fixed numbers
+    inferred: dict[str, int] = {}
+    unparsed: list[str] = []
+    for episode_id, title, _created_at in rows:
+        num = infer_lecture_number(title)
+        if num is not None:
+            inferred[episode_id] = num
+        else:
+            unparsed.append(episode_id)
+
+    # Phase 2: gap-fill for unparsed episodes in creation order
+    used = set(inferred.values())
+    counter = 1
+    for episode_id in unparsed:
+        while counter in used:
+            counter += 1
+        inferred[episode_id] = counter
+        used.add(counter)
+        counter += 1
+
+    # Phase 3: persist
+    for episode_id, num in inferred.items():
+        await db.execute(
+            "UPDATE lecture_downloads SET lecture_number = ? WHERE episode_id = ?",
+            (num, episode_id),
+        )
+    await db.commit()
+    log.info("lecture_numbers_assigned", module_id=module_id, count=len(inferred))
+
 
 @dataclass
 class EpisodeStatus:
@@ -23,6 +77,7 @@ class EpisodeStatus:
     skip_reason: str | None
     transcription_status: str | None
     index_status: str | None
+    lecture_number: int | None = None
 
 
 async def discard_episode(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
@@ -63,7 +118,8 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
                ld.status,
                ld.skip_reason,
                t.status,
-               ki.status
+               ki.status,
+               ld.lecture_number
            FROM lecture_downloads ld
            LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
            LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
@@ -80,6 +136,7 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
             skip_reason=row[3],
             transcription_status=row[4],
             index_status=row[5],
+            lecture_number=row[6],
         )
         for row in rows
     ]

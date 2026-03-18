@@ -827,6 +827,37 @@ def _extract_pdf_text(content: bytes) -> str:
     return _truncate_text("\n".join(parts))
 
 
+def extract_full_pdf_text(content: bytes, max_pages: int = 200) -> str:
+    """Extract text from all pages of a PDF (no truncation or page limit like _extract_pdf_text).
+
+    Public function for full-document extraction used by the material indexing service.
+    """
+    if fitz is None or not content:
+        return ""
+
+    fitz_module: Any = fitz
+
+    try:
+        document = fitz_module.open(stream=content, filetype="pdf")
+    except Exception:  # noqa: BLE001
+        return ""
+
+    try:
+        parts: list[str] = []
+        page_count = int(document.page_count)
+        for page_index in range(min(page_count, max_pages)):
+            try:
+                text = str(document.load_page(page_index).get_text("text")).strip()
+            except Exception:  # noqa: BLE001
+                continue
+            if text:
+                parts.append(text)
+    finally:
+        document.close()
+
+    return "\n".join(parts)
+
+
 def _build_content_info(url: str, response: httpx.Response | None) -> ContentInfo:
     return ContentInfo(
         filename=_extract_filename(url, response),
