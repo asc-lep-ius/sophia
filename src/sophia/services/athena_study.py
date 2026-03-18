@@ -356,11 +356,15 @@ async def get_lecture_context(
     topic: str,
     *,
     n_results: int = 5,
+    with_provenance: bool = False,
 ) -> str:
     """Retrieve concatenated lecture transcript chunks relevant to a topic.
 
     Uses RAG: embed topic → search ChromaDB scoped to module's episodes.
     Returns empty string if no lecture data is available.
+
+    When ``with_provenance=True`` each chunk is prefixed with
+    ``[Title, MM:SS]`` so the reader knows its source and timestamp.
     """
     episode_ids = await _get_episode_ids(app.db, module_id)
     if not episode_ids:
@@ -377,7 +381,28 @@ async def get_lecture_context(
     search_results = await asyncio.to_thread(
         store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
     )
-    return "\n\n".join(chunk.text for chunk, _score in search_results)
+
+    if not with_provenance:
+        return "\n\n".join(chunk.text for chunk, _score in search_results)
+
+    # Build episode→title map for all chunks in the result set
+    ep_ids = list({chunk.episode_id for chunk, _ in search_results})
+    placeholders = ",".join("?" * len(ep_ids))
+    cursor = await app.db.execute(
+        f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
+        f" WHERE episode_id IN ({placeholders})",
+        ep_ids,
+    )
+    title_map: dict[str, str] = {row[0]: row[1] for row in await cursor.fetchall()}
+
+    parts: list[str] = []
+    for chunk, _ in search_results:
+        mm, ss = divmod(int(chunk.start_time), 60)
+        raw_title = title_map.get(chunk.episode_id, "Lecture")
+        short = raw_title[:25].rstrip() + "…" if len(raw_title) > 25 else raw_title
+        parts.append(f"[{short}, {mm:02d}:{ss:02d}]\n{chunk.text}")
+
+    return "\n\n".join(parts)
 
 
 async def generate_study_questions(

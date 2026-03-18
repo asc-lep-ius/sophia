@@ -19,6 +19,7 @@ from sophia.cli.auth import app as auth_app  # noqa: E402
 from sophia.cli.books import app as books_app  # noqa: E402
 from sophia.cli.jobs import app as jobs_app  # noqa: E402
 from sophia.cli.lectures import app as lectures_app  # noqa: E402
+from sophia.cli.quickstart import app as quickstart_app  # noqa: E402
 from sophia.cli.register import app as register_app  # noqa: E402
 from sophia.cli.run_job import register_run_job  # noqa: E402
 from sophia.cli.status import register_status  # noqa: E402
@@ -30,6 +31,7 @@ app.command(register_app)
 app.command(lectures_app)
 app.command(jobs_app)
 app.command(study_app)
+app.command(quickstart_app)
 register_run_job(app)
 register_status(app)
 

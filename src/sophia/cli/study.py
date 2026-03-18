@@ -356,7 +356,9 @@ async def study_session(
             with Status("Fetching lecture content…", console=console):
                 from sophia.services.athena_study import get_lecture_context
 
-                lecture_text = await get_lecture_context(container, resolved_id, topic)
+                lecture_text = await get_lecture_context(
+                    container, resolved_id, topic, with_provenance=True
+                )
 
             if lecture_text:
                 console.print(
