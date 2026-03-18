@@ -561,6 +561,13 @@ async def lectures_transcribe(
 ) -> None:
     """Transcribe downloaded lectures using Whisper. Requires 'sophia lectures setup'."""
     from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TimeElapsedColumn,
+    )
     from rich.table import Table
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
@@ -575,15 +582,37 @@ async def lectures_transcribe(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
 
-            def _on_start(episode_id: str, title: str) -> None:
-                console.print(f"[dim]Transcribing:[/dim] {title}...")
-
-            def _on_complete(episode_id: str, segment_count: int) -> None:
-                console.print(f"  [green]✓[/green] {segment_count} segments")
-
-            results = await transcribe_lectures(
-                container, resolved_id, on_start=_on_start, on_complete=_on_complete
+            cursor = await container.db.execute(
+                "SELECT COUNT(*) FROM lecture_downloads ld"
+                " WHERE ld.module_id = ? AND ld.status = 'completed'"
+                " AND ld.episode_id NOT IN ("
+                "  SELECT episode_id FROM transcriptions"
+                "  WHERE module_id = ? AND status = 'completed'"
+                ")",
+                (resolved_id, resolved_id),
             )
+            (pending_count,) = await cursor.fetchone()
+
+            with Progress(
+                SpinnerColumn(),
+                "[progress.description]{task.description}",
+                BarColumn(bar_width=30),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task("[cyan]Transcribing…[/cyan]", total=pending_count or None)
+
+                def _on_start(episode_id: str, title: str) -> None:
+                    progress.update(task, description=f"[cyan]Transcribing:[/cyan] {title[:50]}…")
+
+                def _on_complete(episode_id: str, segment_count: int) -> None:
+                    progress.advance(task)
+                    progress.update(task, description="[cyan]Transcribing…[/cyan]")
+
+                results = await transcribe_lectures(
+                    container, resolved_id, on_start=_on_start, on_complete=_on_complete
+                )
 
             table = Table(title="Transcription Results")
             table.add_column("Title", style="cyan", no_wrap=False)
@@ -626,6 +655,13 @@ async def lectures_index(
 ) -> None:
     """Build search index from transcribed lectures. Requires transcription first."""
     from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        MofNCompleteColumn,
+        Progress,
+        SpinnerColumn,
+        TimeElapsedColumn,
+    )
     from rich.table import Table
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
@@ -640,15 +676,39 @@ async def lectures_index(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
 
-            def _on_start(episode_id: str, title: str) -> None:
-                console.print(f"[dim]Indexing:[/dim] {title}...")
-
-            def _on_complete(episode_id: str, chunk_count: int) -> None:
-                console.print(f"  [green]✓[/green] {chunk_count} chunks")
-
-            results = await index_lectures(
-                container, resolved_id, on_start=_on_start, on_complete=_on_complete
+            cursor = await container.db.execute(
+                "SELECT COUNT(*) FROM transcriptions t"
+                " WHERE t.module_id = ? AND t.status = 'completed'"
+                " AND t.episode_id NOT IN ("
+                "  SELECT episode_id FROM knowledge_index"
+                "  WHERE module_id = ? AND status = 'completed'"
+                ")",
+                (resolved_id, resolved_id),
             )
+            (pending_count,) = await cursor.fetchone()
+
+            with Progress(
+                SpinnerColumn(),
+                "[progress.description]{task.description}",
+                BarColumn(bar_width=30),
+                MofNCompleteColumn(),
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                task = progress.add_task(
+                    "[cyan]Building index…[/cyan]", total=pending_count or None
+                )
+
+                def _on_start(episode_id: str, title: str) -> None:
+                    progress.update(task, description=f"[cyan]Indexing:[/cyan] {title[:50]}…")
+
+                def _on_complete(episode_id: str, chunk_count: int) -> None:
+                    progress.advance(task)
+                    progress.update(task, description="[cyan]Indexing…[/cyan]")
+
+                results = await index_lectures(
+                    container, resolved_id, on_start=_on_start, on_complete=_on_complete
+                )
 
             table = Table(title="Indexing Results")
             table.add_column("Title", style="cyan", no_wrap=False)
@@ -690,13 +750,20 @@ async def lectures_process(
     ],
 ) -> None:
     """Run the full lecture pipeline: download → transcribe → index → extract topics."""
+    from types import SimpleNamespace
+    from typing import TYPE_CHECKING
+
     from rich.console import Console
+    from rich.progress import Progress, SpinnerColumn, TimeElapsedColumn
     from rich.table import Table
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError, EmbeddingError, TranscriptionError
     from sophia.infra.di import create_app
     from sophia.services.hermes_pipeline import PipelineResult, run_pipeline
+
+    if TYPE_CHECKING:
+        from sophia.domain.models import DownloadProgressEvent
 
     console = Console()
     _STATUS_STYLES = {"completed": "green", "skipped": "yellow", "failed": "red"}
@@ -707,7 +774,137 @@ async def lectures_process(
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             console.print(f"\n[bold]Pipeline for module {resolved_id}[/bold]\n")
 
-            result: PipelineResult = await run_pipeline(container, resolved_id)
+            state = SimpleNamespace(
+                tr_task=None,
+                tr_count=0,
+                ix_task=None,
+                ix_count=0,
+                tc_task=None,
+                tc_count=0,
+            )
+
+            with Progress(
+                SpinnerColumn(),
+                "[progress.description]{task.description}",
+                TimeElapsedColumn(),
+                console=console,
+            ) as progress:
+                dl_task = progress.add_task("[cyan][1/4] Downloading…[/cyan]", total=None)
+                ep_tasks: dict[str, object] = {}
+
+                def _on_dl(episode_id: str, event: DownloadProgressEvent) -> None:
+                    if episode_id not in ep_tasks:
+                        ep_tasks[episode_id] = progress.add_task(
+                            f"  └ {episode_id[:35]}…",
+                            total=event.total_bytes or None,
+                        )
+                    progress.update(ep_tasks[episode_id], completed=event.bytes_downloaded)  # type: ignore[arg-type]
+
+                def _on_tr_start(episode_id: str, title: str) -> None:
+                    if state.tr_task is None:
+                        state.tr_task = progress.add_task(
+                            f"[cyan][2/4] Transcribing: {title[:40]}…[/cyan]", total=None
+                        )
+                        progress.update(
+                            dl_task,
+                            description="[green]✓ [1/4] Download complete[/green]",
+                            completed=1,
+                            total=1,
+                        )
+                    else:
+                        progress.update(
+                            state.tr_task,
+                            description=f"[cyan][2/4] Transcribing: {title[:40]}…[/cyan]",
+                        )
+
+                def _on_tr_complete(episode_id: str, segment_count: int) -> None:
+                    state.tr_count += 1
+
+                def _on_ix_start(episode_id: str, title: str) -> None:
+                    if state.ix_task is None:
+                        state.ix_task = progress.add_task(
+                            f"[cyan][3/4] Indexing: {title[:40]}…[/cyan]", total=None
+                        )
+                        if state.tr_task is not None:
+                            tr_done = (
+                                f"[green]✓ [2/4] Transcription complete"
+                                f" ({state.tr_count})[/green]"
+                            )
+                            progress.update(
+                                state.tr_task,
+                                description=tr_done,
+                                completed=1,
+                                total=1,
+                            )
+                    else:
+                        progress.update(
+                            state.ix_task,
+                            description=f"[cyan][3/4] Indexing: {title[:40]}…[/cyan]",
+                        )
+
+                def _on_ix_complete(episode_id: str, chunk_count: int) -> None:
+                    state.ix_count += 1
+
+                def _on_topic(topic_label: str) -> None:
+                    if state.tc_task is None:
+                        state.tc_task = progress.add_task(
+                            "[cyan][4/4] Extracting topics…[/cyan]", total=None
+                        )
+                        if state.ix_task is not None:
+                            ix_done = f"[green]✓ [3/4] Indexing complete ({state.ix_count})[/green]"
+                            progress.update(
+                                state.ix_task,
+                                description=ix_done,
+                                completed=1,
+                                total=1,
+                            )
+                    state.tc_count += 1
+                    progress.update(
+                        state.tc_task,
+                        description=f"[cyan][4/4] Topics: {state.tc_count} extracted…[/cyan]",
+                    )
+
+                result: PipelineResult = await run_pipeline(
+                    container,
+                    resolved_id,
+                    on_download_progress=_on_dl,
+                    on_transcribe_start=_on_tr_start,
+                    on_transcribe_complete=_on_tr_complete,
+                    on_index_start=_on_ix_start,
+                    on_index_complete=_on_ix_complete,
+                    on_topic_progress=_on_topic,
+                )
+
+                # Mark the deepest completed stage as done
+                if state.tc_task is not None:
+                    progress.update(
+                        state.tc_task,
+                        description=f"[green]✓ [4/4] Topics complete ({state.tc_count})[/green]",
+                        completed=1,
+                        total=1,
+                    )
+                elif state.ix_task is not None:
+                    progress.update(
+                        state.ix_task,
+                        description=f"[green]✓ [3/4] Indexing complete ({state.ix_count})[/green]",
+                        completed=1,
+                        total=1,
+                    )
+                elif state.tr_task is not None:
+                    tr_done = f"[green]✓ [2/4] Transcription complete ({state.tr_count})[/green]"
+                    progress.update(
+                        state.tr_task,
+                        description=tr_done,
+                        completed=1,
+                        total=1,
+                    )
+                else:
+                    progress.update(
+                        dl_task,
+                        description="[green]✓ [1/4] Download complete[/green]",
+                        completed=1,
+                        total=1,
+                    )
 
             # ── Summary table ─────────────────────────────────────────
             console.print("\n")
