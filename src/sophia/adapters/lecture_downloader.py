@@ -26,6 +26,7 @@ from sophia.domain.models import DownloadProgressEvent, LectureTrack
 log = structlog.get_logger()
 
 _CHUNK_SIZE = 65_536  # 64 KiB
+_DEFAULT_MAX_DOWNLOAD_BYTES = 5 * 1024**3  # 5 GB
 
 _MIMETYPE_EXT: dict[str, str] = {
     "video/mp4": ".mp4",
@@ -121,9 +122,12 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
     # Get total duration via ffprobe
     probe = await asyncio.create_subprocess_exec(
         "ffprobe",
-        "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
         str(audio_path),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -145,9 +149,13 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
     # Run silencedetect
     proc = await asyncio.create_subprocess_exec(
         "ffmpeg",
-        "-i", str(audio_path),
-        "-af", "silencedetect=noise=-30dB:d=2",
-        "-f", "null", "-",
+        "-i",
+        str(audio_path),
+        "-af",
+        "silencedetect=noise=-30dB:d=2",
+        "-f",
+        "null",
+        "-",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -176,8 +184,13 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
 class HttpLectureDownloader:
     """Downloads lecture media tracks over HTTP with resume support."""
 
-    def __init__(self, http: httpx.AsyncClient) -> None:
+    def __init__(
+        self,
+        http: httpx.AsyncClient,
+        max_download_bytes: int = _DEFAULT_MAX_DOWNLOAD_BYTES,
+    ) -> None:
         self._http = http
+        self._max_download_bytes = max_download_bytes
 
     async def download_track(self, url: str, dest: Path) -> AsyncIterator[DownloadProgressEvent]:
         """Stream *url* to *dest*, yielding progress events.
@@ -202,6 +215,13 @@ class HttpLectureDownloader:
             mode = "ab" if status == 206 else "wb"  # noqa: PLR2004
             total_header = resp.headers.get("content-length")
             total_bytes = int(total_header) + existing if total_header else None
+
+            if total_bytes is not None and total_bytes > self._max_download_bytes:
+                raise LectureDownloadError(
+                    f"Download size {total_bytes} bytes exceeds limit "
+                    f"of {self._max_download_bytes} bytes for {url}"
+                )
+
             downloaded = existing
 
             start = time.monotonic()
@@ -210,6 +230,11 @@ class HttpLectureDownloader:
                 async for chunk in resp.aiter_bytes(chunk_size=_CHUNK_SIZE):
                     fh.write(chunk)
                     downloaded += len(chunk)
+                    if downloaded > self._max_download_bytes:
+                        raise LectureDownloadError(
+                            f"Download size exceeds limit "
+                            f"of {self._max_download_bytes} bytes for {url}"
+                        )
                     elapsed = time.monotonic() - start
                     speed = (downloaded - existing) / elapsed if elapsed > 0 else 0.0
                     yield DownloadProgressEvent(

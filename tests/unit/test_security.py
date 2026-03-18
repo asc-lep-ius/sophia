@@ -1,8 +1,9 @@
-"""Security hardening tests — command injection, CSPRNG, prompt sanitization."""
+"""Security hardening tests — command injection, CSPRNG, prompt sanitization, network safety."""
 
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -10,6 +11,12 @@ import pytest
 
 from sophia.adapters.topic_extractor import (
     _sanitize_user_content,  # pyright: ignore[reportPrivateUsage]
+)
+from sophia.domain.errors import LectureDownloadError
+from sophia.infra.http import (
+    _is_allowed_redirect,  # pyright: ignore[reportPrivateUsage]
+    _is_private_ip,  # pyright: ignore[reportPrivateUsage]
+    _validate_redirect,  # pyright: ignore[reportPrivateUsage]
 )
 
 
@@ -242,3 +249,196 @@ class TestGenerateQuestionSanitizesInput:
             assert "disregard" not in user_prompt.lower()
             assert "Real content" in user_prompt
             assert "CS 101" in user_prompt
+
+
+class TestSSRFProtection:
+    """Verify redirect domain whitelist blocks SSRF attacks."""
+
+    def test_allowed_redirect_exact_domain(self) -> None:
+        assert _is_allowed_redirect("https://tuwel.tuwien.ac.at/course/view.php?id=1")
+
+    def test_allowed_redirect_subdomain(self) -> None:
+        assert _is_allowed_redirect("https://iu.zid.tuwien.ac.at/AuthServ.authenticate")
+
+    def test_blocked_redirect_unknown_domain(self) -> None:
+        assert not _is_allowed_redirect("https://evil.com/steal-creds")
+
+    def test_blocked_redirect_localhost(self) -> None:
+        assert not _is_allowed_redirect("http://127.0.0.1/admin")
+
+    def test_blocked_redirect_private_10(self) -> None:
+        assert not _is_allowed_redirect("http://10.0.0.1/internal")
+
+    def test_blocked_redirect_private_172(self) -> None:
+        assert not _is_allowed_redirect("http://172.16.5.1/secret")
+
+    def test_blocked_redirect_private_192(self) -> None:
+        assert not _is_allowed_redirect("http://192.168.1.1/router")
+
+    def test_blocked_redirect_link_local(self) -> None:
+        assert not _is_allowed_redirect("http://169.254.169.254/metadata")
+
+    def test_blocked_redirect_ipv6_loopback(self) -> None:
+        assert not _is_allowed_redirect("http://[::1]/admin")
+
+    def test_private_ip_detection(self) -> None:
+        assert _is_private_ip("127.0.0.1")
+        assert _is_private_ip("10.255.0.1")
+        assert _is_private_ip("172.16.0.1")
+        assert _is_private_ip("192.168.0.1")
+        assert _is_private_ip("169.254.169.254")
+        assert _is_private_ip("::1")
+        assert not _is_private_ip("8.8.8.8")
+        assert not _is_private_ip("tuwel.tuwien.ac.at")
+
+    @pytest.mark.asyncio
+    async def test_validate_redirect_blocks_localhost(self) -> None:
+        response = httpx.Response(
+            302,
+            headers={"Location": "http://127.0.0.1/admin"},
+            request=httpx.Request("GET", "https://tuwel.tuwien.ac.at/login"),
+        )
+        with pytest.raises(httpx.HTTPStatusError, match="SSRF"):
+            await _validate_redirect(response)
+
+    @pytest.mark.asyncio
+    async def test_validate_redirect_blocks_private_ip(self) -> None:
+        response = httpx.Response(
+            302,
+            headers={"Location": "http://10.0.0.1/internal"},
+            request=httpx.Request("GET", "https://tuwel.tuwien.ac.at/login"),
+        )
+        with pytest.raises(httpx.HTTPStatusError, match="SSRF"):
+            await _validate_redirect(response)
+
+    @pytest.mark.asyncio
+    async def test_validate_redirect_allows_whitelisted_domain(self) -> None:
+        response = httpx.Response(
+            302,
+            headers={"Location": "https://tiss.tuwien.ac.at/education"},
+            request=httpx.Request("GET", "https://tuwel.tuwien.ac.at/login"),
+        )
+        # Should not raise
+        await _validate_redirect(response)
+
+    @pytest.mark.asyncio
+    async def test_validate_redirect_ignores_non_redirect(self) -> None:
+        response = httpx.Response(
+            200,
+            request=httpx.Request("GET", "https://tuwel.tuwien.ac.at/"),
+        )
+        # Should not raise — not a redirect
+        await _validate_redirect(response)
+
+
+class TestDownloadSizeLimits:
+    """Verify lecture downloads enforce size limits."""
+
+    @pytest.mark.asyncio
+    async def test_content_length_exceeds_limit_aborts(self) -> None:
+        from sophia.adapters.lecture_downloader import HttpLectureDownloader
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-length": str(10 * 1024**3)}  # 10 GB
+
+        mock_http = AsyncMock(spec=httpx.AsyncClient)
+        mock_stream_ctx = AsyncMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_http.stream.return_value = mock_stream_ctx
+
+        downloader = HttpLectureDownloader(mock_http, max_download_bytes=1 * 1024**3)
+        dest = Path("/tmp/test-download.mp4")
+
+        with pytest.raises(LectureDownloadError, match="exceeds.*limit"):
+            async for _ in downloader.download_track(
+                url="https://example.com/video.mp4", dest=dest
+            ):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_streaming_exceeds_limit_aborts(self) -> None:
+        from sophia.adapters.lecture_downloader import HttpLectureDownloader
+
+        chunk = b"x" * (512 * 1024)  # 512 KiB chunks
+
+        async def fake_chunks(chunk_size: int = 65536) -> None:  # noqa: ARG001
+            for _ in range(20):
+                yield chunk  # type: ignore[misc]
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}  # No Content-Length
+        mock_response.aiter_bytes = fake_chunks
+
+        mock_http = AsyncMock(spec=httpx.AsyncClient)
+        mock_stream_ctx = AsyncMock()
+        mock_stream_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_stream_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_http.stream.return_value = mock_stream_ctx
+
+        max_bytes = 5 * 1024 * 1024  # 5 MB
+        downloader = HttpLectureDownloader(mock_http, max_download_bytes=max_bytes)
+        dest = Path("/tmp/test-streaming.mp4")
+
+        with (
+            patch.object(Path, "exists", return_value=False),
+            patch.object(Path, "mkdir"),
+            patch("builtins.open", new_callable=lambda: patch("pathlib.Path.open").start),
+            pytest.raises(LectureDownloadError, match="exceeds.*limit"),
+        ):
+            async for _ in downloader.download_track(
+                url="https://example.com/video.mp4", dest=dest
+            ):
+                pass
+
+
+class TestPDFSizeLimit:
+    """Verify oversized PDFs are skipped during Moodle resource enrichment."""
+
+    def test_pdf_size_constant_defined(self) -> None:
+        from sophia.adapters.moodle import (  # pyright: ignore[reportPrivateUsage]
+            _MAX_PDF_SIZE_BYTES,
+        )
+
+        assert _MAX_PDF_SIZE_BYTES == 100 * 1024 * 1024
+
+    @pytest.mark.asyncio
+    async def test_oversized_pdf_skipped_with_warning(self) -> None:
+        from sophia.adapters.moodle import MoodleAdapter
+
+        client = MoodleAdapter.__new__(MoodleAdapter)
+        client._http = AsyncMock()  # pyright: ignore[reportPrivateUsage]
+        client._host = "https://tuwel.tuwien.ac.at"  # pyright: ignore[reportPrivateUsage]
+
+        oversized_content = b"%" * (101 * 1024 * 1024)  # > 100 MB
+
+        fake_response = AsyncMock(spec=httpx.Response)
+        fake_response.status_code = 200
+        fake_response.content = oversized_content
+        fake_response.headers = {"content-type": "application/pdf"}
+        fake_response.url = httpx.URL("https://tuwel.tuwien.ac.at/file.pdf")
+
+        from sophia.domain.models import ModuleInfo
+
+        module = ModuleInfo(
+            id=1,
+            name="Big PDF Module",
+            modname="resource",
+            url="https://tuwel.tuwien.ac.at/mod/resource/view.php?id=1",
+        )
+
+        with (
+            patch.object(client, "_fetch", return_value=fake_response),
+            patch.object(
+                client,
+                "_resolve_resource_target",
+                return_value=("https://tuwel.tuwien.ac.at/file.pdf", fake_response),
+            ),
+            patch("sophia.adapters.moodle._response_is_pdf", return_value=True),
+            patch("sophia.adapters.moodle._extract_pdf_text") as mock_extract,
+        ):
+            result = await client._enrich_resource_module(module)  # pyright: ignore[reportPrivateUsage]
+            mock_extract.assert_not_called()
+            assert result.id == module.id

@@ -38,6 +38,7 @@ log = structlog.get_logger()
 
 _MAX_INGESTION_CHARS = 20_000
 _MAX_PDF_PAGES = 5
+_MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024  # 100 MB
 _URL_CONTENT_SELECTORS = (
     ".urlworkaround",
     "#region-main",
@@ -307,9 +308,17 @@ class MoodleAdapter:
 
         description = module.description
         if file_response is not None and _response_is_pdf(file_response, file_url):
-            pdf_text = _extract_pdf_text(file_response.content)
-            if pdf_text:
-                description = _merge_description(description, pdf_text)
+            if len(file_response.content) > _MAX_PDF_SIZE_BYTES:
+                log.warning(
+                    "pdf_too_large_skipping",
+                    module_id=module.id,
+                    size=len(file_response.content),
+                    limit=_MAX_PDF_SIZE_BYTES,
+                )
+            else:
+                pdf_text = _extract_pdf_text(file_response.content)
+                if pdf_text:
+                    description = _merge_description(description, pdf_text)
 
         return module.model_copy(
             update={

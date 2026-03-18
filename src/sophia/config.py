@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Downloads
     preferred_formats: list[str] = ["pdf", "epub"]
     max_concurrent_downloads: int = 2
+    max_download_size_bytes: int = 5 * 1024**3  # 5 GB
 
     # FlareSolverr (optional, for scraping fallback)
     flaresolverr_url: str = "http://localhost:8191"
