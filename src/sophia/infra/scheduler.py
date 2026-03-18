@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import abc
+import shlex
 import shutil
 import subprocess
 import sys
@@ -181,7 +182,7 @@ class _LinuxScheduler(Scheduler):
                     f"--unit={job_id}",
                     f"--on-calendar={timestamp}",
                     "--",
-                    *command.split(),
+                    *shlex.split(command),
                 ],
                 check=True,
                 capture_output=True,
@@ -212,7 +213,7 @@ class _MacOSScheduler(Scheduler):
         import plistlib
 
         self._AGENTS_DIR.mkdir(parents=True, exist_ok=True)
-        parts = command.split()
+        parts = shlex.split(command)
         plist = {
             "Label": job_id,
             "ProgramArguments": parts,
@@ -264,7 +265,7 @@ class _WindowsScheduler(Scheduler):
                     "/TN",
                     job_id,
                     "/TR",
-                    command,
+                    command,  # schtasks /TR expects a single string, not tokenized args
                     "/SC",
                     "ONCE",
                     "/ST",

@@ -15,6 +15,15 @@ import structlog
 
 from sophia.domain.errors import TopicExtractionError
 
+_INJECTION_LINE_RE = re.compile(
+    r"^\s*(system\s*:|assistant\s*:|ignore\s+previous|disregard|forget\b)",
+    re.IGNORECASE,
+)
+_MALICIOUS_FENCE_RE = re.compile(
+    r"```(?:system|prompt)\b.*?```",
+    re.DOTALL | re.IGNORECASE,
+)
+
 if TYPE_CHECKING:
     from sophia.domain.models import HermesLLMConfig
 
@@ -50,6 +59,15 @@ _QUESTION_USER_TEMPLATE = (
 )
 
 
+def _sanitize_user_content(text: str) -> str:
+    """Strip patterns resembling LLM prompt injection from user-supplied text."""
+    # Remove malicious code fences (```system, ```prompt)
+    text = _MALICIOUS_FENCE_RE.sub("", text)
+    # Remove lines that look like role overrides or instruction overrides
+    lines = text.splitlines(keepends=True)
+    return "".join(line for line in lines if not _INJECTION_LINE_RE.match(line))
+
+
 def _parse_topics(text: str) -> list[str]:
     """Parse LLM response into a deduplicated list of topic strings."""
     if not text.strip():
@@ -73,6 +91,8 @@ def _parse_topics(text: str) -> list[str]:
 
 def _build_user_prompt(text: str, course_context: str) -> str:
     """Build the user prompt, injecting course context if provided."""
+    text = _sanitize_user_content(text)
+    course_context = _sanitize_user_content(course_context)
     parts: list[str] = []
     if course_context:
         parts.append(f"Course: {course_context}\n")
@@ -137,6 +157,8 @@ class LLMTopicExtractor:
 
     async def generate_question(self, topic: str, lecture_context: str) -> str:
         """Generate a practice question grounded in lecture content."""
+        topic = _sanitize_user_content(topic)
+        lecture_context = _sanitize_user_content(lecture_context)
         user_prompt = _QUESTION_USER_TEMPLATE.format(topic=topic, lecture_context=lecture_context)
         raw = await self._call_llm(_QUESTION_SYSTEM_PROMPT, user_prompt)
         return raw.strip()
