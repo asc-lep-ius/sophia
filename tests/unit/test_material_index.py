@@ -129,19 +129,20 @@ class TestScrapCourseMaterials:
     @pytest.mark.asyncio
     async def test_scrape_inserts_materials(self, db: aiosqlite.Connection) -> None:
         moodle = MagicMock()
-        moodle.get_course_resources = AsyncMock(
-            return_value=[_make_resource_module(module_id=100)]
-        )
+        moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=100)])
         app = _make_app(db, moodle=moodle)
 
         pdf_bytes = b"%PDF-1.4 fake content"
-        with patch(
-            "sophia.services.material_index.extract_full_pdf_text",
-            return_value="Extracted text from PDF",
-        ) as mock_extract, patch(
-            "sophia.services.material_index._download_pdf",
-            new_callable=AsyncMock,
-            return_value=pdf_bytes,
+        with (
+            patch(
+                "sophia.services.material_index.extract_full_pdf_text",
+                return_value="Extracted text from PDF",
+            ) as mock_extract,
+            patch(
+                "sophia.services.material_index._download_pdf",
+                new_callable=AsyncMock,
+                return_value=pdf_bytes,
+            ),
         ):
             materials = await scrape_course_materials(app, course_id=42)
 
@@ -160,19 +161,20 @@ class TestScrapCourseMaterials:
     @pytest.mark.asyncio
     async def test_scrape_idempotent(self, db: aiosqlite.Connection) -> None:
         moodle = MagicMock()
-        moodle.get_course_resources = AsyncMock(
-            return_value=[_make_resource_module(module_id=100)]
-        )
+        moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=100)])
         app = _make_app(db, moodle=moodle)
 
         pdf_bytes = b"%PDF-1.4 fake"
-        with patch(
-            "sophia.services.material_index.extract_full_pdf_text",
-            return_value="Some text",
-        ), patch(
-            "sophia.services.material_index._download_pdf",
-            new_callable=AsyncMock,
-            return_value=pdf_bytes,
+        with (
+            patch(
+                "sophia.services.material_index.extract_full_pdf_text",
+                return_value="Some text",
+            ),
+            patch(
+                "sophia.services.material_index._download_pdf",
+                new_callable=AsyncMock,
+                return_value=pdf_bytes,
+            ),
         ):
             first = await scrape_course_materials(app, course_id=42)
             second = await scrape_course_materials(app, course_id=42)
@@ -231,9 +233,10 @@ class TestIndexMaterials:
         mock_embedder.embed.return_value = [[0.1, 0.2, 0.3]]
         mock_store = MagicMock()
 
-        with patch(
-            "sophia.services.material_index._create_embedder", return_value=mock_embedder
-        ), patch("sophia.services.material_index._create_store", return_value=mock_store):
+        with (
+            patch("sophia.services.material_index._create_embedder", return_value=mock_embedder),
+            patch("sophia.services.material_index._create_store", return_value=mock_store),
+        ):
             total = await index_materials(app, course_id=42)
 
         assert total >= 1
@@ -263,9 +266,10 @@ class TestIndexMaterials:
         await db.commit()
 
         app = _make_app(db)
-        with patch(
-            "sophia.services.material_index._create_embedder"
-        ) as mock_emb, patch("sophia.services.material_index._create_store"):
+        with (
+            patch("sophia.services.material_index._create_embedder") as mock_emb,
+            patch("sophia.services.material_index._create_store"),
+        ):
             total = await index_materials(app, course_id=42)
 
         assert total == 0
@@ -282,9 +286,10 @@ class TestIndexMaterials:
         await db.commit()
 
         app = _make_app(db)
-        with patch(
-            "sophia.services.material_index._create_embedder"
-        ) as mock_emb, patch("sophia.services.material_index._create_store"):
+        with (
+            patch("sophia.services.material_index._create_embedder") as mock_emb,
+            patch("sophia.services.material_index._create_store"),
+        ):
             total = await index_materials(app, course_id=42)
 
         assert total == 0

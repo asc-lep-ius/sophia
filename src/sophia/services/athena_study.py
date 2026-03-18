@@ -86,6 +86,42 @@ async def _get_episode_ids(db: aiosqlite.Connection, module_id: int) -> list[str
     return [row[0] for row in rows]
 
 
+async def _get_material_episode_ids(
+    db: aiosqlite.Connection, course_id: int
+) -> tuple[list[str], dict[str, str]]:
+    """Get material episode IDs and a map of episode_id → material name."""
+    cursor = await db.execute(
+        "SELECT id, name FROM course_materials WHERE course_id = ? AND status = 'completed'",
+        (course_id,),
+    )
+    rows = await cursor.fetchall()
+    ep_ids = [f"mat-{row[0]}" for row in rows]
+    name_map = {f"mat-{row[0]}": row[1] for row in rows}
+    return ep_ids, name_map
+
+
+async def _search_material_chunks(
+    db: aiosqlite.Connection,
+    store: ChromaKnowledgeStore,
+    query_embedding: list[float],
+    course_id: int,
+    *,
+    n_results: int = 5,
+) -> tuple[list[tuple[KnowledgeChunk, float]], dict[str, str]]:
+    """Search PDF material chunks for a course. Returns (results, name_map)."""
+    mat_ep_ids, name_map = await _get_material_episode_ids(db, course_id)
+    if not mat_ep_ids:
+        return [], {}
+    results: list[tuple[KnowledgeChunk, float]] = await asyncio.to_thread(
+        store.search,
+        query_embedding,
+        n_results=n_results,
+        episode_ids=mat_ep_ids,
+        source_filter="pdf",
+    )
+    return results, name_map
+
+
 async def _get_series_title(db: aiosqlite.Connection, module_id: int) -> str:
     """Get the series title for a module to provide LLM context."""
     cursor = await db.execute(
@@ -237,10 +273,15 @@ async def link_topics_to_lectures(
             store.search, query_embedding, n_results=5, episode_ids=episode_ids
         )
 
-        results[topic] = search_results
+        # Also search PDF material chunks
+        pdf_results, _ = await _search_material_chunks(
+            app.db, store, query_embedding, course_id, n_results=5
+        )
+        combined = search_results + pdf_results
+        results[topic] = combined
 
         # Persist links
-        for chunk, score in search_results:
+        for chunk, score in combined:
             await app.db.execute(
                 "INSERT INTO topic_lecture_links "
                 "(topic, course_id, chunk_id, episode_id, score) "
@@ -292,6 +333,7 @@ async def get_lecture_context(
     *,
     n_results: int = 5,
     with_provenance: bool = False,
+    include_materials: bool = False,
 ) -> str:
     """Retrieve concatenated lecture transcript chunks relevant to a topic.
 
@@ -300,6 +342,9 @@ async def get_lecture_context(
 
     When ``with_provenance=True`` each chunk is prefixed with
     ``[Title, MM:SS]`` so the reader knows its source and timestamp.
+
+    When ``include_materials=True`` PDF material chunks are also searched
+    and appended with ``[PDF: name, chunk N]`` provenance annotations.
     """
     episode_ids = await _get_episode_ids(app.db, module_id)
     if not episode_ids:
@@ -313,22 +358,39 @@ async def get_lecture_context(
     embedder = _get_or_create_embedder(config)
     store = _get_or_create_store(app.settings)
     query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
-    search_results = await asyncio.to_thread(
+    search_results: list[tuple[KnowledgeChunk, float]] = await asyncio.to_thread(
         store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
     )
 
-    if not with_provenance:
+    # Optionally search PDF material chunks
+    pdf_results: list[tuple[KnowledgeChunk, float]] = []
+    mat_name_map: dict[str, str] = {}
+    if include_materials:
+        pdf_results, mat_name_map = await _search_material_chunks(
+            app.db, store, query_embedding, module_id, n_results=n_results
+        )
+
+    if not with_provenance and not include_materials:
         return "\n\n".join(chunk.text for chunk, _score in search_results)
 
-    # Build episode→title map for all chunks in the result set
+    if not with_provenance:
+        all_texts = [chunk.text for chunk, _ in search_results]
+        for chunk, _ in pdf_results:
+            mat_name = mat_name_map.get(chunk.episode_id, "PDF")
+            all_texts.append(f"[PDF: {mat_name}, chunk {chunk.chunk_index}]\n{chunk.text}")
+        return "\n\n".join(all_texts)
+
+    # Build episode→title map for lecture chunks
     ep_ids = list({chunk.episode_id for chunk, _ in search_results})
-    placeholders = ",".join("?" * len(ep_ids))
-    cursor = await app.db.execute(
-        f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
-        f" WHERE episode_id IN ({placeholders})",
-        ep_ids,
-    )
-    title_map: dict[str, str] = {row[0]: row[1] for row in await cursor.fetchall()}
+    title_map: dict[str, str] = {}
+    if ep_ids:
+        placeholders = ",".join("?" * len(ep_ids))
+        cursor = await app.db.execute(
+            f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
+            f" WHERE episode_id IN ({placeholders})",
+            ep_ids,
+        )
+        title_map = {row[0]: row[1] for row in await cursor.fetchall()}
 
     parts: list[str] = []
     for chunk, _ in search_results:
@@ -336,6 +398,10 @@ async def get_lecture_context(
         raw_title = title_map.get(chunk.episode_id, "Lecture")
         short = raw_title[:25].rstrip() + "…" if len(raw_title) > 25 else raw_title
         parts.append(f"[{short}, {mm:02d}:{ss:02d}]\n{chunk.text}")
+
+    for chunk, _ in pdf_results:
+        mat_name = mat_name_map.get(chunk.episode_id, "PDF")
+        parts.append(f"[PDF: {mat_name}, chunk {chunk.chunk_index}]\n{chunk.text}")
 
     return "\n\n".join(parts)
 

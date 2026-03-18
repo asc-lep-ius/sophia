@@ -84,7 +84,8 @@ class TestMigration015:
             )
 
     async def test_unique_constraint_allows_different_courses(
-        self, db: aiosqlite.Connection,
+        self,
+        db: aiosqlite.Connection,
     ) -> None:
         """Same URL in different courses is allowed."""
         await db.execute(
