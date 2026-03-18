@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from sophia.adapters.lecture_downloader import (
@@ -300,3 +302,102 @@ class TestStoreCaching:
 
         assert first is not after_reset
         assert mock_cls.call_count == 2
+
+
+# ------------------------------------------------------------------
+# Helpers — async context manager wrapper
+# ------------------------------------------------------------------
+
+
+@contextlib.asynccontextmanager
+async def _async_cm(obj):
+    """Wrap an object in a trivial async context manager."""
+    yield obj
+
+
+# ------------------------------------------------------------------
+# SSO auth retry — tenacity on transient failures
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sso_retry_on_transient_503() -> None:
+    """_initiate_sso retries once on 503, succeeds on second attempt."""
+    from sophia.adapters.auth import _initiate_sso
+
+    ok_response = MagicMock(spec=httpx.Response)
+    ok_response.status_code = 200
+    ok_response.raise_for_status = MagicMock()
+    ok_response.text = "<html></html>"
+
+    error_response = MagicMock(spec=httpx.Response)
+    error_response.status_code = 503
+    error_response.headers = {}
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.get = AsyncMock(
+        side_effect=[
+            httpx.HTTPStatusError("503", request=MagicMock(), response=error_response),
+            ok_response,
+        ]
+    )
+
+    result = await _initiate_sso(client, "https://tuwel.tuwien.ac.at")
+    assert result is ok_response
+    assert client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_sso_retry_on_transport_error() -> None:
+    """_initiate_sso retries on httpx.TransportError."""
+    from sophia.adapters.auth import _initiate_sso
+
+    ok_response = MagicMock(spec=httpx.Response)
+    ok_response.status_code = 200
+    ok_response.raise_for_status = MagicMock()
+    ok_response.text = "<html></html>"
+
+    client = AsyncMock(spec=httpx.AsyncClient)
+    client.get = AsyncMock(
+        side_effect=[
+            httpx.ConnectError("connection reset"),
+            ok_response,
+        ]
+    )
+
+    result = await _initiate_sso(client, "https://tuwel.tuwien.ac.at")
+    assert result is ok_response
+    assert client.get.call_count == 2
+
+
+# ------------------------------------------------------------------
+# DI container init — timeout on hang
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_app_timeout() -> None:
+    """create_app raises RuntimeError if initialization hangs past timeout."""
+    from sophia.adapters.auth import SessionCredentials
+    from sophia.infra.di import create_app
+
+    fake_creds = SessionCredentials(
+        moodle_session="abc",
+        sesskey="xyz",
+        host="https://tuwel.tuwien.ac.at",
+        created_at="2025-01-01T00:00:00+00:00",
+    )
+
+    async def _hanging_db(*args, **kwargs):
+        await asyncio.sleep(9999)
+
+    mock_http = _async_cm(AsyncMock(spec=httpx.AsyncClient))
+    with (
+        patch("sophia.infra.di.load_session", return_value=fake_creds),
+        patch("sophia.infra.di.http_session", return_value=mock_http),
+        patch("sophia.infra.di.connect_db", side_effect=_hanging_db),
+        patch("sophia.infra.di._DI_INIT_TIMEOUT_S", 0.05),
+        pytest.raises(RuntimeError, match="startup timed out"),
+    ):
+        async with create_app():
+            pass  # pragma: no cover

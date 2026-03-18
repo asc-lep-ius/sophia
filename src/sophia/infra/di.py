@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -9,7 +10,7 @@ from urllib.parse import urlparse
 
 import structlog
 
-from sophia.adapters.auth import load_session, session_path
+from sophia.adapters.auth import SessionCredentials, load_session, session_path
 from sophia.adapters.lecture_downloader import HttpLectureDownloader
 from sophia.adapters.lecturetube import OpencastAdapter
 from sophia.adapters.moodle import MoodleAdapter
@@ -24,6 +25,8 @@ from sophia.infra.http import http_session
 from sophia.infra.persistence import connect_db, run_migrations
 
 log = structlog.get_logger()
+
+_DI_INIT_TIMEOUT_S = 30
 
 
 @dataclass(frozen=True)
@@ -54,31 +57,52 @@ async def create_app(settings: Settings | None = None):
         raise AuthError("Not logged in — run: sophia auth login")
 
     async with contextlib.AsyncExitStack() as stack:
-        http = await stack.enter_async_context(http_session())
-        tuwel_domain = urlparse(settings.tuwel_host).hostname or ""
-        http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
-        db = await connect_db(settings.db_path)
-        stack.push_async_callback(db.close)
-        await run_migrations(db)
+        try:
+            container = await asyncio.wait_for(
+                _init_resources(stack, settings, creds),
+                timeout=_DI_INIT_TIMEOUT_S,
+            )
+        except TimeoutError:
+            msg = (
+                f"Application startup timed out after {_DI_INIT_TIMEOUT_S}s"
+                " \u2014 check database and network"
+            )
+            raise RuntimeError(msg) from None
 
-        moodle = MoodleAdapter(
-            http=http,
-            sesskey=creds.sesskey,
-            moodle_session=creds.moodle_session,
-            host=settings.tuwel_host,
-            cookie_name=creds.cookie_name,
-        )
+        yield container
 
-        tiss = TissAdapter(http=http, host=settings.tiss_host)
-        opencast = OpencastAdapter(http=http, host=settings.tuwel_host)
-        lecture_downloader = HttpLectureDownloader(http=http)
 
-        yield AppContainer(
-            settings=settings,
-            http=http,
-            db=db,
-            moodle=moodle,
-            tiss=tiss,
-            opencast=opencast,
-            lecture_downloader=lecture_downloader,
-        )
+async def _init_resources(
+    stack: contextlib.AsyncExitStack,
+    settings: Settings,
+    creds: SessionCredentials,
+) -> AppContainer:
+    """Initialize all resources — extracted so create_app can wrap with a timeout."""
+    http = await stack.enter_async_context(http_session())
+    tuwel_domain = urlparse(settings.tuwel_host).hostname or ""
+    http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
+    db = await connect_db(settings.db_path)
+    stack.push_async_callback(db.close)
+    await run_migrations(db)
+
+    moodle = MoodleAdapter(
+        http=http,
+        sesskey=creds.sesskey,
+        moodle_session=creds.moodle_session,
+        host=settings.tuwel_host,
+        cookie_name=creds.cookie_name,
+    )
+
+    tiss = TissAdapter(http=http, host=settings.tiss_host)
+    opencast = OpencastAdapter(http=http, host=settings.tuwel_host)
+    lecture_downloader = HttpLectureDownloader(http=http)
+
+    return AppContainer(
+        settings=settings,
+        http=http,
+        db=db,
+        moodle=moodle,
+        tiss=tiss,
+        opencast=opencast,
+        lecture_downloader=lecture_downloader,
+    )
