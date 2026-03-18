@@ -21,6 +21,7 @@ from sophia.cli.jobs import app as jobs_app  # noqa: E402
 from sophia.cli.lectures import app as lectures_app  # noqa: E402
 from sophia.cli.register import app as register_app  # noqa: E402
 from sophia.cli.run_job import register_run_job  # noqa: E402
+from sophia.cli.status import register_status  # noqa: E402
 from sophia.cli.study import app as study_app  # noqa: E402
 
 app.command(books_app)
@@ -30,6 +31,7 @@ app.command(lectures_app)
 app.command(jobs_app)
 app.command(study_app)
 register_run_job(app)
+register_status(app)
 
 # Shell completion (sophia --install-completion)
 app.register_install_completion_command()  # type: ignore[reportUnknownMemberType]
