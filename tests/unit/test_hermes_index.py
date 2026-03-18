@@ -305,3 +305,45 @@ async def test_search_lectures(app: MagicMock, db: aiosqlite.Connection) -> None
     call_kwargs = mock_store.search.call_args[1]
     assert "episode_ids" in call_kwargs
     assert call_kwargs["episode_ids"] == ["ep-001"]
+
+
+@pytest.mark.asyncio
+async def test_search_lectures_pdf_filter_includes_material_ids(
+    app: MagicMock, db: aiosqlite.Connection
+) -> None:
+    """With source_filter='pdf' and course_id, search includes material episode IDs."""
+    from sophia.services.hermes_index import search_lectures
+
+    await _insert_download(db, episode_id="ep-001", module_id=42, title="Lecture 1")
+    # Insert course material with distinct course_id=999
+    await db.execute(
+        "INSERT INTO course_materials (id, course_id, module_id, name, url, status) "
+        "VALUES (?, ?, ?, ?, ?, 'completed')",
+        (10, 999, 42, "Slides.pdf", "https://example.com/s.pdf"),
+    )
+    await db.commit()
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.1, 0.2]
+    mock_store = MagicMock()
+    mock_store.search.return_value = []
+
+    with (
+        patch("sophia.services.hermes_index.load_hermes_config", return_value=HermesConfig()),
+        patch(
+            "sophia.services.hermes_index.SentenceTransformerEmbedder",
+            return_value=mock_embedder,
+        ),
+        patch(
+            "sophia.services.hermes_index.ChromaKnowledgeStore",
+            return_value=mock_store,
+        ),
+        patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
+    ):
+        await search_lectures(app, 42, "test query", source_filter="pdf", course_id=999)
+
+    call_kwargs = mock_store.search.call_args[1]
+    episode_ids = call_kwargs["episode_ids"]
+    # Must include both lecture and material episode IDs
+    assert "ep-001" in episode_ids
+    assert "mat-10" in episode_ids

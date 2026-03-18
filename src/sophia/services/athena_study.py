@@ -334,6 +334,7 @@ async def get_lecture_context(
     n_results: int = 5,
     with_provenance: bool = False,
     include_materials: bool = False,
+    course_id: int | None = None,
 ) -> str:
     """Retrieve concatenated lecture transcript chunks relevant to a topic.
 
@@ -365,9 +366,9 @@ async def get_lecture_context(
     # Optionally search PDF material chunks
     pdf_results: list[tuple[KnowledgeChunk, float]] = []
     mat_name_map: dict[str, str] = {}
-    if include_materials:
+    if include_materials and course_id is not None:
         pdf_results, mat_name_map = await _search_material_chunks(
-            app.db, store, query_embedding, module_id, n_results=n_results
+            app.db, store, query_embedding, course_id, n_results=n_results
         )
 
     if not with_provenance and not include_materials:

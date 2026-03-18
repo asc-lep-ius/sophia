@@ -1018,16 +1018,20 @@ class TestSelfExplanation:
 async def test_get_lecture_context_include_materials(
     app: MagicMock, db: aiosqlite.Connection
 ) -> None:
-    """With include_materials=True, both lecture and PDF chunks appear with provenance."""
+    """With include_materials=True, both lecture and PDF chunks appear with provenance.
+
+    Uses distinct module_id (42) and course_id (999) to verify the correct ID
+    reaches _search_material_chunks (which expects course_id, not module_id).
+    """
     from sophia.services.athena_study import get_lecture_context
 
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
-    # Insert a course material in the DB
+    # Insert a course material — note course_id=999 differs from module_id=42
     await db.execute(
         "INSERT INTO course_materials (id, course_id, module_id, name, url, status, chunk_count) "
         "VALUES (?, ?, ?, ?, ?, 'completed', 5)",
-        (10, 42, 42, "Algorithms.pdf", "https://example.com/algo.pdf"),
+        (10, 999, 42, "Algorithms.pdf", "https://example.com/algo.pdf"),
     )
     await db.commit()
 
@@ -1077,6 +1081,7 @@ async def test_get_lecture_context_include_materials(
         result = await get_lecture_context(
             app,
             module_id=42,
+            course_id=999,
             topic="Sorting",
             with_provenance=True,
             include_materials=True,

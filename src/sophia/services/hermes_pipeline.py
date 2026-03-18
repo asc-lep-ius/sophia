@@ -10,6 +10,7 @@ import structlog
 from sophia.services.athena_study import extract_topics_from_lectures
 from sophia.services.hermes_download import LectureDownloadResult, download_lectures
 from sophia.services.hermes_index import IndexingResult, index_lectures
+from sophia.services.hermes_manage import assign_lecture_numbers
 from sophia.services.hermes_transcribe import TranscriptionResult, transcribe_lectures
 
 if TYPE_CHECKING:
@@ -56,6 +57,8 @@ async def run_pipeline(
     log.info("pipeline_start", module_id=module_id)
 
     result.downloads = await download_lectures(app, module_id, on_progress=on_download_progress)
+
+    await assign_lecture_numbers(app.db, module_id)
 
     result.transcriptions = await transcribe_lectures(
         app, module_id, on_start=on_transcribe_start, on_complete=on_transcribe_complete

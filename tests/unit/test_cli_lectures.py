@@ -225,6 +225,10 @@ class TestProcessMaterialsFlag:
                 AsyncMock(return_value=[]),
             ),
             patch(
+                "sophia.services.hermes_pipeline.assign_lecture_numbers",
+                AsyncMock(),
+            ),
+            patch(
                 "sophia.services.material_index.index_materials",
                 AsyncMock(return_value=10),
             ) as mock_index_mat,

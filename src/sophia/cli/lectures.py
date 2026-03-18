@@ -266,7 +266,7 @@ async def lectures_status(
         statuses = await get_pipeline_status(container.db, resolved_id)
 
         mat_cursor = await container.db.execute(
-            "SELECT COUNT(*) FROM course_materials WHERE course_id = ?",
+            "SELECT COUNT(*) FROM course_materials WHERE module_id = ?",
             (resolved_id,),
         )
         mat_row = await mat_cursor.fetchone()

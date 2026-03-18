@@ -245,6 +245,7 @@ async def search_lectures(
     *,
     n_results: int = 5,
     source_filter: str | None = None,
+    course_id: int | None = None,
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
@@ -257,6 +258,18 @@ async def search_lectures(
         return []
     title_map = {row[0]: row[1] for row in rows}
     episode_ids = list(title_map.keys())
+
+    # Include material episode IDs when filtering for PDFs or all sources
+    if source_filter != "lecture" and course_id is not None:
+        mat_cursor = await app.db.execute(
+            "SELECT id, name FROM course_materials WHERE course_id = ?",
+            (course_id,),
+        )
+        mat_rows = await mat_cursor.fetchall()
+        for mat_row in mat_rows:
+            mat_ep_id = f"mat-{mat_row[0]}"
+            episode_ids.append(mat_ep_id)
+            title_map[mat_ep_id] = mat_row[1]
 
     embedder = _create_embedder(app)
     store = _create_store(app)
