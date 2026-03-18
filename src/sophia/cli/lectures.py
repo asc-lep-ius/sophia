@@ -483,9 +483,7 @@ async def lectures_list() -> None:
 async def lectures_download(
     module_id: Annotated[
         str,
-        cyclopts.Parameter(
-            help="Module ID, course number (186.813), or name."
-        ),
+        cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
 ) -> None:
     """Download lecture recordings. Prefers audio; extracts audio from video via ffmpeg."""
@@ -554,9 +552,7 @@ async def lectures_download(
 async def lectures_transcribe(
     module_id: Annotated[
         str,
-        cyclopts.Parameter(
-            help="Module ID, course number (186.813), or name."
-        ),
+        cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
 ) -> None:
     """Transcribe downloaded lectures using Whisper. Requires 'sophia lectures setup'."""
@@ -648,9 +644,7 @@ async def lectures_transcribe(
 async def lectures_index(
     module_id: Annotated[
         str,
-        cyclopts.Parameter(
-            help="Module ID, course number (186.813), or name."
-        ),
+        cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
 ) -> None:
     """Build search index from transcribed lectures. Requires transcription first."""
@@ -744,9 +738,7 @@ async def lectures_index(
 async def lectures_process(
     module_id: Annotated[
         str,
-        cyclopts.Parameter(
-            help="Module ID, course number (186.813), or name."
-        ),
+        cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
 ) -> None:
     """Run the full lecture pipeline: download → transcribe → index → extract topics."""
@@ -827,8 +819,7 @@ async def lectures_process(
                         )
                         if state.tr_task is not None:
                             tr_done = (
-                                f"[green]✓ [2/4] Transcription complete"
-                                f" ({state.tr_count})[/green]"
+                                f"[green]✓ [2/4] Transcription complete ({state.tr_count})[/green]"
                             )
                             progress.update(
                                 state.tr_task,

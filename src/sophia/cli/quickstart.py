@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated
 
 import cyclopts
+import structlog
+
+log = structlog.get_logger()
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -81,17 +84,11 @@ async def quickstart(
 
                 try:
                     with Status("[cyan]Extracting topics…[/cyan]", console=console):
-                        topics_list = await extract_topics_from_lectures(
-                            container, resolved_id
-                        )
-                    console.print(
-                        f"  [green]✓[/green] {len(topics_list)} topics extracted"
-                    )
+                        topics_list = await extract_topics_from_lectures(container, resolved_id)
+                    console.print(f"  [green]✓[/green] {len(topics_list)} topics extracted")
                 except TopicExtractionError as exc:
                     console.print(f"  [yellow]Topic extraction failed:[/yellow] {exc}")
-                    if not Confirm.ask(
-                        "Continue without topics?", default=True, console=console
-                    ):
+                    if not Confirm.ask("Continue without topics?", default=True, console=console):
                         return
 
             # ── Step 3: Confidence ────────────────────────────────────────
@@ -169,34 +166,31 @@ async def _has_topics(db: aiosqlite.Connection, module_id: int) -> bool:
     cursor = await db.execute(
         "SELECT COUNT(*) FROM topic_mappings WHERE course_id = ?", (module_id,)
     )
-    (count,) = await cursor.fetchone()
-    return bool(count)
+    row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 async def _has_confidence(db: aiosqlite.Connection, module_id: int) -> bool:
     cursor = await db.execute(
         "SELECT COUNT(*) FROM confidence_ratings WHERE course_id = ?", (module_id,)
     )
-    (count,) = await cursor.fetchone()
-    return bool(count)
+    row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 async def _has_completed_session(db: aiosqlite.Connection, module_id: int) -> bool:
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM study_sessions"
-        " WHERE course_id = ? AND post_test_score IS NOT NULL",
+        "SELECT COUNT(*) FROM study_sessions WHERE course_id = ? AND post_test_score IS NOT NULL",
         (module_id,),
     )
-    (count,) = await cursor.fetchone()
-    return bool(count)
+    row = await cursor.fetchone()
+    return bool(row and row[0])
 
 
 # ── Step runners ───────────────────────────────────────────────────────────
 
 
-async def _run_pipeline(
-    container: AppContainer, resolved_id: int, console: Console
-) -> None:
+async def _run_pipeline(container: AppContainer, resolved_id: int, console: Console) -> None:
     """Run the Hermes pipeline with a simple status spinner."""
     from rich.status import Status
 
@@ -214,9 +208,7 @@ async def _run_pipeline(
     )
 
 
-async def _run_confidence(
-    container: AppContainer, resolved_id: int, console: Console
-) -> None:
+async def _run_confidence(container: AppContainer, resolved_id: int, console: Console) -> None:
     """Prompt the user to rate confidence for all unrated topics."""
     from rich.prompt import IntPrompt
 
@@ -248,23 +240,11 @@ async def _run_confidence(
     console.print(f"  [green]✓[/green] {len(topics)} topics rated")
 
 
-async def _run_session(
-    container: AppContainer, resolved_id: int, console: Console
-) -> None:
+async def _run_session(container: AppContainer, resolved_id: int, console: Console) -> None:
     """Run a single study session for the weakest topic."""
-    from rich.panel import Panel
-    from rich.prompt import Confirm, Prompt
-    from rich.status import Status
-
-    from sophia.domain.errors import StudySessionError, TopicExtractionError
-    from sophia.services.athena_study import (
-        complete_study_session,
-        generate_study_questions,
-        get_course_topics,
-        get_lecture_context,
-        save_flashcard,
-        start_study_session,
-    )
+    from sophia.domain.errors import StudySessionError
+    from sophia.services.athena_session import run_interactive_session
+    from sophia.services.athena_study import get_course_topics
 
     topics = await get_course_topics(container, resolved_id)
     if not topics:
@@ -280,76 +260,11 @@ async def _run_session(
         if blind_spots:
             topic = blind_spots[0].topic
     except Exception:
-        pass
+        log.debug("blind_spot_lookup_failed", exc_info=True)
 
     console.print(f"  Topic: [bold]{topic}[/bold]")
 
     try:
-        session = await start_study_session(container.db, resolved_id, topic)
-
-        console.rule("[bold blue]Phase 1/4: Pre-Test[/bold blue]")
-        with Status("Generating questions…", console=console):
-            try:
-                pre_qs = await generate_study_questions(container, resolved_id, topic, count=3)
-            except TopicExtractionError:
-                pre_qs = [f"Explain the concept of {topic} in your own words."] * 3
-
-        pre_correct = 0
-        for i, q in enumerate(pre_qs, 1):
-            console.print(f"\n  [bold]Q{i}:[/bold] {q}")
-            answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
-            if answer.strip().lower() != "skip" and Confirm.ask(
-                "  Did you get it right?", default=False, console=console
-            ):
-                pre_correct += 1
-        pre_score = pre_correct / len(pre_qs)
-        console.print(f"\n  Pre-test: [bold]{pre_score:.0%}[/bold]")
-
-        if not Confirm.ask("\nContinue to study phase?", default=True, console=console):
-            await complete_study_session(container.db, session.id, pre_score, pre_score)
-            return
-
-        console.rule("[bold green]Phase 2/4: Study[/bold green]")
-        with Status("Fetching lecture content…", console=console):
-            lecture_text = await get_lecture_context(
-                container, resolved_id, topic, with_provenance=True
-            )
-        if lecture_text:
-            console.print(Panel(lecture_text[:2000], title=f"Lecture Notes: {topic}", expand=False))
-        else:
-            console.print("  [yellow]No lecture content found.[/yellow]")
-
-        if not Confirm.ask("\nContinue to post-test?", default=True, console=console):
-            await complete_study_session(container.db, session.id, pre_score, pre_score)
-            return
-
-        console.rule("[bold yellow]Phase 3/4: Post-Test[/bold yellow]")
-        with Status("Generating questions…", console=console):
-            try:
-                post_qs = await generate_study_questions(container, resolved_id, topic, count=3)
-            except TopicExtractionError:
-                post_qs = pre_qs
-
-        post_correct = 0
-        for i, q in enumerate(post_qs, 1):
-            console.print(f"\n  [bold]Q{i}:[/bold] {q}")
-            answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
-            if answer.strip().lower() != "skip" and Confirm.ask(
-                "  Did you get it right?", default=False, console=console
-            ):
-                post_correct += 1
-        post_score = post_correct / len(post_qs)
-        console.print(f"\n  Post-test: [bold]{post_score:.0%}[/bold]")
-
-        await complete_study_session(container.db, session.id, pre_score, post_score)
-
-        console.rule("[bold magenta]Phase 4/4: Flashcard[/bold magenta]")
-        if Confirm.ask("\nCreate a flashcard for this topic?", default=True, console=console):
-            front = Prompt.ask("  Front (question)", console=console)
-            back = Prompt.ask("  Back (answer)", console=console)
-            if front.strip() and back.strip():
-                await save_flashcard(container.db, resolved_id, topic, front.strip(), back.strip())
-                console.print("  [green]✓[/green] Flashcard saved")
-
+        await run_interactive_session(container, resolved_id, topic, console)
     except StudySessionError as exc:
         console.print(f"  [red]Session error:[/red] {exc}")

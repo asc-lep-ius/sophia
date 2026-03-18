@@ -269,38 +269,29 @@ async def study_session(
     ] = None,
 ) -> None:
     """Guided study: pre-test → lecture review → post-test → flashcard creation."""
+    import structlog
     from rich.console import Console
-    from rich.panel import Panel
-    from rich.prompt import Confirm, Prompt
-    from rich.status import Status
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
-    from sophia.domain.errors import AuthError, StudySessionError, TopicExtractionError
+    from sophia.domain.errors import AuthError, StudySessionError
     from sophia.infra.di import create_app
-    from sophia.services.athena_study import (
-        complete_study_session,
-        generate_study_questions,
-        get_course_topics,
-        save_flashcard,
-        start_study_session,
-    )
+    from sophia.services.athena_session import run_interactive_session
+    from sophia.services.athena_study import get_course_topics
 
+    _log = structlog.get_logger()
     console = Console()
 
     try:
         async with create_app() as container:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            # --- Load topics ---
             topics = await get_course_topics(container, resolved_id)
 
             if not topics:
                 console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
                 return
 
-            # --- Select topic ---
             if topic is None:
-                # Try to pick weakest blind spot, otherwise first topic
                 try:
                     from sophia.services.athena_confidence import get_blind_spots
 
@@ -309,133 +300,20 @@ async def study_session(
                         topic = blind_spots[0].topic
                         console.print(f"[dim]Auto-selected blind spot:[/dim] [bold]{topic}[/bold]")
                 except Exception:
-                    pass
+                    _log.debug("blind_spot_lookup_failed", exc_info=True)
                 if topic is None:
                     topic = topics[0].topic
                     console.print(f"[dim]Auto-selected first topic:[/dim] [bold]{topic}[/bold]")
 
             console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
 
-            # --- Start session ---
-            session = await start_study_session(container.db, resolved_id, topic)
-
-            # --- PRE-TEST ---
-            console.rule("[bold blue]Phase 1/4: Pre-Test[/bold blue]")
-            try:
-                with Status("Generating pre-test questions…", console=console):
-                    pre_questions = await generate_study_questions(
-                        container, resolved_id, topic, count=3
-                    )
-            except TopicExtractionError:
-                console.print("[yellow]LLM unavailable — using generic questions.[/yellow]")
-                pre_questions = [f"Explain the concept of {topic} in your own words."] * 3
-
-            pre_correct = 0
-            for i, q in enumerate(pre_questions, 1):
-                console.print(f"\n  [bold]Q{i}:[/bold] {q}")
-                answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
-                if answer.strip().lower() == "skip":
-                    continue
-                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
-                if self_grade:
-                    pre_correct += 1
-
-            pre_score = pre_correct / len(pre_questions) if pre_questions else 0.0
-            console.print(
-                f"\n  Pre-test score: [bold]{pre_score:.0%}[/bold]"
-                f" ({pre_correct}/{len(pre_questions)})"
-            )
-
-            if not Confirm.ask("\nContinue to study phase?", default=True, console=console):
-                await complete_study_session(container.db, session.id, pre_score, pre_score)
-                console.print("[dim]Session saved with pre-test only.[/dim]")
-                return
-
-            # --- STUDY PHASE ---
-            console.rule("[bold green]Phase 2/4: Study[/bold green]")
-            with Status("Fetching lecture content…", console=console):
-                from sophia.services.athena_study import get_lecture_context
-
-                lecture_text = await get_lecture_context(
-                    container, resolved_id, topic, with_provenance=True
-                )
-
-            if lecture_text:
-                console.print(
-                    Panel(
-                        lecture_text[:2000],
-                        title=f"Lecture Notes: {topic}",
-                        expand=False,
-                    )
-                )
-            else:
-                console.print("[yellow]No lecture content found for this topic.[/yellow]")
-
-            if not Confirm.ask("\nContinue to post-test?", default=True, console=console):
-                await complete_study_session(container.db, session.id, pre_score, pre_score)
-                console.print("[dim]Session saved with pre-test only.[/dim]")
-                return
-
-            # --- POST-TEST ---
-            console.rule("[bold yellow]Phase 3/4: Post-Test[/bold yellow]")
-            try:
-                with Status("Generating post-test questions…", console=console):
-                    post_questions = await generate_study_questions(
-                        container, resolved_id, topic, count=3
-                    )
-            except TopicExtractionError:
-                post_questions = [f"Explain the concept of {topic} in your own words."] * 3
-
-            post_correct = 0
-            for i, q in enumerate(post_questions, 1):
-                console.print(f"\n  [bold]Q{i}:[/bold] {q}")
-                answer = Prompt.ask("  Your answer (or 'skip')", default="skip", console=console)
-                if answer.strip().lower() == "skip":
-                    continue
-                self_grade = Confirm.ask("  Did you get it right?", default=False, console=console)
-                if self_grade:
-                    post_correct += 1
-
-            post_score = post_correct / len(post_questions) if post_questions else 0.0
-            console.print(
-                f"\n  Post-test score: [bold]{post_score:.0%}[/bold]"
-                f" ({post_correct}/{len(post_questions)})"
-            )
-
-            # --- Show improvement ---
-            improvement = post_score - pre_score
-            if improvement > 0:
-                console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
-            elif improvement < 0:
-                console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
-            else:
-                console.print("\n  [dim]➡ No change in score.[/dim]")
-
-            # --- Complete session ---
-            await complete_study_session(container.db, session.id, pre_score, post_score)
-
-            # --- Optional flashcard creation ---
-            console.rule("[bold magenta]Phase 4/4: Flashcard[/bold magenta]")
-            if Confirm.ask("\nCreate a flashcard for this topic?", default=True, console=console):
-                front = Prompt.ask("  Front (question)", console=console)
-                back = Prompt.ask("  Back (answer)", console=console)
-                if front.strip() and back.strip():
-                    await save_flashcard(
-                        container.db, resolved_id, topic, front.strip(), back.strip()
-                    )
-                    console.print("[green]✅ Flashcard saved![/green]")
-                else:
-                    console.print("[dim]Skipped — empty flashcard.[/dim]")
+            await run_interactive_session(container, resolved_id, topic, console)
 
             console.print("\n[bold green]✅ Study session complete![/bold green]")
             console.print("\n[dim]Next:[/dim] [cyan]sophia study review <module-id> [topic][/cyan]")
 
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
-        raise SystemExit(1) from None
-    except TopicExtractionError as exc:
-        console.print(f"[yellow]LLM unavailable:[/yellow] {exc}")
-        console.print("Study with lecture material directly instead.")
         raise SystemExit(1) from None
     except StudySessionError as exc:
         console.print(f"[red]Study session error:[/red] {exc}")
@@ -576,7 +454,10 @@ async def study_explain(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             cards = await get_failed_review_cards(
-                container.db, resolved_id, topic=topic, limit=count,
+                container.db,
+                resolved_id,
+                topic=topic,
+                limit=count,
             )
 
             if not cards:
@@ -698,9 +579,7 @@ async def study_export(
 async def study_due(
     module_id: Annotated[
         str | None,
-        cyclopts.Parameter(
-            help="Module ID, course number (186.813), or name. Omit for all."
-        ),
+        cyclopts.Parameter(help="Module ID, course number (186.813), or name. Omit for all."),
     ] = None,
 ) -> None:
     """Show topics due for spaced review and upcoming reviews."""

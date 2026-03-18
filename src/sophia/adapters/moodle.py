@@ -291,8 +291,7 @@ class MoodleAdapter:
         tasks = [asyncio.ensure_future(self._enrich_resource_module(m)) for m in modules]
         result = await _gather_enrichments(tasks, modules, "resource")
         enriched = sum(
-            1 for original, updated in zip(modules, result, strict=True)
-            if updated is not original
+            1 for original, updated in zip(modules, result, strict=True) if updated is not original
         )
         log.info(
             "resource_enrichment_complete",
@@ -308,8 +307,7 @@ class MoodleAdapter:
         tasks = [asyncio.ensure_future(self._enrich_url_module(m)) for m in modules]
         result = await _gather_enrichments(tasks, modules, "url")
         enriched = sum(
-            1 for original, updated in zip(modules, result, strict=True)
-            if updated is not original
+            1 for original, updated in zip(modules, result, strict=True) if updated is not original
         )
         log.info(
             "url_enrichment_complete",

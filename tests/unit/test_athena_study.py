@@ -291,9 +291,7 @@ async def test_extract_topics_force_replaces_cached(
     assert len(result) == 1
     assert result[0].topic == "Neues Thema"
     # Old stale topic must be gone
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Old Topic'"
-    )
+    cursor = await db.execute("SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Old Topic'")
     row = await cursor.fetchone()
     assert row is not None
     assert row[0] == 0

@@ -25,9 +25,7 @@ class EpisodeStatus:
     index_status: str | None
 
 
-async def discard_episode(
-    db: aiosqlite.Connection, module_id: int, episode_id: str
-) -> bool:
+async def discard_episode(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
     """Mark an episode as discarded. Returns True if updated, False if not found."""
     cursor = await db.execute(
         """UPDATE lecture_downloads SET status = 'discarded'
@@ -42,9 +40,7 @@ async def discard_episode(
     return updated
 
 
-async def restore_episode(
-    db: aiosqlite.Connection, module_id: int, episode_id: str
-) -> bool:
+async def restore_episode(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
     """Restore a discarded episode back to queued. Returns True if restored."""
     cursor = await db.execute(
         """UPDATE lecture_downloads SET status = 'queued'
@@ -58,9 +54,7 @@ async def restore_episode(
     return restored
 
 
-async def get_pipeline_status(
-    db: aiosqlite.Connection, module_id: int
-) -> list[EpisodeStatus]:
+async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Query per-episode pipeline state for a module."""
     cursor = await db.execute(
         """SELECT

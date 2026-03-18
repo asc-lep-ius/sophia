@@ -57,9 +57,7 @@ async def run_migrations(db: aiosqlite.Connection) -> None:
                         statement = statement.strip()
                         if statement:
                             await db.execute(statement)
-                    await db.execute(
-                        "INSERT INTO schema_version (version) VALUES (?)", (version,)
-                    )
+                    await db.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
                     log.info("migration_applied", version=version, file=sql_file.name)
                 except Exception:
                     log.error(

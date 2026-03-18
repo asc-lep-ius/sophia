@@ -40,8 +40,7 @@ async def _insert_transcription(
     db: aiosqlite.Connection, *, episode_id: str, module_id: int, status: str = "completed"
 ) -> None:
     await db.execute(
-        "INSERT INTO transcriptions (episode_id, module_id, status)"
-        " VALUES (?, ?, ?)",
+        "INSERT INTO transcriptions (episode_id, module_id, status) VALUES (?, ?, ?)",
         (episode_id, module_id, status),
     )
     await db.commit()
@@ -51,8 +50,7 @@ async def _insert_knowledge_index(
     db: aiosqlite.Connection, *, episode_id: str, module_id: int, status: str = "completed"
 ) -> None:
     await db.execute(
-        "INSERT INTO knowledge_index (episode_id, module_id, status)"
-        " VALUES (?, ?, ?)",
+        "INSERT INTO knowledge_index (episode_id, module_id, status) VALUES (?, ?, ?)",
         (episode_id, module_id, status),
     )
     await db.commit()
@@ -83,8 +81,7 @@ async def _insert_review(
     next_review_at: str,
 ) -> None:
     await db.execute(
-        "INSERT INTO review_schedule (topic, course_id, next_review_at)"
-        " VALUES (?, ?, ?)",
+        "INSERT INTO review_schedule (topic, course_id, next_review_at) VALUES (?, ?, ?)",
         (topic, course_id, next_review_at),
     )
     await db.commit()

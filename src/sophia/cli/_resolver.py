@@ -67,15 +67,14 @@ async def _resolve_by_course_number(
     return await _get_opencast_module(matches[0], moodle)
 
 
-async def _resolve_by_name(
-    fragment: str, courses: list[Course], moodle: MoodleAdapter
-) -> int:
+async def _resolve_by_name(fragment: str, courses: list[Course], moodle: MoodleAdapter) -> int:
     """Match fragment against enrolled course names and shortnames."""
     fragment_lower = fragment.lower()
 
     # Exact substring match in fullname or shortname
     exact = [
-        c for c in courses
+        c
+        for c in courses
         if fragment_lower in c.fullname.lower() or fragment_lower in c.shortname.lower()
     ]
     if len(exact) == 1:
@@ -86,10 +85,13 @@ async def _resolve_by_name(
 
     # Fuzzy match against fullname + shortname
     scored = [
-        (c, max(
-            SequenceMatcher(None, fragment_lower, c.fullname.lower()).ratio(),
-            SequenceMatcher(None, fragment_lower, c.shortname.lower()).ratio(),
-        ))
+        (
+            c,
+            max(
+                SequenceMatcher(None, fragment_lower, c.fullname.lower()).ratio(),
+                SequenceMatcher(None, fragment_lower, c.shortname.lower()).ratio(),
+            ),
+        )
         for c in courses
     ]
     scored.sort(key=lambda x: x[1], reverse=True)

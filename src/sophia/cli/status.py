@@ -50,16 +50,16 @@ def register_status(app: cyclopts.App) -> None:
         table.add_column("Next Review", justify="center")
 
         for row in data:
-            due = int(row["due_today"])
+            due = int(row["due_today"] or 0)
             due_cell = f"[red bold]{due}[/red bold]" if due > 0 else "[dim]0[/dim]"
             next_rev = (str(row["next_review"]) if row["next_review"] else "—")[:10]
-            total = int(row["total_lectures"])
+            total = int(row["total_lectures"] or 0)
 
             table.add_row(
                 str(row["module_id"]),
                 f"{row['downloaded']}/{total}",
-                _frac_cell(int(row["transcribed"]), total),
-                _frac_cell(int(row["indexed"]), total),
+                _frac_cell(int(row["transcribed"] or 0), total),
+                _frac_cell(int(row["indexed"] or 0), total),
                 str(row["topics"]),
                 str(row["flashcards"]),
                 due_cell,
@@ -80,7 +80,7 @@ def _frac_cell(count: int, total: int) -> str:
     return f"[yellow]{count}/{total}[/yellow]"
 
 
-async def _fetch_course_stats(db: aiosqlite.Connection) -> list[dict[str, object]]:
+async def _fetch_course_stats(db: aiosqlite.Connection) -> list[dict[str, int | str | None]]:
     """Aggregate per-module stats from the DB in two queries."""
     cursor = await db.execute(
         "SELECT"
@@ -119,9 +119,9 @@ async def _fetch_course_stats(db: aiosqlite.Connection) -> list[dict[str, object
         int(row[0]): (int(row[1]), row[2]) for row in await cursor.fetchall()
     }
 
-    result: list[dict[str, object]] = []
+    result: list[dict[str, int | str | None]] = []
     for raw in primary_rows:
-        record: dict[str, object] = dict(zip(cols, raw, strict=True))
+        record: dict[str, int | str | None] = dict(zip(cols, raw, strict=True))
         module_id = int(record["module_id"])
         due, next_rev = review_map.get(module_id, (0, None))
         record["due_today"] = due

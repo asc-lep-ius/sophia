@@ -161,12 +161,8 @@ class TestChromaKnowledgeStore:
         count = store.delete_episode("ep-001")
 
         assert count == 3
-        mock_collection.get.assert_called_once_with(
-            where={"episode_id": "ep-001"}, include=[]
-        )
-        mock_collection.delete.assert_called_once_with(
-            ids=["ep-001_0", "ep-001_1", "ep-001_2"]
-        )
+        mock_collection.get.assert_called_once_with(where={"episode_id": "ep-001"}, include=[])
+        mock_collection.delete.assert_called_once_with(ids=["ep-001_0", "ep-001_1", "ep-001_2"])
 
     def test_delete_episode_returns_zero_for_nonexistent(self, tmp_path: Path) -> None:
         from sophia.adapters.knowledge_store import ChromaKnowledgeStore

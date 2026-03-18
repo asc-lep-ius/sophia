@@ -52,9 +52,7 @@ async def run_pipeline(
 
     log.info("pipeline_start", module_id=module_id)
 
-    result.downloads = await download_lectures(
-        app, module_id, on_progress=on_download_progress
-    )
+    result.downloads = await download_lectures(app, module_id, on_progress=on_download_progress)
 
     result.transcriptions = await transcribe_lectures(
         app, module_id, on_start=on_transcribe_start, on_complete=on_transcribe_complete

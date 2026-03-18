@@ -218,7 +218,6 @@ class TestLLMTopicExtractor:
         call_kwargs = mock_cls.call_args[1]
         assert "localhost:11434" in call_kwargs["base_url"]
 
-
     def test_system_prompt_requires_content_language(self) -> None:
         """_SYSTEM_PROMPT must instruct the LLM to match the content language."""
         from sophia.adapters.topic_extractor import (

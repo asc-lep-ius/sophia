@@ -106,9 +106,7 @@ async def test_pipeline_calls_stages_in_order() -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
-        patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics
-        ),
+        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
     ):
         await run_pipeline(container, module_id=42)
 

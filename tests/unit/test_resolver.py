@@ -71,8 +71,10 @@ def _mock_moodle(
     mock.get_enrolled_courses.return_value = courses or _make_courses()
 
     if content_map:
+
         async def _get_content(course_id: int) -> list[CourseSection]:
             return content_map.get(course_id, _no_opencast_section())
+
         mock.get_course_content.side_effect = _get_content
     else:
         mock.get_course_content.return_value = _opencast_section()

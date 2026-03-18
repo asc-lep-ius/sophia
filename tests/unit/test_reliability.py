@@ -222,9 +222,7 @@ class TestEmbedderCaching:
 
         fake_config = MagicMock()
 
-        with patch(
-            "sophia.adapters.embedder.SentenceTransformerEmbedder"
-        ) as mock_cls:
+        with patch("sophia.adapters.embedder.SentenceTransformerEmbedder") as mock_cls:
             mock_cls.return_value = MagicMock(name="embedder_instance")
 
             first = _get_or_create_embedder(fake_config)
@@ -239,9 +237,7 @@ class TestEmbedderCaching:
 
         fake_config = MagicMock()
 
-        with patch(
-            "sophia.adapters.embedder.SentenceTransformerEmbedder"
-        ) as mock_cls:
+        with patch("sophia.adapters.embedder.SentenceTransformerEmbedder") as mock_cls:
             mock_cls.return_value = MagicMock(name="instance_a")
             first = _get_or_create_embedder(fake_config)
 
@@ -273,9 +269,7 @@ class TestStoreCaching:
 
         fake_settings = MagicMock()
 
-        with patch(
-            "sophia.adapters.knowledge_store.ChromaKnowledgeStore"
-        ) as mock_cls:
+        with patch("sophia.adapters.knowledge_store.ChromaKnowledgeStore") as mock_cls:
             mock_cls.return_value = MagicMock(name="store_instance")
 
             first = _get_or_create_store(fake_settings)
@@ -290,9 +284,7 @@ class TestStoreCaching:
 
         fake_settings = MagicMock()
 
-        with patch(
-            "sophia.adapters.knowledge_store.ChromaKnowledgeStore"
-        ) as mock_cls:
+        with patch("sophia.adapters.knowledge_store.ChromaKnowledgeStore") as mock_cls:
             mock_cls.return_value = MagicMock(name="store_a")
             first = _get_or_create_store(fake_settings)
 

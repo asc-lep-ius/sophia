@@ -92,9 +92,9 @@ class TestDiscardEpisode:
         result = await discard_episode(db, 100, "ep-1")
 
         assert result is True
-        row = await (await db.execute(
-            "SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == DownloadStatus.DISCARDED
 
     async def test_discards_skipped_episode(self, db: aiosqlite.Connection) -> None:
@@ -104,9 +104,9 @@ class TestDiscardEpisode:
         result = await discard_episode(db, 100, "ep-2")
 
         assert result is True
-        row = await (await db.execute(
-            "SELECT status FROM lecture_downloads WHERE episode_id = 'ep-2'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-2'")
+        ).fetchone()
         assert row[0] == DownloadStatus.DISCARDED
 
     async def test_discards_failed_episode(self, db: aiosqlite.Connection) -> None:
@@ -116,22 +116,18 @@ class TestDiscardEpisode:
         result = await discard_episode(db, 100, "ep-3")
 
         assert result is True
-        row = await (await db.execute(
-            "SELECT status FROM lecture_downloads WHERE episode_id = 'ep-3'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-3'")
+        ).fetchone()
         assert row[0] == DownloadStatus.DISCARDED
 
-    async def test_returns_false_for_nonexistent_episode(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_false_for_nonexistent_episode(self, db: aiosqlite.Connection) -> None:
         from sophia.services.hermes_manage import discard_episode
 
         result = await discard_episode(db, 100, "no-such-ep")
         assert result is False
 
-    async def test_returns_false_for_wrong_module(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_false_for_wrong_module(self, db: aiosqlite.Connection) -> None:
         from sophia.services.hermes_manage import discard_episode
 
         await _insert_download(db, "ep-1", 100, status="completed")
@@ -152,23 +148,19 @@ class TestRestoreEpisode:
         result = await restore_episode(db, 100, "ep-1")
 
         assert result is True
-        row = await (await db.execute(
-            "SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == DownloadStatus.QUEUED
 
-    async def test_returns_false_for_non_discarded_episode(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_false_for_non_discarded_episode(self, db: aiosqlite.Connection) -> None:
         from sophia.services.hermes_manage import restore_episode
 
         await _insert_download(db, "ep-1", 100, status="completed")
         result = await restore_episode(db, 100, "ep-1")
         assert result is False
 
-    async def test_returns_false_for_nonexistent_episode(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_false_for_nonexistent_episode(self, db: aiosqlite.Connection) -> None:
         from sophia.services.hermes_manage import restore_episode
 
         result = await restore_episode(db, 100, "no-such-ep")
@@ -286,25 +278,25 @@ class TestPurgeEpisode:
         assert store.deleted == ["ep-1"]
 
         # Download record preserved
-        row = await (await db.execute(
-            "SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row is not None
 
         # Transcription data removed
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == 0
 
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == 0
 
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == 0
 
     async def test_purge_nonexistent_episode(self, db: aiosqlite.Connection) -> None:
@@ -334,14 +326,12 @@ class TestPurgeEpisode:
         assert result.knowledge_index == 0
 
         # Download record still present
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM lecture_downloads WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == 1
 
-    async def test_purge_wrong_module_id_returns_zeros(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_purge_wrong_module_id_returns_zeros(self, db: aiosqlite.Connection) -> None:
         """Purge with a module_id that doesn't own the episode does nothing."""
         from sophia.services.hermes_manage import purge_episode
 
@@ -360,14 +350,12 @@ class TestPurgeEpisode:
         assert store.deleted == []
 
         # All data for module 100 untouched
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'")
+        ).fetchone()
         assert row[0] == 3
 
-    async def test_purge_scoped_to_module(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_purge_scoped_to_module(self, db: aiosqlite.Connection) -> None:
         """Purging module 100's episode doesn't affect module 200's data."""
         from sophia.services.hermes_manage import purge_episode
 
@@ -388,17 +376,21 @@ class TestPurgeEpisode:
         assert result.knowledge_index == 1
 
         # Module 200's records untouched
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-2' AND module_id = 200"
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-2' AND module_id = 200"
+            )
+        ).fetchone()
         assert row[0] == 1
 
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-2' AND module_id = 200"
-        )).fetchone()
+        row = await (
+            await db.execute(
+                "SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-2' AND module_id = 200"
+            )
+        ).fetchone()
         assert row[0] == 1
 
-        row = await (await db.execute(
-            "SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-2'"
-        )).fetchone()
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-2'")
+        ).fetchone()
         assert row[0] == 4
