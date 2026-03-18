@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from asyncio import sleep as asyncio_sleep
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -250,15 +251,6 @@ async def _run_posttest(
     console.print(
         f"\n  Post-test score: [bold]{post_score:.0%}[/bold] ({post_correct}/{len(post_qs)})"
     )
-
-    improvement = post_score - pre_score
-    if improvement > 0:
-        console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
-    elif improvement < 0:
-        console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
-    else:
-        console.print("\n  [dim]➡ No change in score.[/dim]")
-
     return post_score
 
 
@@ -282,11 +274,38 @@ async def _run_flashcard_phase(
             console.print("[dim]Skipped — empty flashcard.[/dim]")
 
 
+async def _run_reflection(console: Console, delay_seconds: int) -> None:
+    """Show reflection prompt and countdown before revealing results."""
+    if delay_seconds <= 0:
+        return
+    console.print(
+        "\n[bold cyan]Before seeing your results, take a moment to reflect:[/bold cyan]"
+    )
+    console.print("  - Which questions felt hardest?")
+    console.print("  - Where were you most uncertain?")
+    console.print("  - What concepts do you want to review?\n")
+
+    from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+
+    with Progress(
+        TextColumn("[bold blue]Reflecting..."),
+        BarColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("reflect", total=delay_seconds)
+        for _ in range(delay_seconds):
+            await asyncio_sleep(1)
+            progress.advance(task, 1)
+
+
 async def run_interactive_session(
     app: AppContainer,
     course_id: int,
     topic: str,
     console: Console,
+    *,
+    feedback_delay: int = 30,
 ) -> None:
     """Run the 4-phase interactive study loop: pre-test → study → post-test → flashcard.
 
@@ -311,6 +330,16 @@ async def run_interactive_session(
         return
 
     post_score = await _run_posttest(app, course_id, topic, console, pre_qs, pre_score)
+
+    await _run_reflection(console, feedback_delay)
+
+    improvement = post_score - pre_score
+    if improvement > 0:
+        console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
+    elif improvement < 0:
+        console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
+    else:
+        console.print("\n  [dim]➡ No change in score.[/dim]")
 
     await complete_study_session(app.db, session.id, pre_score, post_score)
 

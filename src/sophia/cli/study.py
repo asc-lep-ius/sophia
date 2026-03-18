@@ -267,6 +267,13 @@ async def study_session(
     topic: Annotated[
         str | None, cyclopts.Parameter(help="Topic to study. Defaults to weakest.")
     ] = None,
+    feedback_delay: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--feedback-delay",
+            help="Seconds to reflect before seeing results (0 to disable)",
+        ),
+    ] = 30,
 ) -> None:
     """Guided study: pre-test → lecture review → post-test → flashcard creation."""
     import structlog
@@ -307,7 +314,9 @@ async def study_session(
 
             console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
 
-            await run_interactive_session(container, resolved_id, topic, console)
+            await run_interactive_session(
+                container, resolved_id, topic, console, feedback_delay=feedback_delay,
+            )
 
             console.print("\n[bold green]✅ Study session complete![/bold green]")
             console.print("\n[dim]Next:[/dim] [cyan]sophia study review <module-id> [topic][/cyan]")
