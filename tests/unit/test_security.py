@@ -444,6 +444,80 @@ class TestPDFSizeLimit:
             assert result.id == module.id
 
 
+class TestMigrationFailureSafety:
+    """Verify migration rollback and error logging on SQL failure."""
+
+    @pytest.mark.asyncio
+    async def test_migration_failure_rollback(self, tmp_path: Path) -> None:
+        """Broken SQL migration must rollback — schema_version stays clean."""
+        import aiosqlite
+
+        from sophia.infra.persistence import run_migrations
+
+        migrations_dir = tmp_path / "migrations"
+        migrations_dir.mkdir()
+
+        good_sql = "CREATE TABLE test_table (id INTEGER PRIMARY KEY, name TEXT)"
+        (migrations_dir / "001_good.sql").write_text(good_sql)
+
+        bad_sql = "CREATE TABLE another (id INTEGER);\nINVALID SQL GARBAGE HERE"
+        (migrations_dir / "002_bad.sql").write_text(bad_sql)
+
+        db_path = tmp_path / "test.db"
+        db = await aiosqlite.connect(db_path)
+
+        with (
+            patch("sophia.infra.persistence.Path") as mock_path_cls,
+            pytest.raises(Exception),  # noqa: B017, PT011
+        ):
+            mock_path_cls.return_value.parent.__truediv__.return_value = migrations_dir
+            await run_migrations(db)
+
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
+        )
+        row = await cursor.fetchone()
+        if row:
+            cursor = await db.execute("SELECT COALESCE(MAX(version), 0) FROM schema_version")
+            row = await cursor.fetchone()
+            assert row is not None
+            assert row[0] == 0, "No migration version should be recorded after failure"
+
+        await db.close()
+
+    @pytest.mark.asyncio
+    async def test_migration_logs_failed_sql(self, tmp_path: Path) -> None:
+        """Error log must include file name and SQL snippet on failure."""
+        import aiosqlite
+
+        from sophia.infra.persistence import run_migrations
+
+        migrations_dir = tmp_path / "migrations"
+        migrations_dir.mkdir()
+
+        bad_sql = "INVALID SQL STATEMENT"
+        (migrations_dir / "001_broken.sql").write_text(bad_sql)
+
+        db_path = tmp_path / "test.db"
+        db = await aiosqlite.connect(db_path)
+
+        with (
+            patch("sophia.infra.persistence.Path") as mock_path_cls,
+            patch("sophia.infra.persistence.log") as mock_log,
+            pytest.raises(Exception),  # noqa: B017, PT011
+        ):
+            mock_path_cls.return_value.parent.__truediv__.return_value = migrations_dir
+            await run_migrations(db)
+
+        mock_log.error.assert_called_once()
+        call_kwargs = mock_log.error.call_args
+        assert call_kwargs[0][0] == "migration_failed"
+        assert call_kwargs[1]["file"] == "001_broken.sql"
+        assert "INVALID SQL STATEMENT" in call_kwargs[1]["sql"]
+
+        await db.close()
+
+
 class TestEnsureDirs:
     """Verify Settings.ensure_dirs creates directories with restrictive permissions."""
 

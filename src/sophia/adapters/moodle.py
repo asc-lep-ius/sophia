@@ -252,14 +252,38 @@ class MoodleAdapter:
     async def _enrich_resource_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        return list(
+        result = list(
             await asyncio.gather(*(self._enrich_resource_module(module) for module in modules))
         )
+        enriched = sum(
+            1 for original, updated in zip(modules, result, strict=True)
+            if updated is not original
+        )
+        log.info(
+            "resource_enrichment_complete",
+            total=len(modules),
+            enriched=enriched,
+            skipped=len(modules) - enriched,
+        )
+        return result
 
     async def _enrich_url_modules(self, modules: list[ModuleInfo]) -> list[ModuleInfo]:
         if not modules:
             return []
-        return list(await asyncio.gather(*(self._enrich_url_module(module) for module in modules)))
+        result = list(
+            await asyncio.gather(*(self._enrich_url_module(module) for module in modules))
+        )
+        enriched = sum(
+            1 for original, updated in zip(modules, result, strict=True)
+            if updated is not original
+        )
+        log.info(
+            "url_enrichment_complete",
+            total=len(modules),
+            enriched=enriched,
+            skipped=len(modules) - enriched,
+        )
+        return result
 
     async def _enrich_url_module(self, module: ModuleInfo) -> ModuleInfo:
         if not module.url:
@@ -271,7 +295,7 @@ class MoodleAdapter:
         except AuthError:
             raise
         except Exception as exc:  # noqa: BLE001
-            log.debug("url_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            log.warning("url_module_enrichment_skipped", module_id=module.id, error=str(exc))
             return module
 
         if not target_url:
@@ -300,7 +324,7 @@ class MoodleAdapter:
         except AuthError:
             raise
         except Exception as exc:  # noqa: BLE001
-            log.debug("resource_module_enrichment_skipped", module_id=module.id, error=str(exc))
+            log.warning("resource_module_enrichment_skipped", module_id=module.id, error=str(exc))
             return module
 
         if not file_url:
