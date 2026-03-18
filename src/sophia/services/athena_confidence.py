@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from sophia.domain.models import ConfidenceRating
+from sophia.domain.models import ConfidenceRating, DifficultyLevel
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -18,6 +18,17 @@ log = structlog.get_logger()
 
 CONFIDENCE_SCALE_MIN = 1
 CONFIDENCE_SCALE_MAX = 5
+
+
+def get_topic_difficulty_level(confidence_score: float | None) -> DifficultyLevel:
+    """Map a confidence score (0.0-1.0) to a question difficulty level."""
+    if confidence_score is None:
+        return DifficultyLevel.EXPLAIN
+    if confidence_score < 0.4:
+        return DifficultyLevel.CUED
+    if confidence_score > 0.7:
+        return DifficultyLevel.TRANSFER
+    return DifficultyLevel.EXPLAIN
 
 
 def rating_to_score(rating: int) -> float:

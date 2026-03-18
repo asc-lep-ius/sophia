@@ -57,6 +57,14 @@ class DownloadStatus(StrEnum):
     DISCARDED = "discarded"
 
 
+class DifficultyLevel(StrEnum):
+    """Adaptive question difficulty based on confidence."""
+
+    CUED = "cued"
+    EXPLAIN = "explain"
+    TRANSFER = "transfer"
+
+
 class MaterialSource(StrEnum):
     """Origin type of a course material chunk."""
 

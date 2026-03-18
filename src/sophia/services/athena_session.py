@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
+from sophia.services.athena_confidence import get_confidence_ratings, get_topic_difficulty_level
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -141,25 +142,54 @@ def _run_quiz(questions: list[str], console: Console) -> int:
     return correct
 
 
+def _run_quiz_no_skip(questions: list[str], console: Console) -> int:
+    """Run quiz without skip option — generation effect."""
+    from rich.prompt import Confirm, Prompt
+
+    correct = 0
+    for i, q in enumerate(questions, 1):
+        console.print(f"\n  [bold]Q{i}:[/bold] {q}")
+        console.print(
+            "  [dim]Type your best guess — even a wrong attempt strengthens encoding.[/dim]"
+        )
+        answer = Prompt.ask("  Your answer", console=console)
+        while not answer.strip():
+            console.print(
+                "  [yellow]Please type an answer — retrieval attempts strengthen learning.[/yellow]"
+            )
+            answer = Prompt.ask("  Your answer", console=console)
+        if Confirm.ask("  Did you get it right?", default=False, console=console):
+            correct += 1
+    return correct
+
+
 async def _run_pretest(
     app: AppContainer,
     course_id: int,
     topic: str,
     console: Console,
 ) -> tuple[float, list[str]]:
-    """Phase 1: Generate and run pre-test questions."""
+    """Phase 1: Generate and run pre-test questions (no-skip for generation effect)."""
     from rich.status import Status
 
     from sophia.services.athena_study import generate_study_questions
 
     console.rule("[bold blue]Phase 1/4: Pre-Test[/bold blue]")
+
+    # Adaptive difficulty based on latest confidence
+    ratings = await get_confidence_ratings(app.db, course_id)
+    topic_rating = next((r for r in ratings if r.topic == topic), None)
+    difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+
     with Status("Generating pre-test questions…", console=console):
         try:
-            pre_qs = await generate_study_questions(app, course_id, topic, count=_QUESTION_COUNT)
+            pre_qs = await generate_study_questions(
+                app, course_id, topic, count=_QUESTION_COUNT, difficulty=difficulty.value,
+            )
         except TopicExtractionError:
             pre_qs = [_FALLBACK_QUESTION.format(topic=topic)] * _QUESTION_COUNT
 
-    pre_correct = _run_quiz(pre_qs, console)
+    pre_correct = _run_quiz_no_skip(pre_qs, console)
     pre_score = pre_correct / len(pre_qs) if pre_qs else 0.0
     console.print(f"\n  Pre-test score: [bold]{pre_score:.0%}[/bold] ({pre_correct}/{len(pre_qs)})")
     return pre_score, pre_qs
@@ -201,9 +231,17 @@ async def _run_posttest(
     from sophia.services.athena_study import generate_study_questions
 
     console.rule("[bold yellow]Phase 3/4: Post-Test[/bold yellow]")
+
+    # Adaptive difficulty based on latest confidence
+    ratings = await get_confidence_ratings(app.db, course_id)
+    topic_rating = next((r for r in ratings if r.topic == topic), None)
+    difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+
     with Status("Generating post-test questions…", console=console):
         try:
-            post_qs = await generate_study_questions(app, course_id, topic, count=_QUESTION_COUNT)
+            post_qs = await generate_study_questions(
+                app, course_id, topic, count=_QUESTION_COUNT, difficulty=difficulty.value,
+            )
         except TopicExtractionError:
             post_qs = pre_qs
 
