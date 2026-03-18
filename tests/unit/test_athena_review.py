@@ -100,7 +100,8 @@ class TestCompleteReview:
         await schedule_review(db, "Sorting", course_id=42)
         result = await complete_review(db, "Sorting", course_id=42, score=0.9)
 
-        assert result.interval_index == 1
+        assert result.stability > 1.0  # FSRS: high score increases stability
+        assert result.review_count == 1
         assert result.score_at_last_review == pytest.approx(0.9)  # pyright: ignore[reportUnknownMemberType]
         assert result.last_reviewed_at is not None
 
