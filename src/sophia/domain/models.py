@@ -559,6 +559,7 @@ class LectureSearchResult(BaseModel, frozen=True):
     start_time: float
     end_time: float
     score: float
+    source: str = "lecture"
 
 
 # ---------------------------------------------------------------------------

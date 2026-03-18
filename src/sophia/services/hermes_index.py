@@ -244,6 +244,7 @@ async def search_lectures(
     query: str,
     *,
     n_results: int = 5,
+    source_filter: str | None = None,
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
@@ -261,8 +262,13 @@ async def search_lectures(
     store = _create_store(app)
 
     query_embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
+    effective_filter = source_filter if source_filter and source_filter != "all" else None
     search_results = await asyncio.to_thread(
-        store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
+        store.search,
+        query_embedding,
+        n_results=n_results,
+        episode_ids=episode_ids,
+        source_filter=effective_filter,
     )
 
     if not search_results:
@@ -276,6 +282,7 @@ async def search_lectures(
             start_time=chunk.start_time,
             end_time=chunk.end_time,
             score=score,
+            source=chunk.source,
         )
         for chunk, score in search_results
     ]

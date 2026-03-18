@@ -234,9 +234,7 @@ class TestExportLectureScopedDeck:
         from sophia.services.athena_export import export_anki_deck
 
         output = tmp_path / "scoped.apkg"
-        count = await export_anki_deck(
-            db, course_id=course, output_path=output, episode_id="ep-10"
-        )
+        count = await export_anki_deck(db, course_id=course, output_path=output, episode_id="ep-10")
 
         assert count == 2  # only the two "Sorting" cards
 
@@ -258,9 +256,7 @@ class TestExportLectureScopedDeck:
         from sophia.services.athena_export import export_anki_deck
 
         output = tmp_path / "no-dup.apkg"
-        count = await export_anki_deck(
-            db, course_id=course, output_path=output, episode_id="ep-10"
-        )
+        count = await export_anki_deck(db, course_id=course, output_path=output, episode_id="ep-10")
 
         assert count == 1
 
@@ -279,9 +275,7 @@ class TestExportLectureScopedEmpty:
         from sophia.services.athena_export import export_anki_deck
 
         output = tmp_path / "empty-ep.apkg"
-        count = await export_anki_deck(
-            db, course_id=course, output_path=output, episode_id="ep-99"
-        )
+        count = await export_anki_deck(db, course_id=course, output_path=output, episode_id="ep-99")
 
         assert count == 0
         assert not output.exists()

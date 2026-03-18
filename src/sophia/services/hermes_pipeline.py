@@ -29,12 +29,15 @@ class PipelineResult:
     transcriptions: list[TranscriptionResult] = field(default_factory=lambda: [])
     indexing: list[IndexingResult] = field(default_factory=lambda: [])
     topics: list[TopicMapping] = field(default_factory=lambda: [])
+    material_chunks: int = 0
 
 
 async def run_pipeline(
     app: AppContainer,
     module_id: int,
     *,
+    index_materials: bool = False,
+    course_id: int | None = None,
     on_download_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
     on_transcribe_start: Callable[[str, str], None] | None = None,
     on_transcribe_complete: Callable[[str, int], None] | None = None,
@@ -65,6 +68,11 @@ async def run_pipeline(
     result.topics = await extract_topics_from_lectures(
         app, module_id, on_progress=on_topic_progress, force=True
     )
+
+    if index_materials and course_id is not None:
+        from sophia.services.material_index import index_materials as _index_materials
+
+        result.material_chunks = await _index_materials(app, course_id)
 
     log.info(
         "pipeline_complete",
