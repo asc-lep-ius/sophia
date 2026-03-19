@@ -72,8 +72,19 @@ docker-build:
   tags: [ubuntu-desktop-1]
   services:
     - docker:dind
+  variables:
+    # Disable TLS so dind listens on 2375 and the client can reach it
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
   script:
-    - docker compose build
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE:latest .
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+        docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
+        docker push $CI_REGISTRY_IMAGE:latest
+        echo "Published $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
+      fi
   rules:
     - changes:
         - Dockerfile
