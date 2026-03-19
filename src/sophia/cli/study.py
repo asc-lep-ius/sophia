@@ -324,7 +324,6 @@ async def study_session(
                 await run_interleaved_session(
                     container,
                     resolved_id,
-                    resolved_id,
                     console=console,
                     feedback_delay=feedback_delay,
                 )

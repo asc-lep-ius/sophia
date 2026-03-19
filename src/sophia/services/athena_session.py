@@ -233,7 +233,6 @@ async def _run_posttest(
     topic: str,
     console: Console,
     pre_qs: list[str],
-    pre_score: float,
 ) -> float:
     """Phase 3: Generate and run post-test, show improvement."""
     from rich.status import Status
@@ -340,7 +339,7 @@ async def run_interactive_session(
         console.print("[dim]Session saved with pre-test only.[/dim]")
         return
 
-    post_score = await _run_posttest(app, course_id, topic, console, pre_qs, pre_score)
+    post_score = await _run_posttest(app, course_id, topic, console, pre_qs)
 
     await _run_reflection(console, feedback_delay)
 
@@ -406,7 +405,6 @@ async def _select_interleave_topics(
 async def run_interleaved_session(
     app: AppContainer,
     course_id: int,
-    module_id: int,
     *,
     console: Console | None = None,
     feedback_delay: int = 30,
@@ -449,9 +447,14 @@ async def run_interleaved_session(
     pre_qs: dict[str, list[str]] = {}
     pre_scores: dict[str, float] = {}
     all_pre_qs: list[str] = []
+    ratings = await get_confidence_ratings(app.db, course_id)
     for t in topics:
+        topic_rating = next((r for r in ratings if r.topic == t), None)
+        difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
         try:
-            qs = await generate_study_questions(app, course_id, t, count=1)
+            qs = await generate_study_questions(
+                app, course_id, t, count=1, difficulty=difficulty.value
+            )
         except TopicExtractionError:
             qs = [_FALLBACK_QUESTION.format(topic=t)]
         pre_qs[t] = qs
@@ -481,8 +484,12 @@ async def run_interleaved_session(
     console.rule("[bold yellow]Phase 3/4: Post-Test (interleaved)[/bold yellow]")
     all_post_qs: list[str] = []
     for t in topics:
+        topic_rating = next((r for r in ratings if r.topic == t), None)
+        difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
         try:
-            qs = await generate_study_questions(app, course_id, t, count=1)
+            qs = await generate_study_questions(
+                app, course_id, t, count=1, difficulty=difficulty.value
+            )
         except TopicExtractionError:
             qs = pre_qs.get(t, [_FALLBACK_QUESTION.format(topic=t)])
         all_post_qs.extend(qs)

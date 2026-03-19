@@ -20,25 +20,10 @@ FSRS_DEFAULT_DIFFICULTY = 0.3
 FSRS_DEFAULT_STABILITY = 1.0
 
 
-def compute_next_interval(current_index: int, score: float) -> int:
-    """Compute the next interval index based on review score.
-
-    Score >= 0.8: advance to next interval
-    Score 0.5-0.8: repeat current interval
-    Score < 0.5: reset to first interval
-    """
-    if score >= 0.8:
-        return min(current_index + 1, len(REVIEW_INTERVALS) - 1)
-    if score >= 0.5:
-        return current_index
-    return 0
-
-
 def compute_fsrs_interval(
     difficulty: float,
     stability: float,
     score: float,
-    review_count: int,
 ) -> tuple[float, float, int]:
     """Compute next FSRS parameters.
 
@@ -52,6 +37,7 @@ def compute_fsrs_interval(
     else:
         new_stability = max(0.5, stability * 0.3)
 
+    new_stability = min(new_stability, 365.0)
     interval_days = max(1, round(new_stability))
     return (new_difficulty, new_stability, interval_days)
 
@@ -128,7 +114,7 @@ async def complete_review(
     review_count = row[3] if row and row[3] is not None else 0
 
     new_difficulty, new_stability, interval_days = compute_fsrs_interval(
-        difficulty, stability, score, review_count
+        difficulty, stability, score
     )
     new_review_count = review_count + 1
     new_index = _map_interval_to_index(interval_days)

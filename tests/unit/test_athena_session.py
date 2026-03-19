@@ -146,7 +146,7 @@ class TestSessionWiring:
             app.db = MagicMock()
             console = MagicMock()
 
-            await _run_posttest(app, 42, "Algebra", console, ["Q1"], 0.5)
+            await _run_posttest(app, 42, "Algebra", console, ["Q1"])
 
         mock_skip.assert_called_once()
         mock_no_skip.assert_not_called()
@@ -380,6 +380,11 @@ class TestInterleavedSession:
                 return_value=["Algebra", "Calculus", "Stats"],
             ),
             patch(
+                "sophia.services.athena_session.get_confidence_ratings",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
                 "sophia.services.athena_study.generate_study_questions",
                 side_effect=fake_gen,
             ),
@@ -414,7 +419,7 @@ class TestInterleavedSession:
                 new_callable=AsyncMock,
             ),
         ):
-            await run_interleaved_session(app, 1, 1, console=console)
+            await run_interleaved_session(app, 1, console=console)
 
         # Questions generated for each of the 3 topics (pre + post = 6 calls)
         assert set(gen_calls) == {"Algebra", "Calculus", "Stats"}
