@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -18,6 +19,9 @@ from sophia.infra.http import (
     _is_private_ip,  # pyright: ignore[reportPrivateUsage]
     _validate_redirect,  # pyright: ignore[reportPrivateUsage]
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 
 class TestShellCommandSplitting:
@@ -363,9 +367,9 @@ class TestDownloadSizeLimits:
 
         chunk = b"x" * (512 * 1024)  # 512 KiB chunks
 
-        async def fake_chunks(chunk_size: int = 65536) -> None:  # noqa: ARG001
+        async def fake_chunks(chunk_size: int = 65536) -> AsyncGenerator[bytes, None]:  # noqa: ARG001
             for _ in range(20):
-                yield chunk  # type: ignore[misc]
+                yield chunk
 
         mock_response = AsyncMock()
         mock_response.status_code = 200

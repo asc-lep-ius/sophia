@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -84,19 +85,19 @@ async def test_pipeline_calls_stages_in_order() -> None:
 
     call_order: list[str] = []
 
-    async def _download(*a, **kw):
+    async def _download(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("download")
         return [_make_download()]
 
-    async def _transcribe(*a, **kw):
+    async def _transcribe(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("transcribe")
         return [_make_transcription()]
 
-    async def _index(*a, **kw):
+    async def _index(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("index")
         return [_make_indexing()]
 
-    async def _topics(*a, **kw):
+    async def _topics(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("topics")
         return [_make_topic()]
 

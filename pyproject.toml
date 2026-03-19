@@ -83,6 +83,8 @@ typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 include = ["src", "tests"]
+# Tests legitimately access private helpers for white-box testing
+reportPrivateUsage = "warning"
 
 [tool.coverage.run]
 omit = ["src/sophia/__main__.py"]

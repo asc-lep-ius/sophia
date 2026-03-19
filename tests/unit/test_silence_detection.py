@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiosqlite
@@ -66,7 +66,7 @@ _FFMPEG_EDGE_BELOW = (
 def _mock_subprocess(ffprobe_stdout: bytes, ffmpeg_stderr: bytes, returncode: int = 0):
     """Create a side_effect for create_subprocess_exec that handles ffprobe and ffmpeg calls."""
 
-    async def _side_effect(*args, **_kwargs):
+    async def _side_effect(*args: Any, **_kwargs: Any) -> Any:
         mock_proc = AsyncMock()
         mock_proc.returncode = returncode
         if args[0] == "ffprobe":
@@ -95,7 +95,10 @@ async def test_detect_silence_scenarios(
     audio = tmp_path / "lecture.m4a"
     audio.write_bytes(b"\x00" * 100)
 
-    with patch("sophia.adapters.lecture_downloader.asyncio.create_subprocess_exec") as mock_exec:
+    with (
+        patch("sophia.adapters.lecture_downloader.shutil.which", return_value="/usr/bin/ffmpeg"),
+        patch("sophia.adapters.lecture_downloader.asyncio.create_subprocess_exec") as mock_exec,
+    ):
         mock_exec.side_effect = _mock_subprocess(_FFPROBE_DURATION_120, ffmpeg_stderr)
         result = await detect_silence(audio)
 
@@ -204,7 +207,7 @@ async def test_download_marks_silent_episode_as_skipped(
     dest_file = dest_dir / "ep-silent.m4a"
     dest_file.write_bytes(b"\x00" * 100)
 
-    async def _fake_download(*_a, **_kw):
+    async def _fake_download(*_a: Any, **_kw: Any) -> None:
         return
         yield  # noqa: RET504
 
@@ -243,7 +246,7 @@ async def test_download_proceeds_normally_when_not_silent(
     dest_file = dest_dir / "ep-normal.m4a"
     dest_file.write_bytes(b"\x00" * 100)
 
-    async def _fake_download(*_a, **_kw):
+    async def _fake_download(*_a: Any, **_kw: Any) -> None:
         return
         yield  # noqa: RET504
 

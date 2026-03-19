@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -18,6 +18,7 @@ from sophia.adapters.lecture_downloader import (
 from sophia.domain.errors import LectureDownloadError
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
     from pathlib import Path
 
 
@@ -114,7 +115,7 @@ async def test_ffmpeg_silence_timeout(tmp_path: Path) -> None:
 
     call_count = 0
 
-    async def _fake_exec(*args, **kwargs):
+    async def _fake_exec(*args: Any, **kwargs: Any) -> Any:
         nonlocal call_count
         call_count += 1
         return probe_proc if call_count == 1 else silence_proc
@@ -303,7 +304,7 @@ class TestStoreCaching:
 
 
 @contextlib.asynccontextmanager
-async def _async_cm(obj):
+async def _async_cm(obj: Any) -> AsyncGenerator[Any, None]:
     """Wrap an object in a trivial async context manager."""
     yield obj
 
@@ -381,7 +382,7 @@ async def test_create_app_timeout() -> None:
         created_at="2025-01-01T00:00:00+00:00",
     )
 
-    async def _hanging_db(*args, **kwargs):
+    async def _hanging_db(*args: Any, **kwargs: Any) -> None:
         await asyncio.sleep(9999)
 
     mock_http = _async_cm(AsyncMock(spec=httpx.AsyncClient))
@@ -413,7 +414,7 @@ async def test_transcription_timeout() -> None:
     db.commit = AsyncMock()
 
     transcriber = MagicMock()
-    transcriber.transcribe = lambda _path: time.sleep(10)  # blocks, but not forever
+    transcriber.transcribe = lambda _path: time.sleep(10)  # type: ignore[reportUnknownLambdaType]  # blocks, but not forever
 
     with patch("sophia.services.hermes_transcribe._TRANSCRIPTION_TIMEOUT_S", 0.05):
         result = await _transcribe_episode(
@@ -426,4 +427,4 @@ async def test_transcription_timeout() -> None:
         )
 
     assert result.status == "failed"
-    assert "timed out" in result.error
+    assert result.error is not None and "timed out" in result.error

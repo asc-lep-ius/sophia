@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import aiosqlite
 import pytest
 
@@ -13,9 +15,12 @@ from sophia.cli.quickstart import (
 )
 from sophia.infra.persistence import run_migrations
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
 
 @pytest.fixture
-async def db() -> aiosqlite.Connection:
+async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
     conn = await aiosqlite.connect(":memory:")
     await conn.execute("PRAGMA foreign_keys=ON")
     await run_migrations(conn)

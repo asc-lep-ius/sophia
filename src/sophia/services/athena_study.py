@@ -19,12 +19,20 @@ from sophia.domain.models import (
     TopicMapping,
     TopicSource,
 )
-from sophia.services.athena_session import (  # noqa: F401
-    complete_study_session,
-    get_study_sessions,
-    run_interactive_session,
-    save_flashcard,
-    start_study_session,
+from sophia.services.athena_session import (
+    complete_study_session as complete_study_session,
+)
+from sophia.services.athena_session import (
+    get_study_sessions as get_study_sessions,
+)
+from sophia.services.athena_session import (
+    run_interactive_session as run_interactive_session,
+)
+from sophia.services.athena_session import (
+    save_flashcard as save_flashcard,
+)
+from sophia.services.athena_session import (
+    start_study_session as start_study_session,
 )
 from sophia.services.hermes_setup import load_hermes_config
 

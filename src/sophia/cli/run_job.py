@@ -12,7 +12,7 @@ def register_run_job(root_app: cyclopts.App) -> None:
     """Register the hidden _run-job command on the root app."""
 
     @root_app.command(name="_run-job", group=cyclopts.Group("Internal", show=False))
-    async def run_job(job_id: str) -> None:
+    async def run_job(job_id: str) -> None:  # pyright: ignore[reportUnusedFunction]
         """Internal: Execute a scheduled job with auto-relogin. Not for direct use."""
         import shlex
 

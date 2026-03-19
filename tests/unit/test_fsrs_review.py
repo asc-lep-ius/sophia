@@ -17,42 +17,30 @@ from sophia.services.athena_review import compute_fsrs_interval
 
 class TestFSRSPerfectScore:
     def test_increases_stability(self) -> None:
-        _, new_stab, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=1.0, score=1.0
-        )
+        _, new_stab, _ = compute_fsrs_interval(difficulty=0.3, stability=1.0, score=1.0)
         assert new_stab > 1.0
 
     def test_decreases_difficulty(self) -> None:
-        new_diff, _, _ = compute_fsrs_interval(
-            difficulty=0.5, stability=1.0, score=1.0
-        )
+        new_diff, _, _ = compute_fsrs_interval(difficulty=0.5, stability=1.0, score=1.0)
         assert new_diff < 0.5
 
 
 class TestFSRSZeroScore:
     def test_resets_stability(self) -> None:
-        _, new_stab, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=10.0, score=0.0
-        )
+        _, new_stab, _ = compute_fsrs_interval(difficulty=0.3, stability=10.0, score=0.0)
         assert new_stab < 10.0
 
     def test_increases_difficulty(self) -> None:
-        new_diff, _, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=1.0, score=0.0
-        )
+        new_diff, _, _ = compute_fsrs_interval(difficulty=0.3, stability=1.0, score=0.0)
         assert new_diff > 0.3
 
 
 class TestFSRSMediumScore:
     def test_moderate_growth(self) -> None:
-        _, new_stab, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=3.0, score=0.6
-        )
+        _, new_stab, _ = compute_fsrs_interval(difficulty=0.3, stability=3.0, score=0.6)
         assert new_stab > 3.0  # still grows
         # but grows less than a perfect score would
-        _, perfect_stab, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=3.0, score=1.0
-        )
+        _, perfect_stab, _ = compute_fsrs_interval(difficulty=0.3, stability=3.0, score=1.0)
         assert new_stab < perfect_stab
 
 
@@ -61,40 +49,30 @@ class TestFSRSDifficultyClamping:
         """Difficulty never drops below 0.1 even with repeated successes."""
         diff = 0.15
         for _ in range(20):
-            diff, _, _ = compute_fsrs_interval(
-                difficulty=diff, stability=1.0, score=1.0
-            )
+            diff, _, _ = compute_fsrs_interval(difficulty=diff, stability=1.0, score=1.0)
         assert diff >= 0.1
 
     def test_clamped_max(self) -> None:
         """Difficulty never exceeds 1.0 even with repeated failures."""
         diff = 0.9
         for _ in range(20):
-            diff, _, _ = compute_fsrs_interval(
-                difficulty=diff, stability=1.0, score=0.0
-            )
+            diff, _, _ = compute_fsrs_interval(difficulty=diff, stability=1.0, score=0.0)
         assert diff <= 1.0
 
 
 class TestFSRSIntervalConstraints:
     def test_interval_minimum_one_day(self) -> None:
-        _, _, interval = compute_fsrs_interval(
-            difficulty=0.9, stability=0.5, score=0.0
-        )
+        _, _, interval = compute_fsrs_interval(difficulty=0.9, stability=0.5, score=0.0)
         assert interval >= 1
 
     def test_stability_minimum_half(self) -> None:
-        _, new_stab, _ = compute_fsrs_interval(
-            difficulty=0.9, stability=0.5, score=0.0
-        )
+        _, new_stab, _ = compute_fsrs_interval(difficulty=0.9, stability=0.5, score=0.0)
         assert new_stab >= 0.5
 
 
 class TestFSRSDifficultyOnFailure:
     def test_difficulty_increases_on_failure(self) -> None:
-        new_diff, _, _ = compute_fsrs_interval(
-            difficulty=0.3, stability=5.0, score=0.2
-        )
+        new_diff, _, _ = compute_fsrs_interval(difficulty=0.3, stability=5.0, score=0.2)
         assert new_diff > 0.3
 
 
@@ -185,6 +163,6 @@ class TestScheduleReviewInitializesFSRS:
 
         result = await schedule_review(db, "NewTopic", course_id=42)
 
-        assert result.difficulty == pytest.approx(0.3)
-        assert result.stability == pytest.approx(1.0)
+        assert result.difficulty == pytest.approx(0.3)  # type: ignore[reportUnknownMemberType]
+        assert result.stability == pytest.approx(1.0)  # type: ignore[reportUnknownMemberType]
         assert result.review_count == 0

@@ -68,7 +68,7 @@ def handle_cli_error(exc: Exception) -> None:
     raise SystemExit(1)
 
 
-def _current_semester() -> str:
+def current_semester() -> str:
     """Infer current TISS semester from the date (e.g., '2026S' or '2025W')."""
     today = date.today()
     if today.month >= 10 or today.month <= 1:
@@ -77,7 +77,7 @@ def _current_semester() -> str:
     return f"{today.year}S"
 
 
-def _require_tiss_session() -> tuple[Settings, TissSessionCredentials | None]:
+def require_tiss_session() -> tuple[Settings, TissSessionCredentials | None]:
     """Load TISS session or return (settings, None) if not logged in."""
     from sophia.adapters.auth import load_tiss_session, tiss_session_path
     from sophia.config import Settings

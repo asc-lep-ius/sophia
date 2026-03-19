@@ -6,7 +6,7 @@ from typing import Annotated
 
 import cyclopts
 
-from sophia.cli._output import _current_semester, _require_tiss_session, get_console
+from sophia.cli._output import current_semester, get_console, require_tiss_session
 
 app = cyclopts.App(
     name="register",
@@ -40,13 +40,13 @@ async def reg_status(
     from sophia.infra.http import http_session
 
     console = Console()
-    settings, tiss_creds = _require_tiss_session()
+    settings, tiss_creds = require_tiss_session()
     if tiss_creds is None:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
-        semester = _current_semester()
+        semester = current_semester()
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
@@ -80,13 +80,13 @@ async def groups(
     from sophia.infra.http import http_session
 
     console = Console()
-    settings, tiss_creds = _require_tiss_session()
+    settings, tiss_creds = require_tiss_session()
     if tiss_creds is None:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
-        semester = _current_semester()
+        semester = current_semester()
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
@@ -144,13 +144,13 @@ async def favorites(
     from sophia.infra.http import http_session
 
     console = Console()
-    settings, tiss_creds = _require_tiss_session()
+    settings, tiss_creds = require_tiss_session()
     if tiss_creds is None:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
-        semester = _current_semester()
+        semester = current_semester()
 
     async with http_session() as http:
         adapter = TissRegistrationAdapter(
@@ -238,13 +238,13 @@ async def go(
     from sophia.services.registration import register_with_preferences, watch_and_register
 
     console = get_console()
-    settings, tiss_creds = _require_tiss_session()
+    settings, tiss_creds = require_tiss_session()
     if tiss_creds is None:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1)
 
     if not semester:
-        semester = _current_semester()
+        semester = current_semester()
 
     if dry_run:
         console.print("\n[bold]Dry-run registration plan:[/bold]")

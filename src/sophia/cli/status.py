@@ -13,7 +13,7 @@ def register_status(app: cyclopts.App) -> None:
     """Register the 'sophia status' command on *app*."""
 
     @app.command(name="status")
-    async def _status() -> None:
+    async def _status() -> None:  # pyright: ignore[reportUnusedFunction]
         """Show a cross-course overview: lectures, topics, flashcards, and reviews due."""
         from rich.table import Table
 
@@ -122,7 +122,7 @@ async def _fetch_course_stats(db: aiosqlite.Connection) -> list[dict[str, int | 
     result: list[dict[str, int | str | None]] = []
     for raw in primary_rows:
         record: dict[str, int | str | None] = dict(zip(cols, raw, strict=True))
-        module_id = int(record["module_id"])
+        module_id = int(record["module_id"])  # type: ignore[arg-type]
         due, next_rev = review_map.get(module_id, (0, None))
         record["due_today"] = due
         record["next_review"] = next_rev

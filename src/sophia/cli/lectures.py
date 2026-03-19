@@ -665,7 +665,8 @@ async def lectures_transcribe(
                 ")",
                 (resolved_id, resolved_id),
             )
-            (pending_count,) = await cursor.fetchone()
+            _row = await cursor.fetchone()
+            pending_count = int(_row[0]) if _row is not None else 0
 
             with Progress(
                 SpinnerColumn(),
@@ -757,7 +758,8 @@ async def lectures_index(
                 ")",
                 (resolved_id, resolved_id),
             )
-            (pending_count,) = await cursor.fetchone()
+            _row = await cursor.fetchone()
+            pending_count = int(_row[0]) if _row is not None else 0
 
             with Progress(
                 SpinnerColumn(),

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -59,7 +60,7 @@ def _make_material(
     )
 
 
-def _mock_container(*, db_side_effects: list | None = None) -> MagicMock:
+def _mock_container(*, db_side_effects: list[Any] | None = None) -> MagicMock:
     """Build a minimal mock AppContainer."""
     container = MagicMock()
     container.db = AsyncMock()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import aiosqlite
 import pytest
 
@@ -95,6 +97,7 @@ class TestDiscardEpisode:
         row = await (
             await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == DownloadStatus.DISCARDED
 
     async def test_discards_skipped_episode(self, db: aiosqlite.Connection) -> None:
@@ -107,6 +110,7 @@ class TestDiscardEpisode:
         row = await (
             await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-2'")
         ).fetchone()
+        assert row is not None
         assert row[0] == DownloadStatus.DISCARDED
 
     async def test_discards_failed_episode(self, db: aiosqlite.Connection) -> None:
@@ -119,6 +123,7 @@ class TestDiscardEpisode:
         row = await (
             await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-3'")
         ).fetchone()
+        assert row is not None
         assert row[0] == DownloadStatus.DISCARDED
 
     async def test_returns_false_for_nonexistent_episode(self, db: aiosqlite.Connection) -> None:
@@ -151,6 +156,7 @@ class TestRestoreEpisode:
         row = await (
             await db.execute("SELECT status FROM lecture_downloads WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == DownloadStatus.QUEUED
 
     async def test_returns_false_for_non_discarded_episode(self, db: aiosqlite.Connection) -> None:
@@ -254,6 +260,21 @@ class _FakeStore:
         self._chunks = chunks_by_episode or {}
         self.deleted: list[str] = []
 
+    def add_chunks(self, chunks: list[Any], embeddings: list[list[float]]) -> None:  # noqa: ARG002
+        pass
+
+    def search(
+        self,
+        query_embedding: list[float],  # noqa: ARG002
+        *,
+        n_results: int = 5,  # noqa: ARG002
+        episode_ids: list[str] | None = None,  # noqa: ARG002
+    ) -> list[Any]:
+        return []
+
+    def has_episode(self, episode_id: str) -> bool:  # noqa: ARG002
+        return False
+
     def delete_episode(self, episode_id: str) -> int:
         self.deleted.append(episode_id)
         return self._chunks.get(episode_id, 0)
@@ -287,16 +308,19 @@ class TestPurgeEpisode:
         row = await (
             await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 0
 
         row = await (
             await db.execute("SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 0
 
         row = await (
             await db.execute("SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 0
 
     async def test_purge_nonexistent_episode(self, db: aiosqlite.Connection) -> None:
@@ -329,6 +353,7 @@ class TestPurgeEpisode:
         row = await (
             await db.execute("SELECT COUNT(*) FROM lecture_downloads WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 1
 
     async def test_purge_wrong_module_id_returns_zeros(self, db: aiosqlite.Connection) -> None:
@@ -353,6 +378,7 @@ class TestPurgeEpisode:
         row = await (
             await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 3
 
     async def test_purge_scoped_to_module(self, db: aiosqlite.Connection) -> None:
@@ -381,6 +407,7 @@ class TestPurgeEpisode:
                 "SELECT COUNT(*) FROM transcriptions WHERE episode_id = 'ep-2' AND module_id = 200"
             )
         ).fetchone()
+        assert row is not None
         assert row[0] == 1
 
         row = await (
@@ -388,11 +415,13 @@ class TestPurgeEpisode:
                 "SELECT COUNT(*) FROM knowledge_index WHERE episode_id = 'ep-2' AND module_id = 200"
             )
         ).fetchone()
+        assert row is not None
         assert row[0] == 1
 
         row = await (
             await db.execute("SELECT COUNT(*) FROM transcript_segments WHERE episode_id = 'ep-2'")
         ).fetchone()
+        assert row is not None
         assert row[0] == 4
 
 

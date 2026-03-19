@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiosqlite
@@ -22,12 +23,16 @@ from sophia.services.material_index import (
 # ---------------------------------------------------------------------------
 
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+
 @pytest.fixture
-async def db() -> aiosqlite.Connection:
+async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
     conn = await aiosqlite.connect(":memory:")
     await conn.execute("PRAGMA foreign_keys=ON")
     await run_migrations(conn)
-    yield conn  # type: ignore[misc]
+    yield conn
     await conn.close()
 
 

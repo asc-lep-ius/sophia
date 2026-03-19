@@ -166,7 +166,7 @@ class TestRunReflection:
         with patch(mock_target, new_callable=AsyncMock) as mock_sleep:
             await _run_reflection(console, 3)
 
-        output = console.file.getvalue()  # type: ignore[union-attr]
+        output = str(console.file.getvalue())  # type: ignore[union-attr]
         assert "reflect" in output.lower()
         assert mock_sleep.await_count == 3
 
