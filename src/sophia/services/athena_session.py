@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from asyncio import sleep as asyncio_sleep
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
+from sophia.services.athena_confidence import (
+    get_blind_spots,
+    get_confidence_ratings,
+    get_topic_difficulty_level,
+)
+from sophia.services.athena_review import get_due_reviews
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -141,25 +148,58 @@ def _run_quiz(questions: list[str], console: Console) -> int:
     return correct
 
 
+def _run_quiz_no_skip(questions: list[str], console: Console) -> int:
+    """Run quiz without skip option — generation effect."""
+    from rich.prompt import Confirm, Prompt
+
+    correct = 0
+    for i, q in enumerate(questions, 1):
+        console.print(f"\n  [bold]Q{i}:[/bold] {q}")
+        console.print(
+            "  [dim]Type your best guess — even a wrong attempt strengthens encoding.[/dim]"
+        )
+        answer = Prompt.ask("  Your answer", console=console)
+        while not answer.strip():
+            console.print(
+                "  [yellow]Please type an answer — retrieval attempts strengthen learning.[/yellow]"
+            )
+            answer = Prompt.ask("  Your answer", console=console)
+        if Confirm.ask("  Did you get it right?", default=False, console=console):
+            correct += 1
+    return correct
+
+
 async def _run_pretest(
     app: AppContainer,
     course_id: int,
     topic: str,
     console: Console,
 ) -> tuple[float, list[str]]:
-    """Phase 1: Generate and run pre-test questions."""
+    """Phase 1: Generate and run pre-test questions (no-skip for generation effect)."""
     from rich.status import Status
 
     from sophia.services.athena_study import generate_study_questions
 
     console.rule("[bold blue]Phase 1/4: Pre-Test[/bold blue]")
+
+    # Adaptive difficulty based on latest confidence
+    ratings = await get_confidence_ratings(app.db, course_id)
+    topic_rating = next((r for r in ratings if r.topic == topic), None)
+    difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+
     with Status("Generating pre-test questions…", console=console):
         try:
-            pre_qs = await generate_study_questions(app, course_id, topic, count=_QUESTION_COUNT)
+            pre_qs = await generate_study_questions(
+                app,
+                course_id,
+                topic,
+                count=_QUESTION_COUNT,
+                difficulty=difficulty.value,
+            )
         except TopicExtractionError:
             pre_qs = [_FALLBACK_QUESTION.format(topic=topic)] * _QUESTION_COUNT
 
-    pre_correct = _run_quiz(pre_qs, console)
+    pre_correct = _run_quiz_no_skip(pre_qs, console)
     pre_score = pre_correct / len(pre_qs) if pre_qs else 0.0
     console.print(f"\n  Pre-test score: [bold]{pre_score:.0%}[/bold] ({pre_correct}/{len(pre_qs)})")
     return pre_score, pre_qs
@@ -193,7 +233,6 @@ async def _run_posttest(
     topic: str,
     console: Console,
     pre_qs: list[str],
-    pre_score: float,
 ) -> float:
     """Phase 3: Generate and run post-test, show improvement."""
     from rich.status import Status
@@ -201,9 +240,21 @@ async def _run_posttest(
     from sophia.services.athena_study import generate_study_questions
 
     console.rule("[bold yellow]Phase 3/4: Post-Test[/bold yellow]")
+
+    # Adaptive difficulty based on latest confidence
+    ratings = await get_confidence_ratings(app.db, course_id)
+    topic_rating = next((r for r in ratings if r.topic == topic), None)
+    difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+
     with Status("Generating post-test questions…", console=console):
         try:
-            post_qs = await generate_study_questions(app, course_id, topic, count=_QUESTION_COUNT)
+            post_qs = await generate_study_questions(
+                app,
+                course_id,
+                topic,
+                count=_QUESTION_COUNT,
+                difficulty=difficulty.value,
+            )
         except TopicExtractionError:
             post_qs = pre_qs
 
@@ -212,15 +263,6 @@ async def _run_posttest(
     console.print(
         f"\n  Post-test score: [bold]{post_score:.0%}[/bold] ({post_correct}/{len(post_qs)})"
     )
-
-    improvement = post_score - pre_score
-    if improvement > 0:
-        console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
-    elif improvement < 0:
-        console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
-    else:
-        console.print("\n  [dim]➡ No change in score.[/dim]")
-
     return post_score
 
 
@@ -244,11 +286,36 @@ async def _run_flashcard_phase(
             console.print("[dim]Skipped — empty flashcard.[/dim]")
 
 
+async def _run_reflection(console: Console, delay_seconds: int) -> None:
+    """Show reflection prompt and countdown before revealing results."""
+    if delay_seconds <= 0:
+        return
+    console.print("\n[bold cyan]Before seeing your results, take a moment to reflect:[/bold cyan]")
+    console.print("  - Which questions felt hardest?")
+    console.print("  - Where were you most uncertain?")
+    console.print("  - What concepts do you want to review?\n")
+
+    from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
+
+    with Progress(
+        TextColumn("[bold blue]Reflecting..."),
+        BarColumn(),
+        TimeRemainingColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("reflect", total=delay_seconds)
+        for _ in range(delay_seconds):
+            await asyncio_sleep(1)
+            progress.advance(task, 1)
+
+
 async def run_interactive_session(
     app: AppContainer,
     course_id: int,
     topic: str,
     console: Console,
+    *,
+    feedback_delay: int = 30,
 ) -> None:
     """Run the 4-phase interactive study loop: pre-test → study → post-test → flashcard.
 
@@ -272,8 +339,188 @@ async def run_interactive_session(
         console.print("[dim]Session saved with pre-test only.[/dim]")
         return
 
-    post_score = await _run_posttest(app, course_id, topic, console, pre_qs, pre_score)
+    post_score = await _run_posttest(app, course_id, topic, console, pre_qs)
+
+    await _run_reflection(console, feedback_delay)
+
+    improvement = post_score - pre_score
+    if improvement > 0:
+        console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
+    elif improvement < 0:
+        console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
+    else:
+        console.print("\n  [dim]➡ No change in score.[/dim]")
 
     await complete_study_session(app.db, session.id, pre_score, post_score)
 
     await _run_flashcard_phase(app.db, course_id, topic, console)
+
+    console.print(
+        "\n[dim]💡 Tip: Try --interleave to mix topics"
+        " — interleaving strengthens long-term retention.[/dim]"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Interleaved review mode
+# ---------------------------------------------------------------------------
+
+
+async def _select_interleave_topics(
+    app: AppContainer,
+    course_id: int,
+    *,
+    max_topics: int = 3,
+) -> list[str]:
+    """Select 2-3 topics for interleaved review, weighted by blind-spot severity."""
+    db = app.db
+
+    # 1. Blind spots (overconfident topics) get priority
+    blind_spots = await get_blind_spots(db, course_id)
+    topics = [r.topic for r in blind_spots]
+
+    # 2. Fall back to due reviews
+    if len(topics) < max_topics:
+        due = await get_due_reviews(db, course_id)
+        for r in due:
+            if r.topic not in topics:
+                topics.append(r.topic)
+            if len(topics) >= max_topics:
+                break
+
+    # 3. Fall back to all course topics
+    if len(topics) < 2:
+        from sophia.services.athena_study import get_course_topics
+
+        all_topics = await get_course_topics(app, course_id)
+        for tm in all_topics:
+            if tm.topic not in topics:
+                topics.append(tm.topic)
+            if len(topics) >= max_topics:
+                break
+
+    return topics[:max_topics]
+
+
+async def run_interleaved_session(
+    app: AppContainer,
+    course_id: int,
+    *,
+    console: Console | None = None,
+    feedback_delay: int = 30,
+) -> None:
+    """Run study session interleaving multiple topics."""
+    if console is None:
+        from rich.console import Console as RichConsole
+
+        console = RichConsole()
+
+    from sophia.services.athena_study import generate_study_questions, get_lecture_context
+
+    topics = await _select_interleave_topics(app, course_id)
+    if len(topics) < 2:
+        console.print(
+            "[yellow]Not enough topics for interleaving, running single-topic session.[/yellow]"
+        )
+        single_topic = topics[0] if topics else "General"
+        await run_interactive_session(
+            app,
+            course_id,
+            single_topic,
+            console,
+            feedback_delay=feedback_delay,
+        )
+        return
+
+    console.print(f"\n[bold]Interleaved session with {len(topics)} topics:[/bold]")
+    for t in topics:
+        console.print(f"  • {t}")
+
+    # Track per-topic sessions
+    sessions: dict[str, int] = {}
+    for t in topics:
+        session = await start_study_session(app.db, course_id, t)
+        sessions[t] = session.id
+
+    # Pre-test: round-robin 1 question per topic
+    console.rule("[bold blue]Phase 1/4: Pre-Test (interleaved)[/bold blue]")
+    pre_qs: dict[str, list[str]] = {}
+    pre_scores: dict[str, float] = {}
+    all_pre_qs: list[str] = []
+    ratings = await get_confidence_ratings(app.db, course_id)
+    for t in topics:
+        topic_rating = next((r for r in ratings if r.topic == t), None)
+        difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+        try:
+            qs = await generate_study_questions(
+                app, course_id, t, count=1, difficulty=difficulty.value
+            )
+        except TopicExtractionError:
+            qs = [_FALLBACK_QUESTION.format(topic=t)]
+        pre_qs[t] = qs
+        all_pre_qs.extend(qs)
+
+    pre_correct = _run_quiz_no_skip(all_pre_qs, console)
+    pre_total = len(all_pre_qs)
+    pre_score_overall = pre_correct / pre_total if pre_total else 0.0
+    for t in topics:
+        pre_scores[t] = pre_score_overall
+    console.print(
+        f"\n  Pre-test score: [bold]{pre_score_overall:.0%}[/bold] ({pre_correct}/{pre_total})"
+    )
+
+    # Study phase: lecture context per topic
+    console.rule("[bold green]Phase 2/4: Study (interleaved)[/bold green]")
+    for t in topics:
+        lecture_text = await get_lecture_context(app, course_id, t, with_provenance=True)
+        if lecture_text:
+            from rich.panel import Panel
+
+            console.print(Panel(lecture_text[:2000], title=f"Lecture Notes: {t}", expand=False))
+        else:
+            console.print(f"[yellow]No lecture content for {t}.[/yellow]")
+
+    # Post-test: round-robin 1 question per topic (interleaved order)
+    console.rule("[bold yellow]Phase 3/4: Post-Test (interleaved)[/bold yellow]")
+    all_post_qs: list[str] = []
+    for t in topics:
+        topic_rating = next((r for r in ratings if r.topic == t), None)
+        difficulty = get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
+        try:
+            qs = await generate_study_questions(
+                app, course_id, t, count=1, difficulty=difficulty.value
+            )
+        except TopicExtractionError:
+            qs = pre_qs.get(t, [_FALLBACK_QUESTION.format(topic=t)])
+        all_post_qs.extend(qs)
+
+    post_correct = _run_quiz(all_post_qs, console)
+    post_total = len(all_post_qs)
+    post_score_overall = post_correct / post_total if post_total else 0.0
+    console.print(
+        f"\n  Post-test score: [bold]{post_score_overall:.0%}[/bold] ({post_correct}/{post_total})"
+    )
+
+    await _run_reflection(console, feedback_delay)
+
+    # Results
+    improvement = post_score_overall - pre_score_overall
+    if improvement > 0:
+        console.print(f"\n  [green]📈 Improvement: +{improvement:.0%}[/green]")
+    elif improvement < 0:
+        console.print(f"\n  [yellow]📉 Change: {improvement:.0%}[/yellow]")
+    else:
+        console.print("\n  [dim]➡ No change in score.[/dim]")
+
+    # Complete all sessions
+    for t in topics:
+        await complete_study_session(
+            app.db,
+            sessions[t],
+            pre_scores[t],
+            post_score_overall,
+        )
+
+    # Flashcard: one per topic
+    for t in topics:
+        await _run_flashcard_phase(app.db, course_id, t, console)

@@ -57,6 +57,14 @@ class DownloadStatus(StrEnum):
     DISCARDED = "discarded"
 
 
+class DifficultyLevel(StrEnum):
+    """Adaptive question difficulty based on confidence."""
+
+    CUED = "cued"
+    EXPLAIN = "explain"
+    TRANSFER = "transfer"
+
+
 class MaterialSource(StrEnum):
     """Origin type of a course material chunk."""
 
@@ -687,6 +695,9 @@ class ReviewSchedule(BaseModel, frozen=True):
     last_reviewed_at: str | None = None
     next_review_at: str
     score_at_last_review: float | None = None
+    difficulty: float = 0.3
+    stability: float = 1.0
+    review_count: int = 0
 
     @property
     def interval_days(self) -> int:

@@ -19,45 +19,6 @@ async def db():
     await db_conn.close()
 
 
-class TestComputeNextInterval:
-    """Unit tests for the pure compute_next_interval function."""
-
-    def test_high_score_advances(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(0, 0.9) == 1
-
-    def test_medium_score_repeats(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(2, 0.6) == 2
-
-    def test_low_score_resets(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(3, 0.3) == 0
-
-    def test_boundary_08_advances(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(1, 0.8) == 2
-
-    def test_boundary_05_repeats(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(1, 0.5) == 1
-
-    def test_boundary_below_05_resets(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(2, 0.49) == 0
-
-    def test_caps_at_max_interval(self) -> None:
-        from sophia.services.athena_review import compute_next_interval
-
-        assert compute_next_interval(4, 0.9) == 4
-
-
 class TestScheduleReview:
     """schedule_review creates or resets a review schedule."""
 
@@ -100,7 +61,8 @@ class TestCompleteReview:
         await schedule_review(db, "Sorting", course_id=42)
         result = await complete_review(db, "Sorting", course_id=42, score=0.9)
 
-        assert result.interval_index == 1
+        assert result.stability > 1.0  # FSRS: high score increases stability
+        assert result.review_count == 1
         assert result.score_at_last_review == pytest.approx(0.9)  # pyright: ignore[reportUnknownMemberType]
         assert result.last_reviewed_at is not None
 

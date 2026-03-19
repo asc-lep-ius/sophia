@@ -267,6 +267,20 @@ async def study_session(
     topic: Annotated[
         str | None, cyclopts.Parameter(help="Topic to study. Defaults to weakest.")
     ] = None,
+    feedback_delay: Annotated[
+        int,
+        cyclopts.Parameter(
+            name="--feedback-delay",
+            help="Seconds to reflect before seeing results (0 to disable)",
+        ),
+    ] = 30,
+    interleave: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--interleave",
+            help="Mix multiple topics in one session (interleaved practice)",
+        ),
+    ] = False,
 ) -> None:
     """Guided study: pre-test → lecture review → post-test → flashcard creation."""
     import structlog
@@ -275,7 +289,7 @@ async def study_session(
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError, StudySessionError
     from sophia.infra.di import create_app
-    from sophia.services.athena_session import run_interactive_session
+    from sophia.services.athena_session import run_interactive_session, run_interleaved_session
     from sophia.services.athena_study import get_course_topics
 
     _log = structlog.get_logger()
@@ -305,9 +319,23 @@ async def study_session(
                     topic = topics[0].topic
                     console.print(f"[dim]Auto-selected first topic:[/dim] [bold]{topic}[/bold]")
 
-            console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
-
-            await run_interactive_session(container, resolved_id, topic, console)
+            if interleave:
+                console.print("\n[bold]📚 Interleaved Study Session[/bold]\n")
+                await run_interleaved_session(
+                    container,
+                    resolved_id,
+                    console=console,
+                    feedback_delay=feedback_delay,
+                )
+            else:
+                console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
+                await run_interactive_session(
+                    container,
+                    resolved_id,
+                    topic,
+                    console,
+                    feedback_delay=feedback_delay,
+                )
 
             console.print("\n[bold green]✅ Study session complete![/bold green]")
             console.print("\n[dim]Next:[/dim] [cyan]sophia study review <module-id> [topic][/cyan]")
@@ -331,6 +359,13 @@ async def study_review(
         str | None, cyclopts.Parameter(help="Topic to review. Defaults to all.")
     ] = None,
     count: Annotated[int, cyclopts.Parameter(help="Max cards to review.")] = 10,
+    interleave: Annotated[
+        bool,
+        cyclopts.Parameter(
+            name="--interleave",
+            help="Shuffle cards from all topics (ignore topic filter)",
+        ),
+    ] = False,
 ) -> None:
     """Review flashcards and auto-calibrate confidence from results."""
     from rich.console import Console
@@ -354,7 +389,8 @@ async def study_review(
         async with create_app() as container:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            cards = await get_due_cards(container.db, resolved_id, topic=topic, limit=count)
+            review_topic = None if interleave else topic
+            cards = await get_due_cards(container.db, resolved_id, topic=review_topic, limit=count)
 
             if not cards:
                 console.print(

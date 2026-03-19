@@ -58,6 +58,28 @@ _QUESTION_USER_TEMPLATE = (
     "Return ONLY the question text, nothing else."
 )
 
+_QUESTION_TEMPLATES: dict[str, str] = {
+    "cued": (
+        "Topic: {topic}\n\n"
+        "Relevant lecture content:\n{lecture_context}\n\n"
+        "Generate ONE retrieval-cue question that:\n"
+        "1. Provides a partial statement or hint about the topic\n"
+        "2. Asks the student to complete, identify, or match the concept\n"
+        "3. Is appropriate for a student who is still building familiarity\n\n"
+        "Return ONLY the question text, nothing else."
+    ),
+    "explain": _QUESTION_USER_TEMPLATE,
+    "transfer": (
+        "Topic: {topic}\n\n"
+        "Relevant lecture content:\n{lecture_context}\n\n"
+        "Generate ONE transfer/application question that:\n"
+        "1. Presents a novel scenario not directly covered in the lecture\n"
+        "2. Requires applying the concept to a new context or teaching it to someone\n"
+        "3. Challenges a student who already understands the basics\n\n"
+        "Return ONLY the question text, nothing else."
+    ),
+}
+
 
 def _sanitize_user_content(text: str) -> str:
     """Strip patterns resembling LLM prompt injection from user-supplied text."""
@@ -155,11 +177,14 @@ class LLMTopicExtractor:
         log.debug("topic_extraction_response", topic_count=len(topics), topics=topics)
         return topics
 
-    async def generate_question(self, topic: str, lecture_context: str) -> str:
+    async def generate_question(
+        self, topic: str, lecture_context: str, difficulty: str = "explain"
+    ) -> str:
         """Generate a practice question grounded in lecture content."""
         topic = _sanitize_user_content(topic)
         lecture_context = _sanitize_user_content(lecture_context)
-        user_prompt = _QUESTION_USER_TEMPLATE.format(topic=topic, lecture_context=lecture_context)
+        template = _QUESTION_TEMPLATES.get(difficulty, _QUESTION_TEMPLATES["explain"])
+        user_prompt = template.format(topic=topic, lecture_context=lecture_context)
         raw = await self._call_llm(_QUESTION_SYSTEM_PROMPT, user_prompt)
         return raw.strip()
 

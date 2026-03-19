@@ -412,6 +412,7 @@ async def generate_study_questions(
     module_id: int,
     topic: str,
     count: int = 3,
+    difficulty: str = "explain",
 ) -> list[str]:
     """Generate practice questions for a topic, grounded in lecture content.
 
@@ -427,7 +428,7 @@ async def generate_study_questions(
     questions: list[str] = []
     for _ in range(count):
         try:
-            q = await extractor.generate_question(topic, lecture_context)
+            q = await extractor.generate_question(topic, lecture_context, difficulty=difficulty)
             if q and q not in questions:
                 questions.append(q)
         except TopicExtractionError:
