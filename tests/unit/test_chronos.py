@@ -1141,3 +1141,241 @@ class TestSortOrder:
             reverse=True,
         )
         assert sorted_by_effort[0][0].name == "Lots Left"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Calibration Dashboard + ICS Export + Athena Integration
+# ---------------------------------------------------------------------------
+
+
+async def _insert_metacognition(
+    db: aiosqlite.Connection,
+    domain: str,
+    item_id: str,
+    predicted: float,
+    actual: float | None = None,
+    predicted_at: str | None = None,
+) -> None:
+    """Helper to insert a metacognition log entry."""
+    ts = predicted_at or datetime.now(UTC).isoformat()
+    await db.execute(
+        "INSERT OR REPLACE INTO metacognition_log "
+        "(domain, item_id, predicted, actual, predicted_at, actual_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (domain, item_id, predicted, actual, ts, ts if actual else None),
+    )
+    await db.commit()
+
+
+async def _insert_deadline_cache(
+    db: aiosqlite.Connection,
+    *,
+    deadline_id: str = "assign:1",
+    name: str = "Test Deadline",
+    course_id: int = 42,
+    course_name: str = "Algorithms",
+    deadline_type: str = "assignment",
+    due_at: str | None = None,
+    grade_weight: float | None = None,
+) -> None:
+    """Helper to insert a deadline into the cache."""
+    if due_at is None:
+        due_at = (datetime.now(UTC) + timedelta(days=5)).isoformat()
+    await db.execute(
+        "INSERT OR REPLACE INTO deadline_cache "
+        "(id, name, course_id, course_name, deadline_type, due_at, "
+        "grade_weight, submission_status, url, extra, synced_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            deadline_id, name, course_id, course_name, deadline_type,
+            due_at, grade_weight, None, None, "{}", datetime.now(UTC).isoformat(),
+        ),
+    )
+    await db.commit()
+
+
+class TestCalibrationMetrics:
+    async def test_returns_metrics_for_completed_domains(self, db: aiosqlite.Connection) -> None:
+        """Insert 3+ completed effort entries → metrics returned."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        for i in range(4):
+            await _insert_metacognition(db, "effort:assignment", f"a:{i}", 5.0, 6.0)
+
+        metrics = await get_calibration_metrics(db)
+        assert len(metrics) == 1
+        m = metrics[0]
+        assert m.domain == "effort:assignment"
+        assert m.sample_count == 4
+        assert m.mean_error == pytest.approx(1.0)  # actual - predicted = 6-5=1
+        assert m.mean_absolute_error == pytest.approx(1.0)
+
+    async def test_empty_when_insufficient_data(self, db: aiosqlite.Connection) -> None:
+        """<3 entries → no metrics."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        await _insert_metacognition(db, "effort:assignment", "a:1", 5.0, 6.0)
+        await _insert_metacognition(db, "effort:assignment", "a:2", 5.0, 7.0)
+
+        metrics = await get_calibration_metrics(db)
+        assert len(metrics) == 0
+
+    async def test_trend_improving(self, db: aiosqlite.Connection) -> None:
+        """Recent errors smaller than older → improving."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        # Older entries: large error (predicted=5, actual=10 → error=5)
+        for i in range(5):
+            ts = (base + timedelta(days=i)).isoformat()
+            await _insert_metacognition(db, "effort:assignment", f"old:{i}", 5.0, 10.0, ts)
+        # Recent entries: small error (predicted=5, actual=5.5 → error=0.5)
+        for i in range(5):
+            ts = (base + timedelta(days=10 + i)).isoformat()
+            await _insert_metacognition(db, "effort:assignment", f"new:{i}", 5.0, 5.5, ts)
+
+        metrics = await get_calibration_metrics(db)
+        assert len(metrics) == 1
+        assert metrics[0].trend == "improving"
+
+    async def test_trend_declining(self, db: aiosqlite.Connection) -> None:
+        """Recent errors larger than older → declining."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        # Older: small error
+        for i in range(5):
+            ts = (base + timedelta(days=i)).isoformat()
+            await _insert_metacognition(db, "effort:assignment", f"old:{i}", 5.0, 5.5, ts)
+        # Recent: large error
+        for i in range(5):
+            ts = (base + timedelta(days=10 + i)).isoformat()
+            await _insert_metacognition(db, "effort:assignment", f"new:{i}", 5.0, 10.0, ts)
+
+        metrics = await get_calibration_metrics(db)
+        assert len(metrics) == 1
+        assert metrics[0].trend == "declining"
+
+    async def test_trend_stable(self, db: aiosqlite.Connection) -> None:
+        """Similar errors → stable."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        base = datetime(2026, 1, 1, tzinfo=UTC)
+        for i in range(10):
+            ts = (base + timedelta(days=i)).isoformat()
+            await _insert_metacognition(db, "effort:assignment", f"e:{i}", 5.0, 6.0, ts)
+
+        metrics = await get_calibration_metrics(db)
+        assert len(metrics) == 1
+        assert metrics[0].trend == "stable"
+
+    async def test_filters_by_deadline_type(self, db: aiosqlite.Connection) -> None:
+        """Only returns metrics for specified type."""
+        from sophia.services.chronos import get_calibration_metrics
+
+        for i in range(4):
+            await _insert_metacognition(db, "effort:assignment", f"a:{i}", 5.0, 6.0)
+            await _insert_metacognition(db, "effort:exam", f"e:{i}", 3.0, 4.0)
+
+        metrics = await get_calibration_metrics(db, deadline_type=DeadlineType.ASSIGNMENT)
+        assert len(metrics) == 1
+        assert metrics[0].domain == "effort:assignment"
+
+
+class TestGetUpcomingExams:
+    async def test_returns_exam_deadlines(self, db: aiosqlite.Connection) -> None:
+        """Insert exam + assignment, only exam returned."""
+        from sophia.services.chronos import get_upcoming_exams
+
+        await _insert_deadline_cache(
+            db, deadline_id="exam:1", name="Final Exam", deadline_type="exam",
+        )
+        await _insert_deadline_cache(
+            db, deadline_id="assign:1", name="HW1", deadline_type="assignment",
+        )
+
+        exams = await get_upcoming_exams(db)
+        assert len(exams) == 1
+        assert exams[0].name == "Final Exam"
+        assert exams[0].deadline_type == DeadlineType.EXAM
+
+    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+        """Only returns exams for specified course."""
+        from sophia.services.chronos import get_upcoming_exams
+
+        await _insert_deadline_cache(
+            db, deadline_id="exam:1", name="Algo Exam",
+            deadline_type="exam", course_id=42,
+        )
+        await _insert_deadline_cache(
+            db, deadline_id="exam:2", name="DB Exam",
+            deadline_type="exam", course_id=99,
+        )
+
+        exams = await get_upcoming_exams(db, course_id=42)
+        assert len(exams) == 1
+        assert exams[0].name == "Algo Exam"
+
+    async def test_excludes_past_exams(self, db: aiosqlite.Connection) -> None:
+        """Past exams not returned."""
+        from sophia.services.chronos import get_upcoming_exams
+
+        past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
+        await _insert_deadline_cache(
+            db, deadline_id="exam:old", name="Past Exam",
+            deadline_type="exam", due_at=past,
+        )
+        await _insert_deadline_cache(
+            db, deadline_id="exam:new", name="Future Exam", deadline_type="exam",
+        )
+
+        exams = await get_upcoming_exams(db)
+        assert len(exams) == 1
+        assert exams[0].name == "Future Exam"
+
+
+class TestExportIcs:
+    async def test_exports_valid_ics(self, db: aiosqlite.Connection) -> None:
+        """Insert deadlines, export ICS, verify parseable by icalendar."""
+        from icalendar import Calendar as ICalendar
+
+        from sophia.services.chronos import export_deadlines_ics
+
+        await _insert_deadline_cache(db, deadline_id="a:1", name="HW1")
+        await _insert_deadline_cache(db, deadline_id="a:2", name="HW2")
+
+        ics_str = await export_deadlines_ics(db, horizon_days=30)
+        cal = ICalendar.from_ical(ics_str)
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
+        assert len(events) == 2
+
+    async def test_includes_deadline_details(self, db: aiosqlite.Connection) -> None:
+        """Verify SUMMARY, DESCRIPTION, UID in exported events."""
+        from icalendar import Calendar as ICalendar
+
+        from sophia.services.chronos import export_deadlines_ics
+
+        await _insert_deadline_cache(
+            db, deadline_id="a:1", name="Analysis HW",
+            course_name="Math", deadline_type="assignment",
+        )
+
+        ics_str = await export_deadlines_ics(db, horizon_days=30)
+        cal = ICalendar.from_ical(ics_str)
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
+        assert len(events) == 1
+        ev = events[0]
+        assert str(ev["SUMMARY"]) == "Analysis HW"
+        assert "Math" in str(ev["DESCRIPTION"])
+        assert str(ev["UID"]) == "a:1"
+
+    async def test_empty_when_no_deadlines(self, db: aiosqlite.Connection) -> None:
+        """No deadlines → valid but empty calendar."""
+        from icalendar import Calendar as ICalendar
+
+        from sophia.services.chronos import export_deadlines_ics
+
+        ics_str = await export_deadlines_ics(db, horizon_days=30)
+        cal = ICalendar.from_ical(ics_str)
+        events = [c for c in cal.walk() if c.name == "VEVENT"]
+        assert len(events) == 0

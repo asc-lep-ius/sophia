@@ -760,3 +760,13 @@ class EffortEstimate(BaseModel, frozen=True):
     implementation_intention: str | None = None
     scaffold_level: EstimationScaffold
     estimated_at: str
+
+
+class CalibrationMetrics(BaseModel, frozen=True):
+    """Per-domain estimation accuracy metrics."""
+
+    domain: str
+    sample_count: int
+    mean_error: float
+    mean_absolute_error: float
+    trend: str

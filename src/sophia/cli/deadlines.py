@@ -540,3 +540,72 @@ async def deadlines_next() -> None:
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
+
+
+@app.command(name="calibration")
+async def deadlines_calibration() -> None:
+    """Show per-domain estimation accuracy dashboard."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import get_calibration_metrics
+
+    console = Console()
+    try:
+        async with create_app() as container:
+            metrics = await get_calibration_metrics(container.db)
+
+            if not metrics:
+                console.print("[dim]No calibration data yet — complete ≥3 estimates first.[/dim]")
+                return
+
+            trend_icons = {"improving": "↑", "stable": "→", "declining": "↓"}
+            table = Table(title="Estimation Calibration")
+            table.add_column("Domain")
+            table.add_column("Samples", justify="right")
+            table.add_column("Bias", justify="right")
+            table.add_column("MAE", justify="right")
+            table.add_column("Trend", justify="center")
+
+            for m in metrics:
+                sign = "+" if m.mean_error >= 0 else ""
+                table.add_row(
+                    m.domain.removeprefix("effort:"),
+                    str(m.sample_count),
+                    f"{sign}{m.mean_error:.1f}h",
+                    f"±{m.mean_absolute_error:.1f}h",
+                    trend_icons.get(m.trend, "?"),
+                )
+            console.print(table)
+    except AuthError:
+        console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command(name="export-ics")
+async def deadlines_export_ics(
+    *,
+    horizon: int = 30,
+    output: str | None = None,
+) -> None:
+    """Export deadlines as ICS calendar file."""
+    from pathlib import Path
+
+    from rich.console import Console
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import export_deadlines_ics
+
+    console = Console()
+    try:
+        async with create_app() as container:
+            ics_str = await export_deadlines_ics(container.db, horizon_days=horizon)
+            out_path = Path(output or "sophia_deadlines.ics")
+            out_path.write_text(ics_str)
+            console.print(f"[green]Exported to {out_path}[/green]")
+    except AuthError:
+        console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
+        raise SystemExit(1) from None
