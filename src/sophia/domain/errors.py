@@ -79,3 +79,7 @@ class StudySessionError(AthenaError):
 
 class CardReviewError(AthenaError):
     """Card review workflow failed."""
+
+
+class ChronosError(SophiaError):
+    """Chronos deadline pipeline error."""

@@ -17,6 +17,7 @@ app = cyclopts.App(
 # Mount sub-apps
 from sophia.cli.auth import app as auth_app  # noqa: E402
 from sophia.cli.books import app as books_app  # noqa: E402
+from sophia.cli.deadlines import app as deadlines_app  # noqa: E402
 from sophia.cli.jobs import app as jobs_app  # noqa: E402
 from sophia.cli.lectures import app as lectures_app  # noqa: E402
 from sophia.cli.quickstart import app as quickstart_app  # noqa: E402
@@ -27,6 +28,7 @@ from sophia.cli.study import app as study_app  # noqa: E402
 
 app.command(books_app)
 app.command(auth_app)
+app.command(deadlines_app)
 app.command(register_app)
 app.command(lectures_app)
 app.command(jobs_app)

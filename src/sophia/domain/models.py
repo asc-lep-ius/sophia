@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime  # noqa: TC003 — Pydantic needs runtime access
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
@@ -711,3 +712,51 @@ class ReviewSchedule(BaseModel, frozen=True):
         from datetime import UTC, datetime
 
         return datetime.fromisoformat(self.next_review_at) <= datetime.now(UTC)
+
+
+# --- Chronos (Deadline Coach) ---
+
+
+class DeadlineType(StrEnum):
+    """Source type of a deadline."""
+
+    ASSIGNMENT = "assignment"
+    QUIZ = "quiz"
+    CHECKMARK = "checkmark"
+    EXAM = "exam"
+    EXAM_REGISTRATION = "exam_registration"
+
+
+class EstimationScaffold(StrEnum):
+    """Scaffold level for effort estimation prompts (Vygotsky ZPD)."""
+
+    FULL = "full"
+    MINIMAL = "minimal"
+    OPEN = "open"
+
+
+class Deadline(BaseModel, frozen=True):
+    """Unified deadline from any TUWEL/TISS source."""
+
+    id: str
+    name: str
+    course_id: int
+    course_name: str
+    deadline_type: DeadlineType
+    due_at: datetime
+    grade_weight: float | None = None
+    submission_status: str | None = None
+    url: str | None = None
+    extra: dict[str, Any] = {}
+
+
+class EffortEstimate(BaseModel, frozen=True):
+    """A student's predicted effort for a deadline."""
+
+    deadline_id: str
+    course_id: int
+    predicted_hours: float
+    breakdown: dict[str, float] | None = None
+    implementation_intention: str | None = None
+    scaffold_level: EstimationScaffold
+    estimated_at: str
