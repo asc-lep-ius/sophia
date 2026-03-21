@@ -32,6 +32,8 @@ CALIBRATION_HIGH_ERROR = 0.3
 CALIBRATION_LOW_ERROR = 0.15
 CALIBRATION_VERY_LOW_ERROR = 0.05
 REFERENCE_CLASS_MIN_ENTRIES = 3
+DEFAULT_IMPORTANCE = 0.5
+EFFORT_GAP_MINIMUM = 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -580,3 +582,86 @@ def format_estimation_feedback(predicted: float | None, actual: float) -> str:
         "You were faster than you thought! Overestimation is common early on "
         "and usually self-corrects."
     )
+
+
+# ---------------------------------------------------------------------------
+# Priority scoring + workload forecast
+# ---------------------------------------------------------------------------
+
+
+def compute_priority_score(
+    deadline: Deadline,
+    estimated_hours: float | None,
+    tracked_hours: float,
+) -> dict[str, float]:
+    """Compute composite priority with transparent components.
+
+    Returns dict with urgency, importance, effort_gap, and score so
+    students see WHY something ranks as it does.
+    """
+    hours_until_due = (deadline.due_at - datetime.now(UTC)).total_seconds() / 3600.0
+    urgency = 1.0 / max(hours_until_due, 1.0)
+
+    importance = deadline.grade_weight if deadline.grade_weight is not None else DEFAULT_IMPORTANCE
+
+    if estimated_hours is not None:
+        effort_gap = max(estimated_hours - tracked_hours, EFFORT_GAP_MINIMUM)
+    else:
+        effort_gap = EFFORT_GAP_MINIMUM
+
+    return {
+        "urgency": urgency,
+        "importance": importance,
+        "effort_gap": effort_gap,
+        "score": urgency * importance * effort_gap,
+    }
+
+
+async def get_workload_forecast(
+    db: aiosqlite.Connection,
+    horizon_days: int = 7,
+) -> dict[str, object]:
+    """Compute workload summary for the horizon window."""
+    now = datetime.now(UTC)
+    horizon_end = now + timedelta(days=horizon_days)
+
+    cursor = await db.execute(
+        "SELECT dc.id, dc.name, dc.due_at, "
+        "  (SELECT e.predicted_hours FROM effort_estimates e "
+        "   WHERE e.deadline_id = dc.id ORDER BY e.estimated_at DESC LIMIT 1) AS est_hours "
+        "FROM deadline_cache dc "
+        "WHERE dc.due_at > ? AND dc.due_at < ? "
+        "ORDER BY dc.due_at ASC",
+        (now.isoformat(), horizon_end.isoformat()),
+    )
+    rows = list(await cursor.fetchall())
+
+    total_estimated = 0.0
+    total_tracked = 0.0
+    per_day: dict[str, list[tuple[str, float]]] = {}
+
+    for row in rows:
+        deadline_id, name, due_at_str, est_hours = row
+        est = float(est_hours) if est_hours is not None else 0.0
+
+        tracked_cursor = await db.execute(
+            "SELECT COALESCE(SUM(hours), 0) FROM time_entries WHERE deadline_id = ?",
+            (deadline_id,),
+        )
+        tracked_row = await tracked_cursor.fetchone()
+        tracked = float(tracked_row[0]) if tracked_row else 0.0
+
+        total_estimated += est
+        total_tracked += tracked
+        remaining = max(est - tracked, 0.0)
+
+        due_date = datetime.fromisoformat(due_at_str).strftime("%Y-%m-%d")
+        per_day.setdefault(due_date, []).append((name, remaining))
+
+    return {
+        "total_estimated_hours": total_estimated,
+        "total_tracked_hours": total_tracked,
+        "remaining_hours": max(total_estimated - total_tracked, 0.0),
+        "deadline_count": len(rows),
+        "per_day": per_day,
+    }

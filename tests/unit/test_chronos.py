@@ -825,3 +825,319 @@ class TestFormatEstimationFeedback:
         # Should normalize the error, not guilt-frame
         assert "behind" not in result.lower()
         assert "common" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Priority Scoring + Smart Display
+# ---------------------------------------------------------------------------
+
+
+class TestComputePriorityScore:
+    def test_basic_priority_score(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algorithms",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=48),
+            grade_weight=0.3,
+        )
+        result = compute_priority_score(deadline, estimated_hours=5.0, tracked_hours=2.0)
+
+        assert "urgency" in result
+        assert "importance" in result
+        assert "effort_gap" in result
+        assert "score" in result
+        assert result["score"] > 0
+        assert result["score"] == pytest.approx(
+            result["urgency"] * result["importance"] * result["effort_gap"]
+        )
+
+    def test_higher_urgency_closer_deadline(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        close = Deadline(
+            id="assign:1",
+            name="Soon",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=6),
+            grade_weight=0.5,
+        )
+        far = Deadline(
+            id="assign:2",
+            name="Later",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=72),
+            grade_weight=0.5,
+        )
+        score_close = compute_priority_score(close, estimated_hours=3.0, tracked_hours=0.0)
+        score_far = compute_priority_score(far, estimated_hours=3.0, tracked_hours=0.0)
+
+        assert score_close["urgency"] > score_far["urgency"]
+        assert score_close["score"] > score_far["score"]
+
+    def test_importance_defaults_when_no_weight(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(days=3),
+        )
+        result = compute_priority_score(deadline, estimated_hours=4.0, tracked_hours=0.0)
+
+        assert result["importance"] == pytest.approx(0.5)
+
+    def test_effort_gap_with_partial_tracking(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(days=3),
+            grade_weight=0.4,
+        )
+        result = compute_priority_score(deadline, estimated_hours=10.0, tracked_hours=7.0)
+
+        assert result["effort_gap"] == pytest.approx(3.0)
+
+    def test_score_zero_effort_gap_minimum(self) -> None:
+        """When tracked >= estimated, effort_gap floors at 0.5."""
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(days=3),
+            grade_weight=0.4,
+        )
+        result = compute_priority_score(deadline, estimated_hours=5.0, tracked_hours=6.0)
+
+        assert result["effort_gap"] == pytest.approx(0.5)
+
+    def test_no_estimate_uses_default_effort_gap(self) -> None:
+        """When estimated_hours is None, effort_gap should use a sensible default."""
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(days=3),
+        )
+        result = compute_priority_score(deadline, estimated_hours=None, tracked_hours=0.0)
+
+        assert result["effort_gap"] == pytest.approx(0.5)
+        assert result["score"] > 0
+
+
+class TestGetWorkloadForecast:
+    async def test_empty_forecast(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_workload_forecast
+
+        result = await get_workload_forecast(db, horizon_days=7)
+
+        assert result["total_estimated_hours"] == pytest.approx(0.0)
+        assert result["total_tracked_hours"] == pytest.approx(0.0)
+        assert result["remaining_hours"] == pytest.approx(0.0)
+        assert result["deadline_count"] == 0
+
+    async def test_forecast_with_estimates(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_workload_forecast, record_time
+
+        due_in_3 = datetime.now(UTC) + timedelta(days=3)
+        due_in_5 = datetime.now(UTC) + timedelta(days=5)
+
+        await _insert_deadline(db, id="assign:1", name="HW1", due_at=_iso(due_in_3))
+        await _insert_deadline(db, id="assign:2", name="HW2", due_at=_iso(due_in_5))
+
+        # Add estimates
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:1", 42, 4.0, "full"),
+        )
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:2", 42, 6.0, "full"),
+        )
+        await db.commit()
+
+        await record_time(db, "assign:1", 1.5)
+
+        result = await get_workload_forecast(db, horizon_days=7)
+
+        assert result["total_estimated_hours"] == pytest.approx(10.0)
+        assert result["total_tracked_hours"] == pytest.approx(1.5)
+        assert result["remaining_hours"] == pytest.approx(8.5)
+        assert result["deadline_count"] == 2
+        assert isinstance(result["per_day"], dict)
+
+    async def test_forecast_only_includes_horizon(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_workload_forecast
+
+        in_range = datetime.now(UTC) + timedelta(days=3)
+        out_of_range = datetime.now(UTC) + timedelta(days=20)
+
+        await _insert_deadline(db, id="assign:1", name="Near", due_at=_iso(in_range))
+        await _insert_deadline(db, id="assign:2", name="Far", due_at=_iso(out_of_range))
+
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:1", 42, 3.0, "full"),
+        )
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:2", 42, 8.0, "full"),
+        )
+        await db.commit()
+
+        result = await get_workload_forecast(db, horizon_days=7)
+
+        assert result["deadline_count"] == 1
+        assert result["total_estimated_hours"] == pytest.approx(3.0)
+
+
+class TestSortOrder:
+    """Verify that compute_priority_score enables correct sort ordering."""
+
+    def test_sort_by_urgency(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadlines = [
+            Deadline(
+                id="assign:1",
+                name="Far",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(days=7),
+                grade_weight=0.5,
+            ),
+            Deadline(
+                id="assign:2",
+                name="Close",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(hours=12),
+                grade_weight=0.5,
+            ),
+            Deadline(
+                id="assign:3",
+                name="Medium",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(days=3),
+                grade_weight=0.5,
+            ),
+        ]
+
+        scored = sorted(
+            deadlines,
+            key=lambda d: compute_priority_score(d, 5.0, 0.0)["score"],
+            reverse=True,
+        )
+        assert scored[0].name == "Close"
+        assert scored[-1].name == "Far"
+
+    def test_sort_by_weight(self) -> None:
+        deadlines = [
+            Deadline(
+                id="assign:1",
+                name="Low",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(days=3),
+                grade_weight=0.1,
+            ),
+            Deadline(
+                id="assign:2",
+                name="High",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(days=3),
+                grade_weight=0.5,
+            ),
+            Deadline(
+                id="assign:3",
+                name="None",
+                course_id=42,
+                course_name="Algo",
+                deadline_type=DeadlineType.ASSIGNMENT,
+                due_at=datetime.now(UTC) + timedelta(days=3),
+            ),
+        ]
+
+        sorted_by_weight = sorted(
+            deadlines,
+            key=lambda d: d.grade_weight or 0,
+            reverse=True,
+        )
+        assert sorted_by_weight[0].name == "High"
+        assert sorted_by_weight[-1].name == "None"
+
+    def test_sort_by_effort(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadlines_with_estimates: list[tuple[Deadline, float, float]] = [
+            (
+                Deadline(
+                    id="assign:1",
+                    name="Little Left",
+                    course_id=42,
+                    course_name="Algo",
+                    deadline_type=DeadlineType.ASSIGNMENT,
+                    due_at=datetime.now(UTC) + timedelta(days=3),
+                ),
+                5.0,
+                4.0,
+            ),
+            (
+                Deadline(
+                    id="assign:2",
+                    name="Lots Left",
+                    course_id=42,
+                    course_name="Algo",
+                    deadline_type=DeadlineType.ASSIGNMENT,
+                    due_at=datetime.now(UTC) + timedelta(days=3),
+                ),
+                10.0,
+                1.0,
+            ),
+        ]
+
+        sorted_by_effort = sorted(
+            deadlines_with_estimates,
+            key=lambda t: compute_priority_score(t[0], t[1], t[2])["effort_gap"],
+            reverse=True,
+        )
+        assert sorted_by_effort[0][0].name == "Lots Left"
