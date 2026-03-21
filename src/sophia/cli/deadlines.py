@@ -1,4 +1,4 @@
-"""Chronos — Deadline discovery and effort estimation commands."""
+"""Chronos — Deadline discovery, effort estimation, and time tracking commands."""
 
 from __future__ import annotations
 
@@ -9,14 +9,20 @@ import cyclopts
 app = cyclopts.App(
     name="deadlines",
     help=(
-        "Chronos — Deadline discovery and effort estimation.\n"
+        "Chronos — Deadline discovery, effort estimation, and time tracking.\n"
         "\n"
         "Workflow:\n"
         " 1. sync                          — fetch deadlines from all enrolled courses\n"
         " 2. list [--horizon N] [--course] — show upcoming deadlines\n"
         " 3. estimate DEADLINE_ID          — predict your effort with scaffold support\n"
+        " 4. track DEADLINE_ID --hours N   — log manual time entry\n"
+        " 5. timer start/stop DEADLINE_ID  — timer-based time tracking\n"
+        " 6. done DEADLINE_ID              — mark complete → reflection prompt\n"
     ),
 )
+
+timer_app = cyclopts.App(name="timer", help="Timer-based time tracking.")
+app.command(timer_app)
 
 
 @app.command(name="sync")
@@ -58,7 +64,7 @@ async def deadlines_list(
 
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
-    from sophia.services.chronos import get_deadlines
+    from sophia.services.chronos import get_deadlines, get_tracked_time
 
     console = Console()
 
@@ -79,6 +85,8 @@ async def deadlines_list(
             table.add_column("Name", style="bold")
             table.add_column("Course")
             table.add_column("Type")
+            table.add_column("Estimate", justify="right")
+            table.add_column("Tracked", justify="right")
             table.add_column("Status")
 
             for d in deadlines:
@@ -91,11 +99,25 @@ async def deadlines_list(
                     "checkmark": "[green]check[/green]",
                 }.get(d.deadline_type.value, d.deadline_type.value)
 
+                # Look up estimate
+                est_cursor = await container.db.execute(
+                    "SELECT predicted_hours FROM effort_estimates "
+                    "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
+                    (d.id,),
+                )
+                est_row = await est_cursor.fetchone()
+                est_str = f"{est_row[0]:.1f}h" if est_row else ""
+
+                tracked = await get_tracked_time(container.db, d.id)
+                tracked_str = f"{tracked:.1f}h" if tracked > 0 else ""
+
                 table.add_row(
                     due_str,
                     d.name,
                     d.course_name,
                     type_style,
+                    est_str,
+                    tracked_str,
                     d.submission_status or "",
                 )
 
@@ -203,3 +225,149 @@ async def deadlines_estimate(
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
+
+
+@app.command(name="track")
+async def deadlines_track(
+    deadline_id: Annotated[str, cyclopts.Parameter(help="Deadline ID (e.g. 'assign:123').")],
+    *,
+    hours: Annotated[float, cyclopts.Parameter(help="Hours to log.", name="--hours")],
+    note: Annotated[str | None, cyclopts.Parameter(help="Optional note.", name="--note")] = None,
+) -> None:
+    """Log a manual time entry for a deadline."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import record_time
+
+    console = Console()
+
+    async with create_app() as container:
+        await record_time(container.db, deadline_id, hours, note=note)
+        console.print(
+            f"[green]📝 Logged {hours:.1f}h.[/green] "
+            "Quick and easy, but recall estimates tend to be ~30% low."
+        )
+
+
+@timer_app.command(name="start")
+async def timer_start(
+    deadline_id: Annotated[str, cyclopts.Parameter(help="Deadline ID (e.g. 'assign:123').")],
+) -> None:
+    """Start a timer for a deadline."""
+    from rich.console import Console
+
+    from sophia.domain.errors import ChronosError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import start_timer
+
+    console = Console()
+
+    async with create_app() as container:
+        try:
+            await start_timer(container.db, deadline_id)
+            console.print(
+                "[green]⏱ Timer started.[/green] More accurate, but remember to stop it when done."
+            )
+        except ChronosError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise SystemExit(1) from None
+
+
+@timer_app.command(name="stop")
+async def timer_stop(
+    deadline_id: Annotated[str, cyclopts.Parameter(help="Deadline ID (e.g. 'assign:123').")],
+) -> None:
+    """Stop a running timer and record the elapsed time."""
+    from rich.console import Console
+
+    from sophia.domain.errors import ChronosError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import stop_timer
+
+    console = Console()
+
+    async with create_app() as container:
+        try:
+            hours = await stop_timer(container.db, deadline_id)
+            console.print(f"[green]⏱ Timer stopped — {hours:.2f}h recorded.[/green]")
+        except ChronosError as exc:
+            console.print(f"[red]{exc}[/red]")
+            raise SystemExit(1) from None
+
+
+@app.command(name="done")
+async def deadlines_done(
+    deadline_id: Annotated[str, cyclopts.Parameter(help="Deadline ID (e.g. 'assign:123').")],
+) -> None:
+    """Mark a deadline complete — shows estimation feedback and prompts for reflection."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import complete_deadline, record_reflection
+
+    console = Console()
+
+    async with create_app() as container:
+        predicted, actual, feedback = await complete_deadline(container, deadline_id)
+        console.print(Panel(feedback, title="Estimation Feedback"))
+
+        reflection_text = input("Quick reflection (or Enter to skip): ").strip()
+        if reflection_text:
+            await record_reflection(
+                container.db,
+                deadline_id,
+                predicted_hours=predicted,
+                actual_hours=actual,
+                reflection_text=reflection_text,
+            )
+            console.print("[green]✓ Reflection saved.[/green]")
+
+        console.print("[dim]That one's past. Here's what's next.[/dim]")
+
+
+@app.command(name="reflect")
+async def deadlines_reflect(
+    deadline_id: Annotated[str, cyclopts.Parameter(help="Deadline ID (e.g. 'assign:123').")],
+) -> None:
+    """Record a post-deadline reflection for a completed deadline."""
+    from rich.console import Console
+
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import get_tracked_time, record_reflection
+
+    console = Console()
+
+    async with create_app() as container:
+        db = container.db
+
+        # Get predicted hours
+        cursor = await db.execute(
+            "SELECT predicted_hours FROM effort_estimates "
+            "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
+            (deadline_id,),
+        )
+        est_row = await cursor.fetchone()
+        predicted = float(est_row[0]) if est_row else None
+
+        actual = await get_tracked_time(db, deadline_id)
+
+        if predicted is not None:
+            console.print(f"[dim]Estimated: {predicted:.1f}h | Tracked: {actual:.1f}h[/dim]")
+        else:
+            console.print(f"[dim]Tracked: {actual:.1f}h (no estimate)[/dim]")
+
+        reflection_text = input("What did you learn about your working process? ").strip()
+        if not reflection_text:
+            console.print("[yellow]No reflection entered.[/yellow]")
+            return
+
+        await record_reflection(
+            db,
+            deadline_id,
+            predicted_hours=predicted,
+            actual_hours=actual,
+            reflection_text=reflection_text,
+        )
+        console.print("[green]✓ Reflection saved.[/green]")

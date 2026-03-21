@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from sophia.domain.errors import ChronosError
 from sophia.domain.models import (
     Deadline,
     DeadlineType,
@@ -400,4 +401,182 @@ async def record_estimate(
         implementation_intention=intention,
         scaffold_level=scaffold,
         estimated_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Time tracking
+# ---------------------------------------------------------------------------
+
+UNDERESTIMATE_RATIO_MINOR = 1.25
+UNDERESTIMATE_RATIO_MAJOR = 2.0
+OVERESTIMATE_RATIO = 0.75
+
+
+async def start_timer(db: aiosqlite.Connection, deadline_id: str) -> None:
+    """Start a timer for a deadline. Raises ChronosError if already running."""
+    cursor = await db.execute("SELECT 1 FROM active_timers WHERE deadline_id = ?", (deadline_id,))
+    if await cursor.fetchone():
+        raise ChronosError(f"Timer already running for {deadline_id}")
+
+    await db.execute(
+        "INSERT INTO active_timers (deadline_id, started_at) VALUES (?, ?)",
+        (deadline_id, datetime.now(UTC).isoformat()),
+    )
+    await db.commit()
+    log.info("timer_started", deadline_id=deadline_id)
+
+
+async def stop_timer(db: aiosqlite.Connection, deadline_id: str) -> float:
+    """Stop running timer, record elapsed hours as a time entry. Returns hours."""
+    cursor = await db.execute(
+        "SELECT started_at FROM active_timers WHERE deadline_id = ?", (deadline_id,)
+    )
+    row = await cursor.fetchone()
+    if not row:
+        raise ChronosError(f"No timer running for {deadline_id}")
+
+    started = datetime.fromisoformat(row[0])
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=UTC)
+    elapsed = (datetime.now(UTC) - started).total_seconds() / 3600.0
+
+    await db.execute("DELETE FROM active_timers WHERE deadline_id = ?", (deadline_id,))
+    await db.execute(
+        "INSERT INTO time_entries (deadline_id, hours, source) VALUES (?, ?, ?)",
+        (deadline_id, elapsed, "timer"),
+    )
+    await db.commit()
+    log.info("timer_stopped", deadline_id=deadline_id, hours=round(elapsed, 2))
+    return elapsed
+
+
+async def record_time(
+    db: aiosqlite.Connection,
+    deadline_id: str,
+    hours: float,
+    note: str | None = None,
+) -> None:
+    """Record a manual time entry."""
+    await db.execute(
+        "INSERT INTO time_entries (deadline_id, hours, source, note) VALUES (?, ?, ?, ?)",
+        (deadline_id, hours, "manual", note),
+    )
+    await db.commit()
+    log.info("time_recorded", deadline_id=deadline_id, hours=hours)
+
+
+async def get_tracked_time(db: aiosqlite.Connection, deadline_id: str) -> float:
+    """Sum all time entries (timer + manual) for a deadline."""
+    cursor = await db.execute(
+        "SELECT COALESCE(SUM(hours), 0) FROM time_entries WHERE deadline_id = ?",
+        (deadline_id,),
+    )
+    row = await cursor.fetchone()
+    return float(row[0]) if row else 0.0
+
+
+# ---------------------------------------------------------------------------
+# Post-deadline reflection
+# ---------------------------------------------------------------------------
+
+
+async def record_reflection(
+    db: aiosqlite.Connection,
+    deadline_id: str,
+    *,
+    predicted_hours: float | None,
+    actual_hours: float,
+    reflection_text: str,
+) -> None:
+    """Store post-deadline reflection text."""
+    await db.execute(
+        "INSERT INTO deadline_reflections "
+        "(deadline_id, predicted_hours, actual_hours, reflection_text) "
+        "VALUES (?, ?, ?, ?)",
+        (deadline_id, predicted_hours, actual_hours, reflection_text),
+    )
+    await db.commit()
+    log.info("reflection_recorded", deadline_id=deadline_id)
+
+
+async def complete_deadline(
+    app: AppContainer,
+    deadline_id: str,
+) -> tuple[float | None, float, str]:
+    """Mark deadline done: get predicted & actual hours, update metacognition_log.
+
+    Returns (predicted_hours, actual_hours, formatted_feedback).
+    """
+    db = app.db
+    actual_hours = await get_tracked_time(db, deadline_id)
+
+    # Look up deadline_type for metacognition domain
+    cursor = await db.execute(
+        "SELECT deadline_type FROM deadline_cache WHERE id = ?", (deadline_id,)
+    )
+    row = await cursor.fetchone()
+    deadline_type = DeadlineType(row[0]) if row else DeadlineType.ASSIGNMENT
+
+    # Get predicted from effort_estimates
+    cursor = await db.execute(
+        "SELECT predicted_hours FROM effort_estimates WHERE deadline_id = ? "
+        "ORDER BY estimated_at DESC LIMIT 1",
+        (deadline_id,),
+    )
+    est_row = await cursor.fetchone()
+    predicted_hours = float(est_row[0]) if est_row else None
+
+    # Update metacognition_log with actual
+    domain = f"effort:{deadline_type.value}"
+    await db.execute(
+        "UPDATE metacognition_log SET actual = ?, actual_at = ? WHERE domain = ? AND item_id = ?",
+        (actual_hours, datetime.now(UTC).isoformat(), domain, deadline_id),
+    )
+    await db.commit()
+
+    feedback = format_estimation_feedback(predicted_hours, actual_hours)
+    log.info(
+        "deadline_completed",
+        deadline_id=deadline_id,
+        predicted=predicted_hours,
+        actual=actual_hours,
+    )
+    return predicted_hours, actual_hours, feedback
+
+
+def format_estimation_feedback(predicted: float | None, actual: float) -> str:
+    """Empathetic, constructivist feedback on estimation accuracy.
+
+    Never guilt-frames. Normalizes errors and emphasizes growth.
+    """
+    if predicted is None:
+        return f"📊 Tracked {actual:.1f}h total — no estimate to compare against."
+
+    ratio = actual / predicted if predicted > 0 else float("inf")
+
+    if ratio <= UNDERESTIMATE_RATIO_MINOR and ratio >= OVERESTIMATE_RATIO:
+        return (
+            f"✅ Well calibrated! ({predicted:.1f}h predicted, {actual:.1f}h actual) "
+            "— your estimation sense is solid here."
+        )
+
+    if ratio > UNDERESTIMATE_RATIO_MAJOR:
+        return (
+            f"🔍 {predicted:.1f}h predicted, {actual:.1f}h actual — "
+            "This is a very common pattern. Most students underestimate by ~2× "
+            "on their first few tasks. This gap is your biggest learning opportunity."
+        )
+
+    if ratio > UNDERESTIMATE_RATIO_MINOR:
+        return (
+            f"🔍 {predicted:.1f}h predicted, {actual:.1f}h actual — "
+            "Slightly under. Breaking tasks into smaller phases can help close this gap."
+        )
+
+    # Overestimate (ratio < OVERESTIMATE_RATIO)
+    return (
+        f"💪 {predicted:.1f}h predicted, {actual:.1f}h actual — "
+        "You were faster than you thought! Overestimation is common early on "
+        "and usually self-corrects."
     )

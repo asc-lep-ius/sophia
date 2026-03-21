@@ -32,6 +32,7 @@ async def db():
     await conn.execute("PRAGMA foreign_keys=ON")
     await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/017_chronos.sql").read_text())
+    await conn.executescript(Path("src/sophia/infra/migrations/018_chronos_time.sql").read_text())
     await conn.commit()
     yield conn
     await conn.close()
@@ -587,3 +588,240 @@ class TestGetReferenceClass:
 
         refs = await get_reference_class(db, DeadlineType.QUIZ)
         assert refs == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Time Tracking + Post-Deadline Reflection
+# ---------------------------------------------------------------------------
+
+
+class TestStartTimer:
+    async def test_starts_timer(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import start_timer
+
+        await start_timer(db, "assign:1")
+
+        cursor = await db.execute(
+            "SELECT deadline_id, started_at FROM active_timers WHERE deadline_id = ?",
+            ("assign:1",),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "assign:1"
+
+    async def test_error_if_already_running(self, db: aiosqlite.Connection) -> None:
+        from sophia.domain.errors import ChronosError
+        from sophia.services.chronos import start_timer
+
+        await start_timer(db, "assign:1")
+        with pytest.raises(ChronosError, match="already running"):
+            await start_timer(db, "assign:1")
+
+
+class TestStopTimer:
+    async def test_stops_and_records_time(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import start_timer, stop_timer
+
+        await start_timer(db, "assign:1")
+        # Backdate the timer start so elapsed > 0
+        await db.execute(
+            "UPDATE active_timers SET started_at = ? WHERE deadline_id = ?",
+            (
+                (datetime.now(UTC) - timedelta(hours=1, minutes=30)).isoformat(),
+                "assign:1",
+            ),
+        )
+        await db.commit()
+
+        hours = await stop_timer(db, "assign:1")
+        assert hours == pytest.approx(1.5, abs=0.05)
+
+        # Timer row should be gone
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM active_timers WHERE deadline_id = ?", ("assign:1",)
+        )
+        assert (await cursor.fetchone())[0] == 0
+
+        # Time entry should exist
+        cursor = await db.execute(
+            "SELECT hours, source FROM time_entries WHERE deadline_id = ?", ("assign:1",)
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == pytest.approx(1.5, abs=0.05)
+        assert row[1] == "timer"
+
+    async def test_error_if_not_running(self, db: aiosqlite.Connection) -> None:
+        from sophia.domain.errors import ChronosError
+        from sophia.services.chronos import stop_timer
+
+        with pytest.raises(ChronosError, match="No timer running"):
+            await stop_timer(db, "assign:1")
+
+
+class TestRecordTime:
+    async def test_manual_entry(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import record_time
+
+        await record_time(db, "assign:1", 2.5)
+
+        cursor = await db.execute(
+            "SELECT hours, source, note FROM time_entries WHERE deadline_id = ?",
+            ("assign:1",),
+        )
+        row = await cursor.fetchone()
+        assert row[0] == pytest.approx(2.5)
+        assert row[1] == "manual"
+        assert row[2] is None
+
+    async def test_with_note(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import record_time
+
+        await record_time(db, "assign:1", 1.0, note="Researched the topic")
+
+        cursor = await db.execute(
+            "SELECT note FROM time_entries WHERE deadline_id = ?", ("assign:1",)
+        )
+        row = await cursor.fetchone()
+        assert row[0] == "Researched the topic"
+
+
+class TestGetTrackedTime:
+    async def test_sums_all_entries(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_tracked_time, record_time
+
+        await record_time(db, "assign:1", 2.0)
+        await record_time(db, "assign:1", 1.5)
+
+        total = await get_tracked_time(db, "assign:1")
+        assert total == pytest.approx(3.5)
+
+    async def test_zero_when_no_entries(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_tracked_time
+
+        total = await get_tracked_time(db, "assign:1")
+        assert total == 0.0
+
+
+class TestRecordReflection:
+    async def test_stores_reflection(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import record_reflection
+
+        await record_reflection(
+            db,
+            "assign:1",
+            predicted_hours=3.0,
+            actual_hours=5.0,
+            reflection_text="Underestimated the reading phase.",
+        )
+
+        cursor = await db.execute(
+            "SELECT deadline_id, predicted_hours, actual_hours, reflection_text "
+            "FROM deadline_reflections WHERE deadline_id = ?",
+            ("assign:1",),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "assign:1"
+        assert row[1] == pytest.approx(3.0)
+        assert row[2] == pytest.approx(5.0)
+        assert row[3] == "Underestimated the reading phase."
+
+
+class TestCompleteDeadline:
+    async def test_updates_metacognition_log(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import complete_deadline, record_time
+
+        db = app_container.db
+        await _insert_deadline(db)
+
+        # Record an estimate (creates metacognition_log predicted entry)
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:1", 42, 4.0, "full"),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
+            ("effort:assignment", "assign:1", 4.0, datetime.now(UTC).isoformat()),
+        )
+        await db.commit()
+
+        # Track some time
+        await record_time(db, "assign:1", 3.0)
+        await record_time(db, "assign:1", 2.0)
+
+        predicted, actual, feedback = await complete_deadline(app_container, "assign:1")
+
+        assert predicted == pytest.approx(4.0)
+        assert actual == pytest.approx(5.0)
+
+        # metacognition_log should have actual updated
+        cursor = await db.execute(
+            "SELECT actual FROM metacognition_log WHERE domain = ? AND item_id = ?",
+            ("effort:assignment", "assign:1"),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == pytest.approx(5.0)
+
+    async def test_returns_feedback(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import complete_deadline, record_time
+
+        db = app_container.db
+        await _insert_deadline(db)
+
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES (?, ?, ?, ?)",
+            ("assign:1", 42, 4.0, "full"),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
+            ("effort:assignment", "assign:1", 4.0, datetime.now(UTC).isoformat()),
+        )
+        await db.commit()
+
+        await record_time(db, "assign:1", 4.2)
+
+        _, _, feedback = await complete_deadline(app_container, "assign:1")
+        assert "✅" in feedback  # well calibrated
+
+
+class TestFormatEstimationFeedback:
+    def test_well_calibrated(self) -> None:
+        from sophia.services.chronos import format_estimation_feedback
+
+        result = format_estimation_feedback(4.0, 4.2)
+        assert "✅" in result
+        assert "4.0" in result
+        assert "4.2" in result
+
+    def test_underestimate(self) -> None:
+        from sophia.services.chronos import format_estimation_feedback
+
+        result = format_estimation_feedback(3.0, 5.0)
+        assert "🔍" in result
+        assert "3.0" in result
+        assert "5.0" in result
+
+    def test_overestimate(self) -> None:
+        from sophia.services.chronos import format_estimation_feedback
+
+        result = format_estimation_feedback(6.0, 3.0)
+        assert "💪" in result
+        assert "6.0" in result
+        assert "3.0" in result
+
+    def test_large_underestimate(self) -> None:
+        from sophia.services.chronos import format_estimation_feedback
+
+        result = format_estimation_feedback(3.0, 9.0)
+        assert "🔍" in result
+        # Should normalize the error, not guilt-frame
+        assert "behind" not in result.lower()
+        assert "common" in result.lower()
