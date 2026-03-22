@@ -499,6 +499,85 @@ class TestReviewItems:
         assert item_42.score > item_99.score
 
 
+# --- Phase 4 Tests ---
+
+
+async def _make_athena_open(db: aiosqlite.Connection, course_id: int) -> None:
+    """Insert enough flashcards + explanations to reach athena scaffold level 0 (open)."""
+    for i in range(25):
+        await db.execute(
+            "INSERT INTO student_flashcards (course_id, topic, front, back, source) "
+            "VALUES (?, 'Sorting', ?, ?, 'study')",
+            (course_id, f"Q{i}", f"A{i}"),
+        )
+    cursor = await db.execute(
+        "SELECT id FROM student_flashcards WHERE course_id = ?",
+        (course_id,),
+    )
+    card_ids = [row[0] for row in await cursor.fetchall()]
+    for card_id in card_ids:
+        await db.execute(
+            "INSERT INTO self_explanations (flashcard_id, student_explanation, scaffold_level) "
+            "VALUES (?, 'test explanation', 0)",
+            (card_id,),
+        )
+    await db.commit()
+
+
+async def _make_chronos_open(db: aiosqlite.Connection) -> None:
+    """Insert well-calibrated metacognition entries to reach chronos scaffold 'open'."""
+    for i in range(10):
+        await db.execute(
+            "INSERT INTO metacognition_log (domain, item_id, predicted, actual) "
+            "VALUES ('effort:exam', ?, ?, ?)",
+            (f"item_{i}", 5.0, 5.0),
+        )
+    await db.commit()
+
+
+class TestGetScaffoldHint:
+    @pytest.mark.asyncio
+    async def test_returns_hint_when_athena_open_chronos_not(self, db):
+        """Mature study habits but not estimation → hint about estimation."""
+        from sophia.services.athena_chronos import get_scaffold_hint
+
+        await _make_athena_open(db, 42)
+
+        hint = await get_scaffold_hint(db, 42)
+        assert hint is not None
+        assert "effort estimates" in hint
+
+    @pytest.mark.asyncio
+    async def test_returns_hint_when_chronos_open_athena_not(self, db):
+        """Mature estimation but not study → hint about study practice."""
+        from sophia.services.athena_chronos import get_scaffold_hint
+
+        await _make_chronos_open(db)
+
+        hint = await get_scaffold_hint(db, 42)
+        assert hint is not None
+        assert "study practice" in hint
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_both_open(self, db):
+        """Both systems mature → no hint needed."""
+        from sophia.services.athena_chronos import get_scaffold_hint
+
+        await _make_athena_open(db, 42)
+        await _make_chronos_open(db)
+
+        hint = await get_scaffold_hint(db, 42)
+        assert hint is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_data(self, db):
+        """No data at all → both at full scaffold → no contrast."""
+        from sophia.services.athena_chronos import get_scaffold_hint
+
+        hint = await get_scaffold_hint(db, 42)
+        assert hint is None
+
+
 class TestConfidenceGapItems:
     @pytest.mark.asyncio
     async def test_low_ratings_become_gap_items(self, db):

@@ -98,6 +98,22 @@ async def plan_default(
                 parts.append(f"{gaps} confidence gap(s)")
             console.print(f"[dim]{', '.join(parts)}[/dim]")
 
+            from sophia.services.athena_chronos import get_scaffold_hint
+
+            course_ids_seen: set[int] = set()
+            hints: list[str] = []
+            for item in items:
+                if item.course_id not in course_ids_seen:
+                    course_ids_seen.add(item.course_id)
+                    hint = await get_scaffold_hint(container.db, item.course_id)
+                    if hint:
+                        hints.append(f"[dim]{item.course_name}: {hint}[/dim]")
+
+            if hints:
+                console.print()
+                for h in hints:
+                    console.print(h)
+
             console.print(
                 "\n[dim]This is your landscape, not your orders. "
                 "The score ranks by urgency and gaps — "

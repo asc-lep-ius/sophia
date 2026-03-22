@@ -619,11 +619,14 @@ async def study_due(
     ] = None,
 ) -> None:
     """Show topics due for spaced review and upcoming reviews."""
+    from datetime import UTC, datetime
+
     from rich.console import Console
     from rich.table import Table
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.infra.di import create_app
+    from sophia.services.athena_chronos import get_exam_for_course
     from sophia.services.athena_review import get_due_reviews, get_upcoming_reviews
 
     console = Console()
@@ -650,6 +653,7 @@ async def study_due(
             table.add_column("Course", justify="right")
             table.add_column("Review #", justify="center")
             table.add_column("Last Score", justify="center")
+            table.add_column("Exam", justify="center")
 
             for sched in due:
                 score = sched.score_at_last_review
@@ -662,11 +666,21 @@ async def study_due(
                 else:
                     status = f"[red]{score:.0%} reset![/red]"
 
+                exam_date = await get_exam_for_course(container.db, sched.course_id)
+                if exam_date:
+                    days_to_exam = (exam_date - datetime.now(UTC)).days
+                    exam_str = (
+                        f"[bold red]in {days_to_exam}d[/bold red]" if days_to_exam <= 14 else "—"
+                    )
+                else:
+                    exam_str = "—"
+
                 table.add_row(
                     sched.topic,
                     str(sched.course_id),
                     str(sched.interval_index + 1),
                     status,
+                    exam_str,
                 )
             console.print(table)
 

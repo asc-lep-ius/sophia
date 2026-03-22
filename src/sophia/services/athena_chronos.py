@@ -382,3 +382,38 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
             )
 
     return items
+
+
+async def get_scaffold_hint(
+    db: aiosqlite.Connection,
+    course_id: int,
+) -> str | None:
+    """Compare Athena scaffold (study maturity) with Chronos scaffold
+    (estimation maturity) and return an observational hint.
+
+    Returns None if no meaningful contrast exists.
+    """
+    from sophia.domain.models import DeadlineType, EstimationScaffold
+    from sophia.services.athena_study import get_explanation_count
+    from sophia.services.athena_study import get_scaffold_level as athena_scaffold_level
+    from sophia.services.chronos import get_scaffold_level as chronos_scaffold_level
+
+    explanation_count = await get_explanation_count(db, course_id)
+    athena_level = athena_scaffold_level(explanation_count)
+
+    chronos_level = await chronos_scaffold_level(db, DeadlineType.EXAM, course_id=course_id)
+
+    athena_open = athena_level == 0
+    chronos_open = chronos_level == EstimationScaffold.OPEN
+
+    if athena_open and not chronos_open:
+        return (
+            "You've developed strong study habits for this course, "
+            "but your effort estimates still need calibration."
+        )
+    if not athena_open and chronos_open:
+        return (
+            "Your time estimates are well-calibrated for this type of work, "
+            "but your study practice is still developing."
+        )
+    return None

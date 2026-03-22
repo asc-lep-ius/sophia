@@ -486,6 +486,27 @@ async def deadlines_stress(
                 "\n[dim]This is one lens on your workload — "
                 "not the definitive answer on what to do first.[/dim]"
             )
+
+            from sophia.services.athena_chronos import get_course_confidence
+            from sophia.services.chronos import get_deadlines as _get_stress_deadlines
+
+            stress_deadlines = await _get_stress_deadlines(container.db, horizon_days=horizon)
+            low_conf_courses: list[tuple[str, float]] = []
+            seen_course_ids: set[int] = set()
+            for d in stress_deadlines:
+                if d.course_id in seen_course_ids:
+                    continue
+                seen_course_ids.add(d.course_id)
+                conf = await get_course_confidence(container.db, d.course_id)
+                if conf is not None and conf < 0.6:
+                    low_conf_courses.append((d.course_name, conf))
+
+            if low_conf_courses:
+                console.print()
+                for name, conf_val in low_conf_courses:
+                    console.print(
+                        f"[dim]Note: your confidence in '{name}' is {conf_val * 5:.1f}/5[/dim]"
+                    )
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
@@ -552,6 +573,13 @@ async def deadlines_next() -> None:
                 f"  confidence: {conf_str}  (course avg)",
                 f"  → score: {ps['score']:.3f}",
             ]
+
+            from sophia.services.athena_review import get_due_reviews
+
+            course_reviews = await get_due_reviews(container.db, course_id=top.course_id)
+            if course_reviews:
+                lines.append("")
+                lines.append(f"[dim]{len(course_reviews)} review(s) due in this course[/dim]")
 
             console.print(Panel("\n".join(lines), title="Next Up"))
     except AuthError:
