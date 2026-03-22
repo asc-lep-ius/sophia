@@ -47,6 +47,13 @@ async def deadlines_sync() -> None:
             with Status("Syncing deadlines from all courses…", console=console):
                 deadlines = await sync_deadlines(container)
             console.print(f"[green]✓ Synced {len(deadlines)} deadline(s)[/green]")
+
+            from sophia.services.athena_chronos import compress_all_courses
+
+            compressed = await compress_all_courses(container.db)
+            if compressed:
+                total = sum(compressed.values())
+                console.print(f"[dim]Compressed {total} review(s) for upcoming exams.[/dim]")
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
