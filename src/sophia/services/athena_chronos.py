@@ -126,3 +126,80 @@ async def compress_all_courses(db: aiosqlite.Connection) -> dict[int, int]:
             results[course_id] = count
 
     return results
+
+
+# --- Confidence → Priority ---
+
+CONFIDENCE_BOOST_THRESHOLD = 0.6
+CONFIDENCE_BOOST_FACTOR = 1.5
+
+
+async def log_confidence_prediction(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str,
+    confidence_rating: float,
+) -> None:
+    """Write a confidence prediction to metacognition_log.
+
+    Domain: 'confidence:{course_id}'
+    Predicted: confidence score (already 0-1 from rating_to_score).
+    """
+    domain = f"confidence:{course_id}"
+    now = datetime.now(UTC).isoformat()
+
+    await db.execute(
+        "INSERT OR REPLACE INTO metacognition_log "
+        "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
+        (domain, topic, confidence_rating, now),
+    )
+    await db.commit()
+
+
+async def log_confidence_actual(
+    db: aiosqlite.Connection,
+    course_id: int,
+    topic: str,
+    actual_score: float,
+) -> None:
+    """Record an actual exam/test score against a confidence prediction."""
+    domain = f"confidence:{course_id}"
+    now = datetime.now(UTC).isoformat()
+
+    await db.execute(
+        "UPDATE metacognition_log SET actual = ?, actual_at = ? WHERE domain = ? AND item_id = ?",
+        (actual_score, now, domain, topic),
+    )
+    await db.commit()
+
+
+async def get_course_confidence(
+    db: aiosqlite.Connection,
+    course_id: int,
+) -> float | None:
+    """Average normalized confidence (0-1) for a course, or None if no ratings."""
+    cursor = await db.execute(
+        "SELECT AVG(predicted) FROM confidence_ratings WHERE course_id = ?",
+        (course_id,),
+    )
+    row = await cursor.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return float(row[0])
+
+
+def confidence_priority_multiplier(confidence: float | None) -> float:
+    """Compute a priority multiplier based on course confidence.
+
+    Low confidence → higher multiplier (up to CONFIDENCE_BOOST_FACTOR).
+    High confidence → multiplier of 1.0 (no boost).
+    No data → 1.0 (neutral).
+    """
+    if confidence is None:
+        return 1.0
+
+    if confidence >= CONFIDENCE_BOOST_THRESHOLD:
+        return 1.0
+
+    t = confidence / CONFIDENCE_BOOST_THRESHOLD
+    return CONFIDENCE_BOOST_FACTOR - t * (CONFIDENCE_BOOST_FACTOR - 1.0)

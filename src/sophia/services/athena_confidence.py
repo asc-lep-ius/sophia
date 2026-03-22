@@ -57,6 +57,10 @@ async def rate_confidence(
     )
     await app.db.commit()
 
+    from sophia.services.athena_chronos import log_confidence_prediction
+
+    await log_confidence_prediction(app.db, course_id, topic, predicted)
+
     log.info("confidence_rated", topic=topic, course_id=course_id, predicted=predicted)
     return ConfidenceRating(topic=topic, course_id=course_id, predicted=predicted, rated_at=now)
 
@@ -161,4 +165,9 @@ async def update_actual_score(
         (actual, now, topic, course_id),
     )
     await db.commit()
+
+    from sophia.services.athena_chronos import log_confidence_actual
+
+    await log_confidence_actual(db, course_id, topic, actual)
+
     log.info("actual_score_updated", topic=topic, course_id=course_id, actual=actual)

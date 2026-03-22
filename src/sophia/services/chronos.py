@@ -594,11 +594,12 @@ def compute_priority_score(
     deadline: Deadline,
     estimated_hours: float | None,
     tracked_hours: float,
+    confidence_multiplier: float = 1.0,
 ) -> dict[str, float]:
     """Compute composite priority with transparent components.
 
-    Returns dict with urgency, importance, effort_gap, and score so
-    students see WHY something ranks as it does.
+    Returns dict with urgency, importance, effort_gap, confidence_multiplier,
+    and score so students see WHY something ranks as it does.
     """
     hours_until_due = (deadline.due_at - datetime.now(UTC)).total_seconds() / 3600.0
     urgency = 1.0 / max(hours_until_due, 1.0)
@@ -614,7 +615,8 @@ def compute_priority_score(
         "urgency": urgency,
         "importance": importance,
         "effort_gap": effort_gap,
-        "score": urgency * importance * effort_gap,
+        "confidence_multiplier": confidence_multiplier,
+        "score": urgency * importance * effort_gap * confidence_multiplier,
     }
 
 
@@ -797,3 +799,42 @@ async def export_deadlines_ics(
         cal.add_component(event)
 
     return cal.to_ical().decode()
+
+
+async def get_missed_deadlines(
+    db: aiosqlite.Connection,
+    *,
+    course_id: int | None = None,
+    limit: int = 50,
+) -> list[Deadline]:
+    """Return past-due deadlines, most recent first."""
+    now = datetime.now(UTC).isoformat()
+    query = (
+        "SELECT id, name, course_id, course_name, deadline_type, due_at, "
+        "grade_weight, submission_status, url, extra "
+        "FROM deadline_cache "
+        "WHERE due_at < ? "
+    )
+    params: list[str | int] = [now]
+    if course_id is not None:
+        query += "AND course_id = ? "
+        params.append(course_id)
+    query += "ORDER BY due_at DESC LIMIT ?"
+    params.append(limit)
+
+    cursor = await db.execute(query, params)
+    return [
+        Deadline(
+            id=row[0],
+            name=row[1],
+            course_id=row[2],
+            course_name=row[3],
+            deadline_type=DeadlineType(row[4]),
+            due_at=datetime.fromisoformat(row[5]),
+            grade_weight=row[6],
+            submission_status=row[7],
+            url=row[8],
+            extra=json.loads(row[9]) if row[9] else {},
+        )
+        for row in await cursor.fetchall()
+    ]

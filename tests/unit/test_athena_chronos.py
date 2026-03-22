@@ -238,3 +238,129 @@ class TestGetExamForCourse:
 
         result = await get_exam_for_course(db, 42)
         assert result is None
+
+
+# --- Phase 2 Tests ---
+
+
+class TestLogConfidencePrediction:
+    @pytest.mark.asyncio
+    async def test_writes_to_metacognition_log(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import log_confidence_prediction
+
+        await log_confidence_prediction(db, 42, "Sorting", 0.5)
+
+        cursor = await db.execute(
+            "SELECT domain, item_id, predicted FROM metacognition_log WHERE domain = 'confidence:42'",
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "confidence:42"
+        assert row[1] == "Sorting"
+        assert row[2] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_normalizes_rating_to_zero_one(self, db: aiosqlite.Connection) -> None:
+        """The confidence_rating passed in should already be 0-1."""
+        from sophia.services.athena_chronos import log_confidence_prediction
+
+        await log_confidence_prediction(db, 42, "Sorting", 0.75)
+
+        cursor = await db.execute(
+            "SELECT predicted FROM metacognition_log WHERE domain = 'confidence:42'",
+        )
+        row = await cursor.fetchone()
+        assert row[0] == pytest.approx(0.75)
+
+    @pytest.mark.asyncio
+    async def test_replaces_on_duplicate(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import log_confidence_prediction
+
+        await log_confidence_prediction(db, 42, "Sorting", 0.3)
+        await log_confidence_prediction(db, 42, "Sorting", 0.8)
+
+        cursor = await db.execute(
+            "SELECT predicted FROM metacognition_log "
+            "WHERE domain = 'confidence:42' AND item_id = 'Sorting'",
+        )
+        row = await cursor.fetchone()
+        assert row[0] == pytest.approx(0.8)
+
+
+class TestLogConfidenceActual:
+    @pytest.mark.asyncio
+    async def test_updates_actual_score(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import log_confidence_actual, log_confidence_prediction
+
+        await log_confidence_prediction(db, 42, "Sorting", 0.5)
+        await log_confidence_actual(db, 42, "Sorting", 0.7)
+
+        cursor = await db.execute(
+            "SELECT actual FROM metacognition_log "
+            "WHERE domain = 'confidence:42' AND item_id = 'Sorting'",
+        )
+        row = await cursor.fetchone()
+        assert row[0] == pytest.approx(0.7)
+
+
+class TestGetCourseConfidence:
+    @pytest.mark.asyncio
+    async def test_returns_average_normalized(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import get_course_confidence
+
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.5, datetime.now(UTC).isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Graphs", 42, 0.75, datetime.now(UTC).isoformat()),
+        )
+        await db.commit()
+
+        result = await get_course_confidence(db, 42)
+        assert result is not None
+        assert result == pytest.approx(0.625)  # (0.5 + 0.75) / 2
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_no_ratings(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import get_course_confidence
+
+        result = await get_course_confidence(db, 42)
+        assert result is None
+
+
+class TestConfidencePriorityMultiplier:
+    def test_returns_1_when_no_data(self) -> None:
+        from sophia.services.athena_chronos import confidence_priority_multiplier
+
+        assert confidence_priority_multiplier(None) == 1.0
+
+    def test_returns_1_when_high_confidence(self) -> None:
+        from sophia.services.athena_chronos import confidence_priority_multiplier
+
+        assert confidence_priority_multiplier(0.8) == 1.0
+
+    def test_returns_boost_when_low_confidence(self) -> None:
+        from sophia.services.athena_chronos import confidence_priority_multiplier
+
+        result = confidence_priority_multiplier(0.3)
+        assert result > 1.0
+
+    def test_returns_max_boost_at_zero_confidence(self) -> None:
+        from sophia.services.athena_chronos import (
+            CONFIDENCE_BOOST_FACTOR,
+            confidence_priority_multiplier,
+        )
+
+        assert confidence_priority_multiplier(0.0) == pytest.approx(CONFIDENCE_BOOST_FACTOR)
+
+    def test_linear_interpolation(self) -> None:
+        from sophia.services.athena_chronos import confidence_priority_multiplier
+
+        # At threshold (0.6) → 1.0
+        assert confidence_priority_multiplier(0.6) == pytest.approx(1.0)
+        # At half of threshold (0.3) → midpoint between BOOST_FACTOR and 1.0
+        assert confidence_priority_multiplier(0.3) == pytest.approx(1.25)

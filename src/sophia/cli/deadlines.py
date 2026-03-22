@@ -499,6 +499,10 @@ async def deadlines_next() -> None:
 
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
+    from sophia.services.athena_chronos import (
+        confidence_priority_multiplier,
+        get_course_confidence,
+    )
     from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
 
     console = Console()
@@ -522,13 +526,18 @@ async def deadlines_next() -> None:
                 est_hours = float(est_row[0]) if est_row else None
 
                 tracked = await get_tracked_time(container.db, d.id)
-                ps = compute_priority_score(d, est_hours, tracked)
+                confidence = await get_course_confidence(container.db, d.course_id)
+                conf_mult = confidence_priority_multiplier(confidence)
+                ps = compute_priority_score(d, est_hours, tracked, confidence_multiplier=conf_mult)
                 scored.append((d, ps, est_hours, tracked))
 
             scored.sort(key=lambda t: t[1]["score"], reverse=True)
             top, ps, est_hours, tracked = scored[0]
 
             est_str = f"{est_hours:.1f}h" if est_hours is not None else "no estimate"
+            confidence = await get_course_confidence(container.db, top.course_id)
+            conf_str = f"{confidence * 5:.1f}/5" if confidence is not None else "no ratings"
+
             lines = [
                 f"[bold]{top.name}[/bold]",
                 f"Course: {top.course_name}",
@@ -540,6 +549,7 @@ async def deadlines_next() -> None:
                 f"  urgency: {ps['urgency']:.3f}  (closer = higher)",
                 f"  importance: {ps['importance']:.2f}  (grade weight)",
                 f"  effort gap: {ps['effort_gap']:.1f}h  (remaining work)",
+                f"  confidence: {conf_str}  (course avg)",
                 f"  → score: {ps['score']:.3f}",
             ]
 
@@ -613,6 +623,62 @@ async def deadlines_export_ics(
             out_path = Path(output or "sophia_deadlines.ics")
             out_path.write_text(ics_str)
             console.print(f"[green]Exported to {out_path}[/green]")
+    except AuthError:
+        console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command(name="graveyard")
+async def deadlines_graveyard(
+    *,
+    course: Annotated[
+        int | None, cyclopts.Parameter(help="Filter by course ID.", name="--course")
+    ] = None,
+    limit: Annotated[int, cyclopts.Parameter(help="Max entries to show.", name="--limit")] = 20,
+) -> None:
+    """Past-due deadlines — check if late submission or a retry is possible."""
+    from datetime import UTC, datetime
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import get_missed_deadlines
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            missed = await get_missed_deadlines(container.db, course_id=course, limit=limit)
+
+            if not missed:
+                console.print("[dim]No missed deadlines on record.[/dim]")
+                return
+
+            table = Table(title="Past-due deadlines")
+            table.add_column("Name", style="bold")
+            table.add_column("Course")
+            table.add_column("Type")
+            table.add_column("Was due", style="dim")
+            table.add_column("Status")
+
+            for d in missed:
+                days_ago = (datetime.now(UTC) - d.due_at).days
+                status = d.submission_status or "unknown"
+                table.add_row(
+                    d.name,
+                    d.course_name,
+                    d.deadline_type.value,
+                    f"{days_ago}d ago ({d.due_at.strftime('%Y-%m-%d')})",
+                    status,
+                )
+
+            console.print(table)
+            console.print(
+                "\n[dim]Some of these may allow late submission, "
+                "second attempts, or Nachklausur — check TUWEL/TISS.[/dim]"
+            )
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None

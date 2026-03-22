@@ -1379,3 +1379,148 @@ class TestExportIcs:
         cal = ICalendar.from_ical(ics_str)
         events = [c for c in cal.walk() if c.name == "VEVENT"]
         assert len(events) == 0
+
+
+class TestComputePriorityScoreConfidence:
+    """Tests for the confidence_multiplier extension."""
+
+    def test_confidence_multiplier_default_is_1(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=48),
+            grade_weight=0.3,
+        )
+        result = compute_priority_score(deadline, estimated_hours=5.0, tracked_hours=2.0)
+        assert result["confidence_multiplier"] == pytest.approx(1.0)
+
+    def test_confidence_multiplier_increases_score(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=48),
+            grade_weight=0.3,
+        )
+        base = compute_priority_score(deadline, 5.0, 2.0, confidence_multiplier=1.0)
+        boosted = compute_priority_score(deadline, 5.0, 2.0, confidence_multiplier=1.5)
+        assert boosted["score"] > base["score"]
+        assert boosted["score"] == pytest.approx(base["score"] * 1.5)
+
+    def test_confidence_multiplier_in_result_dict(self) -> None:
+        from sophia.services.chronos import compute_priority_score
+
+        deadline = Deadline(
+            id="assign:1",
+            name="HW1",
+            course_id=42,
+            course_name="Algo",
+            deadline_type=DeadlineType.ASSIGNMENT,
+            due_at=datetime.now(UTC) + timedelta(hours=48),
+            grade_weight=0.3,
+        )
+        result = compute_priority_score(deadline, 5.0, 2.0, confidence_multiplier=1.3)
+        assert "confidence_multiplier" in result
+        assert result["confidence_multiplier"] == pytest.approx(1.3)
+
+
+class TestGetMissedDeadlines:
+    @pytest.mark.asyncio
+    async def test_returns_past_due_deadlines(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_missed_deadlines
+
+        past = datetime.now(UTC) - timedelta(days=3)
+        await db.execute(
+            "INSERT INTO deadline_cache "
+            "(id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'Old HW', 42, 'Algo', 'assignment', ?)",
+            (past.isoformat(),),
+        )
+        await db.commit()
+
+        result = await get_missed_deadlines(db)
+        assert len(result) == 1
+        assert result[0].name == "Old HW"
+
+    @pytest.mark.asyncio
+    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_missed_deadlines
+
+        past = datetime.now(UTC) - timedelta(days=3)
+        await db.execute(
+            "INSERT INTO deadline_cache "
+            "(id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?)",
+            (past.isoformat(),),
+        )
+        await db.execute(
+            "INSERT INTO deadline_cache "
+            "(id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:2', 'HW2', 99, 'DB', 'assignment', ?)",
+            (past.isoformat(),),
+        )
+        await db.commit()
+
+        result = await get_missed_deadlines(db, course_id=42)
+        assert len(result) == 1
+        assert result[0].course_id == 42
+
+    @pytest.mark.asyncio
+    async def test_respects_limit(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_missed_deadlines
+
+        for i in range(5):
+            past = datetime.now(UTC) - timedelta(days=i + 1)
+            await db.execute(
+                "INSERT INTO deadline_cache "
+                "(id, name, course_id, course_name, deadline_type, due_at) "
+                "VALUES (?, ?, 42, 'Algo', 'assignment', ?)",
+                (f"a:{i}", f"HW{i}", past.isoformat()),
+            )
+        await db.commit()
+
+        result = await get_missed_deadlines(db, limit=3)
+        assert len(result) == 3
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_none_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_missed_deadlines
+
+        future = datetime.now(UTC) + timedelta(days=5)
+        await db.execute(
+            "INSERT INTO deadline_cache "
+            "(id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'Future HW', 42, 'Algo', 'assignment', ?)",
+            (future.isoformat(),),
+        )
+        await db.commit()
+
+        result = await get_missed_deadlines(db)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_most_recent_first(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_missed_deadlines
+
+        for i in range(3):
+            past = datetime.now(UTC) - timedelta(days=(i + 1) * 2)
+            await db.execute(
+                "INSERT INTO deadline_cache "
+                "(id, name, course_id, course_name, deadline_type, due_at) "
+                "VALUES (?, ?, 42, 'Algo', 'assignment', ?)",
+                (f"a:{i}", f"HW{i}", past.isoformat()),
+            )
+        await db.commit()
+
+        result = await get_missed_deadlines(db)
+        # Most recent (least days ago) should be first
+        assert result[0].name == "HW0"

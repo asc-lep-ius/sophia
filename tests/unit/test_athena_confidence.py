@@ -13,9 +13,10 @@ from sophia.domain.models import ConfidenceRating
 
 @pytest.fixture
 async def db():
-    """In-memory SQLite with topic + confidence migrations applied."""
+    """In-memory SQLite with topic + confidence + metacognition migrations applied."""
     conn = await aiosqlite.connect(":memory:")
     await conn.execute("PRAGMA foreign_keys=ON")
+    await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/006_topics.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/007_confidence.sql").read_text())
     await conn.commit()
