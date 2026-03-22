@@ -13,6 +13,8 @@ import structlog
 if TYPE_CHECKING:
     import aiosqlite
 
+from sophia.domain.models import PlanItem, PlanItemType
+
 log = structlog.get_logger()
 
 EXAM_BUFFER_DAYS = 1
@@ -203,3 +205,180 @@ def confidence_priority_multiplier(confidence: float | None) -> float:
 
     t = confidence / CONFIDENCE_BOOST_THRESHOLD
     return CONFIDENCE_BOOST_FACTOR - t * (CONFIDENCE_BOOST_FACTOR - 1.0)
+
+
+# --- Unified Recommendation Engine (Phase 3) ---
+
+DEADLINE_BASE_WEIGHT = 1.0
+REVIEW_BASE_WEIGHT = 0.6
+CONFIDENCE_GAP_WEIGHT = 0.3
+REVIEW_OVERDUE_BOOST_PER_DAY = 0.1
+CONFIDENCE_GAP_THRESHOLD = 0.5  # predicted < 0.5 (= 2.5/5 raw) is a gap
+
+
+async def build_plan_items(
+    db: aiosqlite.Connection,
+    horizon_days: int = 14,
+) -> list[PlanItem]:
+    """Gather items from Chronos + Athena, score them, return sorted.
+
+    Scoring is for SORTING, not prescribing. The student decides.
+    """
+    items: list[PlanItem] = []
+    items.extend(await _deadline_items(db, horizon_days))
+    items.extend(await _review_items(db))
+    items.extend(await _confidence_gap_items(db))
+    items.sort(key=lambda i: i.score, reverse=True)
+    return items
+
+
+async def _deadline_items(
+    db: aiosqlite.Connection,
+    horizon_days: int,
+) -> list[PlanItem]:
+    """Build PlanItems from upcoming deadlines with priority scores."""
+    from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
+
+    deadlines = await get_deadlines(db, horizon_days=horizon_days)
+    items = []
+
+    for d in deadlines:
+        est_cursor = await db.execute(
+            "SELECT predicted_hours FROM effort_estimates "
+            "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
+            (d.id,),
+        )
+        est_row = await est_cursor.fetchone()
+        est_hours = float(est_row[0]) if est_row else None
+
+        tracked = await get_tracked_time(db, d.id)
+        confidence = await get_course_confidence(db, d.course_id)
+        conf_mult = confidence_priority_multiplier(confidence)
+        ps = compute_priority_score(d, est_hours, tracked, confidence_multiplier=conf_mult)
+
+        est_str = f"{est_hours:.1f}h est" if est_hours else "no estimate"
+        conf_str = f"confidence {confidence * 5:.1f}/5" if confidence else "no confidence data"
+        detail = f"{est_str}, {tracked:.1f}h tracked — {conf_str}"
+
+        items.append(
+            PlanItem(
+                item_type=PlanItemType.DEADLINE,
+                title=d.name,
+                course_name=d.course_name,
+                course_id=d.course_id,
+                score=ps["score"] * DEADLINE_BASE_WEIGHT,
+                components=ps,
+                due_at=d.due_at.isoformat(),
+                detail=detail,
+            )
+        )
+
+    return items
+
+
+async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
+    """Build PlanItems from due reviews."""
+    from sophia.services.athena_review import get_due_reviews
+
+    reviews = await get_due_reviews(db)
+    items = []
+
+    now = datetime.now(UTC)
+    for r in reviews:
+        review_due = datetime.fromisoformat(r.next_review_at)
+        overdue_days = max(0, (now - review_due).days)
+        review_score = REVIEW_BASE_WEIGHT + (overdue_days * REVIEW_OVERDUE_BOOST_PER_DAY)
+
+        exam_date = await get_exam_for_course(db, r.course_id)
+        exam_str = ""
+        exam_boost = 1.0
+        if exam_date:
+            days_to_exam = (exam_date - now).days
+            if days_to_exam <= 14:
+                exam_boost = 1.5
+                review_score *= exam_boost
+                exam_str = f" — exam in {days_to_exam}d"
+
+        name_cursor = await db.execute(
+            "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
+            (r.course_id,),
+        )
+        name_row = await name_cursor.fetchone()
+        course_name = name_row[0] if name_row else f"Course {r.course_id}"
+
+        detail = f"review #{r.review_count + 1}, last score: "
+        detail += f"{r.score_at_last_review:.0%}" if r.score_at_last_review else "none"
+        detail += exam_str
+
+        items.append(
+            PlanItem(
+                item_type=PlanItemType.REVIEW,
+                title=f"Review: {r.topic}",
+                course_name=course_name,
+                course_id=r.course_id,
+                score=review_score,
+                components={
+                    "base": REVIEW_BASE_WEIGHT,
+                    "overdue_days": float(overdue_days),
+                    "exam_boost": exam_boost,
+                },
+                due_at=r.next_review_at,
+                detail=detail,
+            )
+        )
+
+    return items
+
+
+async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
+    """Build PlanItems from low-confidence topics across all courses."""
+    cursor = await db.execute("SELECT DISTINCT course_id FROM confidence_ratings")
+    course_ids = [row[0] for row in await cursor.fetchall()]
+
+    items = []
+    now = datetime.now(UTC)
+
+    for course_id in course_ids:
+        from sophia.services.athena_confidence import get_confidence_ratings
+
+        ratings = await get_confidence_ratings(db, course_id)
+        low_ratings = [r for r in ratings if r.predicted < CONFIDENCE_GAP_THRESHOLD]
+
+        exam_date = await get_exam_for_course(db, course_id)
+        exam_boost = 1.0
+        exam_str = ""
+        if exam_date:
+            days_to_exam = (exam_date - now).days
+            if days_to_exam <= 14:
+                exam_boost = 2.0
+                exam_str = f" — exam in {days_to_exam}d"
+
+        name_cursor = await db.execute(
+            "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
+            (course_id,),
+        )
+        name_row = await name_cursor.fetchone()
+        course_name = name_row[0] if name_row else f"Course {course_id}"
+
+        for rating in low_ratings:
+            confidence_deficit = 1 - rating.predicted
+            gap_score = CONFIDENCE_GAP_WEIGHT * confidence_deficit * exam_boost
+            detail = f"confidence: {rating.predicted * 5:.1f}/5{exam_str}"
+
+            items.append(
+                PlanItem(
+                    item_type=PlanItemType.CONFIDENCE_GAP,
+                    title=f"Low confidence: {rating.topic}",
+                    course_name=course_name,
+                    course_id=course_id,
+                    score=gap_score,
+                    components={
+                        "base": CONFIDENCE_GAP_WEIGHT,
+                        "confidence_deficit": confidence_deficit,
+                        "exam_boost": exam_boost,
+                    },
+                    detail=detail,
+                )
+            )
+
+    return items

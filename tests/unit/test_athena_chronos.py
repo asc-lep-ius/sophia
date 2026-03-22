@@ -251,7 +251,8 @@ class TestLogConfidencePrediction:
         await log_confidence_prediction(db, 42, "Sorting", 0.5)
 
         cursor = await db.execute(
-            "SELECT domain, item_id, predicted FROM metacognition_log WHERE domain = 'confidence:42'",
+            "SELECT domain, item_id, predicted FROM metacognition_log "
+            "WHERE domain = 'confidence:42'",
         )
         row = await cursor.fetchone()
         assert row is not None
@@ -364,3 +365,174 @@ class TestConfidencePriorityMultiplier:
         assert confidence_priority_multiplier(0.6) == pytest.approx(1.0)
         # At half of threshold (0.3) → midpoint between BOOST_FACTOR and 1.0
         assert confidence_priority_multiplier(0.3) == pytest.approx(1.25)
+
+
+# --- Phase 3 Tests ---
+
+
+class TestBuildPlanItems:
+    @pytest.mark.asyncio
+    async def test_returns_deadlines_reviews_and_gaps_sorted(self, db):
+        from sophia.services.athena_chronos import build_plan_items
+
+        now = datetime.now(UTC)
+        # Insert a deadline
+        await _insert_exam(db, 42, now + timedelta(days=5))
+        # Insert a due review
+        await _insert_review(db, "Sorting", 42, now - timedelta(days=1))
+        # Insert a low-confidence rating
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Graphs", 42, 0.2, now.isoformat()),
+        )
+        await db.commit()
+
+        items = await build_plan_items(db, horizon_days=14)
+        assert len(items) >= 2  # At least deadline + review (gap may or may not appear)
+        # Items should be sorted by score descending
+        scores = [i.score for i in items]
+        assert scores == sorted(scores, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_empty_when_no_data(self, db):
+        from sophia.services.athena_chronos import build_plan_items
+
+        items = await build_plan_items(db)
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_respects_horizon(self, db):
+        from sophia.services.athena_chronos import build_plan_items
+
+        now = datetime.now(UTC)
+        await _insert_exam(db, 42, now + timedelta(days=30))
+
+        items_short = await build_plan_items(db, horizon_days=7)
+        items_long = await build_plan_items(db, horizon_days=60)
+        # The deadline at 30 days should only appear in the long horizon
+        assert len(items_long) >= len(items_short)
+
+
+class TestDeadlineItems:
+    @pytest.mark.asyncio
+    async def test_includes_effort_and_tracking_info(self, db):
+        from sophia.services.athena_chronos import _deadline_items
+
+        now = datetime.now(UTC)
+        await db.execute(
+            "INSERT INTO deadline_cache "
+            "(id, name, course_id, course_name, deadline_type, due_at, grade_weight) "
+            "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?, 0.3)",
+            ((now + timedelta(days=5)).isoformat(),),
+        )
+        await db.execute(
+            "INSERT INTO effort_estimates "
+            "(deadline_id, course_id, predicted_hours, scaffold_level) "
+            "VALUES ('a:1', 42, 5.0, 'full')",
+        )
+        await db.commit()
+
+        items = await _deadline_items(db, horizon_days=14)
+        assert len(items) == 1
+        assert "5.0h est" in items[0].detail
+
+    @pytest.mark.asyncio
+    async def test_handles_no_estimate(self, db):
+        from sophia.services.athena_chronos import _deadline_items
+
+        now = datetime.now(UTC)
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?)",
+            ((now + timedelta(days=5)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await _deadline_items(db, horizon_days=14)
+        assert len(items) == 1
+        assert "no estimate" in items[0].detail
+
+
+class TestReviewItems:
+    @pytest.mark.asyncio
+    async def test_overdue_reviews_score_higher(self, db):
+        from sophia.services.athena_chronos import _review_items
+
+        now = datetime.now(UTC)
+        await _insert_review(db, "Recent", 42, now - timedelta(hours=1))
+        await _insert_review(db, "Old", 42, now - timedelta(days=5))
+        # Need course name in deadline_cache
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW', 42, 'Algo', 'assignment', ?)",
+            ((now + timedelta(days=30)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await _review_items(db)
+        assert len(items) == 2
+        old_item = next(i for i in items if "Old" in i.title)
+        recent_item = next(i for i in items if "Recent" in i.title)
+        assert old_item.score > recent_item.score
+
+    @pytest.mark.asyncio
+    async def test_exam_proximity_boosts_review_score(self, db):
+        from sophia.services.athena_chronos import _review_items
+
+        now = datetime.now(UTC)
+        await _insert_review(db, "Topic A", 42, now - timedelta(hours=1))
+        await _insert_review(db, "Topic B", 99, now - timedelta(hours=1))
+        # Exam for course 42 in 5 days
+        await _insert_exam(db, 42, now + timedelta(days=5))
+        # Course names
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:99', 'HW', 99, 'DB', 'assignment', ?)",
+            ((now + timedelta(days=30)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await _review_items(db)
+        item_42 = next(i for i in items if i.course_id == 42)
+        item_99 = next(i for i in items if i.course_id == 99)
+        assert item_42.score > item_99.score
+
+
+class TestConfidenceGapItems:
+    @pytest.mark.asyncio
+    async def test_low_ratings_become_gap_items(self, db):
+        from sophia.services.athena_chronos import _confidence_gap_items
+
+        now = datetime.now(UTC)
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Graphs", 42, 0.2, now.isoformat()),
+        )
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW', 42, 'Algo', 'assignment', ?)",
+            ((now + timedelta(days=30)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await _confidence_gap_items(db)
+        assert len(items) == 1
+        assert "Low confidence" in items[0].title
+        assert "Graphs" in items[0].title
+
+    @pytest.mark.asyncio
+    async def test_no_gaps_when_all_confident(self, db):
+        from sophia.services.athena_chronos import _confidence_gap_items
+
+        now = datetime.now(UTC)
+        await db.execute(
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.8, now.isoformat()),
+        )
+        await db.commit()
+
+        items = await _confidence_gap_items(db)
+        assert items == []
