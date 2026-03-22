@@ -770,3 +770,24 @@ class CalibrationMetrics(BaseModel, frozen=True):
     mean_error: float
     mean_absolute_error: float
     trend: str
+
+
+class PlanItemType(StrEnum):
+    """Type of item in the unified plan."""
+
+    DEADLINE = "deadline"
+    REVIEW = "review"
+    CONFIDENCE_GAP = "confidence_gap"
+
+
+class PlanItem(BaseModel, frozen=True):
+    """A ranked item in the student's academic landscape."""
+
+    item_type: PlanItemType
+    title: str
+    course_name: str
+    course_id: int
+    score: float
+    components: dict[str, float]
+    due_at: str | None = None
+    detail: str = ""

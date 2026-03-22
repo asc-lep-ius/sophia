@@ -47,6 +47,13 @@ async def deadlines_sync() -> None:
             with Status("Syncing deadlines from all courses…", console=console):
                 deadlines = await sync_deadlines(container)
             console.print(f"[green]✓ Synced {len(deadlines)} deadline(s)[/green]")
+
+            from sophia.services.athena_chronos import compress_all_courses
+
+            compressed = await compress_all_courses(container.db)
+            if compressed:
+                total = sum(compressed.values())
+                console.print(f"[dim]Compressed {total} review(s) for upcoming exams.[/dim]")
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
@@ -479,6 +486,27 @@ async def deadlines_stress(
                 "\n[dim]This is one lens on your workload — "
                 "not the definitive answer on what to do first.[/dim]"
             )
+
+            from sophia.services.athena_chronos import get_course_confidence
+            from sophia.services.chronos import get_deadlines as _get_stress_deadlines
+
+            stress_deadlines = await _get_stress_deadlines(container.db, horizon_days=horizon)
+            low_conf_courses: list[tuple[str, float]] = []
+            seen_course_ids: set[int] = set()
+            for d in stress_deadlines:
+                if d.course_id in seen_course_ids:
+                    continue
+                seen_course_ids.add(d.course_id)
+                conf = await get_course_confidence(container.db, d.course_id)
+                if conf is not None and conf < 0.6:
+                    low_conf_courses.append((d.course_name, conf))
+
+            if low_conf_courses:
+                console.print()
+                for name, conf_val in low_conf_courses:
+                    console.print(
+                        f"[dim]Note: your confidence in '{name}' is {conf_val * 5:.1f}/5[/dim]"
+                    )
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None
@@ -492,6 +520,10 @@ async def deadlines_next() -> None:
 
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
+    from sophia.services.athena_chronos import (
+        confidence_priority_multiplier,
+        get_course_confidence,
+    )
     from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
 
     console = Console()
@@ -515,13 +547,18 @@ async def deadlines_next() -> None:
                 est_hours = float(est_row[0]) if est_row else None
 
                 tracked = await get_tracked_time(container.db, d.id)
-                ps = compute_priority_score(d, est_hours, tracked)
+                confidence = await get_course_confidence(container.db, d.course_id)
+                conf_mult = confidence_priority_multiplier(confidence)
+                ps = compute_priority_score(d, est_hours, tracked, confidence_multiplier=conf_mult)
                 scored.append((d, ps, est_hours, tracked))
 
             scored.sort(key=lambda t: t[1]["score"], reverse=True)
             top, ps, est_hours, tracked = scored[0]
 
             est_str = f"{est_hours:.1f}h" if est_hours is not None else "no estimate"
+            confidence = await get_course_confidence(container.db, top.course_id)
+            conf_str = f"{confidence * 5:.1f}/5" if confidence is not None else "no ratings"
+
             lines = [
                 f"[bold]{top.name}[/bold]",
                 f"Course: {top.course_name}",
@@ -533,8 +570,16 @@ async def deadlines_next() -> None:
                 f"  urgency: {ps['urgency']:.3f}  (closer = higher)",
                 f"  importance: {ps['importance']:.2f}  (grade weight)",
                 f"  effort gap: {ps['effort_gap']:.1f}h  (remaining work)",
+                f"  confidence: {conf_str}  (course avg)",
                 f"  → score: {ps['score']:.3f}",
             ]
+
+            from sophia.services.athena_review import get_due_reviews
+
+            course_reviews = await get_due_reviews(container.db, course_id=top.course_id)
+            if course_reviews:
+                lines.append("")
+                lines.append(f"[dim]{len(course_reviews)} review(s) due in this course[/dim]")
 
             console.print(Panel("\n".join(lines), title="Next Up"))
     except AuthError:
@@ -606,6 +651,62 @@ async def deadlines_export_ics(
             out_path = Path(output or "sophia_deadlines.ics")
             out_path.write_text(ics_str)
             console.print(f"[green]Exported to {out_path}[/green]")
+    except AuthError:
+        console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
+        raise SystemExit(1) from None
+
+
+@app.command(name="graveyard")
+async def deadlines_graveyard(
+    *,
+    course: Annotated[
+        int | None, cyclopts.Parameter(help="Filter by course ID.", name="--course")
+    ] = None,
+    limit: Annotated[int, cyclopts.Parameter(help="Max entries to show.", name="--limit")] = 20,
+) -> None:
+    """Past-due deadlines — check if late submission or a retry is possible."""
+    from datetime import UTC, datetime
+
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.domain.errors import AuthError
+    from sophia.infra.di import create_app
+    from sophia.services.chronos import get_missed_deadlines
+
+    console = Console()
+
+    try:
+        async with create_app() as container:
+            missed = await get_missed_deadlines(container.db, course_id=course, limit=limit)
+
+            if not missed:
+                console.print("[dim]No missed deadlines on record.[/dim]")
+                return
+
+            table = Table(title="Past-due deadlines")
+            table.add_column("Name", style="bold")
+            table.add_column("Course")
+            table.add_column("Type")
+            table.add_column("Was due", style="dim")
+            table.add_column("Status")
+
+            for d in missed:
+                days_ago = (datetime.now(UTC) - d.due_at).days
+                status = d.submission_status or "unknown"
+                table.add_row(
+                    d.name,
+                    d.course_name,
+                    d.deadline_type.value,
+                    f"{days_ago}d ago ({d.due_at.strftime('%Y-%m-%d')})",
+                    status,
+                )
+
+            console.print(table)
+            console.print(
+                "\n[dim]Some of these may allow late submission, "
+                "second attempts, or Nachklausur — check TUWEL/TISS.[/dim]"
+            )
     except AuthError:
         console.print("[red]Not logged in. Run 'sophia auth login' first.[/red]")
         raise SystemExit(1) from None

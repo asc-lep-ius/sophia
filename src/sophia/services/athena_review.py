@@ -116,10 +116,28 @@ async def complete_review(
     new_difficulty, new_stability, interval_days = compute_fsrs_interval(
         difficulty, stability, score
     )
+
+    # Exam-aware review compression (Chronos integration)
+    from sophia.services.athena_chronos import cap_review_for_exam, get_exam_for_course
+
+    now = datetime.now(UTC)
+    computed_next = now + timedelta(days=interval_days)
+    exam_date = await get_exam_for_course(db, course_id)
+    if exam_date is not None:
+        capped = cap_review_for_exam(computed_next, exam_date)
+        if capped != computed_next:
+            interval_days = max(1, (capped - now).days)
+            log.info(
+                "review_capped_for_exam",
+                topic=topic,
+                original_days=max(1, round(new_stability)),
+                capped_days=interval_days,
+                exam_date=exam_date.isoformat(),
+            )
+
     new_review_count = review_count + 1
     new_index = _map_interval_to_index(interval_days)
 
-    now = datetime.now(UTC)
     next_at = (now + timedelta(days=interval_days)).isoformat()
 
     await db.execute(

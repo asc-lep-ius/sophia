@@ -631,6 +631,11 @@ class TestStudyDueCommand:
                 "sophia.services.athena_review.get_upcoming_reviews",
                 return_value=upcoming,
             ) as mock_upcoming,
+            patch(
+                "sophia.services.athena_chronos.get_exam_for_course",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
         ):
             mock_create.return_value.__aenter__ = AsyncMock(return_value=mock_container)
             mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
