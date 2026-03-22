@@ -205,6 +205,27 @@ class TestGetUpcomingReviews:
         results = await get_upcoming_reviews(db)
         assert len(results) == 0
 
+    @pytest.mark.asyncio
+    async def test_filters_by_course_id(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_review import get_upcoming_reviews
+
+        upcoming = (datetime.now(UTC) + timedelta(days=2)).isoformat()
+        await db.execute(
+            "INSERT INTO review_schedule (topic, course_id, interval_index, next_review_at) "
+            "VALUES (?, ?, 0, ?)",
+            ("Sorting", 42, upcoming),
+        )
+        await db.execute(
+            "INSERT INTO review_schedule (topic, course_id, interval_index, next_review_at) "
+            "VALUES (?, ?, 0, ?)",
+            ("Graphs", 99, upcoming),
+        )
+        await db.commit()
+
+        results = await get_upcoming_reviews(db, course_id=42, days_ahead=3)
+        assert len(results) == 1
+        assert results[0].topic == "Sorting"
+
 
 class TestGetAllSchedules:
     """get_all_schedules returns all schedules for a course, sorted."""

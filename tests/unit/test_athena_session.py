@@ -9,7 +9,56 @@ import pytest
 from rich.console import Console
 
 from sophia.domain.models import ConfidenceRating, ReviewSchedule, TopicMapping, TopicSource
-from sophia.services.athena_session import _run_quiz_no_skip, _run_reflection
+from sophia.services.athena_session import _run_quiz, _run_quiz_no_skip, _run_reflection
+
+# ---------------------------------------------------------------------------
+# _run_quiz (with skip option)
+# ---------------------------------------------------------------------------
+
+
+class TestRunQuiz:
+    def test_correct_answer_counted(self) -> None:
+        console = MagicMock()
+        with (
+            patch("rich.prompt.Prompt.ask", return_value="my answer"),
+            patch("rich.prompt.Confirm.ask", return_value=True),
+        ):
+            result = _run_quiz(["What is X?"], console)
+        assert result == 1
+
+    def test_skip_not_counted(self) -> None:
+        console = MagicMock()
+        with (
+            patch("rich.prompt.Prompt.ask", return_value="skip"),
+            patch("rich.prompt.Confirm.ask", return_value=True),
+        ):
+            result = _run_quiz(["Q1"], console)
+        assert result == 0
+
+    def test_wrong_answer_not_counted(self) -> None:
+        console = MagicMock()
+        with (
+            patch("rich.prompt.Prompt.ask", return_value="wrong"),
+            patch("rich.prompt.Confirm.ask", return_value=False),
+        ):
+            result = _run_quiz(["Q1"], console)
+        assert result == 0
+
+    def test_mixed_answers(self) -> None:
+        """Multiple questions: one correct, one skipped, one wrong."""
+        console = MagicMock()
+        with (
+            patch("rich.prompt.Prompt.ask", side_effect=["answer", "skip", "wrong"]),
+            patch("rich.prompt.Confirm.ask", side_effect=[True, False]),
+        ):
+            result = _run_quiz(["Q1", "Q2", "Q3"], console)
+        assert result == 1
+
+    def test_empty_questions(self) -> None:
+        console = MagicMock()
+        result = _run_quiz([], console)
+        assert result == 0
+
 
 # ---------------------------------------------------------------------------
 # _run_quiz_no_skip

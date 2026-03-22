@@ -248,7 +248,7 @@ class TestSyncDeadlines:
 
         call_count = 0
 
-        async def assignments_side_effect(course_ids: list[int]) -> list:
+        async def assignments_side_effect(course_ids: list[int]) -> list[AssignmentInfo]:
             nonlocal call_count
             call_count += 1
             if 42 in course_ids:
@@ -291,7 +291,9 @@ class TestSyncDeadlines:
         cursor = await app_container.db.execute(
             "SELECT COUNT(*) FROM deadline_cache WHERE id = 'assign:1'"
         )
-        count = (await cursor.fetchone())[0]
+        row = await cursor.fetchone()
+        assert row is not None
+        count = row[0]
         assert count == 1
 
 
@@ -640,7 +642,9 @@ class TestStopTimer:
         cursor = await db.execute(
             "SELECT COUNT(*) FROM active_timers WHERE deadline_id = ?", ("assign:1",)
         )
-        assert (await cursor.fetchone())[0] == 0
+        row2 = await cursor.fetchone()
+        assert row2 is not None
+        assert row2[0] == 0
 
         # Time entry should exist
         cursor = await db.execute(
@@ -670,6 +674,7 @@ class TestRecordTime:
             ("assign:1",),
         )
         row = await cursor.fetchone()
+        assert row is not None
         assert row[0] == pytest.approx(2.5)
         assert row[1] == "manual"
         assert row[2] is None
@@ -683,6 +688,7 @@ class TestRecordTime:
             "SELECT note FROM time_entries WHERE deadline_id = ?", ("assign:1",)
         )
         row = await cursor.fetchone()
+        assert row is not None
         assert row[0] == "Researched the topic"
 
 
@@ -753,7 +759,7 @@ class TestCompleteDeadline:
         await record_time(db, "assign:1", 3.0)
         await record_time(db, "assign:1", 2.0)
 
-        predicted, actual, feedback = await complete_deadline(app_container, "assign:1")
+        predicted, actual, _ = await complete_deadline(app_container, "assign:1")
 
         assert predicted == pytest.approx(4.0)
         assert actual == pytest.approx(5.0)
@@ -1187,8 +1193,17 @@ async def _insert_deadline_cache(
         "grade_weight, submission_status, url, extra, synced_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
-            deadline_id, name, course_id, course_name, deadline_type,
-            due_at, grade_weight, None, None, "{}", datetime.now(UTC).isoformat(),
+            deadline_id,
+            name,
+            course_id,
+            course_name,
+            deadline_type,
+            due_at,
+            grade_weight,
+            None,
+            None,
+            "{}",
+            datetime.now(UTC).isoformat(),
         ),
     )
     await db.commit()
@@ -1288,10 +1303,16 @@ class TestGetUpcomingExams:
         from sophia.services.chronos import get_upcoming_exams
 
         await _insert_deadline_cache(
-            db, deadline_id="exam:1", name="Final Exam", deadline_type="exam",
+            db,
+            deadline_id="exam:1",
+            name="Final Exam",
+            deadline_type="exam",
         )
         await _insert_deadline_cache(
-            db, deadline_id="assign:1", name="HW1", deadline_type="assignment",
+            db,
+            deadline_id="assign:1",
+            name="HW1",
+            deadline_type="assignment",
         )
 
         exams = await get_upcoming_exams(db)
@@ -1304,12 +1325,18 @@ class TestGetUpcomingExams:
         from sophia.services.chronos import get_upcoming_exams
 
         await _insert_deadline_cache(
-            db, deadline_id="exam:1", name="Algo Exam",
-            deadline_type="exam", course_id=42,
+            db,
+            deadline_id="exam:1",
+            name="Algo Exam",
+            deadline_type="exam",
+            course_id=42,
         )
         await _insert_deadline_cache(
-            db, deadline_id="exam:2", name="DB Exam",
-            deadline_type="exam", course_id=99,
+            db,
+            deadline_id="exam:2",
+            name="DB Exam",
+            deadline_type="exam",
+            course_id=99,
         )
 
         exams = await get_upcoming_exams(db, course_id=42)
@@ -1322,11 +1349,17 @@ class TestGetUpcomingExams:
 
         past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
         await _insert_deadline_cache(
-            db, deadline_id="exam:old", name="Past Exam",
-            deadline_type="exam", due_at=past,
+            db,
+            deadline_id="exam:old",
+            name="Past Exam",
+            deadline_type="exam",
+            due_at=past,
         )
         await _insert_deadline_cache(
-            db, deadline_id="exam:new", name="Future Exam", deadline_type="exam",
+            db,
+            deadline_id="exam:new",
+            name="Future Exam",
+            deadline_type="exam",
         )
 
         exams = await get_upcoming_exams(db)
@@ -1356,8 +1389,11 @@ class TestExportIcs:
         from sophia.services.chronos import export_deadlines_ics
 
         await _insert_deadline_cache(
-            db, deadline_id="a:1", name="Analysis HW",
-            course_name="Math", deadline_type="assignment",
+            db,
+            deadline_id="a:1",
+            name="Analysis HW",
+            course_name="Math",
+            deadline_type="assignment",
         )
 
         ics_str = await export_deadlines_ics(db, horizon_days=30)

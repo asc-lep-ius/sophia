@@ -89,7 +89,7 @@ async def plan_default(
             deadlines = sum(1 for i in items if i.item_type == PlanItemType.DEADLINE)
             reviews = sum(1 for i in items if i.item_type == PlanItemType.REVIEW)
             gaps = sum(1 for i in items if i.item_type == PlanItemType.CONFIDENCE_GAP)
-            parts = []
+            parts: list[str] = []
             if deadlines:
                 parts.append(f"{deadlines} deadline(s)")
             if reviews:

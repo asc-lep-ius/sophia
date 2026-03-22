@@ -19,7 +19,10 @@ from sophia.domain.models import (
     WhisperModel,
 )
 from sophia.services.hermes_setup import (
+    check_hermes_deps,
     detect_gpu,
+    get_provider_defaults,
+    install_hermes_extras,
     load_hermes_config,
     recommend_config,
     save_hermes_config,
@@ -105,6 +108,27 @@ class TestDetectGpu:
         assert has_gpu is False
         assert name == ""
         assert vram == 0
+
+    def test_name_query_timeout_graceful(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """VRAM query succeeds but name query times out → GPU detected, empty name."""
+        call_count = 0
+
+        def _fake_run(
+            cmd: list[str], *_args: object, **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return subprocess.CompletedProcess(
+                    args=cmd, returncode=0, stdout=NVIDIA_SMI_OUTPUT, stderr=""
+                )
+            raise subprocess.TimeoutExpired(cmd="nvidia-smi", timeout=10)
+
+        monkeypatch.setattr(subprocess, "run", _fake_run)
+        has_gpu, name, vram = detect_gpu()
+        assert has_gpu is True
+        assert name == ""
+        assert vram == 24564
 
     def test_nvidia_smi_failure_returncode(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """When nvidia-smi returns non-zero, treat as no GPU."""
@@ -242,3 +266,72 @@ class TestValidateLlmProvider:
         valid, message = validate_llm_provider(config)
         assert valid is True
         assert "no API key required" in message
+
+
+class TestGetProviderDefaults:
+    @pytest.mark.parametrize(
+        "provider",
+        list(LLMProvider),
+        ids=[p.value for p in LLMProvider],
+    )
+    def test_returns_dict_with_expected_keys(self, provider: LLMProvider) -> None:
+        defaults = get_provider_defaults(provider)
+        assert "model" in defaults
+        assert "api_key_env" in defaults
+
+    def test_github_defaults(self) -> None:
+        defaults = get_provider_defaults(LLMProvider.GITHUB)
+        assert defaults["model"] == "openai/gpt-4o"
+        assert defaults["api_key_env"] == "GITHUB_TOKEN"
+
+
+class TestCheckHermesDeps:
+    def test_all_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When all packages are importable, nothing is missing."""
+        monkeypatch.setattr("builtins.__import__", lambda name, *a, **kw: None)
+        assert check_hermes_deps() == []
+
+    def test_some_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-importable packages are reported as missing."""
+        import builtins
+
+        original_import = builtins.__import__
+
+        def _selective_import(name: str, *args: object, **kwargs: object) -> object:
+            if name == "faster_whisper":
+                raise ImportError
+            return original_import(name, *args, **kwargs)  # type: ignore[no-any-return]
+
+        monkeypatch.setattr("builtins.__import__", _selective_import)
+        missing = check_hermes_deps()
+        assert "faster-whisper" in missing
+
+
+class TestInstallHermesExtras:
+    def test_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Successful uv install returns (True, message)."""
+        import subprocess as sp
+
+        mock_popen = type("FakePopen", (), {"wait": lambda self: None, "returncode": 0})()
+        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: mock_popen)
+        ok, msg = install_hermes_extras()
+        assert ok is True
+        assert "success" in msg.lower()
+
+    def test_failure_returncode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-zero exit code returns (False, message)."""
+        import subprocess as sp
+
+        mock_popen = type("FakePopen", (), {"wait": lambda self: None, "returncode": 1})()
+        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: mock_popen)
+        ok, _ = install_hermes_extras()
+        assert ok is False
+
+    def test_uv_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """When uv binary is missing, returns (False, message)."""
+        import subprocess as sp
+
+        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: (_ for _ in ()).throw(FileNotFoundError))
+        ok, msg = install_hermes_extras()
+        assert ok is False
+        assert "uv not found" in msg.lower()

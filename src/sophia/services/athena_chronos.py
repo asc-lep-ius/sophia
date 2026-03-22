@@ -240,7 +240,7 @@ async def _deadline_items(
     from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
 
     deadlines = await get_deadlines(db, horizon_days=horizon_days)
-    items = []
+    items: list[PlanItem] = []
 
     for d in deadlines:
         est_cursor = await db.execute(
@@ -281,7 +281,7 @@ async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
     from sophia.services.athena_review import get_due_reviews
 
     reviews = await get_due_reviews(db)
-    items = []
+    items: list[PlanItem] = []
 
     now = datetime.now(UTC)
     for r in reviews:
@@ -335,7 +335,7 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
     cursor = await db.execute("SELECT DISTINCT course_id FROM confidence_ratings")
     course_ids = [row[0] for row in await cursor.fetchall()]
 
-    items = []
+    items: list[PlanItem] = []
     now = datetime.now(UTC)
 
     for course_id in course_ids:

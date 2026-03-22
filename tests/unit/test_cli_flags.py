@@ -254,3 +254,92 @@ class TestMainFlagParsing:
             from sophia.__main__ import main
 
             main()
+
+
+class TestCurrentSemester:
+    """current_semester() infers TISS semester from the date."""
+
+    def test_spring_semester(self) -> None:
+        from datetime import date
+
+        from sophia.cli._output import current_semester
+
+        with patch("sophia.cli._output.date") as mock_date:
+            mock_date.today.return_value = date(2026, 3, 15)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = current_semester()
+        assert result == "2026S"
+
+    def test_winter_semester_october(self) -> None:
+        from datetime import date
+
+        from sophia.cli._output import current_semester
+
+        with patch("sophia.cli._output.date") as mock_date:
+            mock_date.today.return_value = date(2025, 10, 1)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = current_semester()
+        assert result == "2025W"
+
+    def test_winter_semester_january(self) -> None:
+        from datetime import date
+
+        from sophia.cli._output import current_semester
+
+        with patch("sophia.cli._output.date") as mock_date:
+            mock_date.today.return_value = date(2026, 1, 15)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = current_semester()
+        assert result == "2025W"
+
+    def test_summer_semester_june(self) -> None:
+        from datetime import date
+
+        from sophia.cli._output import current_semester
+
+        with patch("sophia.cli._output.date") as mock_date:
+            mock_date.today.return_value = date(2026, 6, 1)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            result = current_semester()
+        assert result == "2026S"
+
+
+class TestRequireTissSession:
+    """require_tiss_session() loads settings and TISS session."""
+
+    def test_returns_settings_and_creds(self) -> None:
+        from unittest.mock import MagicMock
+
+        from sophia.cli._output import require_tiss_session
+
+        mock_settings = MagicMock()
+        mock_settings.config_dir = "/tmp/sophia-test"
+        mock_creds = MagicMock()
+
+        with (
+            patch("sophia.config.Settings", return_value=mock_settings),
+            patch("sophia.adapters.auth.load_tiss_session", return_value=mock_creds),
+            patch("sophia.adapters.auth.tiss_session_path", return_value="/tmp/sophia-test/tiss"),
+        ):
+            settings, creds = require_tiss_session()
+
+        assert settings is mock_settings
+        assert creds is mock_creds
+
+    def test_returns_none_when_no_session(self) -> None:
+        from unittest.mock import MagicMock
+
+        from sophia.cli._output import require_tiss_session
+
+        mock_settings = MagicMock()
+        mock_settings.config_dir = "/tmp/sophia-test"
+
+        with (
+            patch("sophia.config.Settings", return_value=mock_settings),
+            patch("sophia.adapters.auth.load_tiss_session", return_value=None),
+            patch("sophia.adapters.auth.tiss_session_path", return_value="/tmp/sophia-test/tiss"),
+        ):
+            settings, creds = require_tiss_session()
+
+        assert settings is mock_settings
+        assert creds is None
