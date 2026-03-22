@@ -214,6 +214,7 @@ class CheckmarkInfo(BaseModel):
     id: int
     name: str
     course_id: int
+    due_date: str | None = None
     grade: str | None = None
     max_grade: str | None = None
     completed: bool = False

@@ -1069,3 +1069,63 @@ class TestCheckmarks:
         )
         checkmarks = await adapter.get_checkmarks([42])
         assert checkmarks == []
+
+
+# ------------------------------------------------------------------
+# Calendar Action Events
+# ------------------------------------------------------------------
+
+
+class TestCalendarActionEvents:
+    @respx.mock
+    async def test_returns_events(self, adapter: MoodleAdapter):
+        events = [
+            {
+                "id": 100,
+                "name": "E3Do (Thursday)",
+                "modulename": "checkmark",
+                "timestart": 1743055200,
+                "course": {"id": 42, "fullname": "Analysis"},
+                "url": "https://tuwel.tuwien.ac.at/mod/checkmark/view.php?id=100",
+                "action": {"itemcount": 6, "actionable": True},
+            },
+            {
+                "id": 200,
+                "name": "HW1",
+                "modulename": "assign",
+                "timestart": 1742925600,
+                "course": {"id": 42, "fullname": "Analysis"},
+                "url": "https://tuwel.tuwien.ac.at/mod/assign/view.php?id=200",
+                "action": {},
+            },
+        ]
+        respx.route(method="POST", path=AJAX_PATH).mock(
+            return_value=_ajax_ok({"events": events})
+        )
+
+        result = await adapter.get_calendar_action_events()
+
+        assert len(result) == 2
+        assert result[0]["modulename"] == "checkmark"
+        assert result[1]["modulename"] == "assign"
+
+    @respx.mock
+    async def test_empty_events(self, adapter: MoodleAdapter):
+        respx.route(method="POST", path=AJAX_PATH).mock(
+            return_value=_ajax_ok({"events": []})
+        )
+
+        result = await adapter.get_calendar_action_events()
+        assert result == []
+
+    @respx.mock
+    async def test_auth_error_on_expired_session(self, adapter: MoodleAdapter):
+        respx.route(method="POST", path=AJAX_PATH).mock(
+            return_value=httpx.Response(
+                200,
+                content="<html><body>Login</body></html>",
+                headers={"content-type": "text/html"},
+            )
+        )
+        with pytest.raises(AuthError, match="Session expired"):
+            await adapter.get_calendar_action_events()

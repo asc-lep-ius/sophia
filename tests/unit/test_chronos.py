@@ -288,23 +288,27 @@ class TestSyncDeadlines:
         app_container.moodle.get_enrolled_courses = AsyncMock(
             return_value=[Course(id=42, fullname="Algorithms", shortname="186.813")]
         )
-        app_container.moodle.get_assignments = AsyncMock(
+        app_container.moodle.get_calendar_action_events = AsyncMock(
             return_value=[
-                AssignmentInfo(
-                    id=1,
-                    name="HW1",
-                    course_id=42,
-                    due_date=_unix_ts(FUTURE),
-                )
+                {
+                    "id": 9999,
+                    "name": "HW1 ist fällig.",
+                    "modulename": "assign",
+                    "instance": 1,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Algorithms"},
+                    "url": None,
+                    "action": {},
+                }
             ]
         )
-        app_container.moodle.get_checkmarks = AsyncMock(return_value=[])
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
         result = await sync_deadlines(app_container)
 
         assert len(result) == 1
         assert result[0].id == "assign:1"
+        assert result[0].name == "HW1"
         assert result[0].deadline_type == DeadlineType.ASSIGNMENT
 
         # Verify DB persistence
@@ -319,8 +323,7 @@ class TestSyncDeadlines:
         app_container.moodle.get_enrolled_courses = AsyncMock(
             return_value=[Course(id=42, fullname="Algorithms", shortname="186.813")]
         )
-        app_container.moodle.get_assignments = AsyncMock(return_value=[])
-        app_container.moodle.get_checkmarks = AsyncMock(return_value=[])
+        app_container.moodle.get_calendar_action_events = AsyncMock(return_value=[])
         app_container.tiss.get_exam_dates = AsyncMock(
             return_value=[
                 TissExamDate(
@@ -339,23 +342,30 @@ class TestSyncDeadlines:
         assert "exam:E1" in exam_ids
         assert "examreg:E1" in exam_ids
 
-    async def test_skips_assignments_without_due_date(self, app_container: MagicMock) -> None:
+    async def test_skips_events_without_timestart(self, app_container: MagicMock) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
             return_value=[Course(id=42, fullname="Algorithms", shortname="186.813")]
         )
-        app_container.moodle.get_assignments = AsyncMock(
-            return_value=[AssignmentInfo(id=1, name="HW1", course_id=42, due_date=None)]
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            return_value=[
+                {
+                    "id": 1,
+                    "name": "HW1",
+                    "modulename": "assign",
+                    "course": {"id": 42, "fullname": "Algorithms"},
+                    "action": {},
+                }
+            ]
         )
-        app_container.moodle.get_checkmarks = AsyncMock(return_value=[])
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
         result = await sync_deadlines(app_container)
         assert len(result) == 0
 
-    async def test_continues_on_course_error(self, app_container: MagicMock) -> None:
-        """One course failing doesn't break the whole sync."""
+    async def test_continues_on_tiss_course_error(self, app_container: MagicMock) -> None:
+        """One TISS course failing doesn't break the whole sync."""
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -364,19 +374,27 @@ class TestSyncDeadlines:
                 Course(id=99, fullname="Databases", shortname="184.686"),
             ]
         )
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            return_value=[
+                {
+                    "id": 9999,
+                    "name": "DB-HW",
+                    "modulename": "assign",
+                    "instance": 2,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 99, "fullname": "Databases"},
+                    "url": None,
+                    "action": {},
+                }
+            ]
+        )
 
-        call_count = 0
+        async def tiss_side_effect(course_number: str) -> list:
+            if course_number == "186.813":
+                raise RuntimeError("TISS down")
+            return []
 
-        async def assignments_side_effect(course_ids: list[int]) -> list[AssignmentInfo]:
-            nonlocal call_count
-            call_count += 1
-            if 42 in course_ids:
-                raise RuntimeError("Moodle down")
-            return [AssignmentInfo(id=2, name="DB-HW", course_id=99, due_date=_unix_ts(FUTURE))]
-
-        app_container.moodle.get_assignments = AsyncMock(side_effect=assignments_side_effect)
-        app_container.moodle.get_checkmarks = AsyncMock(return_value=[])
-        app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
+        app_container.tiss.get_exam_dates = AsyncMock(side_effect=tiss_side_effect)
 
         result = await sync_deadlines(app_container)
         assert len(result) == 1
@@ -388,17 +406,20 @@ class TestSyncDeadlines:
         app_container.moodle.get_enrolled_courses = AsyncMock(
             return_value=[Course(id=42, fullname="Algorithms", shortname="186.813")]
         )
-        app_container.moodle.get_assignments = AsyncMock(
+        app_container.moodle.get_calendar_action_events = AsyncMock(
             return_value=[
-                AssignmentInfo(
-                    id=1,
-                    name="HW1 Updated",
-                    course_id=42,
-                    due_date=_unix_ts(FUTURE),
-                )
+                {
+                    "id": 9999,
+                    "name": "HW1 Updated",
+                    "modulename": "assign",
+                    "instance": 1,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Algorithms"},
+                    "url": None,
+                    "action": {},
+                }
             ]
         )
-        app_container.moodle.get_checkmarks = AsyncMock(return_value=[])
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
         # Insert existing
@@ -414,6 +435,137 @@ class TestSyncDeadlines:
         assert row is not None
         count = row[0]
         assert count == 1
+
+    async def test_syncs_checkmarks_from_calendar(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import sync_deadlines
+
+        app_container.moodle.get_enrolled_courses = AsyncMock(
+            return_value=[Course(id=42, fullname="Analysis", shortname="104.258")]
+        )
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            return_value=[
+                {
+                    "id": 9999,
+                    "name": "E3Do (Thursday) ist fällig.",
+                    "modulename": "checkmark",
+                    "instance": 555,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Analysis"},
+                    "url": "https://tuwel.tuwien.ac.at/mod/checkmark/view.php?id=555",
+                    "action": {"itemcount": 6, "actionable": True},
+                }
+            ]
+        )
+        app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
+
+        result = await sync_deadlines(app_container)
+
+        assert len(result) == 1
+        assert result[0].id == "checkmark:555"
+        assert result[0].deadline_type == DeadlineType.CHECKMARK
+        assert result[0].name == "E3Do (Thursday)"
+        assert result[0].extra.get("item_count") == 6
+
+    async def test_calendar_captures_multiple_module_types(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import sync_deadlines
+
+        app_container.moodle.get_enrolled_courses = AsyncMock(
+            return_value=[Course(id=42, fullname="Analysis", shortname="104.258")]
+        )
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            return_value=[
+                {
+                    "id": 9990,
+                    "name": "HW1",
+                    "modulename": "assign",
+                    "instance": 100,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Analysis"},
+                    "url": "https://tuwel.tuwien.ac.at/mod/assign/view.php?id=100",
+                    "action": {},
+                },
+                {
+                    "id": 9991,
+                    "name": "E3Do (Thursday)",
+                    "modulename": "checkmark",
+                    "instance": 200,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Analysis"},
+                    "url": "https://tuwel.tuwien.ac.at/mod/checkmark/view.php?id=200",
+                    "action": {"itemcount": 6},
+                },
+                {
+                    "id": 9992,
+                    "name": "Quiz 1",
+                    "modulename": "quiz",
+                    "instance": 300,
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Analysis"},
+                    "url": "https://tuwel.tuwien.ac.at/mod/quiz/view.php?id=300",
+                    "action": {},
+                },
+            ]
+        )
+        app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
+
+        result = await sync_deadlines(app_container)
+
+        types = {d.deadline_type for d in result}
+        assert DeadlineType.ASSIGNMENT in types
+        assert DeadlineType.CHECKMARK in types
+        assert DeadlineType.QUIZ in types
+        assert len(result) == 3
+
+    async def test_calendar_event_unknown_module_skipped(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import sync_deadlines
+
+        app_container.moodle.get_enrolled_courses = AsyncMock(
+            return_value=[Course(id=42, fullname="Analysis", shortname="104.258")]
+        )
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            return_value=[
+                {
+                    "id": 999,
+                    "name": "Forum Post",
+                    "modulename": "forum",
+                    "timestart": int(FUTURE.timestamp()),
+                    "course": {"id": 42, "fullname": "Analysis"},
+                    "url": "https://tuwel.tuwien.ac.at/mod/forum/view.php?id=999",
+                    "action": {},
+                }
+            ]
+        )
+        app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
+
+        result = await sync_deadlines(app_container)
+        assert len(result) == 0
+
+    async def test_calendar_failure_falls_back_to_scraping(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import sync_deadlines
+
+        app_container.moodle.get_enrolled_courses = AsyncMock(
+            return_value=[Course(id=42, fullname="Algorithms", shortname="186.813")]
+        )
+        app_container.moodle.get_calendar_action_events = AsyncMock(
+            side_effect=RuntimeError("Calendar API unavailable")
+        )
+        app_container.moodle.get_assignments = AsyncMock(
+            return_value=[
+                AssignmentInfo(
+                    id=1,
+                    name="HW1",
+                    course_id=42,
+                    due_date=_unix_ts(FUTURE),
+                )
+            ]
+        )
+        app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
+
+        result = await sync_deadlines(app_container)
+
+        assert len(result) == 1
+        assert result[0].id == "assign:1"
+        assert result[0].deadline_type == DeadlineType.ASSIGNMENT
 
 
 # ---------------------------------------------------------------------------

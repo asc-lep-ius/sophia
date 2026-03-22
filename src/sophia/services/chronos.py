@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
@@ -35,6 +35,12 @@ CALIBRATION_VERY_LOW_ERROR = 0.05
 REFERENCE_CLASS_MIN_ENTRIES = 3
 DEFAULT_IMPORTANCE = 0.5
 EFFORT_GAP_MINIMUM = 0.5
+
+_MODULE_TO_DEADLINE_TYPE: dict[str, DeadlineType] = {
+    "assign": DeadlineType.ASSIGNMENT,
+    "checkmark": DeadlineType.CHECKMARK,
+    "quiz": DeadlineType.QUIZ,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -118,6 +124,51 @@ def _extract_course_number(course: Course) -> str | None:
     return None
 
 
+def _calendar_event_to_deadline(event: dict[str, Any]) -> Deadline | None:
+    """Convert a Moodle calendar action event to a Deadline."""
+    modulename = event.get("modulename", "")
+    deadline_type = _MODULE_TO_DEADLINE_TYPE.get(modulename)
+    if deadline_type is None:
+        return None
+
+    timestart = event.get("timestart")
+    if not timestart:
+        return None
+
+    try:
+        due = datetime.fromtimestamp(int(timestart), tz=UTC)
+    except (ValueError, OverflowError):
+        return None
+
+    course = event.get("course", {})
+    course_id = course.get("id", 0)
+    course_name = course.get("fullname", "")
+
+    extra: dict[str, Any] = {}
+    action = event.get("action", {})
+    if action.get("itemcount"):
+        extra["item_count"] = action["itemcount"]
+
+    # Use instance (cmid) for ID continuity with scraped assignments
+    instance = event.get("instance") or event.get("id", 0)
+    deadline_id = f"{modulename}:{instance}"
+
+    name = event.get("name", "")
+    # Calendar API appends " ist fällig." to activity names
+    name = name.removesuffix(" ist fällig.")
+
+    return Deadline(
+        id=deadline_id,
+        name=name,
+        course_id=course_id,
+        course_name=course_name,
+        deadline_type=deadline_type,
+        due_at=due,
+        url=event.get("url"),
+        extra=extra,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Core service functions
 # ---------------------------------------------------------------------------
@@ -128,25 +179,50 @@ async def sync_deadlines(app: AppContainer) -> list[Deadline]:
     courses = await app.moodle.get_enrolled_courses()
     all_deadlines: list[Deadline] = []
 
+    # Primary: calendar API (captures all module types in one call)
+    try:
+        events = await app.moodle.get_calendar_action_events()
+        for event in events:
+            d = _calendar_event_to_deadline(event)
+            if d:
+                all_deadlines.append(d)
+    except Exception:
+        log.warning("calendar_api_failed_falling_back_to_scraping")
+        # Fallback: per-course assignment scraping (original behavior)
+        for course in courses:
+            try:
+                deadlines = await _sync_course_assignments(app, course)
+                all_deadlines.extend(deadlines)
+            except Exception:
+                log.exception(
+                    "sync_course_failed",
+                    course_id=course.id,
+                    course=course.fullname,
+                )
+                continue
+
+    # TISS exams (not in Moodle calendar — always per-course)
     for course in courses:
-        try:
-            deadlines = await _sync_course(app, course)
-            all_deadlines.extend(deadlines)
-        except Exception:
-            log.exception("sync_course_failed", course_id=course.id, course=course.fullname)
-            continue
+        course_name = course.fullname or course.shortname or str(course.id)
+        course_number = _extract_course_number(course)
+        if course_number:
+            try:
+                exams = await app.tiss.get_exam_dates(course_number)
+                for exam in exams:
+                    all_deadlines.extend(_exam_to_deadlines(exam, course_name, course.id))
+            except Exception:
+                log.warning("tiss_exam_fetch_failed", course_number=course_number)
 
     await _upsert_deadlines(app.db, all_deadlines)
     log.info("deadlines_synced", count=len(all_deadlines))
     return all_deadlines
 
 
-async def _sync_course(app: AppContainer, course: Course) -> list[Deadline]:
-    """Gather deadlines for a single course from Moodle + TISS."""
+async def _sync_course_assignments(app: AppContainer, course: Course) -> list[Deadline]:
+    """Fallback: scrape assignment deadlines for a single course."""
     deadlines: list[Deadline] = []
     course_name = course.fullname or course.shortname or str(course.id)
 
-    # Moodle assignments
     try:
         assignments = await app.moodle.get_assignments([course.id])
         for a in assignments:
@@ -155,19 +231,6 @@ async def _sync_course(app: AppContainer, course: Course) -> list[Deadline]:
                 deadlines.append(d)
     except Exception:
         log.warning("assignments_fetch_failed", course_id=course.id)
-
-    # Moodle checkmarks (no due_date field — skip for deadline purposes)
-    # CheckmarkInfo doesn't have a due_date, so we can't create deadlines from it.
-
-    # TISS exams
-    course_number = _extract_course_number(course)
-    if course_number:
-        try:
-            exams = await app.tiss.get_exam_dates(course_number)
-            for exam in exams:
-                deadlines.extend(_exam_to_deadlines(exam, course_name, course.id))
-        except Exception:
-            log.warning("tiss_exam_fetch_failed", course_number=course_number)
 
     return deadlines
 

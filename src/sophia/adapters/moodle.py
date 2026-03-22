@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import re
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urljoin, urlparse
 
@@ -225,6 +226,22 @@ class MoodleAdapter:
             )
             for c in data["courses"]
         ]
+
+    async def get_calendar_action_events(
+        self,
+        time_from: int | None = None,
+        time_to: int | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Fetch upcoming action events from the Moodle calendar."""
+        now = int(datetime.now(UTC).timestamp())
+        params: dict[str, Any] = {
+            "timesortfrom": time_from or now,
+            "timesortto": time_to or (now + 90 * 86400),
+            "limitnum": limit,
+        }
+        data = await self._call("core_calendar_get_action_events_by_timesort", params)
+        return data.get("events", [])
 
     async def _scrape(self, path: str, params: dict[str, Any] | None = None) -> str:
         """Fetch a Moodle page via GET and return raw HTML.
