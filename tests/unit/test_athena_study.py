@@ -13,6 +13,7 @@ from sophia.domain.models import (
     KnowledgeChunk,
     StudentFlashcard,
     StudySession,
+    TopicMapping,
     TopicSource,
 )
 from sophia.infra.persistence import run_migrations
@@ -1142,3 +1143,136 @@ async def test_get_lecture_context_without_materials_flag(
     assert "Binary trees are hierarchical" in result
     # store.search called exactly once (only lecture, no PDF query)
     assert mock_store.search.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# _get_material_episode_ids
+# ---------------------------------------------------------------------------
+
+
+class TestGetMaterialEpisodeIds:
+    @pytest.mark.asyncio
+    async def test_returns_formatted_ids_and_name_map(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import _get_material_episode_ids
+
+        await db.execute(
+            "INSERT INTO course_materials"
+            " (id, course_id, module_id, name, url, mimetype, status)"
+            " VALUES (10, 1, 100, 'Slides A', 'https://x.com/a.pdf', 'application/pdf',"
+            "  'completed')",
+        )
+        await db.execute(
+            "INSERT INTO course_materials"
+            " (id, course_id, module_id, name, url, mimetype, status)"
+            " VALUES (20, 1, 101, 'Slides B', 'https://x.com/b.pdf', 'application/pdf',"
+            "  'completed')",
+        )
+        await db.commit()
+
+        ep_ids, name_map = await _get_material_episode_ids(db, course_id=1)
+
+        assert ep_ids == ["mat-10", "mat-20"]
+        assert name_map == {"mat-10": "Slides A", "mat-20": "Slides B"}
+
+    @pytest.mark.asyncio
+    async def test_ignores_non_completed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_study import _get_material_episode_ids
+
+        await db.execute(
+            "INSERT INTO course_materials"
+            " (id, course_id, module_id, name, url, mimetype, status)"
+            " VALUES (30, 1, 100, 'Pending', 'https://x.com/c.pdf', 'application/pdf',"
+            "  'pending')",
+        )
+        await db.commit()
+
+        ep_ids, name_map = await _get_material_episode_ids(db, course_id=1)
+        assert ep_ids == []
+        assert name_map == {}
+
+
+# ---------------------------------------------------------------------------
+# extract_topics_from_lectures — cached topics
+# ---------------------------------------------------------------------------
+
+
+class TestExtractTopicsCached:
+    @pytest.mark.asyncio
+    async def test_returns_cached_topics_without_llm_call(self, app: MagicMock) -> None:
+        """When force=False and topics exist, return cached without calling LLM."""
+        from sophia.services.athena_study import extract_topics_from_lectures
+
+        cached = [TopicMapping(topic="Algebra", course_id=1, source=TopicSource.LECTURE)]
+
+        with (
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=cached,
+            ),
+            patch(
+                "sophia.services.athena_study._get_transcript_text",
+                new_callable=AsyncMock,
+            ) as mock_transcript,
+        ):
+            result = await extract_topics_from_lectures(app, module_id=1, force=False)
+
+        assert result == cached
+        mock_transcript.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# extract_topics_from_lectures — force refresh
+# ---------------------------------------------------------------------------
+
+
+class TestExtractTopicsForceRefresh:
+    @pytest.mark.asyncio
+    async def test_force_deletes_old_and_inserts_new(
+        self, db: aiosqlite.Connection, app: MagicMock
+    ) -> None:
+        """force=True deletes existing topics, calls LLM, and persists new ones."""
+        from sophia.services.athena_study import extract_topics_from_lectures
+
+        # Seed lecture_download + transcription + segments so transcript text is found
+        await _insert_download(db, episode_id="ep-force", module_id=1)
+        await _insert_transcription(db, episode_id="ep-force", module_id=1)
+        await _insert_segments(db, episode_id="ep-force", count=3)
+
+        # Pre-insert a stale topic that should be deleted by force
+        await db.execute(
+            "INSERT INTO topic_mappings (topic, course_id, source) "
+            "VALUES ('Stale Topic', 1, 'lecture')",
+        )
+        await db.commit()
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract_topics = AsyncMock(return_value=["Linear Algebra", "Calculus"])
+
+        with (
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_study._create_topic_extractor",
+                return_value=mock_extractor,
+            ),
+        ):
+            mappings = await extract_topics_from_lectures(app, module_id=1, force=True)
+
+        assert len(mappings) == 2
+        assert mappings[0].topic == "Linear Algebra"
+        assert mappings[0].source == TopicSource.LECTURE
+        assert mappings[1].topic == "Calculus"
+
+        # Verify DB: stale topic gone, new ones present
+        cursor = await db.execute(
+            "SELECT topic FROM topic_mappings WHERE course_id = 1 ORDER BY topic"
+        )
+        rows = await cursor.fetchall()
+        topics = [r[0] for r in rows]
+        assert "Stale Topic" not in topics
+        assert "Calculus" in topics
+        assert "Linear Algebra" in topics

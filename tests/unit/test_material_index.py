@@ -13,6 +13,8 @@ from sophia.infra.persistence import run_migrations
 from sophia.services.material_index import (
     _CHUNK_OVERLAP,
     _CHUNK_SIZE,
+    _create_embedder,
+    _create_store,
     chunk_pdf_text,
     index_materials,
     scrape_course_materials,
@@ -299,3 +301,112 @@ class TestIndexMaterials:
 
         assert total == 0
         mock_emb.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _create_embedder / _create_store (unit)
+# ---------------------------------------------------------------------------
+
+
+class TestCreateEmbedder:
+    def test_none_config_falls_back_to_defaults(self) -> None:
+        """When load_hermes_config returns None, HermesConfig defaults are used."""
+        from sophia.domain.models import HermesConfig
+
+        app = MagicMock()
+        app.settings.config_dir = "/nonexistent"
+
+        with (
+            patch("sophia.services.material_index.load_hermes_config", return_value=None),
+            patch("sophia.services.material_index.SentenceTransformerEmbedder") as mock_cls,
+        ):
+            _create_embedder(app)
+
+        mock_cls.assert_called_once_with(HermesConfig().embeddings)
+
+
+class TestCreateStore:
+    def test_creates_store_with_knowledge_path(self) -> None:
+        app = MagicMock()
+        app.settings.data_dir.__truediv__ = MagicMock(return_value="/data/knowledge")
+
+        with patch("sophia.services.material_index.ChromaKnowledgeStore") as mock_cls:
+            _create_store(app)
+
+        mock_cls.assert_called_once_with("/data/knowledge")
+
+
+# ---------------------------------------------------------------------------
+# scrape_course_materials — PDF extraction failure branch
+# ---------------------------------------------------------------------------
+
+
+class TestScrapePdfExtractionFailure:
+    @pytest.mark.asyncio
+    async def test_pdf_failure_inserts_with_empty_text(self, db: aiosqlite.Connection) -> None:
+        """When PDF download/extraction raises, the material is still saved with empty text."""
+        moodle = MagicMock()
+        moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=300)])
+        app = _make_app(db, moodle=moodle)
+
+        with patch(
+            "sophia.services.material_index._download_pdf",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("network error"),
+        ):
+            materials = await scrape_course_materials(app, course_id=42)
+
+        assert len(materials) == 1
+
+        cursor = await db.execute(
+            "SELECT pdf_text, status FROM course_materials WHERE course_id = 42"
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == ""
+        assert row[1] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# index_materials — embedder initialization path
+# ---------------------------------------------------------------------------
+
+
+class TestIndexMaterialsEmbedderInit:
+    @pytest.mark.asyncio
+    async def test_index_initialises_embedder_for_valid_text(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """Materials with real pdf_text trigger embedder/store creation and indexing."""
+        long_text = "Hello world " * 100
+        await db.execute(
+            "INSERT INTO course_materials"
+            " (course_id, module_id, name, url, mimetype, pdf_text, status)"
+            " VALUES (42, 100, 'Big PDF', 'https://x.com/big.pdf', 'application/pdf',"
+            "  ?, 'pending')",
+            (long_text,),
+        )
+        await db.commit()
+
+        app = _make_app(db)
+        mock_embedder = MagicMock()
+        mock_embedder.embed.return_value = [[0.1, 0.2]]
+        mock_store = MagicMock()
+
+        with (
+            patch(
+                "sophia.services.material_index._create_embedder",
+                return_value=mock_embedder,
+            ) as create_emb,
+            patch(
+                "sophia.services.material_index._create_store",
+                return_value=mock_store,
+            ) as create_st,
+        ):
+            total = await index_materials(app, course_id=42)
+
+        assert total > 0
+        create_emb.assert_called_once_with(app)
+        create_st.assert_called_once_with(app)
+        mock_embedder.embed.assert_called_once()
+        mock_store.add_chunks.assert_called_once()

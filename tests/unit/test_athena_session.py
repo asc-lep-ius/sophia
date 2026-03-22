@@ -575,3 +575,193 @@ class TestInterleaveFlag:
 
         mock_interleaved.assert_awaited_once()
         mock_single.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# _run_pretest — TopicExtractionError fallback
+# ---------------------------------------------------------------------------
+
+
+class TestPretestFallback:
+    @pytest.mark.asyncio
+    async def test_topic_extraction_error_uses_fallback_questions(self) -> None:
+        """TopicExtractionError in generate_study_questions triggers fallback."""
+        from sophia.domain.errors import TopicExtractionError
+        from sophia.services.athena_session import _run_pretest
+
+        async def _raise_extraction_error(*args: object, **kwargs: object) -> None:
+            raise TopicExtractionError("LLM unavailable")
+
+        with (
+            patch(
+                "sophia.services.athena_study.generate_study_questions",
+                side_effect=_raise_extraction_error,
+            ),
+            patch(
+                "sophia.services.athena_session.get_confidence_ratings",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_session._run_quiz_no_skip",
+                return_value=1,
+            ) as mock_quiz,
+        ):
+            app = MagicMock()
+            console = MagicMock()
+            _score, qs = await _run_pretest(app, 42, "Algebra", console)
+
+        # Fallback questions should have been generated
+        assert len(qs) == 3
+        assert all("Algebra" in q for q in qs)
+        mock_quiz.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _run_study_phase — no lecture content
+# ---------------------------------------------------------------------------
+
+
+class TestStudyPhaseNoContent:
+    @pytest.mark.asyncio
+    async def test_no_content_shows_warning(self) -> None:
+        """When get_lecture_context returns empty string, a warning is printed."""
+        from sophia.services.athena_session import _run_study_phase
+
+        with patch(
+            "sophia.services.athena_study.get_lecture_context",
+            new_callable=AsyncMock,
+            return_value="",
+        ):
+            app = MagicMock()
+            console = MagicMock()
+            await _run_study_phase(app, 42, "Algebra", console)
+
+        printed = " ".join(str(c) for c in console.print.call_args_list)
+        assert "No lecture content" in printed
+
+    @pytest.mark.asyncio
+    async def test_with_content_shows_panel(self) -> None:
+        """When lecture content exists, a panel is printed (not the warning)."""
+        from sophia.services.athena_session import _run_study_phase
+
+        with patch(
+            "sophia.services.athena_study.get_lecture_context",
+            new_callable=AsyncMock,
+            return_value="Here is some lecture text about sorting algorithms...",
+        ):
+            app = MagicMock()
+            console = MagicMock()
+            await _run_study_phase(app, 42, "Sorting", console)
+
+        printed = " ".join(str(c) for c in console.print.call_args_list)
+        assert "No lecture content" not in printed
+
+
+# ---------------------------------------------------------------------------
+# _select_interleave_topics — all-topics fallback
+# ---------------------------------------------------------------------------
+
+
+class TestSelectInterleaveTopicsFallbackAllTopics:
+    @pytest.mark.asyncio
+    async def test_falls_back_to_all_course_topics(self) -> None:
+        """When blind spots and due reviews give <2 topics, falls back to get_course_topics."""
+        from sophia.services.athena_session import _select_interleave_topics
+
+        app = MagicMock()
+        app.db = MagicMock()
+        with (
+            patch(
+                "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[_make_blind_spot("Algebra")],
+            ),
+            patch(
+                "sophia.services.athena_session.get_due_reviews",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[
+                    _make_topic("Algebra"),
+                    _make_topic("Calculus"),
+                    _make_topic("Stats"),
+                ],
+            ),
+        ):
+            topics = await _select_interleave_topics(app, 1)
+
+        # Should include Algebra (blind spot) + Calculus and/or Stats from all-topics
+        assert len(topics) >= 2
+        assert "Algebra" in topics
+
+    @pytest.mark.asyncio
+    async def test_no_topics_at_all_returns_empty(self) -> None:
+        """When all sources return nothing, returns empty list."""
+        from sophia.services.athena_session import _select_interleave_topics
+
+        app = MagicMock()
+        app.db = MagicMock()
+        with (
+            patch(
+                "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_session.get_due_reviews",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            topics = await _select_interleave_topics(app, 1)
+
+        assert topics == []
+
+
+# ---------------------------------------------------------------------------
+# run_interactive_session — skip study phase
+# ---------------------------------------------------------------------------
+
+
+class TestRunInteractiveSessionSkipStudy:
+    @pytest.mark.asyncio
+    async def test_skip_study_phase_saves_pretest_only(self) -> None:
+        """If user declines to continue after pre-test, session saves with pre-test score only."""
+        from sophia.services.athena_session import run_interactive_session
+
+        with (
+            patch(
+                "sophia.services.athena_session._run_pretest",
+                new_callable=AsyncMock,
+                return_value=(0.33, ["Q1"]),
+            ),
+            patch(
+                "sophia.services.athena_session.start_study_session",
+                new_callable=AsyncMock,
+                return_value=MagicMock(id=7),
+            ),
+            patch(
+                "sophia.services.athena_session.complete_study_session",
+                new_callable=AsyncMock,
+            ) as mock_complete,
+            patch(
+                "sophia.services.athena_session._run_study_phase",
+                new_callable=AsyncMock,
+            ) as mock_study,
+            patch("rich.prompt.Confirm.ask", return_value=False),
+        ):
+            app = MagicMock()
+            console = MagicMock()
+            await run_interactive_session(app, 42, "Algebra", console)
+
+        mock_study.assert_not_awaited()
+        mock_complete.assert_awaited_once_with(app.db, 7, 0.33, 0.33)

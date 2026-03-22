@@ -162,6 +162,125 @@ class TestDeadlineTypeEnum:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# _assignment_to_deadline — invalid timestamp
+# ---------------------------------------------------------------------------
+
+
+class TestAssignmentToDeadline:
+    def test_overflow_timestamp_returns_none(self) -> None:
+        """An assignment with an enormous timestamp returns None instead of crashing."""
+        from sophia.services.chronos import _assignment_to_deadline
+
+        info = AssignmentInfo(id=1, name="HW", course_id=42, due_date="99999999999999")
+        result = _assignment_to_deadline(info, "Algorithms")
+        assert result is None
+
+    def test_non_numeric_due_date_returns_none(self) -> None:
+        from sophia.services.chronos import _assignment_to_deadline
+
+        info = AssignmentInfo(id=2, name="HW", course_id=42, due_date="not-a-number")
+        result = _assignment_to_deadline(info, "Algorithms")
+        assert result is None
+
+    def test_valid_timestamp_returns_deadline(self) -> None:
+        from sophia.services.chronos import _assignment_to_deadline
+
+        info = AssignmentInfo(id=3, name="HW3", course_id=42, due_date=_unix_ts(FUTURE))
+        result = _assignment_to_deadline(info, "Algorithms")
+        assert result is not None
+        assert result.name == "HW3"
+        assert result.deadline_type == DeadlineType.ASSIGNMENT
+
+
+# ---------------------------------------------------------------------------
+# _extract_course_number — fallback paths
+# ---------------------------------------------------------------------------
+
+
+class TestExtractCourseNumber:
+    def test_standard_shortname_with_space(self) -> None:
+        """Standard format: '186.813 WS2025' → '186.813'."""
+        from sophia.services.chronos import _extract_course_number
+
+        course = Course(id=1, fullname="Algorithms", shortname="186.813 WS2025")
+        assert _extract_course_number(course) == "186.813"
+
+    def test_bare_number_shortname_fallback(self) -> None:
+        """Shortname is just the course number (no space-separated parts)."""
+        from sophia.services.chronos import _extract_course_number
+
+        course = Course(id=1, fullname="Algorithms", shortname="186.813")
+        result = _extract_course_number(course)
+        assert result == "186.813"
+
+    def test_no_digits_returns_none(self) -> None:
+        """Shortname with no digits at all → None."""
+        from sophia.services.chronos import _extract_course_number
+
+        course = Course(id=1, fullname="Seminar", shortname="SomeCourse")
+        assert _extract_course_number(course) is None
+
+    def test_parenthesized_number(self) -> None:
+        """Parenthesized number like '(186.813)' should be cleaned."""
+        from sophia.services.chronos import _extract_course_number
+
+        course = Course(id=1, fullname="Algorithms", shortname="(186.813) WS2025")
+        assert _extract_course_number(course) == "186.813"
+
+    def test_empty_shortname_returns_none(self) -> None:
+        from sophia.services.chronos import _extract_course_number
+
+        course = Course(id=1, fullname="X", shortname="")
+        assert _extract_course_number(course) is None
+
+
+# ---------------------------------------------------------------------------
+# _exam_to_deadlines — error paths
+# ---------------------------------------------------------------------------
+
+
+class TestExamToDeadlines:
+    def test_invalid_date_start_skipped(self) -> None:
+        """Bad ISO date_start is logged and skipped, not raised."""
+        from sophia.services.chronos import _exam_to_deadlines
+
+        exam = TissExamDate(
+            exam_id="E1",
+            course_number="186.813",
+            title="Final",
+            date_start="not-a-date",
+        )
+        result = _exam_to_deadlines(exam, "Algo", 42)
+        assert result == []
+
+    def test_invalid_registration_end_skipped(self) -> None:
+        from sophia.services.chronos import _exam_to_deadlines
+
+        exam = TissExamDate(
+            exam_id="E1",
+            course_number="186.813",
+            title="Final",
+            registration_end="bad-date",
+        )
+        result = _exam_to_deadlines(exam, "Algo", 42)
+        assert result == []
+
+    def test_valid_exam_with_mode(self) -> None:
+        from sophia.services.chronos import _exam_to_deadlines
+
+        exam = TissExamDate(
+            exam_id="E2",
+            course_number="186.813",
+            title="Midterm",
+            date_start=_iso(FUTURE),
+            mode="WRITTEN",
+        )
+        result = _exam_to_deadlines(exam, "Algo", 42)
+        assert len(result) == 1
+        assert result[0].extra == {"mode": "WRITTEN"}
+
+
 class TestSyncDeadlines:
     async def test_syncs_assignments(self, app_container: MagicMock) -> None:
         from sophia.services.chronos import sync_deadlines
@@ -528,6 +647,21 @@ class TestGetScaffoldLevel:
 class TestFormatReferenceClassHint:
     async def test_no_hint_when_insufficient_data(self, db: aiosqlite.Connection) -> None:
         from sophia.services.chronos import format_reference_class_hint
+
+        hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
+        assert hint is None
+
+    async def test_two_entries_returns_none(self, db: aiosqlite.Connection) -> None:
+        """Exactly 2 entries (below REFERENCE_CLASS_MIN_ENTRIES=3) → None."""
+        from sophia.services.chronos import format_reference_class_hint
+
+        for i in range(2):
+            await db.execute(
+                "INSERT OR REPLACE INTO metacognition_log "
+                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+            )
+        await db.commit()
 
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
         assert hint is None
