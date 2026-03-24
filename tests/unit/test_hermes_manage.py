@@ -81,6 +81,24 @@ async def _insert_segments(
     await db.commit()
 
 
+async def _insert_topic_link(
+    db: aiosqlite.Connection,
+    topic: str,
+    course_id: int,
+    episode_id: str,
+    chunk_id: str | None = None,
+) -> None:
+    if chunk_id is None:
+        chunk_id = f"chunk-{episode_id}-{topic}"
+    await db.execute(
+        """INSERT INTO topic_lecture_links
+           (topic, course_id, chunk_id, episode_id, score)
+           VALUES (?, ?, ?, ?, 1.0)""",
+        (topic, course_id, chunk_id, episode_id),
+    )
+    await db.commit()
+
+
 # ------------------------------------------------------------------
 # discard_episode
 # ------------------------------------------------------------------
@@ -790,3 +808,57 @@ class TestGetEpisodeCount:
         from sophia.services.hermes_manage import get_episode_count
 
         assert await get_episode_count(db, 999) == 0
+
+
+# ------------------------------------------------------------------
+# get_catch_up_info
+# ------------------------------------------------------------------
+
+
+class TestGetCatchUpInfo:
+    async def test_no_missed_lectures(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_catch_up_info
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        info = await get_catch_up_info(db, 100)
+        assert info.missed_only_topics == []
+        assert info.partial_topics == []
+        assert info.missed_episodes == []
+
+    async def test_all_lectures_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_catch_up_info, mark_missed
+
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", status="completed")
+        await _insert_download(db, "ep-2", 100, title="Lecture 2", status="completed")
+        await mark_missed(db, 100, "ep-1")
+        await mark_missed(db, 100, "ep-2")
+        await _insert_topic_link(db, "Sorting", 1, "ep-1")
+        await _insert_topic_link(db, "Hashing", 1, "ep-2")
+        info = await get_catch_up_info(db, 100)
+        assert set(info.missed_only_topics) == {"Sorting", "Hashing"}
+        assert info.partial_topics == []
+        assert len(info.missed_episodes) == 2
+
+    async def test_correct_partitioning(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_catch_up_info, mark_missed
+
+        # ep-1 missed, ep-2 attended. Both cover "Trees". Only ep-1 covers "Graphs".
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", status="completed")
+        await _insert_download(db, "ep-2", 100, title="Lecture 2", status="completed")
+        await mark_missed(db, 100, "ep-1")
+        await _insert_topic_link(db, "Trees", 1, "ep-1")
+        await _insert_topic_link(db, "Graphs", 1, "ep-1")
+        await _insert_topic_link(db, "Trees", 1, "ep-2")
+        info = await get_catch_up_info(db, 100)
+        assert info.missed_only_topics == ["Graphs"]
+        assert info.partial_topics == ["Trees"]
+
+    async def test_missed_but_no_topics(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_catch_up_info, mark_missed
+
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", status="completed")
+        await mark_missed(db, 100, "ep-1")
+        info = await get_catch_up_info(db, 100)
+        assert info.missed_only_topics == []
+        assert info.partial_topics == []
+        assert len(info.missed_episodes) == 1

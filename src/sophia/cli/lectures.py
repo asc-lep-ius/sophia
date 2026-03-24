@@ -427,6 +427,69 @@ async def lectures_unmark_missed(
         raise SystemExit(1)
 
 
+@app.command(name="catch-up")
+async def lectures_catch_up(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+) -> None:
+    """Show topics from missed lectures to help prioritize catch-up study."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import get_catch_up_info
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        info = await get_catch_up_info(container.db, resolved_id)
+
+    if not info.missed_episodes:
+        console.print("[yellow]No lectures marked as missed.[/yellow]")
+        console.print("[dim]Use: sophia lectures mark-missed <module-id> <episode-id>[/dim]")
+        return
+
+    table = Table(title="Missed Lectures")
+    table.add_column("#", style="dim", width=4, justify="right")
+    table.add_column("Title", style="cyan")
+    table.add_column("Missed At", style="red")
+
+    for ep in info.missed_episodes:
+        table.add_row(
+            str(ep.lecture_number) if ep.lecture_number is not None else "",
+            ep.title,
+            ep.missed_at or "",
+        )
+
+    console.print(table)
+
+    if not info.missed_only_topics and not info.partial_topics:
+        console.print("\n[yellow]No topic data available for missed lectures.[/yellow]")
+        console.print(
+            "[dim]Topics are extracted during indexing."
+            " Run: sophia lectures index <module-id>[/dim]"
+        )
+        return
+
+    if info.missed_only_topics:
+        count = len(info.missed_only_topics)
+        console.print(f"\n[bold red]Topics ONLY covered in missed lectures ({count}):[/bold red]")
+        for topic in info.missed_only_topics:
+            console.print(f"  [red]•[/red] {topic}")
+
+    if info.partial_topics:
+        count = len(info.partial_topics)
+        console.print(f"\n[dim]Topics also covered in other lectures ({count}):[/dim]")
+        for topic in info.partial_topics:
+            console.print(f"  [dim]•[/dim] {topic}")
+
+    console.print(f"\n[dim]Search missed content: sophia lectures search 'topic' {module_id}[/dim]")
+
+
 @app.command(name="purge")
 async def lectures_purge(
     module_id: Annotated[

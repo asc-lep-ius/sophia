@@ -173,6 +173,74 @@ async def get_missed_episodes(db: aiosqlite.Connection, module_id: int) -> list[
     ]
 
 
+@dataclass
+class CatchUpInfo:
+    """Topics the student missed, grouped by exposure."""
+
+    missed_only_topics: list[str]
+    partial_topics: list[str]
+    missed_episodes: list[EpisodeStatus]
+
+
+async def get_catch_up_info(
+    db: aiosqlite.Connection,
+    module_id: int,
+) -> CatchUpInfo:
+    """Analyze which topics the student missed based on marked lectures.
+
+    Groups topics into:
+    - missed_only: topics covered ONLY in missed lectures (highest-priority gaps)
+    - partial: topics covered in both missed AND attended lectures
+    """
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ? AND missed_at IS NOT NULL",
+        (module_id,),
+    )
+    missed_ids = [row[0] for row in await cursor.fetchall()]
+    if not missed_ids:
+        return CatchUpInfo(missed_only_topics=[], partial_topics=[], missed_episodes=[])
+
+    missed_episodes = await get_missed_episodes(db, module_id)
+
+    placeholders = ",".join("?" * len(missed_ids))
+    cursor = await db.execute(
+        f"SELECT DISTINCT topic FROM topic_lecture_links WHERE episode_id IN ({placeholders})",  # noqa: S608
+        missed_ids,
+    )
+    missed_topics = {row[0] for row in await cursor.fetchall()}
+
+    if not missed_topics:
+        return CatchUpInfo(
+            missed_only_topics=[],
+            partial_topics=[],
+            missed_episodes=missed_episodes,
+        )
+
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ? AND missed_at IS NULL",
+        (module_id,),
+    )
+    attended_ids = [row[0] for row in await cursor.fetchall()]
+
+    attended_topics: set[str] = set()
+    if attended_ids:
+        placeholders = ",".join("?" * len(attended_ids))
+        cursor = await db.execute(
+            f"SELECT DISTINCT topic FROM topic_lecture_links WHERE episode_id IN ({placeholders})",  # noqa: S608
+            attended_ids,
+        )
+        attended_topics = {row[0] for row in await cursor.fetchall()}
+
+    missed_only = sorted(missed_topics - attended_topics)
+    partial = sorted(missed_topics & attended_topics)
+
+    return CatchUpInfo(
+        missed_only_topics=missed_only,
+        partial_topics=partial,
+        missed_episodes=missed_episodes,
+    )
+
+
 async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Query per-episode pipeline state for a module."""
     cursor = await db.execute(

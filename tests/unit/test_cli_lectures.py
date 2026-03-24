@@ -462,3 +462,66 @@ class TestStatusMissedColumn:
         captured = capsys.readouterr()
         assert "\u26a0" in captured.out
         assert "Missed" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# lectures catch-up
+# ---------------------------------------------------------------------------
+
+
+class TestCatchUpCommand:
+    @pytest.mark.asyncio
+    async def test_catch_up_no_missed(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_catch_up
+        from sophia.services.hermes_manage import CatchUpInfo
+
+        container = _mock_container()
+        empty_info = CatchUpInfo(missed_only_topics=[], partial_topics=[], missed_episodes=[])
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_manage.get_catch_up_info",
+                AsyncMock(return_value=empty_info),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_catch_up(module_id="42")
+        captured = capsys.readouterr()
+        assert "No lectures marked as missed" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_catch_up_shows_topics(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_catch_up
+        from sophia.services.hermes_manage import CatchUpInfo
+
+        missed_ep = EpisodeStatus(
+            episode_id="ep-1",
+            title="Lecture 1",
+            download_status="completed",
+            skip_reason=None,
+            transcription_status="completed",
+            index_status="completed",
+            lecture_number=1,
+            missed_at="2025-01-15T10:00:00",
+        )
+        info = CatchUpInfo(
+            missed_only_topics=["Graphs", "Trees"],
+            partial_topics=["Sorting"],
+            missed_episodes=[missed_ep],
+        )
+        container = _mock_container()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch("sophia.services.hermes_manage.get_catch_up_info", AsyncMock(return_value=info)),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_catch_up(module_id="42")
+        captured = capsys.readouterr()
+        assert "Graphs" in captured.out
+        assert "Trees" in captured.out
+        assert "Sorting" in captured.out
+        assert "ONLY covered in missed lectures" in captured.out
