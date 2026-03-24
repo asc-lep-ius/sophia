@@ -1274,6 +1274,10 @@ async def lectures_search(
         str,
         cyclopts.Parameter(help="Source filter: lecture, pdf, or all.", name="--source"),
     ] = "all",
+    missed: Annotated[
+        bool,
+        cyclopts.Parameter(help="Restrict results to missed lectures."),
+    ] = False,
 ) -> None:
     """Search lecture transcripts by semantic similarity."""
     from rich.console import Console
@@ -1293,7 +1297,12 @@ async def lectures_search(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             results = await search_lectures(
-                container, resolved_id, query, n_results=count, source_filter=source_filter
+                container,
+                resolved_id,
+                query,
+                n_results=count,
+                source_filter=source_filter,
+                missed_only=missed,
             )
 
             if not results:

@@ -525,3 +525,69 @@ class TestCatchUpCommand:
         assert "Trees" in captured.out
         assert "Sorting" in captured.out
         assert "ONLY covered in missed lectures" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# lectures search — --missed flag
+# ---------------------------------------------------------------------------
+
+
+class TestSearchMissedFlag:
+    """The search command accepts --missed to restrict results to missed lectures."""
+
+    @pytest.mark.asyncio
+    async def test_search_missed_passes_flag(self) -> None:
+        """search_lectures receives missed_only=True when --missed is set."""
+        from sophia.services.hermes_index import search_lectures
+
+        container = MagicMock()
+        container.db = AsyncMock()
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
+        container.db.execute = AsyncMock(return_value=cursor)
+        container.settings.config_dir = "/tmp/test"
+        container.settings.data_dir = MagicMock()
+        container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = MagicMock(return_value=[0.1, 0.2])
+        mock_store = MagicMock()
+        mock_store.search = MagicMock(return_value=[])
+
+        with (
+            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+        ):
+            await search_lectures(container, 42, "test query", missed_only=True)
+
+        # SQL should include missed_at filter
+        sql_arg = container.db.execute.call_args_list[0][0][0]
+        assert "missed_at IS NOT NULL" in sql_arg
+
+    @pytest.mark.asyncio
+    async def test_search_without_missed_uses_default_query(self) -> None:
+        """Default behavior: no missed_at filter in SQL."""
+        from sophia.services.hermes_index import search_lectures
+
+        container = MagicMock()
+        container.db = AsyncMock()
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
+        container.db.execute = AsyncMock(return_value=cursor)
+        container.settings.config_dir = "/tmp/test"
+        container.settings.data_dir = MagicMock()
+        container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = MagicMock(return_value=[0.1, 0.2])
+        mock_store = MagicMock()
+        mock_store.search = MagicMock(return_value=[])
+
+        with (
+            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+        ):
+            await search_lectures(container, 42, "test query")
+
+        sql_arg = container.db.execute.call_args_list[0][0][0]
+        assert "missed_at" not in sql_arg
