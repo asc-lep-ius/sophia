@@ -78,6 +78,7 @@ class EpisodeStatus:
     transcription_status: str | None
     index_status: str | None
     lecture_number: int | None = None
+    missed_at: str | None = None
 
 
 async def discard_episode(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
@@ -109,6 +110,69 @@ async def restore_episode(db: aiosqlite.Connection, module_id: int, episode_id: 
     return restored
 
 
+async def mark_missed(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
+    """Mark a lecture as missed by the student. Returns True if updated."""
+    cursor = await db.execute(
+        """UPDATE lecture_downloads SET missed_at = CURRENT_TIMESTAMP
+           WHERE episode_id = ? AND module_id = ? AND missed_at IS NULL""",
+        (episode_id, module_id),
+    )
+    await db.commit()
+    updated = cursor.rowcount > 0
+    if updated:
+        log.info("episode_marked_missed", episode_id=episode_id, module_id=module_id)
+    return updated
+
+
+async def unmark_missed(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
+    """Remove missed mark from a lecture. Returns True if updated."""
+    cursor = await db.execute(
+        """UPDATE lecture_downloads SET missed_at = NULL
+           WHERE episode_id = ? AND module_id = ? AND missed_at IS NOT NULL""",
+        (episode_id, module_id),
+    )
+    await db.commit()
+    updated = cursor.rowcount > 0
+    if updated:
+        log.info("episode_unmarked_missed", episode_id=episode_id, module_id=module_id)
+    return updated
+
+
+async def get_missed_episodes(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
+    """Return all episodes marked as missed for a module."""
+    cursor = await db.execute(
+        """SELECT
+               ld.episode_id,
+               ld.title,
+               ld.status,
+               ld.skip_reason,
+               t.status,
+               ki.status,
+               ld.lecture_number,
+               ld.missed_at
+           FROM lecture_downloads ld
+           LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
+           LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
+           WHERE ld.module_id = ? AND ld.missed_at IS NOT NULL
+           ORDER BY ld.lecture_number ASC NULLS LAST, ld.created_at ASC""",
+        (module_id,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        EpisodeStatus(
+            episode_id=row[0],
+            title=row[1],
+            download_status=row[2],
+            skip_reason=row[3],
+            transcription_status=row[4],
+            index_status=row[5],
+            lecture_number=row[6],
+            missed_at=row[7],
+        )
+        for row in rows
+    ]
+
+
 async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Query per-episode pipeline state for a module."""
     cursor = await db.execute(
@@ -119,7 +183,8 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
                ld.skip_reason,
                t.status,
                ki.status,
-               ld.lecture_number
+               ld.lecture_number,
+               ld.missed_at
            FROM lecture_downloads ld
            LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
            LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
@@ -137,6 +202,7 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
             transcription_status=row[4],
             index_status=row[5],
             lecture_number=row[6],
+            missed_at=row[7],
         )
         for row in rows
     ]

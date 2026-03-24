@@ -174,6 +174,103 @@ class TestRestoreEpisode:
 
 
 # ------------------------------------------------------------------
+# mark_missed / unmark_missed / get_missed_episodes
+# ------------------------------------------------------------------
+
+
+class TestMarkMissed:
+    async def test_marks_episode_as_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import mark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        result = await mark_missed(db, 100, "ep-1")
+        assert result is True
+        row = await (
+            await db.execute("SELECT missed_at FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
+        assert row[0] is not None
+
+    async def test_already_missed_returns_false(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import mark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        await mark_missed(db, 100, "ep-1")
+        result = await mark_missed(db, 100, "ep-1")
+        assert result is False
+
+    async def test_nonexistent_episode_returns_false(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import mark_missed
+
+        result = await mark_missed(db, 100, "no-such-ep")
+        assert result is False
+
+    async def test_wrong_module_returns_false(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import mark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        result = await mark_missed(db, 999, "ep-1")
+        assert result is False
+
+
+class TestUnmarkMissed:
+    async def test_unmarks_missed_episode(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import mark_missed, unmark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        await mark_missed(db, 100, "ep-1")
+        result = await unmark_missed(db, 100, "ep-1")
+        assert result is True
+        row = await (
+            await db.execute("SELECT missed_at FROM lecture_downloads WHERE episode_id = 'ep-1'")
+        ).fetchone()
+        assert row[0] is None
+
+    async def test_not_missed_returns_false(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import unmark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        result = await unmark_missed(db, 100, "ep-1")
+        assert result is False
+
+    async def test_nonexistent_returns_false(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import unmark_missed
+
+        result = await unmark_missed(db, 100, "no-such-ep")
+        assert result is False
+
+
+class TestGetMissedEpisodes:
+    async def test_returns_only_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_missed_episodes, mark_missed
+
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", status="completed")
+        await _insert_download(db, "ep-2", 100, title="Lecture 2", status="completed")
+        await _insert_download(db, "ep-3", 100, title="Lecture 3", status="completed")
+        await mark_missed(db, 100, "ep-1")
+        await mark_missed(db, 100, "ep-3")
+        missed = await get_missed_episodes(db, 100)
+        assert len(missed) == 2
+        ids = {ep.episode_id for ep in missed}
+        assert ids == {"ep-1", "ep-3"}
+
+    async def test_empty_when_none_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_missed_episodes
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        missed = await get_missed_episodes(db, 100)
+        assert missed == []
+
+    async def test_missed_at_populated(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_missed_episodes, mark_missed
+
+        await _insert_download(db, "ep-1", 100, status="completed")
+        await mark_missed(db, 100, "ep-1")
+        missed = await get_missed_episodes(db, 100)
+        assert len(missed) == 1
+        assert missed[0].missed_at is not None
+
+
+# ------------------------------------------------------------------
 # get_pipeline_status
 # ------------------------------------------------------------------
 
@@ -246,6 +343,15 @@ class TestGetPipelineStatus:
 
         assert len(statuses) == 1
         assert statuses[0].download_status == "discarded"
+
+    async def test_missed_at_reflected_in_status(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_pipeline_status, mark_missed
+
+        await _insert_download(db, "ep-1", 100, title="Missed Lecture", status="completed")
+        await mark_missed(db, 100, "ep-1")
+        statuses = await get_pipeline_status(db, 100)
+        assert len(statuses) == 1
+        assert statuses[0].missed_at is not None
 
 
 # ------------------------------------------------------------------

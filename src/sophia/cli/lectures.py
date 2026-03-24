@@ -283,6 +283,7 @@ async def lectures_status(
     table.add_column("Download", style="green")
     table.add_column("Transcription", style="green")
     table.add_column("Index", style="green")
+    table.add_column("Missed", style="red", justify="center")
     table.add_column("Materials", justify="right")
     table.add_column("Skip Reason", style="yellow")
 
@@ -294,6 +295,7 @@ async def lectures_status(
             ep.download_status,
             ep.transcription_status or "—",
             ep.index_status or "—",
+            "⚠" if ep.missed_at else "",
             mat_count,
             ep.skip_reason or "",
         )
@@ -359,6 +361,68 @@ async def lectures_restore(
         console.print(
             f"[red]Episode {episode_id} not found in module {resolved_id} "
             f"(or not currently discarded).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@app.command(name="mark-missed")
+async def lectures_mark_missed(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to mark as missed.")],
+) -> None:
+    """Mark a lecture as missed — the student was not present for this session."""
+    from rich.console import Console
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import mark_missed
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        ok = await mark_missed(container.db, resolved_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} marked as missed.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {resolved_id} "
+            f"(or already marked as missed).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@app.command(name="unmark-missed")
+async def lectures_unmark_missed(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to unmark.")],
+) -> None:
+    """Remove the missed mark from a lecture."""
+    from rich.console import Console
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import unmark_missed
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        ok = await unmark_missed(container.db, resolved_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Missed mark removed from episode {episode_id}.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {resolved_id} "
+            f"(or not currently marked as missed).[/red]"
         )
         raise SystemExit(1)
 
