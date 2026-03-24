@@ -626,3 +626,103 @@ class TestConfidenceGapItems:
 
         items = await _confidence_gap_items(db)
         assert items == []
+
+
+async def _insert_download(
+    db: aiosqlite.Connection,
+    episode_id: str,
+    module_id: int,
+    *,
+    title: str = "Lecture 1",
+    status: str = "completed",
+    missed_at: str | None = None,
+) -> None:
+    await db.execute(
+        """INSERT INTO lecture_downloads
+           (episode_id, module_id, title, track_url, track_mimetype, status, missed_at)
+           VALUES (?, ?, ?, '', '', ?, ?)""",
+        (episode_id, module_id, title, status, missed_at),
+    )
+    await db.commit()
+
+
+async def _insert_topic_link(
+    db: aiosqlite.Connection,
+    topic: str,
+    course_id: int,
+    episode_id: str,
+) -> None:
+    chunk_id = f"chunk-{episode_id}-{topic}"
+    await db.execute(
+        """INSERT INTO topic_lecture_links
+           (topic, course_id, chunk_id, episode_id, score)
+           VALUES (?, ?, ?, ?, 1.0)""",
+        (topic, course_id, chunk_id, episode_id),
+    )
+    await db.commit()
+
+
+class TestMissedTopicItems:
+    @pytest.mark.asyncio
+    async def test_missed_topics_become_plan_items(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import _missed_topic_items
+
+        now = datetime.now(UTC)
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", missed_at=now.isoformat())
+        await _insert_download(db, "ep-2", 100, title="Lecture 2")
+        await _insert_topic_link(db, "Graphs", 42, "ep-1")
+        await _insert_topic_link(db, "Trees", 42, "ep-1")
+        await _insert_topic_link(db, "Trees", 42, "ep-2")
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW', 42, 'Algorithms', 'assignment', ?)",
+            ((now + timedelta(days=30)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await _missed_topic_items(db)
+        assert len(items) == 1
+        assert items[0].title == "Missed topic: Graphs"
+        assert items[0].item_type.value == "missed_topic"
+        assert items[0].score == pytest.approx(0.4)
+
+    @pytest.mark.asyncio
+    async def test_no_missed_returns_empty(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import _missed_topic_items
+
+        await _insert_download(db, "ep-1", 100, title="Lecture 1")
+        items = await _missed_topic_items(db)
+        assert items == []
+
+    @pytest.mark.asyncio
+    async def test_exam_boost_doubles_score(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import _missed_topic_items
+
+        now = datetime.now(UTC)
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", missed_at=now.isoformat())
+        await _insert_topic_link(db, "Sorting", 42, "ep-1")
+        await _insert_exam(db, 42, now + timedelta(days=7))
+
+        items = await _missed_topic_items(db)
+        assert len(items) == 1
+        assert items[0].score == pytest.approx(0.8)
+        assert items[0].components["exam_boost"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_build_plan_items_includes_missed(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.athena_chronos import build_plan_items
+
+        now = datetime.now(UTC)
+        await _insert_download(db, "ep-1", 100, title="Lecture 1", missed_at=now.isoformat())
+        await _insert_topic_link(db, "Hashing", 42, "ep-1")
+        await db.execute(
+            "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
+            "VALUES ('a:1', 'HW', 42, 'DB', 'assignment', ?)",
+            ((now + timedelta(days=30)).isoformat(),),
+        )
+        await db.commit()
+
+        items = await build_plan_items(db)
+        missed_items = [i for i in items if i.item_type.value == "missed_topic"]
+        assert len(missed_items) == 1
+        assert "Hashing" in missed_items[0].title
