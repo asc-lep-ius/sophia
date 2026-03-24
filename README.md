@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (getting a spot in the desired group, finding + aquiring textbooks, forcing yourself to confront unfamiliar fields of knowledge, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing) and Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions, delayed feedback, confidence calibration, guided sessions, Anki export) are functional with 908 tests passing. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress. Chronos is planned.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), and Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export) are functional with 1168 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
 
 | Abschnitt | Inhalt |
 |-----------|--------|
@@ -13,6 +13,8 @@ A student toolkit for TU Wien that automates the tedious parts of academic life 
 | [Getting Started: Kairos — Course Registration](#getting-started-kairos--course-registration) | Set up Kairos and schedule automatic course registration |
 | [Getting Started: Hermes + Athena — Anki Deck from Lectures](#getting-started-hermes--athena--anki-deck-from-lectures) | Process a lecture and export flashcards |
 | [What Sophia Does](#what-sophia-does) | The modules and what each one handles |
+| [Chronos in Action](#chronos-in-action) | Deadline coach: discovery, estimation, tracking, reflection, calibration |
+| [Unified Plan (`sophia plan`)](#unified-plan-sophia-plan) | Combined recommendations: deadlines, reviews, gaps, missed topics |
 | [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
 | [Architecture](#architecture) | Hexagonal design, protocols, async |
 | [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
@@ -423,9 +425,10 @@ Sophia is organized into modules, each named for a concept that matches its purp
 |--------|---------|--------------|--------|
 | **Bücherwurm** 📚 | `sophia books` | Discovers textbook references from enrolled TUWEL courses (ISBN extraction, metadata enrichment) | ✅ Discovery |
 | **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
-| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, silence detection, transcribe with Whisper, semantic search, course material PDF scraping and indexing, discard/restore/purge management | ✅ Functional |
-| **Chronos** ⏰ | `sophia deadlines` | Deadline coach that helps you estimate effort, prioritize tasks, and reflect on what worked | 📋 Planned |
-| **Athena** 🎓 | `sophia study` | Study layer over Hermes: LLM topic extraction, confidence calibration, adaptive difficulty (cued/explain/transfer questions), guided pre/post-test sessions, FSRS-inspired adaptive spaced repetition, interleaved multi-topic sessions, delayed feedback with reflection countdown, no-skip pre-test for generation effect, self-explanation, Anki `.apkg` export | ✅ Functional |
+| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, silence detection, transcribe with Whisper, semantic search, course material PDF scraping and indexing, discard/restore/purge management, missed-lecture tracking (mark/unmark/catch-up), `--missed` search filter, `--all` purge | ✅ Functional |
+| **Chronos** ⏰ | `sophia deadlines` | Deadline coach: discovery from TUWEL calendar API, effort estimation with adaptive scaffolding, timer-based time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export, exam integration | ✅ Functional |
+| **Athena** 🎓 | `sophia study` | Study layer over Hermes: LLM topic extraction, confidence calibration, adaptive difficulty (cued/explain/transfer questions), guided pre/post-test sessions, FSRS-inspired adaptive spaced repetition, interleaved multi-topic sessions with missed-lecture prioritization, delayed feedback with reflection countdown, no-skip pre-test for generation effect, self-explanation, exam-aware review compression, Anki `.apkg` export | ✅ Functional |
+| **Plan** 🗺️ | `sophia plan` | Unified academic recommendation engine merging Chronos deadlines, Athena review schedule, confidence gaps, and missed-lecture topics into one prioritized view | ✅ Functional |
 | **Quickstart** 🚀 | `sophia quickstart` | Chains the full study pipeline (process → topics → confidence → session → export), skipping already-completed steps | ✅ Functional |
 | **Status** 📊 | `sophia status` | Cross-course dashboard showing lectures, topics, flashcards, and reviews due across all courses | ✅ Functional |
 
@@ -533,6 +536,14 @@ Step 1 only needs to happen once. The setup wizard detects your GPU, recommends 
 - **`sophia lectures restore <module-id> <episode-id>`** — undo a discard and re-queue the episode for processing
 - **`sophia lectures purge <module-id> <episode-id>`** — remove all indexed content for an episode from the knowledge base (ChromaDB chunks, transcript segments, index records)
 
+**Missed-lecture management:**
+
+- **`sophia lectures mark-missed <module-id> <episode-id>`** — mark a lecture as missed so Sophia knows you weren't there
+- **`sophia lectures unmark-missed <module-id> <episode-id>`** — remove the missed mark
+- **`sophia lectures catch-up <module-id>`** — show topics from missed lectures, split into zero-exposure (only covered in missed lectures) and partial-exposure (covered in both missed and attended lectures)
+- **`sophia lectures search "topic" <module-id> --missed`** — restrict semantic search to missed lectures only
+- **`sophia lectures purge <module-id> --all`** — purge all episodes in a module
+
 ### Athena in Action
 
 Athena (Ἀθηνᾶ — goddess of wisdom and strategy) turns Hermes's indexed lecture transcripts into an active study workflow. Hermes is responsible for getting the knowledge in; Athena is responsible for getting it into your head.
@@ -556,6 +567,9 @@ Athena (Ἀθηνᾶ — goddess of wisdom and strategy) turns Hermes's indexed 
 | Generate and schedule flashcard spaced review | Athena (`study review`) |
 | Self-explanation exercises for wrong answers | Athena (`study explain`) |
 | Export flashcard deck as Anki `.apkg` | Athena (`study export`) |
+| Boost missed-lecture topics in interleaved sessions | Athena (`study session --interleave`) |
+| Compress review schedule near exams | Athena-Chronos (automatic on sync) |
+| Unified study+deadline recommendations | Athena-Chronos (`sophia plan`) |
 
 Athena does not re-download or re-transcribe anything. It reads directly from what Hermes has already indexed. Running `sophia lectures process <module-id>` is the only prerequisite.
 
@@ -569,10 +583,48 @@ Athena does not re-download or re-transcribe anything. It reads directly from wh
 - **Delayed feedback:** After the post-test, a configurable countdown (default 30 seconds, set with `--feedback-delay`) with reflection prompts before showing results — forces metacognitive processing instead of pattern-matching.
 - **No-skip pre-test:** Pre-test questions require an answer (even a guess) to leverage the generation effect — wrong attempts strengthen subsequent encoding of the correct answer.
 - **Course materials:** `sophia lectures process --materials` scrapes TUWEL course PDFs, chunks them, and indexes them in ChromaDB alongside lecture transcripts for richer RAG context during study sessions.
+- **Missed-lecture prioritization:** Interleaved sessions automatically detect topics covered only in lectures the student missed (zero-exposure gaps) and prioritize them over topics the student has already encountered. This ensures catch-up material doesn't get buried under familiar review.
+- **Exam-aware review compression:** When an exam approaches, Athena pulls forward spaced reviews that would otherwise fall after the exam date, compressing the schedule so nothing is left unstudied.
 
-### What's Coming: Chronos
+### Chronos in Action
 
-**Chronos** will pull assignment deadlines from TUWEL and TISS, but it won't just list them in a calendar. TUWEL already does that, and students still miss deadlines. The problem isn't information, it's planning. Chronos asks you to estimate how long each task will take *before* you start, tracks your actual time, and helps you see where your estimates fall short. Over a semester, you develop better planning intuition, a skill that transfers far beyond university.
+Chronos (Χρόνος — time, the dimension students chronically misjudge) is Sophia's deadline coach. TUWEL already has a calendar, and students still miss deadlines. The problem isn't information — it's planning. Chronos closes the loop: discover deadlines → estimate effort → track time → reflect on accuracy → calibrate your intuition. Over a semester, you develop better planning skills, a meta-competency that transfers far beyond university.
+
+**The pipeline: sync → list → estimate → track → done/reflect → calibrate**
+
+1. **`sophia deadlines sync`** — refresh the deadline cache from TUWEL's calendar API. Discovers assignments, quizzes, checkmarks (`DeadlineType.CHECKMARK`), exams, and exam registrations automatically.
+2. **`sophia deadlines list`** — show upcoming deadlines. Use `--horizon 30` to look further ahead, `--course` to filter by course, `--sort {due|urgency|weight|effort}` to change ordering.
+3. **`sophia deadlines estimate <deadline-id>`** — interactively estimate how long a task will take. Adaptive scaffolding adjusts how much structure the prompt provides based on your track record: `FULL` (step-by-step breakdown) → `MINIMAL` (just key dimensions) → `OPEN` (freeform estimate). As your calibration improves, Sophia fades the scaffold.
+4. **`sophia deadlines track <deadline-id> --hours 2`** — log time manually. Or use the built-in timer:
+   - **`sophia deadlines timer start <deadline-id>`** — start a timer
+   - **`sophia deadlines timer stop <deadline-id>`** — stop and record elapsed time
+5. **`sophia deadlines done <deadline-id>`** — mark complete. Triggers a reflection prompt: how did your estimate compare to reality? What would you do differently?
+6. **`sophia deadlines reflect <deadline-id>`** — record a post-deadline reflection at any time.
+7. **`sophia deadlines calibration`** — per-domain estimation accuracy dashboard. Shows mean error, mean absolute error, and trend for each course. This is Piaget's horizontal décalage in action: you might be well-calibrated for programming assignments but wildly off for proofs.
+
+**Additional commands:**
+
+- **`sophia deadlines next`** — show the single highest-priority deadline with its full score breakdown (urgency, weight, effort, due date).
+- **`sophia deadlines stress`** — workload forecast for the next 7 days (configurable with `--horizon`). Shows total estimated hours and flags overloaded days.
+- **`sophia deadlines export-ics`** — export deadlines as an `.ics` calendar file for import into Google Calendar, Apple Calendar, etc. Uses `--horizon 30` by default.
+- **`sophia deadlines graveyard`** — past-due deadlines. A record of what slipped through, useful for reflection. Filter with `--course` and `--limit`.
+
+### Unified Plan (`sophia plan`)
+
+The unified planner merges data from Chronos and Athena into a single prioritized recommendation list:
+
+```bash
+uv run sophia plan                          # combined view: deadlines, reviews, gaps, missed topics
+uv run sophia plan --horizon 30 --limit 20  # wider horizon, more items
+```
+
+Each `PlanItem` has a type (`DEADLINE`, `REVIEW`, `CONFIDENCE_GAP`, `MISSED_TOPIC`), a priority score, and contextual detail. The planner implements several cross-module optimizations:
+
+- **Review compression near exams:** When an exam approaches, Athena pulls forward spaced reviews that would otherwise fall after the exam date, compressing the schedule so nothing is left unstudied.
+- **Cross-module confidence hints:** Compares Athena's study scaffolding with Chronos's estimation scaffolding to surface contradictions (e.g., "You're confident studying this topic but underestimate deadline effort in the same domain").
+- **Missed-topic boosting:** Topics covered only in lectures the student missed (zero-exposure gaps) receive a base weight boost (`MISSED_TOPIC_BASE_WEIGHT = 0.4`) so they surface prominently in the plan.
+
+Chronos implements the predict → act → reflect cycle described in the [Philosophy section](#philosophy-why-sophia-doesnt-just-do-everything-for-you): every deadline becomes an opportunity to practice estimation, execute, and calibrate your mental model of how long things take.
 
 ---
 
@@ -660,15 +712,17 @@ src/sophia/
 │   ├── _resolver.py  # Module ID → course ID resolution
 │   ├── auth.py       # sophia auth login/status/logout
 │   ├── books.py      # sophia books discover
+│   ├── deadlines.py  # sophia deadlines sync/list/estimate/track/timer/done/reflect/stress/next/calibration/export-ics/graveyard
 │   ├── jobs.py       # sophia jobs list/cancel
-│   ├── lectures.py   # sophia lectures setup/list/process/download/transcribe/index/search/status/discard/restore/purge/materials
+│   ├── lectures.py   # sophia lectures setup/list/process/download/transcribe/index/search/status/discard/restore/purge/materials/mark-missed/unmark-missed/catch-up
+│   ├── plan.py       # sophia plan (unified academic recommendations)
 │   ├── quickstart.py # sophia quickstart <module-id>
 │   ├── register.py   # sophia register favorites/status/groups/go
 │   ├── run_job.py    # Internal: sophia _run-job
 │   ├── status.py     # sophia status (cross-course dashboard)
 │   └── study.py      # sophia study topics/confidence/session/review/explain/export/due
 ├── domain/           # Pure models, protocols, domain events
-│   ├── models.py     # Book, Course, TopicMapping, KnowledgeChunk, StudySession, StudentFlashcard, ReviewSchedule, ConfidenceRating, CourseMaterial, DifficultyLevel, MaterialSource, etc.
+│   ├── models.py     # Book, Course, TopicMapping, KnowledgeChunk, StudySession, StudentFlashcard, ReviewSchedule, ConfidenceRating, CourseMaterial, DifficultyLevel, MaterialSource, Deadline, DeadlineType, EffortEstimate, EstimationScaffold, CalibrationMetrics, PlanItem, PlanItemType, etc.
 │   ├── ports.py      # Protocol definitions (CourseProvider, BookSearcher, ...)
 │   ├── events.py     # Domain events (BookFound, TopicsExtracted, StudySessionCompleted, ...)
 │   └── errors.py     # Domain-specific error hierarchy
@@ -689,7 +743,9 @@ src/sophia/
 │   ├── athena_session.py      # Guided study sessions: adaptive difficulty, interleaved review, delayed feedback
 │   ├── athena_confidence.py   # Confidence rating, calibration tracking, difficulty mapping
 │   ├── athena_review.py       # FSRS-inspired adaptive spaced repetition scheduling
-│   └── athena_export.py       # Anki .apkg deck generation (genanki)
+│   ├── athena_chronos.py      # Athena-Chronos integration: unified planner, review compression, cross-module hints
+│   ├── athena_export.py       # Anki .apkg deck generation (genanki)
+│   └── chronos.py             # Deadline discovery, effort estimation, time tracking, priority scoring, calibration
 ├── adapters/         # External world implementations
 │   ├── moodle.py     # TUWEL/Moodle AJAX adapter
 │   ├── tiss.py       # TISS public API adapter
@@ -703,11 +759,11 @@ src/sophia/
 │   └── topic_extractor.py     # LLM topic extraction (Gemini/Groq/GitHub Models/Ollama)
 ├── infra/            # Cross-cutting concerns
 │   ├── http.py       # Shared HTTP client with retry logic
-│   ├── persistence.py # SQLite via aiosqlite (with 16 migrations)
+│   ├── persistence.py # SQLite via aiosqlite (with 19 migrations)
 │   ├── di.py         # Dependency injection container
 │   ├── logging.py    # Structured logging (structlog)
 │   ├── scheduler.py  # OS-native job scheduler (systemd/launchd/Task Scheduler)
-│   └── migrations/   # Schema migrations (001–016)
+│   └── migrations/   # Schema migrations (001–019)
 ```
 
 Key design decisions:
@@ -746,6 +802,7 @@ Sophia pulls in several external tools and services beyond the core Python stack
 | Dependency | What It Does for Sophia | Required? | How to Install |
 |-----------|------------------------|-----------|----------------|
 | keyring | Stores your TUWEL/TISS credentials securely in your OS keychain | Core (auto-installed) | `uv sync` |
+| icalendar | Exports deadlines as ICS calendar files for import into Google Calendar, Apple Calendar, etc. | Core (auto-installed) | `uv sync` |
 | google-genai | Calls Google Gemini for topic extraction from lectures | Optional | `uv sync --extra llm` |
 | groq | Calls Groq for fast topic extraction (alternative to Gemini) | Optional | `uv sync --extra llm` |
 | faster-whisper | Transcribes lecture recordings (speech-to-text) | Optional | `uv sync --extra hermes` |
@@ -941,7 +998,7 @@ uv run sophia lectures setup       # configure Hermes for your hardware (GPU, mo
 # The lectures setup wizard auto-installs hermes deps when needed
 
 # Run the test suite
-uv run pytest                      # 908 tests currently passing
+uv run pytest                      # 1168 tests currently passing
 uv run pytest --cov=sophia     # with coverage report
 uv run pytest -x               # stop on first failure (useful when debugging)
 
@@ -1017,7 +1074,9 @@ CI runs automatically via GitLab CI on every push.
 | ✅ Done | **Docker & CI/CD** | Multi-stage Dockerfile, docker-compose, GitLab CI with lint/typecheck/test/security/docker-build |
 | 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
 | 🔨 In Progress | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq — LLM adapter already built in `topic_extractor.py`), Typst-rendered reading reports |
-| 📋 Planned | **M3: Chronos** | Deadline import from TUWEL/TISS, effort estimation prompts, time tracking, reflection analytics |
+| ✅ Done | **M3: Chronos** | Deadline discovery from TUWEL calendar API (assignments, quizzes, checkmarks, exams), effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export |
+| ✅ Done | **Athena-Chronos Integration** | Unified recommendation engine (`sophia plan`), review compression near exams, cross-module confidence hints, missed-lecture prioritization |
+| ✅ Done | **Missed Lectures** | Mark/unmark missed lectures, catch-up command, missed-only search, Athena interleave prioritization, unified planner boosting |
 | 📋 Planned | **M5: Polish & Ship** | Textual TUI, Gradio web interface, comprehensive documentation, stable public release |
 
 ---
@@ -1062,6 +1121,11 @@ uv run sophia lectures search "topic" <module-id>  # semantic search within a le
 uv run sophia lectures discard <module-id> <episode-id>  # mark episode as discarded
 uv run sophia lectures restore <module-id> <episode-id>  # undo discard
 uv run sophia lectures purge <module-id> <episode-id>    # remove episode from knowledge base
+uv run sophia lectures mark-missed <module-id> <episode-id>  # mark lecture as missed
+uv run sophia lectures unmark-missed <module-id> <episode-id> # remove missed mark
+uv run sophia lectures catch-up <module-id>                   # show missed-lecture topics to catch up on
+uv run sophia lectures search "topic" <module-id> --missed    # search within missed lectures only
+uv run sophia lectures purge <module-id> --all                # purge all episodes in module
 
 # Study (Athena)
 uv run sophia study topics <module-id>              # extract topics from transcripts
@@ -1077,6 +1141,27 @@ uv run sophia study explain <module-id> --count 10      # explain up to 10 cards
 uv run sophia study export <module-id>              # export flashcards to Anki
 uv run sophia study export <module-id> --blocked        # group by topic instead of interleaving
 uv run sophia study due [module-id]                 # show topics due for review (all if omitted)
+
+# Deadlines (Chronos)
+uv run sophia deadlines sync                        # refresh deadline cache from TUWEL
+uv run sophia deadlines list                        # upcoming deadlines
+uv run sophia deadlines list --horizon 30           # look 30 days ahead
+uv run sophia deadlines list --sort urgency         # sort by urgency score
+uv run sophia deadlines estimate <deadline-id>      # estimate effort (with scaffolding)
+uv run sophia deadlines track <deadline-id> --hours 2   # log time manually
+uv run sophia deadlines timer start <deadline-id>   # start a timer
+uv run sophia deadlines timer stop <deadline-id>    # stop timer, record time
+uv run sophia deadlines done <deadline-id>          # mark complete + reflection
+uv run sophia deadlines reflect <deadline-id>       # post-deadline reflection
+uv run sophia deadlines next                        # highest-priority deadline
+uv run sophia deadlines stress                      # workload forecast (7 days)
+uv run sophia deadlines calibration                 # estimation accuracy dashboard
+uv run sophia deadlines export-ics                  # export as .ics calendar file
+uv run sophia deadlines graveyard                   # past-due deadlines
+
+# Unified Plan (Athena + Chronos)
+uv run sophia plan                                  # combined recommendations: deadlines, reviews, gaps, missed topics
+uv run sophia plan --horizon 30 --limit 20          # wider horizon, more items
 
 # Scheduled Jobs
 uv run sophia jobs list            # show scheduled jobs
