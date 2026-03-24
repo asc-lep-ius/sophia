@@ -366,6 +366,29 @@ async def run_interactive_session(
 # ---------------------------------------------------------------------------
 
 
+async def _get_missed_lecture_topics(db: aiosqlite.Connection, course_id: int) -> list[str]:
+    """Get topics only covered in missed lectures for a course (zero-exposure gaps)."""
+    cursor = await db.execute(
+        "SELECT DISTINCT tll.topic "
+        "FROM topic_lecture_links tll "
+        "JOIN lecture_downloads ld ON ld.episode_id = tll.episode_id "
+        "WHERE tll.course_id = ? AND ld.missed_at IS NOT NULL",
+        (course_id,),
+    )
+    missed = {row[0] for row in await cursor.fetchall()}
+
+    cursor = await db.execute(
+        "SELECT DISTINCT tll.topic "
+        "FROM topic_lecture_links tll "
+        "JOIN lecture_downloads ld ON ld.episode_id = tll.episode_id "
+        "WHERE tll.course_id = ? AND ld.missed_at IS NULL",
+        (course_id,),
+    )
+    attended = {row[0] for row in await cursor.fetchall()}
+
+    return sorted(missed - attended)
+
+
 async def _select_interleave_topics(
     app: AppContainer,
     course_id: int,
@@ -379,7 +402,16 @@ async def _select_interleave_topics(
     blind_spots = await get_blind_spots(db, course_id)
     topics = [r.topic for r in blind_spots]
 
-    # 2. Fall back to due reviews
+    # 2. Missed-lecture topics — zero-exposure gaps
+    if len(topics) < max_topics:
+        missed_topics = await _get_missed_lecture_topics(db, course_id)
+        for t in missed_topics:
+            if t not in topics:
+                topics.append(t)
+            if len(topics) >= max_topics:
+                break
+
+    # 3. Due reviews
     if len(topics) < max_topics:
         due = await get_due_reviews(db, course_id)
         for r in due:
@@ -388,7 +420,7 @@ async def _select_interleave_topics(
             if len(topics) >= max_topics:
                 break
 
-    # 3. Fall back to all course topics
+    # 4. All course topics
     if len(topics) < 2:
         from sophia.services.athena_study import get_course_topics
 

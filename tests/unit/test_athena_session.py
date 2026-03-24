@@ -330,6 +330,11 @@ class TestSelectInterleaveTopics:
                 return_value=[_make_blind_spot("Algebra"), _make_blind_spot("Calculus")],
             ),
             patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
                 "sophia.services.athena_session.get_due_reviews",
                 new_callable=AsyncMock,
                 return_value=[],
@@ -354,6 +359,11 @@ class TestSelectInterleaveTopics:
         with (
             patch(
                 "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
                 new_callable=AsyncMock,
                 return_value=[],
             ),
@@ -387,6 +397,11 @@ class TestSelectInterleaveTopics:
                 return_value=many,
             ),
             patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
                 "sophia.services.athena_session.get_due_reviews",
                 new_callable=AsyncMock,
                 return_value=[],
@@ -400,6 +415,105 @@ class TestSelectInterleaveTopics:
             topics = await _select_interleave_topics(app, 1)
 
         assert len(topics) <= 3
+
+    @pytest.mark.asyncio
+    async def test_includes_missed_lecture_topics(self) -> None:
+        """Missed-lecture topics fill tier 2 between blind spots and due reviews."""
+        from sophia.services.athena_session import _select_interleave_topics
+
+        app = MagicMock()
+        app.db = MagicMock()
+        with (
+            patch(
+                "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[_make_blind_spot("Algebra")],
+            ),
+            patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=["TopicA", "TopicB"],
+            ),
+            patch(
+                "sophia.services.athena_session.get_due_reviews",
+                new_callable=AsyncMock,
+                return_value=[_make_review("Stats"), _make_review("Logic")],
+            ),
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            topics = await _select_interleave_topics(app, 1)
+
+        assert topics == ["Algebra", "TopicA", "TopicB"]
+
+    @pytest.mark.asyncio
+    async def test_missed_deduped_with_blind_spots(self) -> None:
+        """Missed topics already in blind spots are not duplicated."""
+        from sophia.services.athena_session import _select_interleave_topics
+
+        app = MagicMock()
+        app.db = MagicMock()
+        with (
+            patch(
+                "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[_make_blind_spot("Algebra")],
+            ),
+            patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=["Algebra", "TopicA"],
+            ),
+            patch(
+                "sophia.services.athena_session.get_due_reviews",
+                new_callable=AsyncMock,
+                return_value=[_make_review("Stats")],
+            ),
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            topics = await _select_interleave_topics(app, 1)
+
+        assert topics == ["Algebra", "TopicA", "Stats"]
+
+    @pytest.mark.asyncio
+    async def test_missed_no_topics(self) -> None:
+        """When no missed topics, falls through to due reviews unchanged."""
+        from sophia.services.athena_session import _select_interleave_topics
+
+        app = MagicMock()
+        app.db = MagicMock()
+        with (
+            patch(
+                "sophia.services.athena_session.get_blind_spots",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
+                "sophia.services.athena_session.get_due_reviews",
+                new_callable=AsyncMock,
+                return_value=[_make_review("Stats"), _make_review("Logic")],
+            ),
+            patch(
+                "sophia.services.athena_study.get_course_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+        ):
+            topics = await _select_interleave_topics(app, 1)
+
+        assert topics == ["Stats", "Logic"]
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +792,11 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
                 return_value=[_make_blind_spot("Algebra")],
             ),
             patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
                 "sophia.services.athena_session.get_due_reviews",
                 new_callable=AsyncMock,
                 return_value=[],
@@ -712,6 +831,11 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
                 return_value=[],
             ),
             patch(
+                "sophia.services.athena_session._get_missed_lecture_topics",
+                new_callable=AsyncMock,
+                return_value=[],
+            ),
+            patch(
                 "sophia.services.athena_session.get_due_reviews",
                 new_callable=AsyncMock,
                 return_value=[],
@@ -725,6 +849,120 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
             topics = await _select_interleave_topics(app, 1)
 
         assert topics == []
+
+
+# ---------------------------------------------------------------------------
+# _get_missed_lecture_topics — in-memory DB tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+async def db():
+    import aiosqlite
+
+    from sophia.infra.persistence import run_migrations
+
+    db_conn = await aiosqlite.connect(":memory:")
+    await db_conn.execute("PRAGMA foreign_keys=ON")
+    await run_migrations(db_conn)
+    yield db_conn
+    await db_conn.close()
+
+
+async def _insert_download(
+    db: object,
+    episode_id: str,
+    module_id: int,
+    *,
+    title: str = "Lecture 1",
+    status: str = "completed",
+    missed_at: str | None = None,
+) -> None:
+    import aiosqlite
+
+    assert isinstance(db, aiosqlite.Connection)
+    await db.execute(
+        """INSERT INTO lecture_downloads
+           (episode_id, module_id, title, track_url, track_mimetype, status, missed_at)
+           VALUES (?, ?, ?, '', '', ?, ?)""",
+        (episode_id, module_id, title, status, missed_at),
+    )
+    await db.commit()
+
+
+async def _insert_topic_link(
+    db: object,
+    topic: str,
+    course_id: int,
+    episode_id: str,
+) -> None:
+    import aiosqlite
+
+    assert isinstance(db, aiosqlite.Connection)
+    chunk_id = f"chunk-{episode_id}-{topic}"
+    await db.execute(
+        """INSERT INTO topic_lecture_links
+           (topic, course_id, chunk_id, episode_id, score)
+           VALUES (?, ?, ?, ?, 1.0)""",
+        (topic, course_id, chunk_id, episode_id),
+    )
+    await db.commit()
+
+
+class TestGetMissedLectureTopics:
+    @pytest.mark.asyncio
+    async def test_zero_exposure_topics_returned(self, db: object) -> None:
+        """Topics only covered in missed lectures are returned."""
+        from sophia.services.athena_session import _get_missed_lecture_topics
+
+        await _insert_download(db, "ep-1", 1, missed_at="2024-01-01")
+        await _insert_topic_link(db, "TopicA", 42, "ep-1")
+        await _insert_topic_link(db, "TopicB", 42, "ep-1")
+
+        result = await _get_missed_lecture_topics(db, 42)
+
+        assert set(result) == {"TopicA", "TopicB"}
+
+    @pytest.mark.asyncio
+    async def test_partial_exposure_excluded(self, db: object) -> None:
+        """Topics covered in both missed and attended lectures are not returned."""
+        from sophia.services.athena_session import _get_missed_lecture_topics
+
+        # TopicA in missed lecture
+        await _insert_download(db, "ep-1", 1, missed_at="2024-01-01")
+        await _insert_topic_link(db, "TopicA", 42, "ep-1")
+
+        # TopicA also in attended lecture — partial exposure
+        await _insert_download(db, "ep-2", 1)
+        await _insert_topic_link(db, "TopicA", 42, "ep-2")
+
+        result = await _get_missed_lecture_topics(db, 42)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_ignores_other_courses(self, db: object) -> None:
+        """Topics from missed lectures in other courses are not returned."""
+        from sophia.services.athena_session import _get_missed_lecture_topics
+
+        await _insert_download(db, "ep-1", 1, missed_at="2024-01-01")
+        await _insert_topic_link(db, "TopicA", 99, "ep-1")  # different course
+
+        result = await _get_missed_lecture_topics(db, 42)
+
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_empty_when_no_missed(self, db: object) -> None:
+        """Returns empty when no lectures are missed."""
+        from sophia.services.athena_session import _get_missed_lecture_topics
+
+        await _insert_download(db, "ep-1", 1)
+        await _insert_topic_link(db, "TopicA", 42, "ep-1")
+
+        result = await _get_missed_lecture_topics(db, 42)
+
+        assert result == []
 
 
 # ---------------------------------------------------------------------------
