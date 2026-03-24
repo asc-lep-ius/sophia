@@ -592,3 +592,95 @@ class TestEpisodeStatusLectureNumber:
         statuses = await get_pipeline_status(db, 100)
         assert len(statuses) == 1
         assert statuses[0].lecture_number is None
+
+
+# ------------------------------------------------------------------
+# purge_module
+# ------------------------------------------------------------------
+
+
+class TestPurgeModule:
+    async def test_purge_module_purges_all_episodes(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import purge_module
+
+        for i in range(3):
+            ep = f"ep-{i}"
+            await _insert_download(db, ep, 100, title=f"Lecture {i}")
+            await _insert_transcription(db, ep, 100)
+            await _insert_segments(db, ep, count=2)
+            await _insert_index(db, ep, 100)
+
+        store = _FakeStore({f"ep-{i}": 4 for i in range(3)})
+        result = await purge_module(db, store, 100)
+
+        assert result.knowledge_chunks == 12
+        assert result.transcript_segments == 6
+        assert result.transcriptions == 3
+        assert result.knowledge_index == 3
+
+        # Download records preserved
+        row = await (
+            await db.execute("SELECT COUNT(*) FROM lecture_downloads WHERE module_id = 100")
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 3
+
+        # All indexed data removed
+        for table in ("transcriptions", "knowledge_index"):
+            row = await (
+                await db.execute(f"SELECT COUNT(*) FROM {table} WHERE module_id = 100")  # noqa: S608
+            ).fetchone()
+            assert row is not None
+            assert row[0] == 0
+
+    async def test_purge_module_empty_module(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import purge_module
+
+        store = _FakeStore()
+        result = await purge_module(db, store, 999)
+
+        assert result.knowledge_chunks == 0
+        assert result.transcript_segments == 0
+        assert result.transcriptions == 0
+        assert result.knowledge_index == 0
+
+    async def test_purge_module_accumulates_counts(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import purge_module
+
+        await _insert_download(db, "ep-a", 100, title="A")
+        await _insert_transcription(db, "ep-a", 100)
+        await _insert_segments(db, "ep-a", count=3)
+        await _insert_index(db, "ep-a", 100)
+
+        await _insert_download(db, "ep-b", 100, title="B")
+        await _insert_transcription(db, "ep-b", 100)
+        await _insert_segments(db, "ep-b", count=5)
+        await _insert_index(db, "ep-b", 100)
+
+        store = _FakeStore({"ep-a": 2, "ep-b": 7})
+        result = await purge_module(db, store, 100)
+
+        assert result.knowledge_chunks == 2 + 7
+        assert result.transcript_segments == 3 + 5
+        assert result.transcriptions == 2
+        assert result.knowledge_index == 2
+
+
+# ------------------------------------------------------------------
+# get_episode_count
+# ------------------------------------------------------------------
+
+
+class TestGetEpisodeCount:
+    async def test_returns_count(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_episode_count
+
+        for i in range(3):
+            await _insert_download(db, f"ep-{i}", 100, title=f"Lecture {i}")
+
+        assert await get_episode_count(db, 100) == 3
+
+    async def test_empty_module(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.hermes_manage import get_episode_count
+
+        assert await get_episode_count(db, 999) == 0

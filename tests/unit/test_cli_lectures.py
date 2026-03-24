@@ -316,3 +316,57 @@ class TestSearchSourceFilter:
 
         assert len(results) == 1
         assert results[0].source == "pdf"
+
+
+# ---------------------------------------------------------------------------
+# lectures purge --all flag
+# ---------------------------------------------------------------------------
+
+
+class TestPurgeAllFlag:
+    @pytest.mark.asyncio
+    async def test_purge_all_and_episode_id_errors(self) -> None:
+        """Providing both --all and an episode ID should error."""
+        from sophia.cli.lectures import lectures_purge
+
+        with pytest.raises(SystemExit) as exc_info:
+            await lectures_purge("100", "ep-1", all_episodes=True)
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_purge_neither_all_nor_episode_errors(self) -> None:
+        """Providing neither --all nor episode ID should error."""
+        from sophia.cli.lectures import lectures_purge
+
+        with pytest.raises(SystemExit) as exc_info:
+            await lectures_purge("100", None, all_episodes=False)
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_purge_all_aborted(self) -> None:
+        """User declines confirmation → 'Aborted' message, no purge."""
+        from sophia.cli.lectures import lectures_purge
+
+        container = _mock_container()
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=100)),
+            patch(
+                "sophia.services.hermes_manage.get_episode_count",
+                AsyncMock(return_value=5),
+            ),
+            patch("rich.prompt.Confirm.ask", return_value=False),
+            patch(
+                "sophia.services.hermes_manage.purge_module",
+                AsyncMock(),
+            ) as mock_purge,
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await lectures_purge("100", None, all_episodes=True)
+
+        mock_purge.assert_not_called()

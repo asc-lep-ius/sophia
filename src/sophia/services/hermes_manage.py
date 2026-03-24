@@ -215,3 +215,53 @@ async def purge_episode(
         },
     )
     return result
+
+
+async def purge_module(
+    db: aiosqlite.Connection,
+    store: KnowledgeStore,
+    module_id: int,
+) -> PurgeResult:
+    """Purge all indexed content for every episode in a module.
+
+    Calls purge_episode for each episode and accumulates results.
+    Preserves download records and audio files (same as single-episode purge).
+    """
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ?",
+        (module_id,),
+    )
+    episode_ids = [row[0] for row in await cursor.fetchall()]
+    if not episode_ids:
+        return PurgeResult()
+
+    total = PurgeResult()
+    for ep_id in episode_ids:
+        result = await purge_episode(db, store, module_id, ep_id)
+        total.knowledge_chunks += result.knowledge_chunks
+        total.transcript_segments += result.transcript_segments
+        total.transcriptions += result.transcriptions
+        total.knowledge_index += result.knowledge_index
+
+    log.info(
+        "module_purged",
+        module_id=module_id,
+        episodes=len(episode_ids),
+        **{
+            "knowledge_chunks": total.knowledge_chunks,
+            "transcript_segments": total.transcript_segments,
+            "transcriptions": total.transcriptions,
+            "knowledge_index": total.knowledge_index,
+        },
+    )
+    return total
+
+
+async def get_episode_count(db: aiosqlite.Connection, module_id: int) -> int:
+    """Return the number of episodes for a module."""
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM lecture_downloads WHERE module_id = ?",
+        (module_id,),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0

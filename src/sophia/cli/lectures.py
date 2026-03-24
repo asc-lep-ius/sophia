@@ -368,17 +368,34 @@ async def lectures_purge(
     module_id: Annotated[
         str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
     ],
-    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to purge indexed content for.")],
+    episode_id: Annotated[
+        str | None, cyclopts.Parameter(help="Episode ID to purge. Omit when using --all.")
+    ] = None,
+    *,
+    all_episodes: Annotated[
+        bool, cyclopts.Parameter(name="--all", help="Purge all episodes in the module.")
+    ] = False,
 ) -> None:
-    """Remove indexed content (ChromaDB chunks, transcripts, knowledge index) for an episode."""
+    """Remove indexed content for an episode or entire module.
+
+    Removes ChromaDB chunks, transcripts, and knowledge index entries.
+    """
     from rich.console import Console
+    from rich.prompt import Confirm
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
-    from sophia.services.hermes_manage import purge_episode
+    from sophia.services.hermes_manage import get_episode_count, purge_episode, purge_module
 
     console = Console()
+
+    if all_episodes and episode_id:
+        console.print("[red]Cannot use --all with a specific episode ID.[/red]")
+        raise SystemExit(1)
+    if not all_episodes and not episode_id:
+        console.print("[red]Provide an episode ID, or use --all to purge the entire module.[/red]")
+        raise SystemExit(1)
 
     try:
         async with create_app() as container:
@@ -387,12 +404,31 @@ async def lectures_purge(
             from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 
             store = ChromaKnowledgeStore(container.settings.data_dir / "knowledge")
-            result = await purge_episode(
-                container.db,
-                store,
-                resolved_id,
-                episode_id,
-            )
+
+            if all_episodes:
+                episode_count = await get_episode_count(container.db, resolved_id)
+                if episode_count == 0:
+                    console.print(f"[yellow]No episodes found for module {resolved_id}.[/yellow]")
+                    return
+                prompt = (
+                    f"Purge all indexed content for {episode_count} "
+                    f"episodes in module {resolved_id}?"
+                )
+                if not Confirm.ask(
+                    prompt,
+                    default=False,
+                    console=console,
+                ):
+                    console.print("[dim]Aborted.[/dim]")
+                    return
+                result = await purge_module(container.db, store, resolved_id)
+            else:
+                result = await purge_episode(
+                    container.db,
+                    store,
+                    resolved_id,
+                    episode_id,
+                )
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
@@ -404,10 +440,20 @@ async def lectures_purge(
         + result.knowledge_index
     )
     if total == 0:
-        console.print(
-            f"[yellow]No indexed content found for episode {episode_id} "
-            f"in module {module_id}.[/yellow]"
-        )
+        if all_episodes:
+            console.print(f"[yellow]No indexed content found for module {module_id}.[/yellow]")
+        else:
+            console.print(
+                f"[yellow]No indexed content found for episode {episode_id} "
+                f"in module {module_id}.[/yellow]"
+            )
+    elif all_episodes:
+        console.print(f"[green]Purged all episodes in module {resolved_id}:[/green]")
+        console.print(f"  Episodes processed: {episode_count}")
+        console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
+        console.print(f"  Transcript segments removed: {result.transcript_segments}")
+        console.print(f"  Transcription records removed: {result.transcriptions}")
+        console.print(f"  Knowledge index records removed: {result.knowledge_index}")
     else:
         console.print(f"[green]Purged episode {episode_id}:[/green]")
         console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
