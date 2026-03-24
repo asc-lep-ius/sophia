@@ -524,6 +524,7 @@ async def lectures_purge(
         console.print("[red]Provide an episode ID, or use --all to purge the entire module.[/red]")
         raise SystemExit(1)
 
+    episode_count = 0
     try:
         async with create_app() as container:
             async with handle_resolve_error():
@@ -550,6 +551,7 @@ async def lectures_purge(
                     return
                 result = await purge_module(container.db, store, resolved_id)
             else:
+                assert episode_id is not None
                 result = await purge_episode(
                     container.db,
                     store,
