@@ -212,6 +212,8 @@ def confidence_priority_multiplier(confidence: float | None) -> float:
 DEADLINE_BASE_WEIGHT = 1.0
 REVIEW_BASE_WEIGHT = 0.6
 CONFIDENCE_GAP_WEIGHT = 0.3
+# Higher than CONFIDENCE_GAP_WEIGHT — zero exposure is worse than low confidence
+MISSED_TOPIC_BASE_WEIGHT = 0.4
 REVIEW_OVERDUE_BOOST_PER_DAY = 0.1
 CONFIDENCE_GAP_THRESHOLD = 0.5  # predicted < 0.5 (= 2.5/5 raw) is a gap
 
@@ -228,6 +230,7 @@ async def build_plan_items(
     items.extend(await _deadline_items(db, horizon_days))
     items.extend(await _review_items(db))
     items.extend(await _confidence_gap_items(db))
+    items.extend(await _missed_topic_items(db))
     items.sort(key=lambda i: i.score, reverse=True)
     return items
 
@@ -380,6 +383,82 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
                     detail=detail,
                 )
             )
+
+    return items
+
+
+async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
+    """Build PlanItems from topics only covered in missed lectures.
+
+    Pedagogical rationale: topics the student was never exposed to are the most
+    dangerous gaps — no disequilibrium exists because the student doesn't know
+    what they don't know. By surfacing these in the planner, we create awareness.
+    """
+    from sophia.services.hermes_manage import get_catch_up_info
+
+    cursor = await db.execute(
+        "SELECT DISTINCT module_id FROM lecture_downloads WHERE missed_at IS NOT NULL",
+    )
+    module_ids = [row[0] for row in await cursor.fetchall()]
+    if not module_ids:
+        return []
+
+    items: list[PlanItem] = []
+    now = datetime.now(UTC)
+
+    for module_id in module_ids:
+        info = await get_catch_up_info(db, module_id)
+        if not info.missed_only_topics:
+            continue
+
+        missed_episode_ids = [ep.episode_id for ep in info.missed_episodes]
+        if not missed_episode_ids:
+            continue
+
+        placeholders = ",".join("?" * len(missed_episode_ids))
+        cursor = await db.execute(
+            "SELECT DISTINCT course_id FROM topic_lecture_links"
+            f" WHERE episode_id IN ({placeholders})",  # noqa: S608
+            missed_episode_ids,
+        )
+        course_ids = [row[0] for row in await cursor.fetchall()]
+
+        for course_id in course_ids:
+            exam_date = await get_exam_for_course(db, course_id)
+            exam_boost = 1.0
+            exam_str = ""
+            if exam_date:
+                days_to_exam = (exam_date - now).days
+                if days_to_exam <= 14:
+                    exam_boost = 2.0
+                    exam_str = f" — exam in {days_to_exam}d"
+
+            name_cursor = await db.execute(
+                "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
+                (course_id,),
+            )
+            name_row = await name_cursor.fetchone()
+            course_name = name_row[0] if name_row else f"Course {course_id}"
+
+            for topic in info.missed_only_topics:
+                score = MISSED_TOPIC_BASE_WEIGHT * exam_boost
+                detail = f"zero exposure — missed lecture{exam_str}"
+
+                items.append(
+                    PlanItem(
+                        item_type=PlanItemType.MISSED_TOPIC,
+                        title=f"Missed topic: {topic}",
+                        course_name=course_name,
+                        course_id=course_id,
+                        score=score,
+                        components={
+                            "base": MISSED_TOPIC_BASE_WEIGHT,
+                            "exposure_deficit": 1.0,
+                            "exam_boost": exam_boost,
+                        },
+                        detail=detail,
+                    )
+                )
 
     return items
 

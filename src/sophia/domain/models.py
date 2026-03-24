@@ -779,6 +779,7 @@ class PlanItemType(StrEnum):
     DEADLINE = "deadline"
     REVIEW = "review"
     CONFIDENCE_GAP = "confidence_gap"
+    MISSED_TOPIC = "missed_topic"
 
 
 class PlanItem(BaseModel, frozen=True):

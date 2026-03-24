@@ -78,6 +78,7 @@ class EpisodeStatus:
     transcription_status: str | None
     index_status: str | None
     lecture_number: int | None = None
+    missed_at: str | None = None
 
 
 async def discard_episode(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
@@ -109,6 +110,137 @@ async def restore_episode(db: aiosqlite.Connection, module_id: int, episode_id: 
     return restored
 
 
+async def mark_missed(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
+    """Mark a lecture as missed by the student. Returns True if updated."""
+    cursor = await db.execute(
+        """UPDATE lecture_downloads SET missed_at = CURRENT_TIMESTAMP
+           WHERE episode_id = ? AND module_id = ? AND missed_at IS NULL""",
+        (episode_id, module_id),
+    )
+    await db.commit()
+    updated = cursor.rowcount > 0
+    if updated:
+        log.info("episode_marked_missed", episode_id=episode_id, module_id=module_id)
+    return updated
+
+
+async def unmark_missed(db: aiosqlite.Connection, module_id: int, episode_id: str) -> bool:
+    """Remove missed mark from a lecture. Returns True if updated."""
+    cursor = await db.execute(
+        """UPDATE lecture_downloads SET missed_at = NULL
+           WHERE episode_id = ? AND module_id = ? AND missed_at IS NOT NULL""",
+        (episode_id, module_id),
+    )
+    await db.commit()
+    updated = cursor.rowcount > 0
+    if updated:
+        log.info("episode_unmarked_missed", episode_id=episode_id, module_id=module_id)
+    return updated
+
+
+async def get_missed_episodes(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
+    """Return all episodes marked as missed for a module."""
+    cursor = await db.execute(
+        """SELECT
+               ld.episode_id,
+               ld.title,
+               ld.status,
+               ld.skip_reason,
+               t.status,
+               ki.status,
+               ld.lecture_number,
+               ld.missed_at
+           FROM lecture_downloads ld
+           LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
+           LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
+           WHERE ld.module_id = ? AND ld.missed_at IS NOT NULL
+           ORDER BY ld.lecture_number ASC NULLS LAST, ld.created_at ASC""",
+        (module_id,),
+    )
+    rows = await cursor.fetchall()
+    return [
+        EpisodeStatus(
+            episode_id=row[0],
+            title=row[1],
+            download_status=row[2],
+            skip_reason=row[3],
+            transcription_status=row[4],
+            index_status=row[5],
+            lecture_number=row[6],
+            missed_at=row[7],
+        )
+        for row in rows
+    ]
+
+
+@dataclass
+class CatchUpInfo:
+    """Topics the student missed, grouped by exposure."""
+
+    missed_only_topics: list[str]
+    partial_topics: list[str]
+    missed_episodes: list[EpisodeStatus]
+
+
+async def get_catch_up_info(
+    db: aiosqlite.Connection,
+    module_id: int,
+) -> CatchUpInfo:
+    """Analyze which topics the student missed based on marked lectures.
+
+    Groups topics into:
+    - missed_only: topics covered ONLY in missed lectures (highest-priority gaps)
+    - partial: topics covered in both missed AND attended lectures
+    """
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ? AND missed_at IS NOT NULL",
+        (module_id,),
+    )
+    missed_ids = [row[0] for row in await cursor.fetchall()]
+    if not missed_ids:
+        return CatchUpInfo(missed_only_topics=[], partial_topics=[], missed_episodes=[])
+
+    missed_episodes = await get_missed_episodes(db, module_id)
+
+    placeholders = ",".join("?" * len(missed_ids))
+    cursor = await db.execute(
+        f"SELECT DISTINCT topic FROM topic_lecture_links WHERE episode_id IN ({placeholders})",  # noqa: S608
+        missed_ids,
+    )
+    missed_topics = {row[0] for row in await cursor.fetchall()}
+
+    if not missed_topics:
+        return CatchUpInfo(
+            missed_only_topics=[],
+            partial_topics=[],
+            missed_episodes=missed_episodes,
+        )
+
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ? AND missed_at IS NULL",
+        (module_id,),
+    )
+    attended_ids = [row[0] for row in await cursor.fetchall()]
+
+    attended_topics: set[str] = set()
+    if attended_ids:
+        placeholders = ",".join("?" * len(attended_ids))
+        cursor = await db.execute(
+            f"SELECT DISTINCT topic FROM topic_lecture_links WHERE episode_id IN ({placeholders})",  # noqa: S608
+            attended_ids,
+        )
+        attended_topics = {row[0] for row in await cursor.fetchall()}
+
+    missed_only = sorted(missed_topics - attended_topics)
+    partial = sorted(missed_topics & attended_topics)
+
+    return CatchUpInfo(
+        missed_only_topics=missed_only,
+        partial_topics=partial,
+        missed_episodes=missed_episodes,
+    )
+
+
 async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Query per-episode pipeline state for a module."""
     cursor = await db.execute(
@@ -119,7 +251,8 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
                ld.skip_reason,
                t.status,
                ki.status,
-               ld.lecture_number
+               ld.lecture_number,
+               ld.missed_at
            FROM lecture_downloads ld
            LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
            LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
@@ -137,6 +270,7 @@ async def get_pipeline_status(db: aiosqlite.Connection, module_id: int) -> list[
             transcription_status=row[4],
             index_status=row[5],
             lecture_number=row[6],
+            missed_at=row[7],
         )
         for row in rows
     ]
@@ -215,3 +349,53 @@ async def purge_episode(
         },
     )
     return result
+
+
+async def purge_module(
+    db: aiosqlite.Connection,
+    store: KnowledgeStore,
+    module_id: int,
+) -> PurgeResult:
+    """Purge all indexed content for every episode in a module.
+
+    Calls purge_episode for each episode and accumulates results.
+    Preserves download records and audio files (same as single-episode purge).
+    """
+    cursor = await db.execute(
+        "SELECT episode_id FROM lecture_downloads WHERE module_id = ?",
+        (module_id,),
+    )
+    episode_ids = [row[0] for row in await cursor.fetchall()]
+    if not episode_ids:
+        return PurgeResult()
+
+    total = PurgeResult()
+    for ep_id in episode_ids:
+        result = await purge_episode(db, store, module_id, ep_id)
+        total.knowledge_chunks += result.knowledge_chunks
+        total.transcript_segments += result.transcript_segments
+        total.transcriptions += result.transcriptions
+        total.knowledge_index += result.knowledge_index
+
+    log.info(
+        "module_purged",
+        module_id=module_id,
+        episodes=len(episode_ids),
+        **{
+            "knowledge_chunks": total.knowledge_chunks,
+            "transcript_segments": total.transcript_segments,
+            "transcriptions": total.transcriptions,
+            "knowledge_index": total.knowledge_index,
+        },
+    )
+    return total
+
+
+async def get_episode_count(db: aiosqlite.Connection, module_id: int) -> int:
+    """Return the number of episodes for a module."""
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM lecture_downloads WHERE module_id = ?",
+        (module_id,),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else 0

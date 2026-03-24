@@ -1,0 +1,1 @@
+ALTER TABLE lecture_downloads ADD COLUMN missed_at TIMESTAMP DEFAULT NULL;

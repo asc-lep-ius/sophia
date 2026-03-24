@@ -24,6 +24,7 @@ def _make_episode_status(
     skip_reason: str | None = None,
     transcription_status: str | None = "completed",
     index_status: str | None = "completed",
+    missed_at: str | None = None,
 ) -> EpisodeStatus:
     return EpisodeStatus(
         episode_id=episode_id,
@@ -33,6 +34,7 @@ def _make_episode_status(
         transcription_status=transcription_status,
         index_status=index_status,
         lecture_number=lecture_number,
+        missed_at=missed_at,
     )
 
 
@@ -316,3 +318,276 @@ class TestSearchSourceFilter:
 
         assert len(results) == 1
         assert results[0].source == "pdf"
+
+
+# ---------------------------------------------------------------------------
+# lectures purge --all flag
+# ---------------------------------------------------------------------------
+
+
+class TestPurgeAllFlag:
+    @pytest.mark.asyncio
+    async def test_purge_all_and_episode_id_errors(self) -> None:
+        """Providing both --all and an episode ID should error."""
+        from sophia.cli.lectures import lectures_purge
+
+        with pytest.raises(SystemExit) as exc_info:
+            await lectures_purge("100", "ep-1", all_episodes=True)
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_purge_neither_all_nor_episode_errors(self) -> None:
+        """Providing neither --all nor episode ID should error."""
+        from sophia.cli.lectures import lectures_purge
+
+        with pytest.raises(SystemExit) as exc_info:
+            await lectures_purge("100", None, all_episodes=False)
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_purge_all_aborted(self) -> None:
+        """User declines confirmation → 'Aborted' message, no purge."""
+        from sophia.cli.lectures import lectures_purge
+
+        container = _mock_container()
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=100)),
+            patch(
+                "sophia.services.hermes_manage.get_episode_count",
+                AsyncMock(return_value=5),
+            ),
+            patch("rich.prompt.Confirm.ask", return_value=False),
+            patch(
+                "sophia.services.hermes_manage.purge_module",
+                AsyncMock(),
+            ) as mock_purge,
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await lectures_purge("100", None, all_episodes=True)
+
+        mock_purge.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# lectures mark-missed / unmark-missed
+# ---------------------------------------------------------------------------
+
+
+class TestMarkMissedCommand:
+    @pytest.mark.asyncio
+    async def test_mark_missed_success(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_mark_missed
+
+        container = _mock_container()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch("sophia.services.hermes_manage.mark_missed", AsyncMock(return_value=True)),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_mark_missed(module_id="42", episode_id="ep-001")
+        captured = capsys.readouterr()
+        assert "marked as missed" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_mark_missed_failure(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_mark_missed
+
+        container = _mock_container()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch("sophia.services.hermes_manage.mark_missed", AsyncMock(return_value=False)),
+            pytest.raises(SystemExit),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_mark_missed(module_id="42", episode_id="ep-001")
+
+
+class TestUnmarkMissedCommand:
+    @pytest.mark.asyncio
+    async def test_unmark_missed_success(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_unmark_missed
+
+        container = _mock_container()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch("sophia.services.hermes_manage.unmark_missed", AsyncMock(return_value=True)),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_unmark_missed(module_id="42", episode_id="ep-001")
+        captured = capsys.readouterr()
+        assert "Missed mark removed" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# lectures status — Missed column
+# ---------------------------------------------------------------------------
+
+
+class TestStatusMissedColumn:
+    @pytest.mark.asyncio
+    async def test_status_shows_missed_indicator(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_status
+
+        statuses = [
+            _make_episode_status("ep-001", "Lecture 1", missed_at="2025-01-15T10:00:00"),
+            _make_episode_status("ep-002", "Lecture 2"),
+        ]
+        mat_cursor = AsyncMock()
+        mat_cursor.fetchone = AsyncMock(return_value=(0,))
+        container = _mock_container()
+        container.db.execute = AsyncMock(return_value=mat_cursor)
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_manage.get_pipeline_status",
+                AsyncMock(return_value=statuses),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_status(module_id="42")
+        captured = capsys.readouterr()
+        assert "\u26a0" in captured.out
+        assert "Missed" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# lectures catch-up
+# ---------------------------------------------------------------------------
+
+
+class TestCatchUpCommand:
+    @pytest.mark.asyncio
+    async def test_catch_up_no_missed(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_catch_up
+        from sophia.services.hermes_manage import CatchUpInfo
+
+        container = _mock_container()
+        empty_info = CatchUpInfo(missed_only_topics=[], partial_topics=[], missed_episodes=[])
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_manage.get_catch_up_info",
+                AsyncMock(return_value=empty_info),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_catch_up(module_id="42")
+        captured = capsys.readouterr()
+        assert "No lectures marked as missed" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_catch_up_shows_topics(self, capsys: pytest.CaptureFixture[str]) -> None:
+        from sophia.cli.lectures import lectures_catch_up
+        from sophia.services.hermes_manage import CatchUpInfo
+
+        missed_ep = EpisodeStatus(
+            episode_id="ep-1",
+            title="Lecture 1",
+            download_status="completed",
+            skip_reason=None,
+            transcription_status="completed",
+            index_status="completed",
+            lecture_number=1,
+            missed_at="2025-01-15T10:00:00",
+        )
+        info = CatchUpInfo(
+            missed_only_topics=["Graphs", "Trees"],
+            partial_topics=["Sorting"],
+            missed_episodes=[missed_ep],
+        )
+        container = _mock_container()
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch("sophia.services.hermes_manage.get_catch_up_info", AsyncMock(return_value=info)),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+            await lectures_catch_up(module_id="42")
+        captured = capsys.readouterr()
+        assert "Graphs" in captured.out
+        assert "Trees" in captured.out
+        assert "Sorting" in captured.out
+        assert "ONLY covered in missed lectures" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# lectures search — --missed flag
+# ---------------------------------------------------------------------------
+
+
+class TestSearchMissedFlag:
+    """The search command accepts --missed to restrict results to missed lectures."""
+
+    @pytest.mark.asyncio
+    async def test_search_missed_passes_flag(self) -> None:
+        """search_lectures receives missed_only=True when --missed is set."""
+        from sophia.services.hermes_index import search_lectures
+
+        container = MagicMock()
+        container.db = AsyncMock()
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
+        container.db.execute = AsyncMock(return_value=cursor)
+        container.settings.config_dir = "/tmp/test"
+        container.settings.data_dir = MagicMock()
+        container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = MagicMock(return_value=[0.1, 0.2])
+        mock_store = MagicMock()
+        mock_store.search = MagicMock(return_value=[])
+
+        with (
+            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+        ):
+            await search_lectures(container, 42, "test query", missed_only=True)
+
+        # SQL should include missed_at filter
+        sql_arg = container.db.execute.call_args_list[0][0][0]
+        assert "missed_at IS NOT NULL" in sql_arg
+
+    @pytest.mark.asyncio
+    async def test_search_without_missed_uses_default_query(self) -> None:
+        """Default behavior: no missed_at filter in SQL."""
+        from sophia.services.hermes_index import search_lectures
+
+        container = MagicMock()
+        container.db = AsyncMock()
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
+        container.db.execute = AsyncMock(return_value=cursor)
+        container.settings.config_dir = "/tmp/test"
+        container.settings.data_dir = MagicMock()
+        container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
+
+        mock_embedder = MagicMock()
+        mock_embedder.embed_query = MagicMock(return_value=[0.1, 0.2])
+        mock_store = MagicMock()
+        mock_store.search = MagicMock(return_value=[])
+
+        with (
+            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+        ):
+            await search_lectures(container, 42, "test query")
+
+        sql_arg = container.db.execute.call_args_list[0][0][0]
+        assert "missed_at" not in sql_arg

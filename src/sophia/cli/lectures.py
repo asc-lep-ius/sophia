@@ -283,6 +283,7 @@ async def lectures_status(
     table.add_column("Download", style="green")
     table.add_column("Transcription", style="green")
     table.add_column("Index", style="green")
+    table.add_column("Missed", style="red", justify="center")
     table.add_column("Materials", justify="right")
     table.add_column("Skip Reason", style="yellow")
 
@@ -294,6 +295,7 @@ async def lectures_status(
             ep.download_status,
             ep.transcription_status or "—",
             ep.index_status or "—",
+            "⚠" if ep.missed_at else "",
             mat_count,
             ep.skip_reason or "",
         )
@@ -363,23 +365,166 @@ async def lectures_restore(
         raise SystemExit(1)
 
 
+@app.command(name="mark-missed")
+async def lectures_mark_missed(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to mark as missed.")],
+) -> None:
+    """Mark a lecture as missed — the student was not present for this session."""
+    from rich.console import Console
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import mark_missed
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        ok = await mark_missed(container.db, resolved_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Episode {episode_id} marked as missed.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {resolved_id} "
+            f"(or already marked as missed).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@app.command(name="unmark-missed")
+async def lectures_unmark_missed(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to unmark.")],
+) -> None:
+    """Remove the missed mark from a lecture."""
+    from rich.console import Console
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import unmark_missed
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        ok = await unmark_missed(container.db, resolved_id, episode_id)
+
+    if ok:
+        console.print(f"[green]Missed mark removed from episode {episode_id}.[/green]")
+    else:
+        console.print(
+            f"[red]Episode {episode_id} not found in module {resolved_id} "
+            f"(or not currently marked as missed).[/red]"
+        )
+        raise SystemExit(1)
+
+
+@app.command(name="catch-up")
+async def lectures_catch_up(
+    module_id: Annotated[
+        str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
+    ],
+) -> None:
+    """Show topics from missed lectures to help prioritize catch-up study."""
+    from rich.console import Console
+    from rich.table import Table
+
+    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.infra.di import create_app
+    from sophia.services.hermes_manage import get_catch_up_info
+
+    console = Console()
+
+    async with create_app() as container:
+        async with handle_resolve_error():
+            resolved_id = await resolve_module_id(module_id, container.moodle)
+        info = await get_catch_up_info(container.db, resolved_id)
+
+    if not info.missed_episodes:
+        console.print("[yellow]No lectures marked as missed.[/yellow]")
+        console.print("[dim]Use: sophia lectures mark-missed <module-id> <episode-id>[/dim]")
+        return
+
+    table = Table(title="Missed Lectures")
+    table.add_column("#", style="dim", width=4, justify="right")
+    table.add_column("Title", style="cyan")
+    table.add_column("Missed At", style="red")
+
+    for ep in info.missed_episodes:
+        table.add_row(
+            str(ep.lecture_number) if ep.lecture_number is not None else "",
+            ep.title,
+            ep.missed_at or "",
+        )
+
+    console.print(table)
+
+    if not info.missed_only_topics and not info.partial_topics:
+        console.print("\n[yellow]No topic data available for missed lectures.[/yellow]")
+        console.print(
+            "[dim]Topics are extracted during indexing."
+            " Run: sophia lectures index <module-id>[/dim]"
+        )
+        return
+
+    if info.missed_only_topics:
+        count = len(info.missed_only_topics)
+        console.print(f"\n[bold red]Topics ONLY covered in missed lectures ({count}):[/bold red]")
+        for topic in info.missed_only_topics:
+            console.print(f"  [red]•[/red] {topic}")
+
+    if info.partial_topics:
+        count = len(info.partial_topics)
+        console.print(f"\n[dim]Topics also covered in other lectures ({count}):[/dim]")
+        for topic in info.partial_topics:
+            console.print(f"  [dim]•[/dim] {topic}")
+
+    console.print(f"\n[dim]Search missed content: sophia lectures search 'topic' {module_id}[/dim]")
+
+
 @app.command(name="purge")
 async def lectures_purge(
     module_id: Annotated[
         str, cyclopts.Parameter(help="Module ID, course number (186.813), or name.")
     ],
-    episode_id: Annotated[str, cyclopts.Parameter(help="Episode ID to purge indexed content for.")],
+    episode_id: Annotated[
+        str | None, cyclopts.Parameter(help="Episode ID to purge. Omit when using --all.")
+    ] = None,
+    *,
+    all_episodes: Annotated[
+        bool, cyclopts.Parameter(name="--all", help="Purge all episodes in the module.")
+    ] = False,
 ) -> None:
-    """Remove indexed content (ChromaDB chunks, transcripts, knowledge index) for an episode."""
+    """Remove indexed content for an episode or entire module.
+
+    Removes ChromaDB chunks, transcripts, and knowledge index entries.
+    """
     from rich.console import Console
+    from rich.prompt import Confirm
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
-    from sophia.services.hermes_manage import purge_episode
+    from sophia.services.hermes_manage import get_episode_count, purge_episode, purge_module
 
     console = Console()
 
+    if all_episodes and episode_id:
+        console.print("[red]Cannot use --all with a specific episode ID.[/red]")
+        raise SystemExit(1)
+    if not all_episodes and not episode_id:
+        console.print("[red]Provide an episode ID, or use --all to purge the entire module.[/red]")
+        raise SystemExit(1)
+
+    episode_count = 0
     try:
         async with create_app() as container:
             async with handle_resolve_error():
@@ -387,12 +532,32 @@ async def lectures_purge(
             from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 
             store = ChromaKnowledgeStore(container.settings.data_dir / "knowledge")
-            result = await purge_episode(
-                container.db,
-                store,
-                resolved_id,
-                episode_id,
-            )
+
+            if all_episodes:
+                episode_count = await get_episode_count(container.db, resolved_id)
+                if episode_count == 0:
+                    console.print(f"[yellow]No episodes found for module {resolved_id}.[/yellow]")
+                    return
+                prompt = (
+                    f"Purge all indexed content for {episode_count} "
+                    f"episodes in module {resolved_id}?"
+                )
+                if not Confirm.ask(
+                    prompt,
+                    default=False,
+                    console=console,
+                ):
+                    console.print("[dim]Aborted.[/dim]")
+                    return
+                result = await purge_module(container.db, store, resolved_id)
+            else:
+                assert episode_id is not None
+                result = await purge_episode(
+                    container.db,
+                    store,
+                    resolved_id,
+                    episode_id,
+                )
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None
@@ -404,10 +569,20 @@ async def lectures_purge(
         + result.knowledge_index
     )
     if total == 0:
-        console.print(
-            f"[yellow]No indexed content found for episode {episode_id} "
-            f"in module {module_id}.[/yellow]"
-        )
+        if all_episodes:
+            console.print(f"[yellow]No indexed content found for module {module_id}.[/yellow]")
+        else:
+            console.print(
+                f"[yellow]No indexed content found for episode {episode_id} "
+                f"in module {module_id}.[/yellow]"
+            )
+    elif all_episodes:
+        console.print(f"[green]Purged all episodes in module {resolved_id}:[/green]")
+        console.print(f"  Episodes processed: {episode_count}")
+        console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
+        console.print(f"  Transcript segments removed: {result.transcript_segments}")
+        console.print(f"  Transcription records removed: {result.transcriptions}")
+        console.print(f"  Knowledge index records removed: {result.knowledge_index}")
     else:
         console.print(f"[green]Purged episode {episode_id}:[/green]")
         console.print(f"  ChromaDB chunks removed: {result.knowledge_chunks}")
@@ -1101,6 +1276,10 @@ async def lectures_search(
         str,
         cyclopts.Parameter(help="Source filter: lecture, pdf, or all.", name="--source"),
     ] = "all",
+    missed: Annotated[
+        bool,
+        cyclopts.Parameter(help="Restrict results to missed lectures."),
+    ] = False,
 ) -> None:
     """Search lecture transcripts by semantic similarity."""
     from rich.console import Console
@@ -1120,7 +1299,12 @@ async def lectures_search(
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             results = await search_lectures(
-                container, resolved_id, query, n_results=count, source_filter=source_filter
+                container,
+                resolved_id,
+                query,
+                n_results=count,
+                source_filter=source_filter,
+                missed_only=missed,
             )
 
             if not results:

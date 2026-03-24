@@ -246,13 +246,21 @@ async def search_lectures(
     n_results: int = 5,
     source_filter: str | None = None,
     course_id: int | None = None,
+    missed_only: bool = False,
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
-    cursor = await app.db.execute(
-        "SELECT episode_id, title FROM lecture_downloads WHERE module_id = ?",
-        (module_id,),
-    )
+    if missed_only:
+        cursor = await app.db.execute(
+            "SELECT episode_id, title FROM lecture_downloads"
+            " WHERE module_id = ? AND missed_at IS NOT NULL",
+            (module_id,),
+        )
+    else:
+        cursor = await app.db.execute(
+            "SELECT episode_id, title FROM lecture_downloads WHERE module_id = ?",
+            (module_id,),
+        )
     rows = await cursor.fetchall()
     if not rows:
         return []
