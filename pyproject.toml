@@ -80,6 +80,7 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = ["e2e: End-to-end GUI tests requiring Playwright"]
 
 [tool.pyright]
 pythonVersion = "3.12"

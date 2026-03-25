@@ -1,10 +1,8 @@
-"""Playwright E2E test fixtures for the Sophia GUI.
-
-Scaffold — actual tests come in Phase 7D.
-"""
+"""Playwright E2E test fixtures for the Sophia GUI."""
 
 from __future__ import annotations
 
+import os
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -29,6 +27,9 @@ def gui_base_url() -> Generator[str, None, None]:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]
+
+    # NiceGUI's ui.run() detects pytest and reads port from this env var
+    os.environ["NICEGUI_SCREEN_TEST_PORT"] = str(port)
 
     base_url = f"http://127.0.0.1:{port}"
     settings = Settings(gui_host="127.0.0.1", gui_port=port)
