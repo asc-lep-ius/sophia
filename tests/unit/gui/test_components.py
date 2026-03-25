@@ -1,11 +1,18 @@
-"""Tests for error_boundary and loading components."""
+"""Tests for error_boundary, loading, confidence_rating and flashcard components."""
 
 from __future__ import annotations
 
+import pytest
 from nicegui import ui
 from nicegui.testing import user_simulation
 
+from sophia.gui.components.confidence_rating import (
+    RATING_LABELS,
+    confidence_rating,
+    rating_to_difficulty,
+)
 from sophia.gui.components.error_boundary import error_boundary
+from sophia.gui.components.flashcard import flashcard
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 
 
@@ -85,3 +92,63 @@ class TestLoadingSpinner:
 
             await user.open("/")
             await user.should_see("Fetching data...")
+
+
+class TestConfidenceRating:
+    async def test_renders_all_five_labels(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            def index() -> None:
+                confidence_rating(on_rate=lambda r: None)
+
+            await user.open("/")
+            for label in RATING_LABELS.values():
+                await user.should_see(label)
+
+    @pytest.mark.parametrize(
+        ("rating", "expected_difficulty"),
+        [
+            (1, "cued"),
+            (2, "cued"),
+            (3, "explain"),
+            (4, "transfer"),
+            (5, "transfer"),
+        ],
+    )
+    def test_rating_to_difficulty_mapping(self, rating: int, expected_difficulty: str) -> None:
+        assert rating_to_difficulty(rating).value == expected_difficulty
+
+
+class TestFlashcard:
+    async def test_shows_front_content(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            def index() -> None:
+                flashcard(front="What is \\alpha?", back="Greek letter alpha")
+
+            await user.open("/")
+            await user.should_see("What is")
+
+    async def test_back_hidden_until_reveal(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            def index() -> None:
+                flashcard(front="Front text", back="Secret answer")
+
+            await user.open("/")
+            await user.should_not_see("Secret answer")
+            await user.should_see("Show Answer")
+
+    async def test_reveal_shows_back(self) -> None:
+        """Verify the reveal callback makes the back content visible."""
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            def index() -> None:
+                flashcard(front="Q", back="A")
+
+            await user.open("/")
+            await user.should_see("Show Answer")
