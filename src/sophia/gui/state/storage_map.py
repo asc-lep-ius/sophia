@@ -27,6 +27,10 @@ USER_ACTIVE_SESSIONS: Final = "active_sessions"
 TAB_STEPPER_STATE: Final = "stepper_state"
 TAB_IN_PROGRESS_ANSWERS: Final = "in_progress_answers"
 TAB_TIMER_STATE: Final = "timer_state"
+TAB_REVIEW_INDEX: Final = "review_current_index"
+TAB_REVIEW_SCORES: Final = "review_session_scores"
+TAB_REVIEW_SHOW_BACK: Final = "review_show_back"
+TAB_REVIEW_RECALL_TEXT: Final = "review_recall_text"
 
 # ``app.storage.client`` — per WebSocket connection, transient.
 CLIENT_PANEL_STATE: Final = "panel_state"
@@ -44,7 +48,10 @@ BROWSER_LATEX_ASSIST_LEVEL: Final = "latex_assist_level"
 TIER_MAP: Final[dict[str, list[str]]] = {
     "general": [GENERAL_APP_CONTAINER],
     "user": [USER_CURRENT_COURSE, USER_ACTIVE_TOPIC, USER_PREFERENCES, USER_ACTIVE_SESSIONS],
-    "tab": [TAB_STEPPER_STATE, TAB_IN_PROGRESS_ANSWERS, TAB_TIMER_STATE],
+    "tab": [
+        TAB_STEPPER_STATE, TAB_IN_PROGRESS_ANSWERS, TAB_TIMER_STATE,
+        TAB_REVIEW_INDEX, TAB_REVIEW_SCORES, TAB_REVIEW_SHOW_BACK, TAB_REVIEW_RECALL_TEXT,
+    ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
     "browser": [BROWSER_DENSITY_MODE, BROWSER_THEME_PREF, BROWSER_LATEX_ASSIST_LEVEL],
 }

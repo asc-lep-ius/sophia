@@ -21,6 +21,7 @@ from sophia.gui.middleware.health import (
     set_container_error,
 )
 from sophia.gui.pages.dashboard import dashboard_content
+from sophia.gui.pages.review import review_content
 from sophia.infra.di import create_app as create_di_container
 
 if TYPE_CHECKING:
@@ -95,7 +96,7 @@ def _register_pages() -> None:
 
     @ui.page("/review")
     def review_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(_review_placeholder, page_name="Review"))
+        app_shell(lambda: error_boundary(review_content, page_name="Review"))
 
     @ui.page("/search")
     def search_page() -> None:  # pyright: ignore[reportUnusedFunction]
@@ -115,11 +116,6 @@ def _register_pages() -> None:
 def _study_placeholder() -> None:
     ui.label("Study").classes("text-2xl font-bold")
     ui.label("Study features coming soon.").classes("text-gray-500 mt-2")
-
-
-def _review_placeholder() -> None:
-    ui.label("Review").classes("text-2xl font-bold")
-    ui.label("Review features coming soon.").classes("text-gray-500 mt-2")
 
 
 def _search_placeholder() -> None:
