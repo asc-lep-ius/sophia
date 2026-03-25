@@ -10,7 +10,7 @@ variables:
   tags: [ubuntu-desktop-1]
   before_script:
     - pip install uv
-    - uv sync --group dev
+    - uv sync --extra web --group dev
   cache:
     key:
       prefix: uv-${PYTHON_VERSION}
@@ -36,7 +36,7 @@ typecheck:
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends libatomic1
     - pip install uv
-    - uv sync --group dev
+    - uv sync --extra web --group dev
   script:
     - uv run pyright
 
@@ -90,5 +90,59 @@ docker-build:
     - changes:
         - Dockerfile
         - docker-compose.yml
+        - pyproject.toml
+        - uv.lock
+
+test-gui:
+  extends: .python-job
+  stage: check
+  variables:
+    PYTHON_VERSION: "3.12"
+  script:
+    - uv run pytest tests/unit/gui/ -v --tb=short
+
+test-gui-e2e:
+  extends: .python-job
+  stage: check
+  variables:
+    PYTHON_VERSION: "3.12"
+  allow_failure: true
+  script:
+    - uv run playwright install --with-deps chromium
+    - uv run pytest tests/integration/gui/ -v --tb=short
+
+test-gui-a11y:
+  extends: .python-job
+  stage: check
+  variables:
+    PYTHON_VERSION: "3.12"
+  allow_failure: true
+  script:
+    - uv run playwright install --with-deps chromium
+    - uv run pytest tests/integration/gui/ -k accessibility -v --tb=short
+
+docker-gui-build:
+  stage: build
+  image: docker:latest
+  tags: [ubuntu-desktop-1]
+  services:
+    - docker:dind
+  variables:
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+  script:
+    - docker build -f Dockerfile.gui -t sophia-gui:latest .
+    - |
+      IMAGE_SIZE=$(docker image inspect sophia-gui:latest --format='{{.Size}}')
+      MAX_SIZE=$((500 * 1024 * 1024))
+      echo "Image size: $((IMAGE_SIZE / 1024 / 1024))MB"
+      if [ "$IMAGE_SIZE" -gt "$MAX_SIZE" ]; then
+        echo "ERROR: Image exceeds 500MB limit"
+        exit 1
+      fi
+  rules:
+    - changes:
+        - Dockerfile.gui
+        - docker-compose.gui.yml
         - pyproject.toml
         - uv.lock

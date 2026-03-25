@@ -1,0 +1,23 @@
+# Multi-stage build for the Sophia GUI service
+FROM python:3.12-slim AS base
+ENV TERM=xterm-256color LANG=C.UTF-8 LC_ALL=C.UTF-8
+RUN pip install uv
+
+FROM base AS builder
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ src/
+RUN uv sync --extra web --no-dev --frozen
+
+FROM base AS runtime
+WORKDIR /app
+COPY --from=builder /app /app
+ENV SOPHIA_DATA_DIR=/data
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN useradd --create-home --uid 1000 sophia
+RUN mkdir -p /data && chown sophia:sophia /data
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+    CMD ["curl", "-f", "http://localhost:8080/health"]
+USER sophia
+CMD ["/app/.venv/bin/python", "-m", "sophia", "gui", "launch", "--host", "0.0.0.0"]
