@@ -32,6 +32,20 @@ TAB_REVIEW_SCORES: Final = "review_session_scores"
 TAB_REVIEW_SHOW_BACK: Final = "review_show_back"
 TAB_REVIEW_RECALL_TEXT: Final = "review_recall_text"
 
+# Tab-scoped — study session stepper
+TAB_STUDY_STEP_INDEX: Final = "study_step_index"
+TAB_STUDY_PRE_ANSWERS: Final = "study_pre_answers"
+TAB_STUDY_PRE_CONFIDENCE: Final = "study_pre_confidence"
+TAB_STUDY_POST_ANSWERS: Final = "study_post_answers"
+TAB_STUDY_POST_CONFIDENCE: Final = "study_post_confidence"
+TAB_STUDY_REFLECTION: Final = "study_reflection"
+TAB_STUDY_INSIGHT: Final = "study_insight"
+TAB_STUDY_TIMER_REMAINING: Final = "study_timer_remaining"
+TAB_STUDY_INTERLEAVED: Final = "study_interleaved"
+TAB_STUDY_TOPICS: Final = "study_topics"
+TAB_STUDY_SESSION_ID: Final = "study_session_id"
+TAB_STUDY_NOVEL_TOPIC: Final = "study_novel_topic"
+
 # ``app.storage.client`` — per WebSocket connection, transient.
 CLIENT_PANEL_STATE: Final = "panel_state"
 CLIENT_SCROLL_POSITION: Final = "scroll_position"
@@ -49,8 +63,25 @@ TIER_MAP: Final[dict[str, list[str]]] = {
     "general": [GENERAL_APP_CONTAINER],
     "user": [USER_CURRENT_COURSE, USER_ACTIVE_TOPIC, USER_PREFERENCES, USER_ACTIVE_SESSIONS],
     "tab": [
-        TAB_STEPPER_STATE, TAB_IN_PROGRESS_ANSWERS, TAB_TIMER_STATE,
-        TAB_REVIEW_INDEX, TAB_REVIEW_SCORES, TAB_REVIEW_SHOW_BACK, TAB_REVIEW_RECALL_TEXT,
+        TAB_STEPPER_STATE,
+        TAB_IN_PROGRESS_ANSWERS,
+        TAB_TIMER_STATE,
+        TAB_REVIEW_INDEX,
+        TAB_REVIEW_SCORES,
+        TAB_REVIEW_SHOW_BACK,
+        TAB_REVIEW_RECALL_TEXT,
+        TAB_STUDY_STEP_INDEX,
+        TAB_STUDY_PRE_ANSWERS,
+        TAB_STUDY_PRE_CONFIDENCE,
+        TAB_STUDY_POST_ANSWERS,
+        TAB_STUDY_POST_CONFIDENCE,
+        TAB_STUDY_REFLECTION,
+        TAB_STUDY_INSIGHT,
+        TAB_STUDY_TIMER_REMAINING,
+        TAB_STUDY_INTERLEAVED,
+        TAB_STUDY_TOPICS,
+        TAB_STUDY_SESSION_ID,
+        TAB_STUDY_NOVEL_TOPIC,
     ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
     "browser": [BROWSER_DENSITY_MODE, BROWSER_THEME_PREF, BROWSER_LATEX_ASSIST_LEVEL],
