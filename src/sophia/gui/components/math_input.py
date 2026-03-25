@@ -48,7 +48,9 @@ def math_input(
     """
     ui.add_head_html(KATEX_HEAD_HTML, shared=True)
     textarea = ui.textarea(label=label, value=value).classes("w-full font-mono")
+    textarea.props('aria-label="LaTeX math input"')
     preview = ui.html("").classes("p-2 border rounded min-h-[2rem]")
+    preview.props('aria-label="LaTeX preview" role="region"')
 
     def _update(e: object) -> None:
         raw = textarea.value or ""

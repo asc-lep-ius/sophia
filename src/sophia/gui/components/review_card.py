@@ -65,7 +65,7 @@ def _render_recall_input(on_submit_recall: Callable[[str], None]) -> None:
     """Render the recall text area and submit button."""
     ui.separator().classes("my-4")
     textarea = ui.textarea(label="Type your recall attempt").classes("w-full")
-    textarea.props("autofocus")
+    textarea.props('autofocus aria-label="Type your recall attempt"')
 
     def _submit() -> None:
         on_submit_recall(textarea.value or "")
@@ -103,4 +103,4 @@ def _render_answer_section(
             ui.button(
                 button_text,
                 on_click=lambda _, r=rating: on_rate(r),
-            ).props("outline dense")
+            ).props(f'outline dense aria-label="Rate {rating}: {label}"')

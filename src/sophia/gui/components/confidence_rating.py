@@ -51,7 +51,7 @@ def confidence_rating(*, on_rate: Callable[[int], None]) -> None:
             ui.button(
                 label,
                 on_click=lambda _, v=value: _handle_click(v),
-            ).props("outline dense")
+            ).props(f'outline dense aria-label="Rate confidence: {value} of 5, {label}"')
         badge_label = ui.label("").classes("text-sm font-semibold ml-4")
 
     def _handle_click(rating: int) -> None:

@@ -26,12 +26,13 @@ def flashcard(
     """
     ui.add_head_html(KATEX_HEAD_HTML, shared=True)
 
-    with ui.card().classes("w-full max-w-lg mx-auto p-6"):
+    with ui.card().classes("w-full max-w-lg mx-auto p-6").props('aria-label="Flashcard question"'):
         ui.label("Question").classes("text-xs text-gray-500 uppercase tracking-wide")
         _render_katex_content(front)
 
         back_container = ui.column().classes("w-full mt-4")
         back_container.visible = False
+        back_container.props('aria-label="Flashcard answer"')
 
         with back_container:
             ui.separator()
@@ -42,4 +43,8 @@ def flashcard(
             back_container.visible = True
             reveal_btn.visible = False
 
-        reveal_btn = ui.button("Show Answer", on_click=_reveal).classes("mt-4 mx-auto")
+        reveal_btn = (
+            ui.button("Show Answer", on_click=_reveal)
+            .classes("mt-4 mx-auto")
+            .props('aria-label="Reveal answer"')
+        )

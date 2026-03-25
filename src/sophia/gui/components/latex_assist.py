@@ -99,7 +99,7 @@ def _symbol_buttons(
         for display, latex in symbols.items():
             ui.button(display, on_click=lambda _, lx=latex: on_insert(lx)).props(
                 "dense flat size=sm"
-            ).classes("min-w-[2rem]")
+            ).classes("min-h-[44px] min-w-[44px]")
 
 
 def latex_assist_palette(
@@ -111,7 +111,11 @@ def latex_assist_palette(
     if level == AssistLevel.EXPERT:
         return  # no palette at expert level
 
-    with ui.expansion("LaTeX Assist", value=level == AssistLevel.FULL).classes("w-full"):
+    with (
+        ui.expansion("LaTeX Assist", value=level == AssistLevel.FULL)
+        .classes("w-full")
+        .props('aria-label="LaTeX symbol palette"')
+    ):
         _symbol_buttons(GREEK_SYMBOLS, on_insert=on_insert, group_label="Greek")
         _symbol_buttons(OPERATORS, on_insert=on_insert, group_label="Operators")
         _symbol_buttons(CALCULUS, on_insert=on_insert, group_label="Calculus")
@@ -122,7 +126,7 @@ def latex_assist_palette(
                 for name, latex in TEMPLATES.items():
                     ui.button(name, on_click=lambda _, lx=latex: on_insert(lx)).props(
                         "outline dense size=sm"
-                    )
+                    ).classes("min-h-[44px] min-w-[44px]")
             ui.label("Tip: Use \\frac{a}{b} for fractions, ^{n} for powers").classes(
                 "text-xs text-gray-400 mt-2 italic"
             )

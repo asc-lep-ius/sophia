@@ -71,6 +71,7 @@ CLIENT_SCROLL_POSITION: Final = "scroll_position"
 BROWSER_DENSITY_MODE: Final = "dashboard_density_mode"
 BROWSER_THEME_PREF: Final = "theme_pref"
 BROWSER_LATEX_ASSIST_LEVEL: Final = "latex_assist_level"
+BROWSER_HIGH_CONTRAST: Final = "high_contrast"
 
 # ---------------------------------------------------------------------------
 # Tier summary — convenience mapping for documentation / introspection
@@ -112,5 +113,10 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_CALIBRATION_CHART_TYPE,
     ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
-    "browser": [BROWSER_DENSITY_MODE, BROWSER_THEME_PREF, BROWSER_LATEX_ASSIST_LEVEL],
+    "browser": [
+        BROWSER_DENSITY_MODE,
+        BROWSER_THEME_PREF,
+        BROWSER_LATEX_ASSIST_LEVEL,
+        BROWSER_HIGH_CONTRAST,
+    ],
 }

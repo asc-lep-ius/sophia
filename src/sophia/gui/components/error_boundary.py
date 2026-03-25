@@ -30,7 +30,9 @@ def error_boundary(content_fn: Callable[[], Any], *, page_name: str = "page") ->
 
 
 def _render_error_card(exc: Exception, *, page_name: str) -> None:
-    with ui.card().classes("mx-auto mt-12 p-8 max-w-md"):
+    with (
+        ui.card().classes("mx-auto mt-12 p-8 max-w-md").props('role="alert" aria-live="assertive"')
+    ):
         ui.icon("error_outline").classes("text-red-500 text-5xl mx-auto")
         ui.label("Something went wrong").classes("text-xl font-bold text-center mt-4")
         ui.label(f"Error on {page_name}: {type(exc).__name__}").classes(
