@@ -1099,9 +1099,7 @@ class TestCalendarActionEvents:
                 "action": {},
             },
         ]
-        respx.route(method="POST", path=AJAX_PATH).mock(
-            return_value=_ajax_ok({"events": events})
-        )
+        respx.route(method="POST", path=AJAX_PATH).mock(return_value=_ajax_ok({"events": events}))
 
         result = await adapter.get_calendar_action_events()
 
@@ -1111,9 +1109,7 @@ class TestCalendarActionEvents:
 
     @respx.mock
     async def test_empty_events(self, adapter: MoodleAdapter):
-        respx.route(method="POST", path=AJAX_PATH).mock(
-            return_value=_ajax_ok({"events": []})
-        )
+        respx.route(method="POST", path=AJAX_PATH).mock(return_value=_ajax_ok({"events": []}))
 
         result = await adapter.get_calendar_action_events()
         assert result == []

@@ -1,0 +1,1 @@
+"""GUI state management."""

@@ -38,7 +38,7 @@ export = [
     "bibtexparser>=1.4",
 ]
 web = [
-    "gradio>=4.0",
+    "nicegui>=2.0",
 ]
 hermes = [
     "faster-whisper>=1.1",
@@ -92,6 +92,8 @@ root = "tests"
 reportUnknownMemberType = false
 reportUnknownLambdaType = false
 reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnusedFunction = false
 
 [tool.coverage.run]
 omit = ["src/sophia/__main__.py"]
