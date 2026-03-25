@@ -87,8 +87,9 @@ def _render_card_stats(*, difficulty: float, stability: float) -> None:
 
     diff_color = "red" if difficulty > 0.6 else "orange" if difficulty > 0.3 else "green"
 
-    with ui.card().classes("w-full max-w-lg mx-auto p-4 mb-2"), ui.row().classes(
-        "w-full items-center gap-4"
+    with (
+        ui.card().classes("w-full max-w-lg mx-auto p-4 mb-2"),
+        ui.row().classes("w-full items-center gap-4"),
     ):
         # Difficulty bar
         with ui.column().classes("flex-1"):

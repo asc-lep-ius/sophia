@@ -46,6 +46,23 @@ TAB_STUDY_TOPICS: Final = "study_topics"
 TAB_STUDY_SESSION_ID: Final = "study_session_id"
 TAB_STUDY_NOVEL_TOPIC: Final = "study_novel_topic"
 
+# Tab-scoped — Hermes search
+TAB_SEARCH_QUERY: Final = "search_query"
+TAB_SEARCH_COURSE_FILTER: Final = "search_course_filter"
+TAB_SEARCH_RESULTS: Final = "search_results"
+TAB_SEARCH_SELECTED_INDEX: Final = "search_selected_index"
+TAB_SEARCH_BLOOM_LEVEL: Final = "search_bloom_level"
+TAB_SEARCH_BLOOM_RESPONSE: Final = "search_bloom_response"
+
+# Tab-scoped — Chronos deadlines
+TAB_CHRONOS_COURSE_FILTER: Final = "chronos_course_filter"
+TAB_CHRONOS_ACTIVE_TIMER: Final = "chronos_active_timer"
+TAB_CHRONOS_ESTIMATE_DRAFT: Final = "chronos_estimate_draft"
+
+# Tab-scoped — Calibration dashboard
+TAB_CALIBRATION_COURSE_FILTER: Final = "calibration_course_filter"
+TAB_CALIBRATION_CHART_TYPE: Final = "calibration_chart_type"
+
 # ``app.storage.client`` — per WebSocket connection, transient.
 CLIENT_PANEL_STATE: Final = "panel_state"
 CLIENT_SCROLL_POSITION: Final = "scroll_position"
@@ -82,6 +99,17 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_STUDY_TOPICS,
         TAB_STUDY_SESSION_ID,
         TAB_STUDY_NOVEL_TOPIC,
+        TAB_SEARCH_QUERY,
+        TAB_SEARCH_COURSE_FILTER,
+        TAB_SEARCH_RESULTS,
+        TAB_SEARCH_SELECTED_INDEX,
+        TAB_SEARCH_BLOOM_LEVEL,
+        TAB_SEARCH_BLOOM_RESPONSE,
+        TAB_CHRONOS_COURSE_FILTER,
+        TAB_CHRONOS_ACTIVE_TIMER,
+        TAB_CHRONOS_ESTIMATE_DRAFT,
+        TAB_CALIBRATION_COURSE_FILTER,
+        TAB_CALIBRATION_CHART_TYPE,
     ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
     "browser": [BROWSER_DENSITY_MODE, BROWSER_THEME_PREF, BROWSER_LATEX_ASSIST_LEVEL],

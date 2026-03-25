@@ -20,8 +20,11 @@ from sophia.gui.middleware.health import (
     set_container,
     set_container_error,
 )
+from sophia.gui.pages.calibration import calibration_content
+from sophia.gui.pages.chronos import chronos_content
 from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.review import review_content
+from sophia.gui.pages.search import search_content
 from sophia.gui.pages.study import study_content
 from sophia.infra.di import create_app as create_di_container
 
@@ -101,32 +104,15 @@ def _register_pages() -> None:
 
     @ui.page("/search")
     def search_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(_search_placeholder, page_name="Search"))
+        app_shell(lambda: error_boundary(search_content, page_name="Search"))
 
     @ui.page("/chronos")
     def chronos_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(_chronos_placeholder, page_name="Chronos"))
+        app_shell(lambda: error_boundary(chronos_content, page_name="Chronos"))
 
     @ui.page("/calibration")
     def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(
-            lambda: error_boundary(_calibration_placeholder, page_name="Calibration"),
-        )
-
-
-def _search_placeholder() -> None:
-    ui.label("Search").classes("text-2xl font-bold")
-    ui.label("Search features coming soon.").classes("text-gray-500 mt-2")
-
-
-def _chronos_placeholder() -> None:
-    ui.label("Chronos").classes("text-2xl font-bold")
-    ui.label("Deadline tracking coming soon.").classes("text-gray-500 mt-2")
-
-
-def _calibration_placeholder() -> None:
-    ui.label("Calibration").classes("text-2xl font-bold")
-    ui.label("Calibration features coming soon.").classes("text-gray-500 mt-2")
+        app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
 
 
 def run(settings: Settings | None = None) -> None:

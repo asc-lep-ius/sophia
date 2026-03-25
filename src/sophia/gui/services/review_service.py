@@ -98,6 +98,4 @@ async def get_upcoming_review_items(
     days_ahead: int = 3,
 ) -> list[ReviewSchedule]:
     """Fetch reviews due within the next *days_ahead* days."""
-    return await athena_review.get_upcoming_reviews(
-        db, course_id=course_id, days_ahead=days_ahead
-    )
+    return await athena_review.get_upcoming_reviews(db, course_id=course_id, days_ahead=days_ahead)

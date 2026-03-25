@@ -149,9 +149,7 @@ class TestCompleteReviewItem:
             result = await complete_review_item(
                 mock_container.db, topic="Trees", course_id=1, score=0.7
             )
-        mock_mod.complete_review.assert_awaited_once_with(
-            mock_container.db, "Trees", 1, 0.7
-        )
+        mock_mod.complete_review.assert_awaited_once_with(mock_container.db, "Trees", 1, 0.7)
         assert result is sentinel
 
 
