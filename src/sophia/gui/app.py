@@ -20,6 +20,7 @@ from sophia.gui.middleware.health import (
     set_container,
     set_container_error,
 )
+from sophia.gui.pages.dashboard import dashboard_content
 from sophia.infra.di import create_app as create_di_container
 
 if TYPE_CHECKING:
@@ -86,7 +87,7 @@ def _register_pages() -> None:
 
     @ui.page("/")
     def dashboard_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(_dashboard_content, page_name="Dashboard"))
+        app_shell(lambda: error_boundary(dashboard_content, page_name="Dashboard"))
 
     @ui.page("/study")
     def study_page() -> None:  # pyright: ignore[reportUnusedFunction]
@@ -109,11 +110,6 @@ def _register_pages() -> None:
         app_shell(
             lambda: error_boundary(_calibration_placeholder, page_name="Calibration"),
         )
-
-
-def _dashboard_content() -> None:
-    ui.label("Dashboard").classes("text-2xl font-bold")
-    ui.label("Welcome to Sophia").classes("text-gray-500 mt-2")
 
 
 def _study_placeholder() -> None:
