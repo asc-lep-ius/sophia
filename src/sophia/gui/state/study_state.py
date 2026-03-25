@@ -20,6 +20,7 @@ from sophia.gui.state.storage_map import (
     TAB_STUDY_PRE_CONFIDENCE,
     TAB_STUDY_REFLECTION,
     TAB_STUDY_SESSION_ID,
+    TAB_STUDY_SESSION_IDS,
     TAB_STUDY_STEP_INDEX,
     TAB_STUDY_TIMER_REMAINING,
     TAB_STUDY_TOPICS,
@@ -119,11 +120,11 @@ def set_session_id(sid: str) -> None:
 
 
 def get_session_ids() -> dict[str, int]:
-    return app.storage.tab.get("study_session_ids", {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_STUDY_SESSION_IDS, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
 
 
 def set_session_ids(ids: dict[str, int]) -> None:
-    app.storage.tab["study_session_ids"] = ids  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_STUDY_SESSION_IDS] = ids  # pyright: ignore[reportUnknownMemberType]
 
 
 def get_novel_topic() -> bool:
@@ -154,4 +155,4 @@ def reset_session_state() -> None:
     app.storage.tab[TAB_STUDY_TIMER_REMAINING] = DEFAULT_REFLECTION_SECONDS  # pyright: ignore[reportUnknownMemberType]
     app.storage.tab[TAB_STUDY_SESSION_ID] = ""  # pyright: ignore[reportUnknownMemberType]
     app.storage.tab[TAB_STUDY_NOVEL_TOPIC] = False  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab["study_session_ids"] = {}  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_STUDY_SESSION_IDS] = {}  # pyright: ignore[reportUnknownMemberType]

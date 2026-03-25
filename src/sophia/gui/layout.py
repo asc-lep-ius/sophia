@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from sophia.gui.components.keyboard_shortcuts import register_keyboard_shortcuts
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -109,6 +111,8 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
         .classes("lg:ml-56 min-h-screen p-4 pb-20 lg:pb-4")
     ):
         content_fn()
+
+    register_keyboard_shortcuts()
 
 
 def _sidebar_content() -> None:

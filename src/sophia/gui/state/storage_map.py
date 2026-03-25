@@ -44,6 +44,7 @@ TAB_STUDY_TIMER_REMAINING: Final = "study_timer_remaining"
 TAB_STUDY_INTERLEAVED: Final = "study_interleaved"
 TAB_STUDY_TOPICS: Final = "study_topics"
 TAB_STUDY_SESSION_ID: Final = "study_session_id"
+TAB_STUDY_SESSION_IDS: Final = "study_session_ids"
 TAB_STUDY_NOVEL_TOPIC: Final = "study_novel_topic"
 
 # Tab-scoped — Hermes search
@@ -99,6 +100,7 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_STUDY_INTERLEAVED,
         TAB_STUDY_TOPICS,
         TAB_STUDY_SESSION_ID,
+        TAB_STUDY_SESSION_IDS,
         TAB_STUDY_NOVEL_TOPIC,
         TAB_SEARCH_QUERY,
         TAB_SEARCH_COURSE_FILTER,
