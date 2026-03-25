@@ -11,9 +11,9 @@ from sophia.domain.models import DifficultyLevel
 
 class TestConstants:
     def test_default_reflection_seconds(self) -> None:
-        from sophia.gui.pages.study import _DEFAULT_REFLECTION_SECONDS
+        from sophia.gui.state.study_state import DEFAULT_REFLECTION_SECONDS
 
-        assert _DEFAULT_REFLECTION_SECONDS == 30
+        assert DEFAULT_REFLECTION_SECONDS == 30
 
     def test_autosave_interval(self) -> None:
         from sophia.gui.pages.study import _AUTOSAVE_INTERVAL_SECONDS

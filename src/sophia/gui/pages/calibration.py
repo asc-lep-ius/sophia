@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, Final
 import structlog
 from nicegui import app, ui
 
+from sophia.gui.components.chart_table import chart_with_table
 from sophia.gui.services.calibration_service import (
     build_blind_spot_chart_data,
     build_confidence_scatter_data,
@@ -50,6 +51,60 @@ _SOCRATIC_QUESTION: Final = (
 )
 
 _MAX_FEEDBACK_TOPICS: Final = 5
+_TIER_Y_REVERSE: Final[dict[int, str]] = {0: "cued", 1: "explain", 2: "transfer"}
+
+
+# --- Row extraction helpers (pure, tested) -----------------------------------
+
+
+def extract_scatter_rows(chart: dict[str, Any]) -> list[list[str]]:
+    """Extract [predicted, actual] rows from a scatter chart config."""
+    series = chart.get("series", [{}])
+    data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    return [[f"{pt[0]:.2f}", f"{pt[1]:.2f}"] for pt in data if len(pt) >= 2]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+
+def extract_bar_rows(chart: dict[str, Any]) -> list[list[str]]:
+    """Extract [label, value] rows from a bar chart config."""
+    labels = chart.get("yAxis", {}).get("data") or chart.get("xAxis", {}).get("data") or []  # pyright: ignore[reportUnknownVariableType]
+    series = chart.get("series", [{}])
+    values = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    return [[str(label), str(v)] for label, v in zip(labels, values, strict=False)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+
+def extract_line_rows(chart: dict[str, Any]) -> list[list[str]]:
+    """Extract [x, y] rows from a line chart config."""
+    x_data = chart.get("xAxis", {}).get("data", [])
+    series = chart.get("series", [{}])
+    y_data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    return [[str(x), f"{y:.2f}"] for x, y in zip(x_data, y_data, strict=False)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+
+def extract_heatmap_rows(chart: dict[str, Any]) -> list[list[str]]:
+    """Extract [topic, course, score] rows from a heatmap chart config."""
+    x_labels = chart.get("xAxis", {}).get("data", [])
+    y_labels = chart.get("yAxis", {}).get("data", [])
+    series = chart.get("series", [{}])
+    data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    rows: list[list[str]] = []
+    for pt in data:  # pyright: ignore[reportUnknownVariableType]
+        if len(pt) >= 3:  # pyright: ignore[reportUnknownArgumentType]
+            xi, yi = int(pt[0]), int(pt[1])  # pyright: ignore[reportUnknownArgumentType]
+            topic = x_labels[xi] if xi < len(x_labels) else str(xi)
+            course = y_labels[yi] if yi < len(y_labels) else str(yi)
+            rows.append([str(topic), str(course), f"{pt[2]:.2f}"])
+    return rows
+
+
+def extract_tier_rows(chart: dict[str, Any]) -> list[list[str]]:
+    """Extract [session, tier_name] rows from a tier progression chart."""
+    x_data = chart.get("xAxis", {}).get("data", [])
+    series = chart.get("series", [{}])
+    y_data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    return [
+        [str(x), _TIER_Y_REVERSE.get(int(y), str(y))]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        for x, y in zip(x_data, y_data, strict=False)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    ]
 
 
 # --- Storage helpers ---------------------------------------------------------
@@ -239,7 +294,13 @@ def _render_confidence_scatter(ratings: list[ConfidenceRating]) -> None:
     has_data = series_data and series_data[0].get("data")
 
     if has_data:
-        ui.echart(scatter_data).classes("w-full h-64")
+        chart_with_table(
+            scatter_data,
+            headers=["Predicted", "Actual"],
+            rows=extract_scatter_rows(scatter_data),
+            chart_id="confidence-scatter",
+            classes="w-full h-64",
+        )
     else:
         ui.label("No confidence vs actual data available.").classes("text-gray-400 italic")
 
@@ -251,7 +312,13 @@ def _render_blind_spots(ratings: list[ConfidenceRating]) -> None:
     has_data = series and series[0].get("data")
 
     if has_data:
-        ui.echart(chart_data).classes("w-full h-64")
+        chart_with_table(
+            chart_data,
+            headers=["Topic", "Overconfidence"],
+            rows=extract_bar_rows(chart_data),
+            chart_id="blind-spots",
+            classes="w-full h-64",
+        )
     else:
         ui.label("No blind spots detected — good calibration!").classes("text-green-500 italic")
 
@@ -263,7 +330,13 @@ def _render_calibration_trend(ratings: list[ConfidenceRating]) -> None:
     has_data = series and series[0].get("data")
 
     if has_data:
-        ui.echart(trend_data).classes("w-full h-48")
+        chart_with_table(
+            trend_data,
+            headers=["Rating #", "Abs. Error"],
+            rows=extract_line_rows(trend_data),
+            chart_id="calibration-trend",
+            classes="w-full h-48",
+        )
     else:
         ui.label("Not enough data for trend analysis.").classes("text-gray-400 italic")
 
@@ -275,7 +348,13 @@ def _render_mastery_heatmap(ratings: list[ConfidenceRating]) -> None:
     has_data = series and series[0].get("data")
 
     if has_data:
-        ui.echart(heatmap_data).classes("w-full h-64")
+        chart_with_table(
+            heatmap_data,
+            headers=["Topic", "Course", "Score"],
+            rows=extract_heatmap_rows(heatmap_data),
+            chart_id="mastery-heatmap",
+            classes="w-full h-64",
+        )
     else:
         ui.label("No mastery data available.").classes("text-gray-400 italic")
 
@@ -294,7 +373,13 @@ async def _render_tier_progression(
 
     if has_data:
         with ui.card().classes("w-full mb-2"):
-            ui.echart(chart_data).classes("w-full h-48")
+            chart_with_table(
+                chart_data,
+                headers=["Session", "Tier"],
+                rows=extract_tier_rows(chart_data),
+                chart_id=f"tier-progression-{topic}",
+                classes="w-full h-48",
+            )
     else:
         ui.label(f"No session data for {topic}.").classes("text-gray-400 italic text-sm")
 

@@ -69,6 +69,7 @@ def _render_density_toggle() -> None:
             (DENSITY_FULL, "view_comfy", "Full"),
         ]:
             btn = ui.button(label, icon=icon, on_click=lambda _e, m=mode: _set_mode(m))
+            btn.props(f'aria-label="Dashboard density: {label}"')
             if mode == current:
                 btn.props("color=primary")
             else:

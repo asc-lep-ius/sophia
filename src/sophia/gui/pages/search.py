@@ -145,11 +145,15 @@ def search_content() -> None:
 def _render_header(container: AppContainer, course_id: int) -> None:
     """Search input bar with course filter."""
     with ui.row().classes("w-full items-center gap-4 mb-4"):
-        search_input = ui.input(
-            label="Search lecture content",
-            placeholder="Enter a search query…",
-            value=_get_query(),
-        ).classes("flex-grow")
+        search_input = (
+            ui.input(
+                label="Search lecture content",
+                placeholder="Enter a search query…",
+                value=_get_query(),
+            )
+            .classes("flex-grow")
+            .props('aria-label="Search lecture transcripts"')
+        )
 
         async def _on_search(e: object) -> None:
             query = search_input.value or ""
@@ -193,6 +197,14 @@ def _search_results() -> None:
     results = _get_results()
     query = _get_query()
     selected = _get_selected_index()
+
+    # Aria-live region announces result count to screen readers
+    if query.strip():
+        count = len(results)
+        status = (
+            f"{count} result{'s' if count != 1 else ''} found" if results else "No results found"
+        )
+        ui.label(status).classes("sr-only").props('aria-live="polite"')
 
     if not query.strip():
         ui.label("Enter a search query to find lecture content.").classes(

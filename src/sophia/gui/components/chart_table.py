@@ -13,13 +13,16 @@ def chart_with_table(
     headers: list[str],
     rows: list[list[str]],
     chart_id: str = "",
+    classes: str = "",
 ) -> None:
     """Render an EChart with a toggleable accessible data table.
 
     Screen readers and users who cannot interpret charts can toggle the
     table view to access the same data in tabular form.
     """
-    ui.echart(chart_config)
+    chart = ui.echart(chart_config)
+    if classes:
+        chart.classes(classes)
     show_table = ui.switch("Show as table").props(
         f'aria-label="Toggle data table view for {chart_id}"'
     )

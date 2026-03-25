@@ -215,6 +215,8 @@ async def _review_session() -> None:
         return
 
     card = reviews[idx]
+    # Aria-live announcer for card transitions
+    ui.label(f"Card {idx + 1} of {len(reviews)}").classes("sr-only").props('aria-live="polite"')
     _render_progress_label(idx, len(reviews))
     _render_card_stats(difficulty=card.difficulty, stability=card.stability)
     _render_active_card(card, reviews)

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Final
 import structlog
 from nicegui import app, ui
 
+from sophia.gui.components.chart_table import chart_with_table
 from sophia.gui.services.chronos_service import (
     estimate_effort,
     format_deadline_feedback,
@@ -234,7 +235,11 @@ async def _render_deadline_card(container: AppContainer, deadline: Deadline) -> 
                     ui.notify(f"Stopped — {format_hours(elapsed)} tracked", type="positive")
                     _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
-                ui.button("Stop ⏹", icon="stop", on_click=_stop).props("flat dense color=negative")
+                ui.button(
+                    "Stop ⏹",
+                    icon="stop",
+                    on_click=_stop,
+                ).props("flat dense color=negative").props('aria-label="Stop timer"')
             else:
 
                 async def _start(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
@@ -248,7 +253,11 @@ async def _render_deadline_card(container: AppContainer, deadline: Deadline) -> 
                     ui.notify("Timer started", type="positive")
                     _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
-                ui.button("Start Timer", icon="play_arrow", on_click=_start).props("flat dense")
+                ui.button(
+                    "Start Timer",
+                    icon="play_arrow",
+                    on_click=_start,
+                ).props("flat dense").props('aria-label="Start timer"')
 
             # Reflection for overdue deadlines
             now_utc = datetime.now(UTC)
@@ -363,7 +372,8 @@ async def _render_estimation_form(container: AppContainer, deadline: Deadline) -
 
 def _render_timer_display() -> None:
     """Show elapsed time for the active timer, updating every second."""
-    timer_label = ui.label("⏱ 00:00:00").classes("text-lg font-mono text-primary mt-1")
+    with ui.element("div").props('aria-live="polite"'):
+        timer_label = ui.label("\u23f1 00:00:00").classes("text-lg font-mono text-primary mt-1")
     start_time = datetime.now(UTC)
 
     def _update_display() -> None:
@@ -439,15 +449,24 @@ async def _render_calibration_chart(container: AppContainer) -> None:
 
     with ui.card().classes("w-full p-4 mt-6"):
         ui.label("Estimation Calibration").classes("text-lg font-bold mb-2")
-        ui.echart(
-            {
-                "tooltip": {"trigger": "axis"},
-                "legend": {"data": ["Mean Error", "Mean |Error|"]},
-                "xAxis": {"type": "category", "data": domains},
-                "yAxis": {"type": "value", "name": "Hours"},
-                "series": [
-                    {"name": "Mean Error", "type": "bar", "data": errors},
-                    {"name": "Mean |Error|", "type": "bar", "data": abs_errors},
-                ],
-            }
+        chart_config = {
+            "tooltip": {"trigger": "axis"},
+            "legend": {"data": ["Mean Error", "Mean |Error|"]},
+            "xAxis": {"type": "category", "data": domains},
+            "yAxis": {"type": "value", "name": "Hours"},
+            "series": [
+                {"name": "Mean Error", "type": "bar", "data": errors},
+                {"name": "Mean |Error|", "type": "bar", "data": abs_errors},
+            ],
+        }
+        headers = ["Domain", "Mean Error", "Mean |Error|"]
+        rows = [
+            [str(d), f"{e:.2f}", f"{a:.2f}"]
+            for d, e, a in zip(domains, errors, abs_errors, strict=False)
+        ]
+        chart_with_table(
+            chart_config,
+            headers=headers,
+            rows=rows,
+            chart_id="chronos-calibration",
         )

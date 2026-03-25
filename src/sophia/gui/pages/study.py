@@ -27,22 +27,93 @@ from sophia.gui.services.study_service import (
     start_session,
 )
 from sophia.gui.state.session_store import SessionState, SessionStore
-from sophia.gui.state.storage_map import (
-    GENERAL_APP_CONTAINER,
-    TAB_STUDY_INSIGHT,
-    TAB_STUDY_INTERLEAVED,
-    TAB_STUDY_NOVEL_TOPIC,
-    TAB_STUDY_POST_ANSWERS,
-    TAB_STUDY_POST_CONFIDENCE,
-    TAB_STUDY_PRE_ANSWERS,
-    TAB_STUDY_PRE_CONFIDENCE,
-    TAB_STUDY_REFLECTION,
-    TAB_STUDY_SESSION_ID,
-    TAB_STUDY_STEP_INDEX,
-    TAB_STUDY_TIMER_REMAINING,
-    TAB_STUDY_TOPICS,
-    USER_ACTIVE_TOPIC,
-    USER_CURRENT_COURSE,
+from sophia.gui.state.storage_map import GENERAL_APP_CONTAINER
+from sophia.gui.state.study_state import (
+    get_active_topic as _get_active_topic,
+)
+from sophia.gui.state.study_state import (
+    get_course_id as _get_course_id,
+)
+from sophia.gui.state.study_state import (
+    get_insight as _get_insight,
+)
+from sophia.gui.state.study_state import (
+    get_interleaved as _get_interleaved,
+)
+from sophia.gui.state.study_state import (
+    get_novel_topic as _get_novel_topic,
+)
+from sophia.gui.state.study_state import (
+    get_post_answers as _get_post_answers,
+)
+from sophia.gui.state.study_state import (
+    get_post_confidence as _get_post_confidence,
+)
+from sophia.gui.state.study_state import (
+    get_pre_answers as _get_pre_answers,
+)
+from sophia.gui.state.study_state import (
+    get_pre_confidence as _get_pre_confidence,
+)
+from sophia.gui.state.study_state import (
+    get_reflection as _get_reflection,
+)
+from sophia.gui.state.study_state import (
+    get_session_id as _get_session_id,
+)
+from sophia.gui.state.study_state import (
+    get_session_ids as _get_session_ids,
+)
+from sophia.gui.state.study_state import (
+    get_step_index as _get_step_index,
+)
+from sophia.gui.state.study_state import (
+    get_timer_remaining as _get_timer_remaining,
+)
+from sophia.gui.state.study_state import (
+    get_topics as _get_topics,
+)
+from sophia.gui.state.study_state import (
+    reset_session_state as _reset_session_state,
+)
+from sophia.gui.state.study_state import (
+    set_insight as _set_insight,
+)
+from sophia.gui.state.study_state import (
+    set_interleaved as _set_interleaved,
+)
+from sophia.gui.state.study_state import (
+    set_novel_topic as _set_novel_topic,
+)
+from sophia.gui.state.study_state import (
+    set_post_answers as _set_post_answers,
+)
+from sophia.gui.state.study_state import (
+    set_post_confidence as _set_post_confidence,
+)
+from sophia.gui.state.study_state import (
+    set_pre_answers as _set_pre_answers,
+)
+from sophia.gui.state.study_state import (
+    set_pre_confidence as _set_pre_confidence,
+)
+from sophia.gui.state.study_state import (
+    set_reflection as _set_reflection,
+)
+from sophia.gui.state.study_state import (
+    set_session_id as _set_session_id,
+)
+from sophia.gui.state.study_state import (
+    set_session_ids as _set_session_ids,
+)
+from sophia.gui.state.study_state import (
+    set_step_index as _set_step_index,
+)
+from sophia.gui.state.study_state import (
+    set_timer_remaining as _set_timer_remaining,
+)
+from sophia.gui.state.study_state import (
+    set_topics as _set_topics,
 )
 
 if TYPE_CHECKING:
@@ -54,7 +125,6 @@ log = structlog.get_logger()
 
 # --- Constants ---------------------------------------------------------------
 
-_DEFAULT_REFLECTION_SECONDS: Final = 30
 _AUTOSAVE_INTERVAL_SECONDS: Final = 10
 _PRETEST_COUNT: Final = 3
 _POSTTEST_COUNT: Final = 3
@@ -106,136 +176,6 @@ def _build_session_id(course_id: int, topics: list[str], *, interleaved: bool) -
 def _render_difficulty_badge(difficulty: DifficultyLevel) -> None:
     color = _DIFFICULTY_BADGE_COLORS[difficulty]
     ui.badge(difficulty.value.upper(), color=color).classes("text-xs")
-
-
-# --- State management --------------------------------------------------------
-
-
-def _get_step_index() -> int:
-    return app.storage.tab.get(TAB_STUDY_STEP_INDEX, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_step_index(idx: int) -> None:
-    app.storage.tab[TAB_STUDY_STEP_INDEX] = idx  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_pre_answers() -> dict[str, str]:
-    return app.storage.tab.get(TAB_STUDY_PRE_ANSWERS, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_pre_answers(answers: dict[str, str]) -> None:
-    app.storage.tab[TAB_STUDY_PRE_ANSWERS] = answers  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_pre_confidence() -> dict[str, int]:
-    return app.storage.tab.get(TAB_STUDY_PRE_CONFIDENCE, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_pre_confidence(conf: dict[str, int]) -> None:
-    app.storage.tab[TAB_STUDY_PRE_CONFIDENCE] = conf  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_post_answers() -> dict[str, str]:
-    return app.storage.tab.get(TAB_STUDY_POST_ANSWERS, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_post_answers(answers: dict[str, str]) -> None:
-    app.storage.tab[TAB_STUDY_POST_ANSWERS] = answers  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_post_confidence() -> dict[str, int]:
-    return app.storage.tab.get(TAB_STUDY_POST_CONFIDENCE, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_post_confidence(conf: dict[str, int]) -> None:
-    app.storage.tab[TAB_STUDY_POST_CONFIDENCE] = conf  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_reflection() -> str:
-    return app.storage.tab.get(TAB_STUDY_REFLECTION, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_reflection(text: str) -> None:
-    app.storage.tab[TAB_STUDY_REFLECTION] = text  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_insight() -> str:
-    return app.storage.tab.get(TAB_STUDY_INSIGHT, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_insight(text: str) -> None:
-    app.storage.tab[TAB_STUDY_INSIGHT] = text  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_timer_remaining() -> int:
-    return app.storage.tab.get(TAB_STUDY_TIMER_REMAINING, _DEFAULT_REFLECTION_SECONDS)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_timer_remaining(seconds: int) -> None:
-    app.storage.tab[TAB_STUDY_TIMER_REMAINING] = seconds  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_interleaved() -> bool:
-    return app.storage.tab.get(TAB_STUDY_INTERLEAVED, False)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_interleaved(value: bool) -> None:
-    app.storage.tab[TAB_STUDY_INTERLEAVED] = value  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_topics() -> list[str]:
-    return app.storage.tab.get(TAB_STUDY_TOPICS, [])  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_topics(topics: list[str]) -> None:
-    app.storage.tab[TAB_STUDY_TOPICS] = topics  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_session_id() -> str:
-    return app.storage.tab.get(TAB_STUDY_SESSION_ID, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_session_id(sid: str) -> None:
-    app.storage.tab[TAB_STUDY_SESSION_ID] = sid  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_session_ids() -> dict[str, int]:
-    return app.storage.tab.get("study_session_ids", {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_session_ids(ids: dict[str, int]) -> None:
-    app.storage.tab["study_session_ids"] = ids  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_novel_topic() -> bool:
-    return app.storage.tab.get(TAB_STUDY_NOVEL_TOPIC, False)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _set_novel_topic(value: bool) -> None:
-    app.storage.tab[TAB_STUDY_NOVEL_TOPIC] = value  # pyright: ignore[reportUnknownMemberType]
-
-
-def _get_course_id() -> int:
-    return app.storage.user.get(USER_CURRENT_COURSE, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _get_active_topic() -> str:
-    return app.storage.user.get(USER_ACTIVE_TOPIC, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
-
-
-def _reset_session_state() -> None:
-    """Clear all tab-scoped study state for a fresh session."""
-    app.storage.tab[TAB_STUDY_STEP_INDEX] = 0  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_PRE_ANSWERS] = {}  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_PRE_CONFIDENCE] = {}  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_POST_ANSWERS] = {}  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_POST_CONFIDENCE] = {}  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_REFLECTION] = ""  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_INSIGHT] = ""  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_TIMER_REMAINING] = _DEFAULT_REFLECTION_SECONDS  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_SESSION_ID] = ""  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_STUDY_NOVEL_TOPIC] = False  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab["study_session_ids"] = {}  # pyright: ignore[reportUnknownMemberType]
 
 
 def study_content() -> None:
@@ -411,6 +351,13 @@ async def _render_stepper(
 ) -> None:
     step = _get_step_index()
 
+    # Aria-live step announcer for screen readers
+    step_announcer = (
+        ui.label(f"Step {step + 1} of {len(_STEP_LABELS)}: {_STEP_LABELS[step]}")
+        .classes("sr-only")
+        .props('aria-live="polite"')
+    )
+
     with ui.stepper().props("header-nav=false").classes("w-full") as stepper:
         with ui.step(_STEP_LABELS[0]):
             await _render_pretest(stepper, container, course_id, topics)
@@ -426,6 +373,24 @@ async def _render_stepper(
     # Advance stepper to current step (NiceGUI steppers default to step 0)
     for _ in range(step):
         stepper.next()
+
+    # Ctrl+Enter keyboard shortcut to advance step
+    def _on_ctrl_enter(e: object) -> None:
+        key = getattr(e, "key", "")
+        action = getattr(e, "action", False)
+        modifiers = getattr(e, "modifiers", None) or {}  # pyright: ignore[reportUnknownVariableType]
+        if action and key == "Enter" and getattr(modifiers, "ctrl", False):  # pyright: ignore[reportUnknownArgumentType]
+            current = _get_step_index()
+            if current < len(_STEP_LABELS) - 1:
+                if not _can_advance_from_step(current, num_topics=len(topics)):
+                    ui.notify("Complete the current step first", type="warning")
+                    return
+                _advance_step(stepper, current + 1)
+                step_announcer.text = (
+                    f"Step {current + 2} of {len(_STEP_LABELS)}: {_STEP_LABELS[current + 1]}"
+                )
+
+    ui.keyboard(on_key=_on_ctrl_enter)
 
 
 # --- Step renderers ----------------------------------------------------------
@@ -798,6 +763,28 @@ async def _complete_study_session(
 
     ui.notify("Session complete!", type="positive")
     ui.navigate.to("/")
+
+
+def _can_advance_from_step(step: int, *, num_topics: int) -> bool:
+    """Check whether the current step's completion criteria are satisfied."""
+    if step == 0:
+        return _questions_complete(
+            _get_pre_answers(),
+            _get_pre_confidence(),
+            count=num_topics * _PRETEST_COUNT,
+        )
+    if step == 1:
+        insight = _get_insight()
+        return bool(insight and insight.strip())
+    if step == 2:
+        return _questions_complete(
+            _get_post_answers(),
+            _get_post_confidence(),
+            count=num_topics * _POSTTEST_COUNT,
+        )
+    if step == 3:
+        return _get_timer_remaining() <= 0 and bool(_get_reflection().strip())
+    return False
 
 
 def _advance_step(stepper: ui.stepper, target: int) -> None:
