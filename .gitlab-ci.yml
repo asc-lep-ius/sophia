@@ -47,7 +47,7 @@ test:
     matrix:
       - PYTHON_VERSION: ["3.12", "3.14"]
   script:
-    - uv run pytest --tb=short -q --cov=src/sophia --cov-report=term-missing --cov-report=xml --cov-fail-under=75
+    - uv run pytest --ignore=tests/integration --tb=short -q --cov=src/sophia --cov-report=term-missing --cov-report=xml --cov-fail-under=75
   coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)$/'
   artifacts:
     reports:

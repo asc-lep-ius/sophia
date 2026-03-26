@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from axe_playwright_python.sync_playwright import Axe
+from axe_playwright_python.sync_playwright import Axe  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
     from playwright.sync_api import Page

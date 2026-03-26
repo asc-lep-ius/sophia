@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,7 +19,7 @@ QUERY = "binary search"
 _PATCH_BASE = "sophia.gui.services.search_service"
 
 
-def _make_result(**overrides: object) -> LectureSearchResult:
+def _make_result(**overrides: Any) -> LectureSearchResult:
     defaults = {
         "episode_id": "ep-1",
         "title": "Lecture 1",

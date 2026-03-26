@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -18,7 +18,7 @@ TOPIC = "Binary Search"
 _PATCH_BASE = "sophia.gui.services.calibration_service"
 
 
-def _make_rating(**overrides: object) -> ConfidenceRating:
+def _make_rating(**overrides: Any) -> ConfidenceRating:
     defaults = {
         "topic": TOPIC,
         "course_id": COURSE_ID,
@@ -30,7 +30,7 @@ def _make_rating(**overrides: object) -> ConfidenceRating:
     return ConfidenceRating(**defaults)  # type: ignore[arg-type]
 
 
-def _make_session(**overrides: object) -> StudySession:
+def _make_session(**overrides: Any) -> StudySession:
     defaults = {
         "id": 1,
         "course_id": COURSE_ID,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -25,7 +25,7 @@ DEADLINE_ID = "dl-abc-123"
 _PATCH_BASE = "sophia.gui.services.chronos_service"
 
 
-def _make_deadline(**overrides: object) -> Deadline:
+def _make_deadline(**overrides: Any) -> Deadline:
     defaults = {
         "id": DEADLINE_ID,
         "name": "HW 1",
@@ -38,7 +38,7 @@ def _make_deadline(**overrides: object) -> Deadline:
     return Deadline(**defaults)  # type: ignore[arg-type]
 
 
-def _make_estimate(**overrides: object) -> EffortEstimate:
+def _make_estimate(**overrides: Any) -> EffortEstimate:
     defaults = {
         "deadline_id": DEADLINE_ID,
         "course_id": COURSE_ID,

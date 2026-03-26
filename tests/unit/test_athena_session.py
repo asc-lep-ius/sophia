@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,9 @@ from rich.console import Console
 
 from sophia.domain.models import ConfidenceRating, ReviewSchedule, TopicMapping, TopicSource
 from sophia.services.athena_session import _run_quiz, _run_quiz_no_skip, _run_reflection
+
+if TYPE_CHECKING:
+    import aiosqlite
 
 # ---------------------------------------------------------------------------
 # _run_quiz (with skip option)
@@ -911,7 +915,7 @@ async def _insert_topic_link(
 
 class TestGetMissedLectureTopics:
     @pytest.mark.asyncio
-    async def test_zero_exposure_topics_returned(self, db: object) -> None:
+    async def test_zero_exposure_topics_returned(self, db: aiosqlite.Connection) -> None:
         """Topics only covered in missed lectures are returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -924,7 +928,7 @@ class TestGetMissedLectureTopics:
         assert set(result) == {"TopicA", "TopicB"}
 
     @pytest.mark.asyncio
-    async def test_partial_exposure_excluded(self, db: object) -> None:
+    async def test_partial_exposure_excluded(self, db: aiosqlite.Connection) -> None:
         """Topics covered in both missed and attended lectures are not returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -941,7 +945,7 @@ class TestGetMissedLectureTopics:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_ignores_other_courses(self, db: object) -> None:
+    async def test_ignores_other_courses(self, db: aiosqlite.Connection) -> None:
         """Topics from missed lectures in other courses are not returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -953,7 +957,7 @@ class TestGetMissedLectureTopics:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_empty_when_no_missed(self, db: object) -> None:
+    async def test_empty_when_no_missed(self, db: aiosqlite.Connection) -> None:
         """Returns empty when no lectures are missed."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
