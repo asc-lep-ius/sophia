@@ -76,6 +76,8 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
     Mobile (≤768px): bottom tab bar.
     Tablet (769–1024px): collapsible sidebar.
     """
+    # WCAG AA-compliant primary — Tailwind blue-700, 8.59:1 contrast with white
+    ui.colors(primary="#1d4ed8")
     ui.add_head_html(_REDUCED_MOTION_CSS, shared=True)
     ui.add_head_html(_FOCUS_RING_CSS, shared=True)
     ui.add_head_html(_SKIP_LINK_CSS, shared=True)

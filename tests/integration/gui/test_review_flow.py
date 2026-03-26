@@ -31,16 +31,12 @@ def test_review_empty_state_or_cards(gui_page: Page, gui_base_url: str) -> None:
     """Review page shows either the empty state, loading state, or review cards."""
     gui_page.goto(f"{gui_base_url}/review")
     gui_page.wait_for_load_state("networkidle")
-    # With no data, the empty state "All caught up!" should appear
-    empty = gui_page.locator("text=All caught up!")
-    # Or a review card is present (difficulty/stability stats)
-    stats = gui_page.locator("text=Difficulty")
-    # Or the DI container is not initialized yet (loading state)
-    connecting = gui_page.locator("text=Connecting")
-    not_init = gui_page.locator("text=not initialized")
-    assert (
-        empty.count() >= 1 or stats.count() >= 1 or connecting.count() >= 1 or not_init.count() >= 1
+    # Any of these states is acceptable — async rendering means content
+    # may take a moment to appear; CI may also lack credentials (auth-error).
+    combined = gui_page.locator(
+        "text=/All caught up!|Difficulty|Connecting|not initialized|Not logged in/",
     )
+    combined.first.wait_for(timeout=10_000)
 
 
 def test_review_nav_link_present(gui_page: Page, gui_base_url: str) -> None:

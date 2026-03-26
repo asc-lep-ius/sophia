@@ -26,6 +26,7 @@ from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.study import study_content
+from sophia.gui.state.storage_map import GENERAL_APP_CONTAINER
 from sophia.infra.di import create_app as create_di_container
 
 if TYPE_CHECKING:
@@ -61,6 +62,7 @@ def configure(settings: Settings | None = None) -> None:
                 create_di_container(resolved_settings),
             )
             set_container(_container)
+            app.storage.general[GENERAL_APP_CONTAINER] = _container
             log.info(
                 "gui_started",
                 host=resolved_settings.gui_host,
