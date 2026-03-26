@@ -206,6 +206,7 @@ class TestMarkMissed:
         row = await (
             await db.execute("SELECT missed_at FROM lecture_downloads WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] is not None
 
     async def test_already_missed_returns_false(self, db: aiosqlite.Connection) -> None:
@@ -241,6 +242,7 @@ class TestUnmarkMissed:
         row = await (
             await db.execute("SELECT missed_at FROM lecture_downloads WHERE episode_id = 'ep-1'")
         ).fetchone()
+        assert row is not None
         assert row[0] is None
 
     async def test_not_missed_returns_false(self, db: aiosqlite.Connection) -> None:

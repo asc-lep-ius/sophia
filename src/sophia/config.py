@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Typst (optional, auto-detected)
     typst_path: str = "typst"
 
+    # GUI
+    gui_host: str = "127.0.0.1"
+    gui_port: int = 8080
+    gui_reload: bool = False
+
     def ensure_dirs(self) -> None:
         """Create application directories with restrictive permissions."""
         for d in (self.data_dir, self.config_dir, self.cache_dir):

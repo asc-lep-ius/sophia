@@ -389,7 +389,7 @@ class TestSyncDeadlines:
             ]
         )
 
-        async def tiss_side_effect(course_number: str) -> list:
+        async def tiss_side_effect(course_number: str) -> list[object]:
             if course_number == "186.813":
                 raise RuntimeError("TISS down")
             return []

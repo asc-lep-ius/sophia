@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (getting a spot in the desired group, finding + aquiring textbooks, forcing yourself to confront unfamiliar fields of knowledge, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), and Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export) are functional with 1168 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export), and a NiceGUI web interface (dashboard, study sessions, review, search, deadlines, calibration analytics — WCAG 2.1 AA accessible) are functional with 1530 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
 
 | Abschnitt | Inhalt |
 |-----------|--------|
@@ -15,6 +15,7 @@ A student toolkit for TU Wien that automates the tedious parts of academic life 
 | [What Sophia Does](#what-sophia-does) | The modules and what each one handles |
 | [Chronos in Action](#chronos-in-action) | Deadline coach: discovery, estimation, tracking, reflection, calibration |
 | [Unified Plan (`sophia plan`)](#unified-plan-sophia-plan) | Combined recommendations: deadlines, reviews, gaps, missed topics |
+| [GUI — Web Interface](#gui--web-interface) | NiceGUI dashboard, study sessions, review, search, deadlines, calibration |
 | [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
 | [Architecture](#architecture) | Hexagonal design, protocols, async |
 | [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
@@ -429,6 +430,7 @@ Sophia is organized into modules, each named for a concept that matches its purp
 | **Chronos** ⏰ | `sophia deadlines` | Deadline coach: discovery from TUWEL calendar API, effort estimation with adaptive scaffolding, timer-based time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export, exam integration | ✅ Functional |
 | **Athena** 🎓 | `sophia study` | Study layer over Hermes: LLM topic extraction, confidence calibration, adaptive difficulty (cued/explain/transfer questions), guided pre/post-test sessions, FSRS-inspired adaptive spaced repetition, interleaved multi-topic sessions with missed-lecture prioritization, delayed feedback with reflection countdown, no-skip pre-test for generation effect, self-explanation, exam-aware review compression, Anki `.apkg` export | ✅ Functional |
 | **Plan** 🗺️ | `sophia plan` | Unified academic recommendation engine merging Chronos deadlines, Athena review schedule, confidence gaps, and missed-lecture topics into one prioritized view | ✅ Functional |
+| **GUI** 🖥️ | `sophia gui launch` | NiceGUI web interface: dashboard, study sessions, spaced repetition review, lecture search, deadline management, calibration analytics. WCAG 2.1 AA accessible. | ✅ Functional |
 | **Quickstart** 🚀 | `sophia quickstart` | Chains the full study pipeline (process → topics → confidence → session → export), skipping already-completed steps | ✅ Functional |
 | **Status** 📊 | `sophia status` | Cross-course dashboard showing lectures, topics, flashcards, and reviews due across all courses | ✅ Functional |
 
@@ -719,6 +721,7 @@ src/sophia/
 │   ├── quickstart.py # sophia quickstart <module-id>
 │   ├── register.py   # sophia register favorites/status/groups/go
 │   ├── run_job.py    # Internal: sophia _run-job
+│   ├── gui.py        # sophia gui launch
 │   ├── status.py     # sophia status (cross-course dashboard)
 │   └── study.py      # sophia study topics/confidence/session/review/explain/export/due
 ├── domain/           # Pure models, protocols, domain events
@@ -757,6 +760,14 @@ src/sophia/
 │   ├── embedder.py            # Embedding adapter (sentence-transformers)
 │   ├── knowledge_store.py     # Vector store adapter (ChromaDB)
 │   └── topic_extractor.py     # LLM topic extraction (Gemini/Groq/GitHub Models/Ollama)
+├── gui/              # NiceGUI web interface
+│   ├── app.py        # App factory and lifecycle
+│   ├── layout.py     # Responsive shell with navigation
+│   ├── components/   # Reusable UI components (flashcard, confidence rating, chart tables, keyboard shortcuts)
+│   ├── middleware/    # Health endpoints, error handling
+│   ├── pages/        # Dashboard, study, review, search, chronos, calibration
+│   ├── services/     # Service wrappers (study, review, chronos, calibration, search)
+│   └── state/        # Session store, persistent storage
 ├── infra/            # Cross-cutting concerns
 │   ├── http.py       # Shared HTTP client with retry logic
 │   ├── persistence.py # SQLite via aiosqlite (with 19 migrations)
@@ -789,6 +800,8 @@ Key design decisions:
 | Linting | ruff |
 | Type checking | Pyright (strict mode) |
 | Packaging | uv + hatchling |
+| Web GUI | NiceGUI 2.0+ (Vue/Quasar-based) |
+| E2E Testing | Playwright + axe-core (WCAG 2.1 AA) |
 | CI | GitLab CI |
 
 ---
@@ -810,6 +823,7 @@ Sophia pulls in several external tools and services beyond the core Python stack
 | chromadb | Stores and searches lecture embeddings (vector database) | Optional | `uv sync --extra hermes` |
 | openai | Connects to GitHub Models or local Ollama for topic extraction | Optional | `uv sync --extra hermes` |
 | genanki | Generates Anki flashcard decks (`.apkg` files) | Optional | `uv sync --extra athena` |
+| nicegui | Web-based GUI dashboard for study sessions, review, search, deadlines | Optional | `uv sync --extra web` |
 | ffmpeg | Extracts audio from lecture videos (system tool) | Optional (system) | See [System Tools](#5-system-tools) |
 | NVIDIA drivers | GPU acceleration for Whisper transcription | Optional (system) | See [System Tools](#5-system-tools) |
 
@@ -989,6 +1003,10 @@ Sophia accesses TU Wien data through three tiers, each chosen for the data it ca
 uv sync --all-extras --group dev   # install all optional features + test/lint tools
 uv run sophia lectures setup       # configure Hermes for your hardware (GPU, models, LLM provider)
 
+# GUI development
+uv sync --extra web --group dev    # install NiceGUI + test tools
+uv run sophia gui launch --reload  # start GUI with hot-reload
+
 # Or use the Makefile shortcuts:
 # make dev                         # install deps
 # make setup-hermes                # configure Hermes
@@ -998,7 +1016,7 @@ uv run sophia lectures setup       # configure Hermes for your hardware (GPU, mo
 # The lectures setup wizard auto-installs hermes deps when needed
 
 # Run the test suite
-uv run pytest                      # 1168 tests currently passing
+uv run pytest                      # 1530 tests currently passing
 uv run pytest --cov=sophia     # with coverage report
 uv run pytest -x               # stop on first failure (useful when debugging)
 
@@ -1028,6 +1046,14 @@ The test suite uses `pytest` with `pytest-asyncio` for async tests, `respx` for 
 | `make docker-down` | Stop services |
 | `make docker-logs` | Tail service logs |
 | `make docker-backup` | Backup SQLite from Docker volume |
+| `make test-gui` | Run GUI unit tests |
+| `make test-gui-e2e` | Run GUI E2E tests (Playwright) |
+| `make test-gui-a11y` | Run WCAG accessibility audit |
+| `make test-all` | Run all tests (core + GUI) |
+| `make docker-gui-build` | Build GUI Docker image |
+| `make docker-gui-up` | Start GUI service (detached) |
+| `make docker-gui-down` | Stop GUI service |
+| `make docker-gui-logs` | Tail GUI service logs |
 
 ### Docker
 
@@ -1039,6 +1065,14 @@ docker compose logs -f             # tail logs
 
 # Backup database from container
 make docker-backup                 # saves sophia-backup-YYYYMMDD.db
+
+# GUI Docker deployment
+docker compose -f docker-compose.gui.yml build    # build GUI image
+docker compose -f docker-compose.gui.yml up -d     # start GUI
+docker compose -f docker-compose.gui.yml down       # stop GUI
+docker compose -f docker-compose.gui.yml logs -f    # tail logs
+# Or use Makefile shortcuts:
+make docker-gui-build && make docker-gui-up
 ```
 
 ### CI/CD
@@ -1050,6 +1084,10 @@ GitLab CI runs on every push:
 3. **Test** — `pytest` with coverage on Python 3.12 + 3.14 matrix (75% minimum coverage)
 4. **Security** — `pip-audit` (allowed to fail)
 5. **Docker build** — builds the image; pushes to GitLab Container Registry on `master` merges (tagged with commit SHA + `latest`)
+6. **GUI unit tests** — `pytest tests/unit/gui/`
+7. **GUI E2E** — Playwright browser tests (allowed to fail)
+8. **GUI accessibility** — axe-core WCAG 2.1 AA audit (allowed to fail)
+9. **GUI Docker build** — builds GUI image, enforces 500MB size budget
 
 CI runs automatically via GitLab CI on every push.
 
@@ -1077,7 +1115,7 @@ CI runs automatically via GitLab CI on every push.
 | ✅ Done | **M3: Chronos** | Deadline discovery from TUWEL calendar API (assignments, quizzes, checkmarks, exams), effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export |
 | ✅ Done | **Athena-Chronos Integration** | Unified recommendation engine (`sophia plan`), review compression near exams, cross-module confidence hints, missed-lecture prioritization |
 | ✅ Done | **Missed Lectures** | Mark/unmark missed lectures, catch-up command, missed-only search, Athena interleave prioritization, unified planner boosting |
-| 📋 Planned | **M5: Polish & Ship** | Textual TUI, Gradio web interface, comprehensive documentation, stable public release |
+| 🔨 In Progress | **M5: Polish & Ship** | NiceGUI web GUI (6 pages, WCAG 2.1 AA accessible, Docker deployment), comprehensive documentation, stable public release |
 
 ---
 
@@ -1172,6 +1210,13 @@ uv run sophia --json <command>     # output as JSON
 uv run sophia --quiet <command>    # suppress output
 uv run sophia --no-color <command> # disable colors
 uv run sophia --debug <command>    # enable debug logging
+
+# GUI (Web Interface)
+uv run sophia gui launch                           # start web GUI at localhost:8080
+uv run sophia gui launch --port 3000               # custom port
+uv run sophia gui launch --reload                  # dev mode with hot-reload
+uv run sophia gui launch --host 0.0.0.0            # bind to all interfaces (Docker/remote)
+uv run sophia gui launch --native                  # open in native window (experimental)
 
 # Help
 uv run sophia --help               # show all commands
