@@ -61,6 +61,7 @@ dev = [
     "pyright>=1.1",
     "pytest-cov>=5.0",
     "pip-audit>=2.0",
+    "requests>=2.33.0",
     "playwright>=1.40",
     "pytest-playwright>=0.5",
     "axe-playwright-python>=0.1",
@@ -81,6 +82,7 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["e2e: End-to-end GUI tests requiring Playwright"]
+addopts = "-p nicegui.testing.user_plugin"
 
 [tool.pyright]
 pythonVersion = "3.12"
