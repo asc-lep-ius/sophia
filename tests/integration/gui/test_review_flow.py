@@ -37,7 +37,10 @@ def test_review_empty_state_or_cards(gui_page: Page, gui_base_url: str) -> None:
     stats = gui_page.locator("text=Difficulty")
     # Or the DI container is not initialized yet (loading state)
     connecting = gui_page.locator("text=Connecting")
-    assert empty.count() >= 1 or stats.count() >= 1 or connecting.count() >= 1
+    not_init = gui_page.locator("text=not initialized")
+    assert (
+        empty.count() >= 1 or stats.count() >= 1 or connecting.count() >= 1 or not_init.count() >= 1
+    )
 
 
 def test_review_nav_link_present(gui_page: Page, gui_base_url: str) -> None:

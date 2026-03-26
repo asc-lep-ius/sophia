@@ -73,7 +73,7 @@ def _render_density_toggle() -> None:
             if mode == current:
                 btn.props("color=primary")
             else:
-                btn.props("flat").classes("text-gray-900")
+                btn.props("flat text-color=dark")
 
 
 @ui.refreshable  # type: ignore[misc]
