@@ -57,6 +57,12 @@ def _clamp_stability_pct(stability: float) -> float:
 def review_content() -> None:
     """Main review page entry point — called by app_shell + error_boundary."""
     _render_header()
+
+    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    if not container:
+        ui.label("Application not initialized.").classes("text-red-700")
+        return
+
     _review_session()  # pyright: ignore[reportUnusedCoroutine]
 
 
