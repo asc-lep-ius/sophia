@@ -117,7 +117,7 @@ def chronos_content() -> None:
     """Main Chronos deadlines page — called by app_shell + error_boundary."""
     container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     if container is None:
-        ui.label("Application not initialized.").classes("text-red-500")
+        ui.label("Application not initialized.").classes("text-red-700")
         return
     _render_header(container)  # pyright: ignore[reportUnknownArgumentType]
     _deadline_list(container)  # pyright: ignore[reportUnknownArgumentType, reportUnusedCoroutine]

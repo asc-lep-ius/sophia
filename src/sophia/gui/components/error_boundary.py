@@ -39,5 +39,9 @@ def _render_error_card(exc: Exception, *, page_name: str) -> None:
             "text-gray-500 text-center mt-2"
         )
         with ui.row().classes("mt-6 justify-center gap-4"):
-            ui.button("Retry", on_click=lambda: ui.navigate.reload()).props("outline")
-            ui.button("Dashboard", on_click=lambda: ui.navigate.to("/"))
+            ui.button("Retry", on_click=lambda: ui.navigate.reload()).props(
+                "outline color=primary"
+            )
+            ui.button("Dashboard", on_click=lambda: ui.navigate.to("/")).props(
+                "color=primary"
+            )

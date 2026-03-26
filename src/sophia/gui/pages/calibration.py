@@ -219,7 +219,7 @@ def calibration_content() -> None:
     """Public entry point for the calibration dashboard page."""
     container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
     if container is None:
-        ui.label("Application not initialized.").classes("text-red-500")
+        ui.label("Application not initialized.").classes("text-red-700")
         return
 
     course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]

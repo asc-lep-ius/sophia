@@ -96,7 +96,10 @@ def set_timer_remaining(seconds: int) -> None:
 
 
 def get_interleaved() -> bool:
-    return app.storage.tab.get(TAB_STUDY_INTERLEAVED, False)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.tab.get(TAB_STUDY_INTERLEAVED, False)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return False
 
 
 def set_interleaved(value: bool) -> None:
