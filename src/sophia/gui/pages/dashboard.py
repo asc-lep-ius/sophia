@@ -11,7 +11,7 @@ from nicegui import app, ui
 from sophia.domain.models import DeadlineType, PlanItemType
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
-from sophia.gui.state.storage_map import BROWSER_DENSITY_MODE
+from sophia.gui.state.storage_map import TAB_DENSITY_MODE
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.chronos import get_deadlines
@@ -41,6 +41,7 @@ COLOR_NOT_STUDIED = "#6b7280"
 
 async def dashboard_content() -> None:
     """Main dashboard entry point — called by app_shell + error_boundary."""
+    await ui.context.client.connected()  # required before accessing app.storage.tab
     _render_header()
     await _dashboard_cards()
 
@@ -58,10 +59,10 @@ def _render_header() -> None:
 
 @ui.refreshable  # type: ignore[misc]
 def _render_density_toggle() -> None:
-    current: str = app.storage.browser.get(BROWSER_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    current: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     def _set_mode(mode: str) -> None:
-        app.storage.browser[BROWSER_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
+        app.storage.tab[TAB_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
         _render_density_toggle.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
         _dashboard_cards.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
@@ -87,7 +88,7 @@ async def _dashboard_cards() -> None:
         loading_spinner(text="Connecting...")
         return
 
-    density: str = app.storage.browser.get(BROWSER_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    density: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     try:
         db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]

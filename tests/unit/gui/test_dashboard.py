@@ -441,18 +441,18 @@ class TestDensityToggleRefresh:
             ) as cards_refresh,
             patch(f"{_PATCH_BASE}.app") as mock_app,
         ):
-            mock_app.storage.browser = {}
+            mock_app.storage.tab = {}
 
             # _set_mode is a closure; extract it by inspecting the button callbacks
             # rendered during _render_density_toggle. We call the toggle which builds
             # the UI and captures _set_mode as a click handler — but we can also just
             # replicate the closure logic that _set_mode performs:
             from sophia.gui.pages.dashboard import (
-                BROWSER_DENSITY_MODE,
                 DENSITY_FOCUS,
+                TAB_DENSITY_MODE,
             )
 
-            mock_app.storage.browser[BROWSER_DENSITY_MODE] = DENSITY_FOCUS
+            mock_app.storage.tab[TAB_DENSITY_MODE] = DENSITY_FOCUS
             _render_density_toggle.refresh()  # type: ignore[attr-defined]
             _dashboard_cards.refresh()  # type: ignore[attr-defined]
 
