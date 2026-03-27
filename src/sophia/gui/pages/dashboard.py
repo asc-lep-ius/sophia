@@ -186,7 +186,18 @@ def _render_deadlines_card(deadlines: list[Deadline]) -> None:
             ui.label("Upcoming Deadlines").classes("font-semibold")
 
         if not deadlines:
-            ui.label("No upcoming deadlines").classes("text-sm text-gray-400 italic")
+            with ui.column().classes("items-center py-4"):
+                ui.icon("event_note", color="gray").classes("text-3xl")
+                ui.label("No deadlines yet").classes("text-sm font-semibold text-gray-600 mt-2")
+                ui.label(
+                    "Sync your TUWEL deadlines to start"
+                    " the predict \u2192 act \u2192 reflect cycle."
+                ).classes("text-xs text-gray-500 text-center mt-1")
+                ui.button(
+                    "Sync Deadlines",
+                    icon="sync",
+                    on_click=lambda: ui.navigate.to("/chronos"),
+                ).props("flat dense").classes("mt-2")
             return
 
         for d in deadlines[:3]:
@@ -211,7 +222,12 @@ def _render_plan_items_card(plan_items: list[PlanItem]) -> None:
             ui.label("Academic Landscape").classes("font-semibold")
 
         if not plan_items:
-            ui.label("No items to display").classes("text-sm text-gray-400 italic")
+            with ui.column().classes("items-center py-4"):
+                ui.icon("playlist_add_check", color="gray").classes("text-3xl")
+                ui.label("No plan items").classes("text-sm font-semibold text-gray-600 mt-2")
+                ui.label(
+                    "Plan items appear after syncing deadlines and rating confidence per topic."
+                ).classes("text-xs text-gray-500 text-center mt-1")
             return
 
         for item in plan_items[:5]:

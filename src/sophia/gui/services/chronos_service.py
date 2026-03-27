@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from sophia.domain.errors import AuthError
 from sophia.services.chronos import (
     compute_priority_score as _compute_priority_score,
 )
@@ -35,6 +36,9 @@ from sophia.services.chronos import (
 )
 from sophia.services.chronos import (
     stop_timer as _stop_timer,
+)
+from sophia.services.chronos import (
+    sync_deadlines as _sync_deadlines,
 )
 
 if TYPE_CHECKING:
@@ -178,4 +182,16 @@ async def get_deadline_calibration(
         return await _get_calibration_metrics(app.db, deadline_type)
     except Exception:
         log.exception("get_calibration_failed", deadline_type=deadline_type)
+        return []
+
+
+async def sync_deadlines_from_gui(app: AppContainer) -> list[Deadline]:
+    """Fetch deadlines from all sources and update cache."""
+    try:
+        return await _sync_deadlines(app)
+    except AuthError:
+        log.warning("sync_deadlines_auth_expired")
+        return []
+    except Exception:
+        log.exception("sync_deadlines_failed")
         return []

@@ -201,3 +201,81 @@ class TestStorageAccessors:
         ):
             getattr(mod, setter)(arg)  # must not raise
         mock_debug.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# sync_deadlines_from_gui wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestSyncButton:
+    """Verify sync_deadlines_from_gui wrapper handles errors gracefully."""
+
+    @pytest.mark.asyncio
+    async def test_sync_wrapper_returns_empty_on_auth_error(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sophia.domain.errors import AuthError
+        from sophia.gui.services.chronos_service import sync_deadlines_from_gui
+
+        mock_app = MagicMock()
+        with patch(
+            "sophia.gui.services.chronos_service._sync_deadlines",
+            new_callable=AsyncMock,
+        ) as mock_sync:
+            mock_sync.side_effect = AuthError("expired")
+            result = await sync_deadlines_from_gui(mock_app)
+            assert result == []
+
+    @pytest.mark.asyncio
+    async def test_sync_wrapper_returns_empty_on_general_error(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sophia.gui.services.chronos_service import sync_deadlines_from_gui
+
+        mock_app = MagicMock()
+        with patch(
+            "sophia.gui.services.chronos_service._sync_deadlines",
+            new_callable=AsyncMock,
+        ) as mock_sync:
+            mock_sync.side_effect = RuntimeError("connection failed")
+            result = await sync_deadlines_from_gui(mock_app)
+            assert result == []
+
+    @pytest.mark.asyncio
+    async def test_sync_wrapper_returns_deadlines_on_success(self) -> None:
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from sophia.gui.services.chronos_service import sync_deadlines_from_gui
+
+        mock_app = MagicMock()
+        mock_deadlines = [MagicMock(), MagicMock()]
+        with patch(
+            "sophia.gui.services.chronos_service._sync_deadlines",
+            new_callable=AsyncMock,
+        ) as mock_sync:
+            mock_sync.return_value = mock_deadlines
+            result = await sync_deadlines_from_gui(mock_app)
+            assert result == mock_deadlines
+            mock_sync.assert_called_once_with(mock_app)
+
+
+# ---------------------------------------------------------------------------
+# Chronos empty state — source inspection
+# ---------------------------------------------------------------------------
+
+
+class TestChronosEmptyState:
+    """Verify Chronos empty state shows pedagogical guidance."""
+
+    def test_empty_state_text_constants(self) -> None:
+        import inspect
+
+        from sophia.gui.pages.chronos import _deadline_list
+
+        # NiceGUI @refreshable wraps the function; access via .func
+        func = getattr(_deadline_list, "func", _deadline_list)
+        source = inspect.getsource(func)
+        assert "No deadlines synced" in source
+        assert "predict" in source.lower()
+        assert "Sync from TUWEL" in source

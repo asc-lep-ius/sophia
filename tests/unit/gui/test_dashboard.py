@@ -285,7 +285,9 @@ class TestEmptyStates:
                 _render_deadlines_card([])
 
             await user.open("/test-empty-deadlines")
-            await user.should_see("No upcoming deadlines")
+            await user.should_see("No deadlines yet")
+            await user.should_see("predict")
+            await user.should_see("Sync Deadlines")
 
     async def test_empty_plan_items_shows_no_items(self) -> None:
         async with user_simulation() as user:
@@ -295,7 +297,8 @@ class TestEmptyStates:
                 _render_plan_items_card([])
 
             await user.open("/test-empty-plan")
-            await user.should_see("No items to display")
+            await user.should_see("No plan items")
+            await user.should_see("Plan items appear after syncing")
 
 
 # ---------------------------------------------------------------------------
