@@ -104,8 +104,8 @@ class TestReviewContent:
         async with user_simulation() as user:
 
             @ui.page("/test-review-header")
-            def page() -> None:
-                review_content()
+            async def page() -> None:
+                await review_content()
 
             await user.open("/test-review-header")
             await user.should_see("Review")
@@ -117,8 +117,8 @@ class TestReviewContent:
         async with user_simulation() as user:
 
             @ui.page("/test-review-nocrash")
-            def page() -> None:
-                review_content()
+            async def page() -> None:
+                await review_content()
 
             await user.open("/test-review-nocrash")
             await user.should_see("Review")

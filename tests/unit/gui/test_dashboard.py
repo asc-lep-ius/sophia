@@ -373,8 +373,8 @@ class TestDashboardContent:
         async with user_simulation() as user:
 
             @ui.page("/test-dash-header")
-            def page() -> None:
-                dashboard_content()
+            async def page() -> None:
+                await dashboard_content()
 
             await user.open("/test-dash-header")
             await user.should_see("Dashboard")
@@ -387,8 +387,8 @@ class TestDashboardContent:
         async with user_simulation() as user:
 
             @ui.page("/test-dash-nocrash")
-            def page() -> None:
-                dashboard_content()
+            async def page() -> None:
+                await dashboard_content()
 
             await user.open("/test-dash-nocrash")
             await user.should_see("Dashboard")

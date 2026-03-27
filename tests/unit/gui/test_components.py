@@ -21,8 +21,8 @@ class TestErrorBoundary:
         async with user_simulation() as user:
 
             @ui.page("/")
-            def index() -> None:
-                error_boundary(lambda: ui.label("All good"), page_name="Test")
+            async def index() -> None:
+                await error_boundary(lambda: ui.label("All good"), page_name="Test")
 
             await user.open("/")
             await user.should_see("All good")
@@ -36,8 +36,8 @@ class TestErrorBoundary:
         async with user_simulation() as user:
 
             @ui.page("/")
-            def index() -> None:
-                error_boundary(_broken, page_name="Broken")
+            async def index() -> None:
+                await error_boundary(_broken, page_name="Broken")
 
             await user.open("/")
             await user.should_see("Something went wrong")
@@ -52,11 +52,38 @@ class TestErrorBoundary:
         async with user_simulation() as user:
 
             @ui.page("/")
-            def index() -> None:
-                error_boundary(_broken, page_name="MyPage")
+            async def index() -> None:
+                await error_boundary(_broken, page_name="MyPage")
 
             await user.open("/")
             await user.should_see("MyPage")
+
+    async def test_awaits_async_content_fn(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            async def index() -> None:
+                async def _async_content() -> None:
+                    ui.label("Async content rendered")
+
+                await error_boundary(_async_content, page_name="AsyncTest")
+
+            await user.open("/")
+            await user.should_see("Async content rendered")
+
+    async def test_catches_async_content_exception(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            async def index() -> None:
+                async def _broken_async() -> None:
+                    msg = "async boom"
+                    raise ValueError(msg)
+
+                await error_boundary(_broken_async, page_name="AsyncBroken")
+
+            await user.open("/")
+            await user.should_see("Something went wrong")
 
 
 class TestSkeletonCard:

@@ -16,6 +16,11 @@ log = structlog.get_logger()
 _container_ref: dict[str, Any] = {"container": None, "error": None}
 
 
+def get_container() -> Any:
+    """Return the DI container, or None if not initialized."""
+    return _container_ref["container"]
+
+
 def set_container(container: object) -> None:
     """Mark the DI container as initialized."""
     _container_ref["container"] = container

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
@@ -59,6 +60,51 @@ _SKIP_LINK_CSS = """
 </style>
 """
 
+_RESPONSIVE_NAV_CSS = """
+<style>
+/* Responsive nav layout — avoids Quasar's .hidden !important conflict */
+.sophia-sidebar {
+    display: none;
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    width: 14rem;
+    flex-direction: column;
+    z-index: 50;
+}
+@media (min-width: 1024px) {
+    .sophia-sidebar {
+        display: flex;
+    }
+}
+.sophia-bottom-nav {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 50;
+}
+@media (min-width: 1024px) {
+    .sophia-bottom-nav {
+        display: none;
+    }
+}
+.sophia-main {
+    min-height: 100vh;
+    padding: 1rem;
+    padding-bottom: 5rem;
+}
+@media (min-width: 1024px) {
+    .sophia-main {
+        margin-left: 14rem;
+        padding-bottom: 1rem;
+    }
+}
+</style>
+"""
+
 NAV_ITEMS: list[dict[str, str]] = [
     {"label": "Dashboard", "icon": "dashboard", "path": "/"},
     {"label": "Study", "icon": "school", "path": "/study"},
@@ -69,7 +115,7 @@ NAV_ITEMS: list[dict[str, str]] = [
 ]
 
 
-def app_shell(content_fn: Callable[[], Any]) -> None:
+async def app_shell(content_fn: Callable[[], Any]) -> None:
     """Wrap *content_fn* in a responsive app shell.
 
     Desktop (≥1025px): fixed left sidebar with navigation links.
@@ -81,6 +127,7 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
     ui.add_head_html(_REDUCED_MOTION_CSS, shared=True)
     ui.add_head_html(_FOCUS_RING_CSS, shared=True)
     ui.add_head_html(_SKIP_LINK_CSS, shared=True)
+    ui.add_head_html(_RESPONSIVE_NAV_CSS, shared=True)
 
     # Skip-to-content link — visible only on focus
     ui.html('<a href="#main-content" class="skip-link">Skip to content</a>')
@@ -89,9 +136,7 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
     with (
         ui.element("nav")
         .props('aria-label="Main navigation"')
-        .classes(
-            "hidden lg:flex fixed left-0 top-0 h-screen w-56 bg-gray-900 text-white flex-col z-50"
-        )
+        .classes("sophia-sidebar bg-gray-900 text-white")
     ):
         _sidebar_content()
 
@@ -99,10 +144,7 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
     with (
         ui.element("nav")
         .props('aria-label="Mobile navigation"')
-        .classes(
-            "flex lg:hidden fixed bottom-0 left-0 right-0 bg-gray-900 text-white"
-            " justify-around items-center h-16 z-50"
-        )
+        .classes("sophia-bottom-nav bg-gray-900 text-white justify-around items-center h-16")
     ):
         _bottom_nav_content()
 
@@ -110,9 +152,11 @@ def app_shell(content_fn: Callable[[], Any]) -> None:
     with (
         ui.element("main")
         .props('id="main-content"')
-        .classes("lg:ml-56 min-h-screen p-4 pb-20 lg:pb-4")
+        .classes("sophia-main")
     ):
-        content_fn()
+        result = content_fn()
+        if inspect.isawaitable(result):
+            await result
 
     register_keyboard_shortcuts()
 

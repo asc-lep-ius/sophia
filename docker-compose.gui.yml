@@ -7,10 +7,12 @@ services:
       - "${SOPHIA_GUI_PORT:-8080}:8080"
     volumes:
       - sophia-data:/data
+      - ${SOPHIA_CONFIG_DIR:-~/.config/sophia}:/config:ro
     environment:
       - SOPHIA_GUI_HOST=0.0.0.0
       - SOPHIA_GUI_PORT=8080
       - SOPHIA_DATA_DIR=/data
+      - SOPHIA_CONFIG_DIR=/config
       - SOPHIA_LOG_FORMAT=json
     env_file: .env
     deploy:

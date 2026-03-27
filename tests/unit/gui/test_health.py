@@ -5,6 +5,7 @@ from __future__ import annotations
 from starlette.testclient import TestClient
 
 from sophia.gui.middleware.health import (
+    get_container,
     health,
     ready,
     reset_state,
@@ -77,3 +78,26 @@ class TestReadyEndpoint:
         client = _build_test_app()
         resp = client.get("/ready")
         assert resp.status_code == 503
+
+
+class TestGetContainer:
+    def setup_method(self) -> None:
+        reset_state()
+
+    def test_returns_none_before_init(self) -> None:
+        assert get_container() is None
+
+    def test_returns_container_after_set(self) -> None:
+        sentinel = object()
+        set_container(sentinel)
+        assert get_container() is sentinel
+
+    def test_returns_none_after_reset(self) -> None:
+        set_container(object())
+        reset_state()
+        assert get_container() is None
+
+    def test_returns_none_after_error(self) -> None:
+        set_container(object())
+        set_container_error("boom")
+        assert get_container() is None
