@@ -56,11 +56,13 @@ def _render_header() -> None:
         _render_density_toggle()
 
 
+@ui.refreshable  # type: ignore[misc]
 def _render_density_toggle() -> None:
     current: str = app.storage.browser.get(BROWSER_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     def _set_mode(mode: str) -> None:
         app.storage.browser[BROWSER_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
+        _render_density_toggle.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
         _dashboard_cards.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
     with ui.button_group():
@@ -97,12 +99,13 @@ async def _dashboard_cards() -> None:
         skeleton_card()
         return
 
-    if density == DENSITY_FOCUS:
-        _render_focus_mode(reviews, deadlines, plan_items)
-    elif density == DENSITY_FULL:
-        _render_full_mode(reviews, deadlines, plan_items)
-    else:
-        _render_standard_mode(reviews, deadlines, plan_items)
+    with ui.column().classes("w-full transition-opacity duration-200"):
+        if density == DENSITY_FOCUS:
+            _render_focus_mode(reviews, deadlines, plan_items)
+        elif density == DENSITY_FULL:
+            _render_full_mode(reviews, deadlines, plan_items)
+        else:
+            _render_standard_mode(reviews, deadlines, plan_items)
 
 
 # ---------------------------------------------------------------------------
