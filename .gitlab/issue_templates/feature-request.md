@@ -105,4 +105,4 @@ Before starting:
 
 ---
 
-/label ~"feature-request" ~"needs-triage"
+/label ~feature ~"needs-triage"
