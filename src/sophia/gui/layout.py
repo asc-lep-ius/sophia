@@ -149,11 +149,7 @@ async def app_shell(content_fn: Callable[[], Any]) -> None:
         _bottom_nav_content()
 
     # Main content area with left margin on desktop
-    with (
-        ui.element("main")
-        .props('id="main-content"')
-        .classes("sophia-main")
-    ):
+    with ui.element("main").props('id="main-content"').classes("sophia-main"):
         result = content_fn()
         if inspect.isawaitable(result):
             await result
