@@ -169,3 +169,9 @@ class TopicExtractor(Protocol):
     """Uses LLM to extract topic labels from text content."""
 
     async def extract_topics(self, text: str, course_context: str = "") -> list[str]: ...
+
+
+class SessionHealthCheck(Protocol):
+    """Lightweight session validation — used by GUI keepalive."""
+
+    async def is_session_valid(self) -> bool: ...

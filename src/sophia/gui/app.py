@@ -26,6 +26,7 @@ from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.study import study_content
+from sophia.gui.services.session_health import SessionHealthMonitor
 from sophia.infra.di import create_app as create_di_container
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ log = structlog.get_logger()
 # Module-level reference for the DI exit stack and container
 _exit_stack: contextlib.AsyncExitStack | None = None
 _container: AppContainer | None = None
+_health_monitor: SessionHealthMonitor | None = None
 
 
 def configure(settings: Settings | None = None) -> None:
@@ -53,7 +55,7 @@ def configure(settings: Settings | None = None) -> None:
     # DI lifecycle
     @app.on_startup  # type: ignore[reportUnknownMemberType]
     async def _startup() -> None:  # pyright: ignore[reportUnusedFunction]
-        global _exit_stack, _container  # noqa: PLW0603
+        global _exit_stack, _container, _health_monitor  # noqa: PLW0603
         reset_state()
         _exit_stack = contextlib.AsyncExitStack()
         try:
@@ -66,6 +68,11 @@ def configure(settings: Settings | None = None) -> None:
                 host=resolved_settings.gui_host,
                 port=resolved_settings.gui_port,
             )
+            _health_monitor = SessionHealthMonitor(
+                _container.moodle,
+                resolved_settings.session_keepalive_interval,
+            )
+            _health_monitor.start()
         except AuthError as exc:
             log.warning("gui_auth_error", error=str(exc))
             set_container_error(str(exc))
@@ -75,7 +82,10 @@ def configure(settings: Settings | None = None) -> None:
 
     @app.on_shutdown  # type: ignore[reportUnknownMemberType]
     async def _shutdown() -> None:  # pyright: ignore[reportUnusedFunction]
-        global _exit_stack, _container  # noqa: PLW0603
+        global _exit_stack, _container, _health_monitor  # noqa: PLW0603
+        if _health_monitor is not None:
+            await _health_monitor.stop()
+            _health_monitor = None
         if _exit_stack is not None:
             await _exit_stack.aclose()
             _exit_stack = None
