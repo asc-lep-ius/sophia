@@ -5,19 +5,19 @@
      For new behaviour → feature-request. For broken behaviour → bug-report.
      ────────────────────────────────────────────────────────────────────────── -->
 
-## Summary
+## 📋 Summary
 
 <!-- What needs to be done and why? One short paragraph.
      Focus on the goal, not the implementation. -->
 
-## Motivation / Context
+## 🎯 Motivation / Context
 
 <!-- Why does this matter now? Link to the broader feature, issue, or
      architectural decision this unblocks.
      Examples: "Prerequisite for #42.", "Technical debt causing test flakiness.",
      "Required by change in upstream TISS API response format." -->
 
-## Definition of Done
+## ✅ Definition of Done
 
 <!-- GitLab renders these as interactive checkboxes — tick them off as you go.
      Be specific enough that any contributor can self-assess whether they're done. -->
@@ -28,14 +28,25 @@
 - [ ] <!-- e.g. Relevant docs / docstrings updated -->
 - [ ] <!-- e.g. CHANGELOG entry added (if externally visible) -->
 
-## Out of Scope
+## 🧪 Verification
+
+<!-- Which commands / tests confirm this task is complete? -->
+
+```bash
+# e.g.
+uv run pytest tests/
+uv run ruff check .
+uv run pyright
+```
+
+## 🚫 Out of Scope
 
 <!-- What does this issue explicitly NOT touch?
      Prevents contributors from over-engineering or gold-plating. -->
 
 - 
 
-## Dependencies
+## 🔗 Dependencies
 
 <!-- Is this blocked by another issue? Does completing this unblock something?
      Use GitLab quick actions below if applicable. -->
@@ -45,7 +56,7 @@
 | Blocked by | <!-- #N or n/a --> |
 | Unblocks | <!-- #N or n/a --> |
 
-## Affected Module(s)
+## 📦 Affected Module(s)
 
 - [ ] Bücherwurm
 - [ ] Kairos

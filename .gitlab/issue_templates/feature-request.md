@@ -4,19 +4,25 @@
      For broken behaviour → use bug-report. For chores/refactors → use task.
      ────────────────────────────────────────────────────────────────────────── -->
 
-## Problem Statement
+## 🎉 Problem Statement
 
 <!-- What pain point does this solve? Who experiences it?
      Example: "When a student has 6 open registrations on TISS, Kairos
      has no way to prioritise which one to attempt first, so it always
      tries them in arbitrary order and the time-sensitive ones fail." -->
 
-## Proposed Solution
+## 💁 User Story
+
+> As a **[persona]**, I want to **[action]**, so that **[benefit]**.
+
+<!-- Personas: student (cramming), student (planning), power user (CLI), casual user (GUI) -->
+
+## 💡 Proposed Solution
 
 <!-- Your candidate approach — not the only valid one, just a starting point.
      Keep it short. The Acceptance Criteria below is what actually matters. -->
 
-## Acceptance Criteria
+## 🎯 Acceptance Criteria
 
 <!-- Gherkin doubles as the contract between you and every contributor.
      Add as many Scenarios as needed. Title Case keywords are required
@@ -38,7 +44,21 @@ Feature: <feature name, e.g. "Registration priority queue">
     Then <expected outcome>
 ```
 
-## Out of Scope
+## 🛡️ Abuse & Misuse Cases
+
+<!-- Abuse = intentional malicious actions. Misuse = accidental but harmful. Delete if not applicable. -->
+
+- **Abuse:** <!-- e.g. "Attacker crafts a malicious TISS session cookie to exfiltrate data." -->
+- **Misuse:** <!-- e.g. "User accidentally triggers bulk registration for all courses." -->
+- **Mitigation:** <!-- e.g. "Rate-limit TISS API calls; require confirmation for bulk actions." -->
+
+## 🧪 Test Planning
+
+- **E2E Scenarios:** <!-- List critical user flows to validate -->
+- **Integration Tests:** <!-- List systems/APIs involved -->
+- **UI Test Coverage:** <!-- Visual states or screenshot requirements -->
+
+## 🚫 Out of Scope
 
 <!-- Explicitly list what this issue does NOT cover.
      This prevents well-meaning contributors from expanding scope.
@@ -47,7 +67,7 @@ Feature: <feature name, e.g. "Registration priority queue">
 
 - 
 
-## Affected Module(s)
+## 📦 Affected Module(s)
 
 <!-- Tick whichever apply -->
 - [ ] Bücherwurm (book discovery / acquisition)
@@ -59,12 +79,13 @@ Feature: <feature name, e.g. "Registration priority queue">
 - [ ] CLI / UI
 - [ ] Docs
 
-## Implementation Notes
+## 🤓 Implementation Steps
 
-<!-- Optional: constraints, known pitfalls, related prior art in the codebase.
-     Delete this section if you have nothing to add. -->
+<!-- Reserved for developers. Add numbered steps with estimates. -->
 
-## For Contributors
+1. <!-- Step description — (estimate) -->
+
+## 🤝 For Contributors
 
 <!-- Delete this section if you are the maintainer self-assigning.
      Leave it when the issue is open for external contribution. -->
@@ -73,6 +94,14 @@ Before starting:
 1. Comment on this issue to claim it — avoids duplicate work.
 2. Read [CONTRIBUTING.md](../../CONTRIBUTING.md) if you haven't already.
 3. Open your draft PR early and link it here with `Closes #<this issue number>`.
+
+## ✅ Definition of Ready
+
+- [ ] Scope fits a single iteration (not a hidden epic)
+- [ ] Acceptance criteria written in Gherkin
+- [ ] Edge cases identified
+- [ ] No open questions remaining
+- [ ] Abuse/misuse cases considered (if user-facing)
 
 ---
 
