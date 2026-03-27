@@ -10,7 +10,8 @@ from nicegui import app, ui
 
 from sophia.domain.models import DeadlineType, PlanItemType
 from sophia.gui.components.loading import loading_spinner, skeleton_card
-from sophia.gui.state.storage_map import BROWSER_DENSITY_MODE, GENERAL_APP_CONTAINER
+from sophia.gui.middleware.health import get_container
+from sophia.gui.state.storage_map import BROWSER_DENSITY_MODE
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.chronos import get_deadlines
@@ -38,10 +39,10 @@ COLOR_NOT_STUDIED = "#6b7280"
 # ---------------------------------------------------------------------------
 
 
-def dashboard_content() -> None:
+async def dashboard_content() -> None:
     """Main dashboard entry point — called by app_shell + error_boundary."""
     _render_header()
-    _dashboard_cards()  # pyright: ignore[reportUnusedCoroutine]
+    await _dashboard_cards()
 
 
 # ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ def _render_density_toggle() -> None:
 @ui.refreshable  # type: ignore[misc]
 async def _dashboard_cards() -> None:
     """Fetch data and render density-appropriate cards."""
-    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    container = get_container()
     if not container:
         loading_spinner(text="Connecting...")
         return

@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING, Final
 import structlog
 from nicegui import app, ui
 
+from sophia.gui.middleware.health import get_container
 from sophia.gui.services.search_service import search_lectures
 from sophia.gui.state.storage_map import (
-    GENERAL_APP_CONTAINER,
     TAB_SEARCH_BLOOM_LEVEL,
     TAB_SEARCH_BLOOM_RESPONSE,
     TAB_SEARCH_COURSE_FILTER,
@@ -128,7 +128,7 @@ def _set_course_filter(value: str) -> None:  # pyright: ignore[reportUnusedFunct
 
 def search_content() -> None:
     """Public entry point — renders the Hermes search page."""
-    container: AppContainer | None = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]
+    container: AppContainer | None = get_container()
     if container is None:
         ui.label("Application not initialized.").classes("text-red-700")
         return

@@ -30,8 +30,8 @@ class TestAppShell:
         async with user_simulation() as user:
 
             @ui.page("/")
-            def index() -> None:
-                app_shell(lambda: ui.label("Main Content"))
+            async def index() -> None:
+                await app_shell(lambda: ui.label("Main Content"))
 
             await user.open("/")
             await user.should_see("Sophia")
@@ -44,8 +44,8 @@ class TestAppShell:
             async with user_simulation() as user:
 
                 @ui.page("/")
-                def index() -> None:
-                    app_shell(lambda: ui.label("test"))
+                async def index() -> None:
+                    await app_shell(lambda: ui.label("test"))
 
                 await user.open("/")
                 mock_register.assert_called_once()
@@ -54,12 +54,25 @@ class TestAppShell:
         async with user_simulation() as user:
 
             @ui.page("/")
-            def index() -> None:
-                app_shell(lambda: ui.label("test"))
+            async def index() -> None:
+                await app_shell(lambda: ui.label("test"))
 
             await user.open("/")
             for item in NAV_ITEMS:
                 await user.should_see(item["label"])
+
+    async def test_shell_awaits_async_content_fn(self) -> None:
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            async def index() -> None:
+                async def _async_content() -> None:
+                    ui.label("Async Shell Content")
+
+                await app_shell(_async_content)
+
+            await user.open("/")
+            await user.should_see("Async Shell Content")
 
 
 class TestStorageMapSessionIds:

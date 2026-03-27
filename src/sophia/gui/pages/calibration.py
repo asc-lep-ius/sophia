@@ -8,6 +8,7 @@ import structlog
 from nicegui import app, ui
 
 from sophia.gui.components.chart_table import chart_with_table
+from sophia.gui.middleware.health import get_container
 from sophia.gui.services.calibration_service import (
     build_blind_spot_chart_data,
     build_confidence_scatter_data,
@@ -18,7 +19,6 @@ from sophia.gui.services.calibration_service import (
     get_study_sessions_for_topic,
 )
 from sophia.gui.state.storage_map import (
-    GENERAL_APP_CONTAINER,
     TAB_CALIBRATION_COURSE_FILTER,
     USER_CURRENT_COURSE,
 )
@@ -215,9 +215,9 @@ def format_socratic_feedback(topic: str, tier: str, session_count: int, avg_scor
 # --- Entry point -------------------------------------------------------------
 
 
-def calibration_content() -> None:
+async def calibration_content() -> None:
     """Public entry point for the calibration dashboard page."""
-    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    container = get_container()
     if container is None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
@@ -228,7 +228,7 @@ def calibration_content() -> None:
         return
 
     _render_header()
-    _charts(container, course_id)  # pyright: ignore[reportUnusedCoroutine, reportUnknownArgumentType]
+    await _charts(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
 
 
 # --- Header ------------------------------------------------------------------

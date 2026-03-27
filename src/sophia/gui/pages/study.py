@@ -13,6 +13,7 @@ from sophia.gui.components.confidence_rating import confidence_rating
 from sophia.gui.components.flashcard import flashcard
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.components.math_input import math_input
+from sophia.gui.middleware.health import get_container
 from sophia.gui.services.study_service import (
     check_novel_topic,
     complete_session,
@@ -27,7 +28,6 @@ from sophia.gui.services.study_service import (
     start_session,
 )
 from sophia.gui.state.session_store import SessionState, SessionStore
-from sophia.gui.state.storage_map import GENERAL_APP_CONTAINER
 from sophia.gui.state.study_state import (
     get_active_topic as _get_active_topic,
 )
@@ -178,10 +178,10 @@ def _render_difficulty_badge(difficulty: DifficultyLevel) -> None:
     ui.badge(difficulty.value.upper(), color=color).classes("text-xs")
 
 
-def study_content() -> None:
+async def study_content() -> None:
     """Main study page entry point — called by app_shell + error_boundary."""
     _render_header()
-    _study_session()  # pyright: ignore[reportUnusedCoroutine]
+    await _study_session()
 
 
 def _render_header() -> None:
@@ -217,7 +217,7 @@ def _render_resume_prompt(
 @ui.refreshable  # type: ignore[misc]
 async def _study_session() -> None:
     """Fetch data and render the 5-step study stepper."""
-    container: AppContainer | None = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]
+    container: AppContainer | None = get_container()
     if not container:
         loading_spinner(text="Connecting...")
         return

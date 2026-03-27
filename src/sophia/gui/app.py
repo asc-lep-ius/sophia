@@ -26,7 +26,6 @@ from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.study import study_content
-from sophia.gui.state.storage_map import GENERAL_APP_CONTAINER
 from sophia.infra.di import create_app as create_di_container
 
 if TYPE_CHECKING:
@@ -62,7 +61,6 @@ def configure(settings: Settings | None = None) -> None:
                 create_di_container(resolved_settings),
             )
             set_container(_container)
-            app.storage.general[GENERAL_APP_CONTAINER] = _container
             log.info(
                 "gui_started",
                 host=resolved_settings.gui_host,
@@ -93,28 +91,28 @@ def _register_pages() -> None:
     """Register all NiceGUI page routes."""
 
     @ui.page("/")
-    def dashboard_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(dashboard_content, page_name="Dashboard"))
+    async def dashboard_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(dashboard_content, page_name="Dashboard"))
 
     @ui.page("/study")
-    def study_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(study_content, page_name="Study"))
+    async def study_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(study_content, page_name="Study"))
 
     @ui.page("/review")
-    def review_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(review_content, page_name="Review"))
+    async def review_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(review_content, page_name="Review"))
 
     @ui.page("/search")
-    def search_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(search_content, page_name="Search"))
+    async def search_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(search_content, page_name="Search"))
 
     @ui.page("/chronos")
-    def chronos_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(chronos_content, page_name="Chronos"))
+    async def chronos_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(chronos_content, page_name="Chronos"))
 
     @ui.page("/calibration")
-    def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
-        app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
+    async def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
 
 
 def run(settings: Settings | None = None) -> None:

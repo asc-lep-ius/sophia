@@ -9,6 +9,7 @@ import structlog
 from nicegui import app, ui
 
 from sophia.gui.components.chart_table import chart_with_table
+from sophia.gui.middleware.health import get_container
 from sophia.gui.services.chronos_service import (
     estimate_effort,
     format_deadline_feedback,
@@ -22,7 +23,6 @@ from sophia.gui.services.chronos_service import (
     stop_deadline_timer,
 )
 from sophia.gui.state.storage_map import (
-    GENERAL_APP_CONTAINER,
     TAB_CHRONOS_ACTIVE_TIMER,
     TAB_CHRONOS_COURSE_FILTER,
     TAB_CHRONOS_ESTIMATE_DRAFT,
@@ -113,15 +113,15 @@ def _get_current_course() -> int:  # pyright: ignore[reportUnusedFunction]
 # --- Entry point -------------------------------------------------------------
 
 
-def chronos_content() -> None:
+async def chronos_content() -> None:
     """Main Chronos deadlines page — called by app_shell + error_boundary."""
-    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    container = get_container()
     if container is None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
     _render_header(container)  # pyright: ignore[reportUnknownArgumentType]
-    _deadline_list(container)  # pyright: ignore[reportUnknownArgumentType, reportUnusedCoroutine]
-    _render_calibration_chart(container)  # pyright: ignore[reportUnknownArgumentType, reportUnusedCoroutine]
+    await _deadline_list(container)  # pyright: ignore[reportUnknownArgumentType]
+    await _render_calibration_chart(container)  # pyright: ignore[reportUnknownArgumentType]
 
 
 # --- Header ------------------------------------------------------------------

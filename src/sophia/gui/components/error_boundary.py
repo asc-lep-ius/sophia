@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -15,7 +16,7 @@ from sophia.gui.middleware.error_handler import handle_exception
 log = structlog.get_logger()
 
 
-def error_boundary(content_fn: Callable[[], Any], *, page_name: str = "page") -> None:
+async def error_boundary(content_fn: Callable[[], Any], *, page_name: str = "page") -> None:
     """Render *content_fn* inside an error boundary.
 
     If *content_fn* raises, log the error and show a recovery card with
@@ -23,7 +24,9 @@ def error_boundary(content_fn: Callable[[], Any], *, page_name: str = "page") ->
     page doesn't take down the whole app.
     """
     try:
-        content_fn()
+        result = content_fn()
+        if inspect.isawaitable(result):
+            await result
     except Exception as exc:
         handle_exception(exc)
         _render_error_card(exc, page_name=page_name)

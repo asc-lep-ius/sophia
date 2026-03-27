@@ -9,6 +9,7 @@ from nicegui import app, ui
 
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.components.review_card import review_card
+from sophia.gui.middleware.health import get_container
 from sophia.gui.services.review_service import (
     complete_review_item,
     compute_interval_previews,
@@ -16,7 +17,6 @@ from sophia.gui.services.review_service import (
     rating_to_score,
 )
 from sophia.gui.state.storage_map import (
-    GENERAL_APP_CONTAINER,
     TAB_REVIEW_INDEX,
     TAB_REVIEW_RECALL_TEXT,
     TAB_REVIEW_SCORES,
@@ -54,16 +54,16 @@ def _clamp_stability_pct(stability: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-def review_content() -> None:
+async def review_content() -> None:
     """Main review page entry point — called by app_shell + error_boundary."""
     _render_header()
 
-    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    container = get_container()
     if not container:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    _review_session()  # pyright: ignore[reportUnusedCoroutine]
+    await _review_session()
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ def _reset_session_state() -> None:
 @ui.refreshable  # type: ignore[misc]
 async def _review_session() -> None:
     """Fetch due reviews and render the current review state."""
-    container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    container = get_container()
     if not container:
         loading_spinner(text="Connecting...")
         return
@@ -246,7 +246,7 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
         _set_recall_text("")
 
         try:
-            container = app.storage.general.get(GENERAL_APP_CONTAINER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+            container = get_container()
             if container:
                 db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
                 await complete_review_item(db, card.topic, card.course_id, score)  # pyright: ignore[reportUnknownArgumentType]
