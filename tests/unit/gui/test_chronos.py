@@ -135,3 +135,69 @@ class TestExports:
         from sophia.gui.pages.chronos import format_hours
 
         assert callable(format_hours)
+
+
+# ---------------------------------------------------------------------------
+# Storage accessors — RuntimeError guards
+# ---------------------------------------------------------------------------
+
+
+class TestStorageAccessors:
+    """Verify that storage accessors return safe defaults outside a NiceGUI request context."""
+
+    @pytest.mark.parametrize(
+        ("accessor", "expected_default"),
+        [
+            ("_get_course_filter", None),
+            ("_get_active_timer", ""),
+            ("_get_estimate_draft", {}),
+        ],
+    )
+    def test_tab_getter_returns_default_on_runtime_error(
+        self,
+        accessor: str,
+        expected_default: object,
+    ) -> None:
+        from unittest.mock import PropertyMock, patch
+
+        import sophia.gui.pages.chronos as mod
+
+        mock_tab = PropertyMock(side_effect=RuntimeError)
+        with patch.object(type(mod.app.storage), "tab", mock_tab):
+            result = getattr(mod, accessor)()
+        assert result == expected_default
+
+    def test_get_current_course_returns_zero_on_runtime_error(self) -> None:
+        from unittest.mock import PropertyMock, patch
+
+        import sophia.gui.pages.chronos as mod
+
+        mock_user = PropertyMock(side_effect=RuntimeError)
+        with patch.object(type(mod.app.storage), "user", mock_user):
+            result = mod._get_current_course()
+        assert result == 0
+
+    @pytest.mark.parametrize(
+        ("setter", "arg"),
+        [
+            ("_set_course_filter", 42),
+            ("_set_active_timer", "abc"),
+            ("_set_estimate_draft", {"key": "val"}),
+        ],
+    )
+    def test_setter_logs_debug_on_runtime_error(
+        self,
+        setter: str,
+        arg: object,
+    ) -> None:
+        from unittest.mock import PropertyMock, patch
+
+        import sophia.gui.pages.chronos as mod
+
+        mock_tab = PropertyMock(side_effect=RuntimeError)
+        with (
+            patch.object(type(mod.app.storage), "tab", mock_tab),
+            patch.object(mod.log, "debug") as mock_debug,
+        ):
+            getattr(mod, setter)(arg)  # must not raise
+        mock_debug.assert_called_once()

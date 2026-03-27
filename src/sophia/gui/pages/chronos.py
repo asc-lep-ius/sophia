@@ -82,32 +82,53 @@ def format_hours(hours: float) -> str:
 
 
 def _get_course_filter() -> int | None:
-    val = app.storage.tab.get(TAB_CHRONOS_COURSE_FILTER, None)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-    return int(val) if val else None  # pyright: ignore[reportUnknownArgumentType]
+    try:
+        val = app.storage.tab.get(TAB_CHRONOS_COURSE_FILTER, None)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        return int(val) if val else None  # pyright: ignore[reportUnknownArgumentType]
+    except RuntimeError:
+        return None
 
 
 def _set_course_filter(course_id: int | None) -> None:
-    app.storage.tab[TAB_CHRONOS_COURSE_FILTER] = course_id  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_COURSE_FILTER] = course_id  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_course_filter_no_tab_storage")
 
 
 def _get_active_timer() -> str:
-    return app.storage.tab.get(TAB_CHRONOS_ACTIVE_TIMER, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.tab.get(TAB_CHRONOS_ACTIVE_TIMER, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return ""
 
 
 def _set_active_timer(deadline_id: str) -> None:
-    app.storage.tab[TAB_CHRONOS_ACTIVE_TIMER] = deadline_id  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_ACTIVE_TIMER] = deadline_id  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_active_timer_no_tab_storage")
 
 
 def _get_estimate_draft() -> dict[str, object]:
-    return app.storage.tab.get(TAB_CHRONOS_ESTIMATE_DRAFT, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.tab.get(TAB_CHRONOS_ESTIMATE_DRAFT, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return {}
 
 
 def _set_estimate_draft(draft: dict[str, object]) -> None:
-    app.storage.tab[TAB_CHRONOS_ESTIMATE_DRAFT] = draft  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_ESTIMATE_DRAFT] = draft  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_estimate_draft_no_tab_storage")
 
 
 def _get_current_course() -> int:  # pyright: ignore[reportUnusedFunction]
-    return app.storage.user.get(USER_CURRENT_COURSE, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.user.get(USER_CURRENT_COURSE, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return 0
 
 
 # --- Entry point -------------------------------------------------------------
