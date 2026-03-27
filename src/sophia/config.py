@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from platformdirs import user_cache_dir, user_config_dir, user_data_dir
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     gui_host: str = "127.0.0.1"
     gui_port: int = 8080
     gui_reload: bool = False
+
+    # Session health
+    session_keepalive_interval: int = 300
+
+    @field_validator("session_keepalive_interval")
+    @classmethod
+    def _keepalive_at_least_60(cls, v: int) -> int:
+        if v < 60:
+            msg = "session_keepalive_interval must be at least 60 seconds"
+            raise ValueError(msg)
+        return v
 
     def ensure_dirs(self) -> None:
         """Create application directories with restrictive permissions."""

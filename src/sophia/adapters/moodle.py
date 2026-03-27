@@ -208,6 +208,14 @@ class MoodleAdapter:
         with contextlib.suppress(MoodleError):
             await self._call("core_session_time_remaining")
 
+    async def is_session_valid(self) -> bool:
+        """Return True if the Moodle session is still active."""
+        try:
+            await self.check_session()
+            return True
+        except AuthError:
+            return False
+
     # ------------------------------------------------------------------
     # CourseProvider
     # ------------------------------------------------------------------

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from sophia.config import Settings
 from sophia.gui.middleware.health import reset_state, set_container, set_container_error
 
 if TYPE_CHECKING:
-    import pytest
-
     from sophia.infra.di import AppContainer
 
 
@@ -49,6 +49,25 @@ class TestGUISettings:
         assert s.gui_host == "0.0.0.0"
         assert s.gui_port == 9000
         assert s.gui_reload is True
+
+
+class TestSessionKeepaliveSettings:
+    def test_default_keepalive_interval(self) -> None:
+        s = Settings()
+        assert s.session_keepalive_interval == 300
+
+    def test_keepalive_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SOPHIA_SESSION_KEEPALIVE_INTERVAL", "600")
+        s = Settings()
+        assert s.session_keepalive_interval == 600
+
+    def test_keepalive_minimum_enforced(self) -> None:
+        with pytest.raises(ValueError, match="at least 60"):
+            Settings(session_keepalive_interval=30)
+
+    def test_keepalive_boundary_at_60(self) -> None:
+        s = Settings(session_keepalive_interval=60)
+        assert s.session_keepalive_interval == 60
 
 
 class TestDILifecycle:

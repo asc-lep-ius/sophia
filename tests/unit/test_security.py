@@ -470,12 +470,8 @@ class TestMigrationFailureSafety:
         db_path = tmp_path / "test.db"
         db = await aiosqlite.connect(db_path)
 
-        with (
-            patch("sophia.infra.persistence.Path") as mock_path_cls,
-            pytest.raises(Exception),  # noqa: B017, PT011
-        ):
-            mock_path_cls.return_value.parent.__truediv__.return_value = migrations_dir
-            await run_migrations(db)
+        with pytest.raises(Exception):  # noqa: B017, PT011
+            await run_migrations(db, migrations_dir=migrations_dir)
 
         cursor = await db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
@@ -506,12 +502,10 @@ class TestMigrationFailureSafety:
         db = await aiosqlite.connect(db_path)
 
         with (
-            patch("sophia.infra.persistence.Path") as mock_path_cls,
             patch("sophia.infra.persistence.log") as mock_log,
             pytest.raises(Exception),  # noqa: B017, PT011
         ):
-            mock_path_cls.return_value.parent.__truediv__.return_value = migrations_dir
-            await run_migrations(db)
+            await run_migrations(db, migrations_dir=migrations_dir)
 
         mock_log.error.assert_called_once()
         call_kwargs = mock_log.error.call_args
