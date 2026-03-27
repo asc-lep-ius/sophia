@@ -25,6 +25,7 @@ from sophia.gui.pages.chronos import chronos_content
 from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
+from sophia.gui.pages.settings import settings_content
 from sophia.gui.pages.study import study_content
 from sophia.gui.services.session_health import SessionHealthMonitor
 from sophia.infra.di import create_app as create_di_container
@@ -38,6 +39,11 @@ log = structlog.get_logger()
 _exit_stack: contextlib.AsyncExitStack | None = None
 _container: AppContainer | None = None
 _health_monitor: SessionHealthMonitor | None = None
+
+
+def get_health_monitor() -> SessionHealthMonitor | None:
+    """Return the session health monitor, or *None* if not started."""
+    return _health_monitor
 
 
 def configure(settings: Settings | None = None) -> None:
@@ -123,6 +129,10 @@ def _register_pages() -> None:
     @ui.page("/calibration")
     async def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
         await app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
+
+    @ui.page("/settings")
+    async def settings_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(settings_content, page_name="Settings"))
 
 
 def run(settings: Settings | None = None) -> None:

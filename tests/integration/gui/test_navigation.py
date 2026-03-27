@@ -18,6 +18,7 @@ PAGES = [
     ("/search", "Search"),
     ("/chronos", "Chronos"),
     ("/calibration", "Calibration"),
+    ("/settings", "Settings"),
 ]
 
 

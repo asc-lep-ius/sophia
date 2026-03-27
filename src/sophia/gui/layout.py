@@ -112,6 +112,7 @@ NAV_ITEMS: list[dict[str, str]] = [
     {"label": "Search", "icon": "search", "path": "/search"},
     {"label": "Chronos", "icon": "schedule", "path": "/chronos"},
     {"label": "Calibration", "icon": "tune", "path": "/calibration"},
+    {"label": "Settings", "icon": "settings", "path": "/settings"},
 ]
 
 
