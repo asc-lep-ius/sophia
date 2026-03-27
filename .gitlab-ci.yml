@@ -10,7 +10,7 @@ variables:
   tags: [ubuntu-desktop-1]
   before_script:
     - pip install uv
-    - uv sync --extra web --group dev
+    - uv sync --extra web --extra test --group dev
   cache:
     key:
       prefix: uv-${PYTHON_VERSION}
@@ -36,7 +36,7 @@ typecheck:
   before_script:
     - apt-get update && apt-get install -y --no-install-recommends libatomic1
     - pip install uv
-    - uv sync --extra web --group dev
+    - uv sync --extra web --extra test --group dev
   script:
     - uv run pyright
 

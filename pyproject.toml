@@ -49,6 +49,10 @@ hermes = [
 athena = [
     "genanki>=0.13",
 ]
+test = [
+    "genanki>=0.13",
+    "pymupdf>=1.24",
+]
 
 [dependency-groups]
 dev = [
@@ -83,7 +87,7 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = ["e2e: End-to-end GUI tests requiring Playwright"]
-addopts = "-p nicegui.testing.user_plugin"
+addopts = "-p nicegui.testing.user_plugin -m \"not e2e\""
 
 [tool.pyright]
 pythonVersion = "3.12"

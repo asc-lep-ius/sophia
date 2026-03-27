@@ -47,13 +47,13 @@ test-gui:                        ## Run GUI unit tests
 	uv run pytest tests/unit/gui/ -v
 
 test-gui-e2e:                    ## Run GUI E2E tests (Playwright)
-	uv run pytest tests/integration/gui/ -v
+	uv run pytest tests/integration/gui/ -m e2e -v
 
 test-gui-a11y:                   ## Run accessibility tests
-	uv run pytest tests/integration/gui/ -k accessibility -v
+	uv run pytest tests/integration/gui/ -m e2e -k accessibility -v
 
 test-all:                        ## Run all tests (unit + E2E)
-	uv run pytest --tb=short && $(MAKE) test-gui-e2e
+	uv run pytest --tb=short -q && uv run pytest -m e2e --tb=short -q
 
 docker-gui-build:                ## Build GUI Docker image
 	docker build -f Dockerfile.gui -t sophia-gui:latest .

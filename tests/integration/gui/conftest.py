@@ -10,6 +10,14 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Auto-mark all integration GUI tests as e2e."""
+    for item in items:
+        if "integration" in str(item.fspath):
+            item.add_marker(pytest.mark.e2e)
+
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
