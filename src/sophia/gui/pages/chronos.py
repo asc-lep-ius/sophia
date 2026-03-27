@@ -21,6 +21,7 @@ from sophia.gui.services.chronos_service import (
     reflect_on_deadline,
     start_deadline_timer,
     stop_deadline_timer,
+    sync_deadlines_from_gui,
 )
 from sophia.gui.state.storage_map import (
     TAB_CHRONOS_ACTIVE_TIMER,
@@ -82,32 +83,53 @@ def format_hours(hours: float) -> str:
 
 
 def _get_course_filter() -> int | None:
-    val = app.storage.tab.get(TAB_CHRONOS_COURSE_FILTER, None)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-    return int(val) if val else None  # pyright: ignore[reportUnknownArgumentType]
+    try:
+        val = app.storage.tab.get(TAB_CHRONOS_COURSE_FILTER, None)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+        return int(val) if val else None  # pyright: ignore[reportUnknownArgumentType]
+    except RuntimeError:
+        return None
 
 
 def _set_course_filter(course_id: int | None) -> None:
-    app.storage.tab[TAB_CHRONOS_COURSE_FILTER] = course_id  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_COURSE_FILTER] = course_id  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_course_filter_no_tab_storage")
 
 
 def _get_active_timer() -> str:
-    return app.storage.tab.get(TAB_CHRONOS_ACTIVE_TIMER, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.tab.get(TAB_CHRONOS_ACTIVE_TIMER, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return ""
 
 
 def _set_active_timer(deadline_id: str) -> None:
-    app.storage.tab[TAB_CHRONOS_ACTIVE_TIMER] = deadline_id  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_ACTIVE_TIMER] = deadline_id  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_active_timer_no_tab_storage")
 
 
 def _get_estimate_draft() -> dict[str, object]:
-    return app.storage.tab.get(TAB_CHRONOS_ESTIMATE_DRAFT, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.tab.get(TAB_CHRONOS_ESTIMATE_DRAFT, {})  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return {}
 
 
 def _set_estimate_draft(draft: dict[str, object]) -> None:
-    app.storage.tab[TAB_CHRONOS_ESTIMATE_DRAFT] = draft  # pyright: ignore[reportUnknownMemberType]
+    try:
+        app.storage.tab[TAB_CHRONOS_ESTIMATE_DRAFT] = draft  # pyright: ignore[reportUnknownMemberType]
+    except RuntimeError:
+        log.debug("set_estimate_draft_no_tab_storage")
 
 
 def _get_current_course() -> int:  # pyright: ignore[reportUnusedFunction]
-    return app.storage.user.get(USER_CURRENT_COURSE, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    try:
+        return app.storage.user.get(USER_CURRENT_COURSE, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    except RuntimeError:
+        return 0
 
 
 # --- Entry point -------------------------------------------------------------
@@ -138,7 +160,15 @@ def _render_header(container: AppContainer) -> None:
             ).classes("min-w-[140px]").props("dense outlined")
 
             async def _sync() -> None:
-                ui.notify("Syncing deadlines…", type="info")
+                ui.notify("Syncing deadlines\u2026", type="info")
+                result = await sync_deadlines_from_gui(container)  # pyright: ignore[reportUnknownArgumentType]
+                if result:
+                    ui.notify(f"Synced {len(result)} deadlines", type="positive")
+                else:
+                    ui.notify(
+                        "No deadlines found \u2014 check your TUWEL connection",
+                        type="warning",
+                    )
                 _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
             ui.button("Sync", icon="sync", on_click=_sync).props("flat dense")
@@ -163,9 +193,28 @@ async def _deadline_list(container: AppContainer) -> None:
     )  # pyright: ignore[reportUnknownArgumentType]
 
     if not deadlines:
+
+        async def _sync_from_empty() -> None:
+            ui.notify("Syncing deadlines\u2026", type="info")
+            result = await sync_deadlines_from_gui(container)  # pyright: ignore[reportUnknownArgumentType]
+            if result:
+                ui.notify(f"Synced {len(result)} deadlines", type="positive")
+            else:
+                ui.notify("No deadlines found \u2014 check your TUWEL connection", type="warning")
+            _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+
         with ui.column().classes("w-full items-center py-12"):
-            ui.icon("event_available", color="gray").classes("text-6xl")
-            ui.label("No upcoming deadlines.").classes("text-gray-500 mt-4")
+            ui.icon("calendar_month", color="gray").classes("text-6xl")
+            ui.label("No deadlines synced").classes("text-lg font-semibold text-gray-600 mt-4")
+            ui.label(
+                "Connect to TUWEL to import your assignments, quizzes, and exams. "
+                "Sophia helps you plan with predict \u2192 act \u2192 reflect."
+            ).classes("text-sm text-gray-500 text-center max-w-md mt-2")
+            ui.button(
+                "Sync from TUWEL",
+                icon="sync",
+                on_click=_sync_from_empty,
+            ).props("color=primary").classes("mt-4")
         return
 
     # Sort by due date

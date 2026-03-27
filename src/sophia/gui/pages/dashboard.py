@@ -11,7 +11,7 @@ from nicegui import app, ui
 from sophia.domain.models import DeadlineType, PlanItemType
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
-from sophia.gui.state.storage_map import BROWSER_DENSITY_MODE
+from sophia.gui.state.storage_map import TAB_DENSITY_MODE
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.chronos import get_deadlines
@@ -41,6 +41,7 @@ COLOR_NOT_STUDIED = "#6b7280"
 
 async def dashboard_content() -> None:
     """Main dashboard entry point — called by app_shell + error_boundary."""
+    await ui.context.client.connected()  # required before accessing app.storage.tab
     _render_header()
     await _dashboard_cards()
 
@@ -56,11 +57,13 @@ def _render_header() -> None:
         _render_density_toggle()
 
 
+@ui.refreshable  # type: ignore[misc]
 def _render_density_toggle() -> None:
-    current: str = app.storage.browser.get(BROWSER_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    current: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     def _set_mode(mode: str) -> None:
-        app.storage.browser[BROWSER_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
+        app.storage.tab[TAB_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
+        _render_density_toggle.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
         _dashboard_cards.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
     with ui.button_group():
@@ -85,7 +88,7 @@ async def _dashboard_cards() -> None:
         loading_spinner(text="Connecting...")
         return
 
-    density: str = app.storage.browser.get(BROWSER_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    density: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
 
     try:
         db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
@@ -97,12 +100,13 @@ async def _dashboard_cards() -> None:
         skeleton_card()
         return
 
-    if density == DENSITY_FOCUS:
-        _render_focus_mode(reviews, deadlines, plan_items)
-    elif density == DENSITY_FULL:
-        _render_full_mode(reviews, deadlines, plan_items)
-    else:
-        _render_standard_mode(reviews, deadlines, plan_items)
+    with ui.column().classes("w-full transition-opacity duration-200"):
+        if density == DENSITY_FOCUS:
+            _render_focus_mode(reviews, deadlines, plan_items)
+        elif density == DENSITY_FULL:
+            _render_full_mode(reviews, deadlines, plan_items)
+        else:
+            _render_standard_mode(reviews, deadlines, plan_items)
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +187,18 @@ def _render_deadlines_card(deadlines: list[Deadline]) -> None:
             ui.label("Upcoming Deadlines").classes("font-semibold")
 
         if not deadlines:
-            ui.label("No upcoming deadlines").classes("text-sm text-gray-400 italic")
+            with ui.column().classes("items-center py-4"):
+                ui.icon("event_note", color="gray").classes("text-3xl")
+                ui.label("No deadlines yet").classes("text-sm font-semibold text-gray-600 mt-2")
+                ui.label(
+                    "Sync your TUWEL deadlines to start"
+                    " the predict \u2192 act \u2192 reflect cycle."
+                ).classes("text-xs text-gray-500 text-center mt-1")
+                ui.button(
+                    "Sync Deadlines",
+                    icon="sync",
+                    on_click=lambda: ui.navigate.to("/chronos"),
+                ).props("flat dense").classes("mt-2")
             return
 
         for d in deadlines[:3]:
@@ -208,7 +223,12 @@ def _render_plan_items_card(plan_items: list[PlanItem]) -> None:
             ui.label("Academic Landscape").classes("font-semibold")
 
         if not plan_items:
-            ui.label("No items to display").classes("text-sm text-gray-400 italic")
+            with ui.column().classes("items-center py-4"):
+                ui.icon("playlist_add_check", color="gray").classes("text-3xl")
+                ui.label("No plan items").classes("text-sm font-semibold text-gray-600 mt-2")
+                ui.label(
+                    "Plan items appear after syncing deadlines and rating confidence per topic."
+                ).classes("text-xs text-gray-500 text-center mt-1")
             return
 
         for item in plan_items[:5]:

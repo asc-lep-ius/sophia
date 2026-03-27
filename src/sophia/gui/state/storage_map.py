@@ -64,12 +64,14 @@ TAB_CHRONOS_ESTIMATE_DRAFT: Final = "chronos_estimate_draft"
 TAB_CALIBRATION_COURSE_FILTER: Final = "calibration_course_filter"
 TAB_CALIBRATION_CHART_TYPE: Final = "calibration_chart_type"
 
+# Tab-scoped — Dashboard density
+TAB_DENSITY_MODE: Final = "dashboard_density_mode"
+
 # ``app.storage.client`` — per WebSocket connection, transient.
 CLIENT_PANEL_STATE: Final = "panel_state"
 CLIENT_SCROLL_POSITION: Final = "scroll_position"
 
 # ``app.storage.browser`` — per browser (localStorage), survives restarts.
-BROWSER_DENSITY_MODE: Final = "dashboard_density_mode"
 BROWSER_THEME_PREF: Final = "theme_pref"
 BROWSER_LATEX_ASSIST_LEVEL: Final = "latex_assist_level"
 BROWSER_HIGH_CONTRAST: Final = "high_contrast"
@@ -113,10 +115,10 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_CHRONOS_ESTIMATE_DRAFT,
         TAB_CALIBRATION_COURSE_FILTER,
         TAB_CALIBRATION_CHART_TYPE,
+        TAB_DENSITY_MODE,
     ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
     "browser": [
-        BROWSER_DENSITY_MODE,
         BROWSER_THEME_PREF,
         BROWSER_LATEX_ASSIST_LEVEL,
         BROWSER_HIGH_CONTRAST,
