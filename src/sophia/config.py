@@ -50,6 +50,7 @@ class Settings(BaseSettings):
     gui_host: str = "127.0.0.1"
     gui_port: int = 8080
     gui_reload: bool = False
+    auto_sync: bool = True
 
     # Session health
     session_keepalive_interval: int = 300
