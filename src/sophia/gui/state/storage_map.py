@@ -56,6 +56,10 @@ TAB_SEARCH_SELECTED_INDEX: Final = "search_selected_index"
 TAB_SEARCH_BLOOM_LEVEL: Final = "search_bloom_level"
 TAB_SEARCH_BLOOM_RESPONSE: Final = "search_bloom_response"
 
+# Tab-scoped — Lectures list
+TAB_LECTURES_STATUS_FILTER: Final = "lectures_status_filter"
+TAB_LECTURES_SEARCH_QUERY: Final = "lectures_search_query"
+
 # Tab-scoped — Chronos deadlines
 TAB_CHRONOS_COURSE_FILTER: Final = "chronos_course_filter"
 TAB_CHRONOS_ACTIVE_TIMER: Final = "chronos_active_timer"
@@ -118,6 +122,8 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_SEARCH_SELECTED_INDEX,
         TAB_SEARCH_BLOOM_LEVEL,
         TAB_SEARCH_BLOOM_RESPONSE,
+        TAB_LECTURES_STATUS_FILTER,
+        TAB_LECTURES_SEARCH_QUERY,
         TAB_CHRONOS_COURSE_FILTER,
         TAB_CHRONOS_ACTIVE_TIMER,
         TAB_CHRONOS_ESTIMATE_DRAFT,
