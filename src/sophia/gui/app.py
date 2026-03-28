@@ -28,6 +28,7 @@ from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.settings import settings_content
 from sophia.gui.pages.study import study_content
+from sophia.gui.pages.topics import topics_content
 from sophia.gui.services.chronos_service import sync_deadlines_from_gui
 from sophia.gui.services.session_health import SessionHealthMonitor
 from sophia.infra.di import create_app as create_di_container
@@ -139,6 +140,10 @@ def _register_pages() -> None:
     @ui.page("/calibration")
     async def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
         await app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
+
+    @ui.page("/topics")
+    async def topics_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(topics_content, page_name="Topics"))
 
     @ui.page("/settings")
     async def settings_page() -> None:  # pyright: ignore[reportUnusedFunction]
