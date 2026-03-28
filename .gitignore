@@ -26,6 +26,9 @@ htmlcov/
 *.db
 downloads/
 
+# NiceGUI auto-generated
+.nicegui/
+
 # IDE
 .idea/
 .conductor/

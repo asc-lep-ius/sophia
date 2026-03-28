@@ -10,6 +10,7 @@ import pytest
 from sophia.gui.pages.settings import (
     format_session_age,
     health_status_label,
+    hermes_setup_status,
 )
 
 # ---------------------------------------------------------------------------
@@ -107,6 +108,25 @@ class TestGetHealthMonitor:
 
 
 # ---------------------------------------------------------------------------
+# hermes_setup_status — pure function tests
+# ---------------------------------------------------------------------------
+
+
+class TestHermesSetupStatus:
+    def test_configured_when_setup_complete(self) -> None:
+        label, icon, css = hermes_setup_status(is_complete=True)
+        assert label == "Configured"
+        assert icon == "check_circle"
+        assert css == "text-green-600"
+
+    def test_not_configured_when_setup_incomplete(self) -> None:
+        label, icon, css = hermes_setup_status(is_complete=False)
+        assert label == "Not configured"
+        assert icon == "pending"
+        assert css == "text-gray-500"
+
+
+# ---------------------------------------------------------------------------
 # settings_content — integration-style tests with mocked NiceGUI
 # ---------------------------------------------------------------------------
 
@@ -145,6 +165,10 @@ class TestSettingsContentWithContainer:
             lambda *a, **kw: MagicMock(
                 classes=MagicMock(return_value=MagicMock(props=MagicMock())),
             ),
+        )
+        monkeypatch.setattr(
+            f"{_PATCH_BASE}.app.storage",
+            MagicMock(user={}),
         )
 
     async def test_renders_auth_section_not_connected(

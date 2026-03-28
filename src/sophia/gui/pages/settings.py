@@ -10,6 +10,8 @@ from nicegui import app, ui
 
 from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
+from sophia.gui.pages.lectures import is_hermes_setup_complete
+from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 
 if TYPE_CHECKING:
     from sophia.gui.services.session_health import SessionHealthMonitor
@@ -63,6 +65,13 @@ def health_status_label(monitor: SessionHealthMonitor | None) -> tuple[str, str]
     return "Session expired", "text-amber-600"
 
 
+def hermes_setup_status(is_complete: bool) -> tuple[str, str, str]:
+    """Return (label, icon, css_class) for Hermes setup state."""
+    if is_complete:
+        return "Configured", "check_circle", "text-green-600"
+    return "Not configured", "pending", "text-gray-500"
+
+
 # --- Logout action -----------------------------------------------------------
 
 
@@ -90,6 +99,7 @@ async def settings_content() -> None:
     _render_auth_section(container)
     _render_job_status_section()
     _render_config_section(container)
+    _render_hermes_section()
 
 
 def _render_auth_section(container: AppContainer) -> None:
@@ -155,6 +165,36 @@ def _render_config_section(container: AppContainer) -> None:
         _config_row("Data directory", str(settings.data_dir))
         _config_row("Config directory", str(settings.config_dir))
         _config_row("Keepalive interval", f"{settings.session_keepalive_interval}s")
+
+
+def _render_hermes_section() -> None:
+    """Hermes Lecture Pipeline configuration card."""
+    is_complete = is_hermes_setup_complete()
+    label, icon, css = hermes_setup_status(is_complete)
+
+    with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
+        ui.label("Lecture Pipeline (Hermes)").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
+        ui.separator()  # pyright: ignore[reportUnknownMemberType]
+
+        with ui.row().classes("items-center gap-2 mt-2"):  # pyright: ignore[reportUnknownMemberType]
+            ui.icon(icon).classes(f"text-xl {css}")  # pyright: ignore[reportUnknownMemberType]
+            ui.label(label).classes(f"font-medium {css}")  # pyright: ignore[reportUnknownMemberType]
+
+        if is_complete:
+
+            def _rerun() -> None:
+                app.storage.user[USER_HERMES_SETUP_COMPLETE] = False  # pyright: ignore[reportUnknownMemberType]
+                ui.navigate.to("/lectures/setup")  # pyright: ignore[reportUnknownMemberType]
+
+            ui.button("Re-run Setup", icon="refresh", on_click=_rerun).classes("mt-3").props(  # pyright: ignore[reportUnknownMemberType]
+                "outline",
+            )
+        else:
+            ui.button(  # pyright: ignore[reportUnknownMemberType]
+                "Run Setup",
+                icon="play_arrow",
+                on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
+            ).classes("mt-3")
 
 
 def _config_row(label: str, value: str) -> None:
