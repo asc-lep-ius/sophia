@@ -212,7 +212,7 @@ class TestSyncButton:
     """Verify sync_deadlines_from_gui wrapper handles errors gracefully."""
 
     @pytest.mark.asyncio
-    async def test_sync_wrapper_returns_empty_on_auth_error(self) -> None:
+    async def test_sync_wrapper_returns_auth_expired_on_auth_error(self) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from sophia.domain.errors import AuthError
@@ -225,10 +225,11 @@ class TestSyncButton:
         ) as mock_sync:
             mock_sync.side_effect = AuthError("expired")
             result = await sync_deadlines_from_gui(mock_app)
-            assert result == []
+            assert result.status == "auth_expired"
+            assert result.deadline_count == 0
 
     @pytest.mark.asyncio
-    async def test_sync_wrapper_returns_empty_on_general_error(self) -> None:
+    async def test_sync_wrapper_returns_error_on_general_error(self) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from sophia.gui.services.chronos_service import sync_deadlines_from_gui
@@ -240,10 +241,10 @@ class TestSyncButton:
         ) as mock_sync:
             mock_sync.side_effect = RuntimeError("connection failed")
             result = await sync_deadlines_from_gui(mock_app)
-            assert result == []
+            assert result.status == "error"
 
     @pytest.mark.asyncio
-    async def test_sync_wrapper_returns_deadlines_on_success(self) -> None:
+    async def test_sync_wrapper_returns_success_with_deadlines(self) -> None:
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from sophia.gui.services.chronos_service import sync_deadlines_from_gui
@@ -256,7 +257,9 @@ class TestSyncButton:
         ) as mock_sync:
             mock_sync.return_value = mock_deadlines
             result = await sync_deadlines_from_gui(mock_app)
-            assert result == mock_deadlines
+            assert result.status == "success"
+            assert result.deadline_count == 2
+            assert result.deadlines == mock_deadlines
             mock_sync.assert_called_once_with(mock_app)
 
 
@@ -279,3 +282,177 @@ class TestChronosEmptyState:
         assert "No deadlines synced" in source
         assert "predict" in source.lower()
         assert "Sync from TUWEL" in source
+
+
+# ---------------------------------------------------------------------------
+# format_calibration_error
+# ---------------------------------------------------------------------------
+
+
+class TestFormatCalibrationError:
+    """Pure helper that formats predicted vs actual into a metacognitive prompt."""
+
+    @pytest.mark.parametrize(
+        ("predicted", "actual", "expected_fragment"),
+        [
+            (3.0, 3.0, "Predicted: 3.0h"),
+            (3.0, 3.0, "Actual: 3.0h"),
+            (3.0, 3.0, "Error: 0.0h"),
+            (2.0, 4.0, "Error: 2.0h"),
+            (5.0, 3.0, "Error: -2.0h"),
+        ],
+    )
+    def test_shows_predicted_actual_and_error(
+        self, predicted: float, actual: float, expected_fragment: str
+    ) -> None:
+        from sophia.gui.pages.chronos import format_calibration_error
+
+        result = format_calibration_error(predicted, actual)
+        assert expected_fragment in result
+
+    def test_none_predicted_gives_no_estimate_message(self) -> None:
+        from sophia.gui.pages.chronos import format_calibration_error
+
+        result = format_calibration_error(None, 4.0)
+        assert "No estimate recorded" in result
+        assert "try predicting next time" in result.lower()
+
+    def test_includes_metacognitive_prompt(self) -> None:
+        from sophia.gui.pages.chronos import format_calibration_error
+
+        result = format_calibration_error(2.0, 5.0)
+        assert "What factors" in result
+
+
+# ---------------------------------------------------------------------------
+# classify_deadline_outcome
+# ---------------------------------------------------------------------------
+
+
+class TestClassifyDeadlineOutcome:
+    """Pure helper that classifies a deadline as on_time, late, or missed."""
+
+    def test_completed_before_due_is_on_time(self) -> None:
+        from sophia.gui.pages.chronos import classify_deadline_outcome
+
+        due = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+        completed = datetime(2026, 3, 31, 12, 0, tzinfo=UTC)
+        assert classify_deadline_outcome(due, completed_at=completed) == "on_time"
+
+    def test_completed_at_due_is_on_time(self) -> None:
+        from sophia.gui.pages.chronos import classify_deadline_outcome
+
+        due = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+        assert classify_deadline_outcome(due, completed_at=due) == "on_time"
+
+    def test_completed_after_due_is_late(self) -> None:
+        from sophia.gui.pages.chronos import classify_deadline_outcome
+
+        due = datetime(2026, 4, 1, 12, 0, tzinfo=UTC)
+        completed = datetime(2026, 4, 2, 12, 0, tzinfo=UTC)
+        assert classify_deadline_outcome(due, completed_at=completed) == "late"
+
+    def test_no_completion_past_due_is_missed(self) -> None:
+        from sophia.gui.pages.chronos import classify_deadline_outcome
+
+        past_due = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
+        now = datetime(2026, 3, 28, 12, 0, tzinfo=UTC)
+        assert classify_deadline_outcome(past_due, now=now) == "missed"
+
+    def test_no_completion_future_due_is_on_time(self) -> None:
+        from sophia.gui.pages.chronos import classify_deadline_outcome
+
+        future_due = datetime(2026, 5, 1, 12, 0, tzinfo=UTC)
+        now = datetime(2026, 3, 28, 12, 0, tzinfo=UTC)
+        assert classify_deadline_outcome(future_due, now=now) == "on_time"
+
+
+# ---------------------------------------------------------------------------
+# format_time_source
+# ---------------------------------------------------------------------------
+
+
+class TestFormatTimeSource:
+    """Pure helper that maps time entry source to display icon."""
+
+    def test_timer_source(self) -> None:
+        from sophia.gui.pages.chronos import format_time_source
+
+        assert format_time_source("timer") == "⏱️"
+
+    def test_manual_source(self) -> None:
+        from sophia.gui.pages.chronos import format_time_source
+
+        assert format_time_source("manual") == "✏️"
+
+    def test_unknown_source_falls_back(self) -> None:
+        from sophia.gui.pages.chronos import format_time_source
+
+        assert format_time_source("other") == "📝"
+
+
+# ---------------------------------------------------------------------------
+# build_effort_subtitle
+# ---------------------------------------------------------------------------
+
+
+class TestBuildEffortSubtitle:
+    """Agency-oriented subtitle for the effort distribution chart."""
+
+    def test_free_hours_message(self) -> None:
+        from sophia.gui.pages.chronos import build_effort_subtitle
+        from sophia.gui.services.chronos_service import DayEffort
+
+        days = [
+            DayEffort(date="2026-03-28", deadline_efforts={"HW": 1.0}, unestimated=[], total=1.0),
+            DayEffort(date="2026-03-29", deadline_efforts={"HW": 4.0}, unestimated=[], total=4.0),
+        ]
+        result = build_effort_subtitle(days, capacity=4.0)
+        # Day with most free hours is Mar 28 (3h free)
+        assert "3.0" in result
+        assert "free" in result.lower()
+
+    def test_all_over_capacity(self) -> None:
+        from sophia.gui.pages.chronos import build_effort_subtitle
+        from sophia.gui.services.chronos_service import DayEffort
+
+        days = [
+            DayEffort(date="2026-03-28", deadline_efforts={"HW": 5.0}, unestimated=[], total=5.0),
+        ]
+        result = build_effort_subtitle(days, capacity=4.0)
+        assert "fully" in result.lower() or "no free" in result.lower()
+
+    def test_empty_days(self) -> None:
+        from sophia.gui.pages.chronos import build_effort_subtitle
+
+        result = build_effort_subtitle([], capacity=4.0)
+        assert isinstance(result, str)
+
+
+# ---------------------------------------------------------------------------
+# OUTCOME_BADGE_COLORS
+# ---------------------------------------------------------------------------
+
+
+class TestOutcomeBadgeColors:
+    """Constant mapping outcome → NiceGUI color for past deadline badges."""
+
+    def test_has_all_outcomes(self) -> None:
+        from sophia.gui.pages.chronos import OUTCOME_BADGE_COLORS
+
+        assert set(OUTCOME_BADGE_COLORS) == {"on_time", "late", "missed"}
+
+    def test_on_time_is_positive(self) -> None:
+        from sophia.gui.pages.chronos import OUTCOME_BADGE_COLORS
+
+        assert OUTCOME_BADGE_COLORS["on_time"] == "positive"
+
+    def test_late_is_warning(self) -> None:
+        from sophia.gui.pages.chronos import OUTCOME_BADGE_COLORS
+
+        assert OUTCOME_BADGE_COLORS["late"] == "warning"
+
+    def test_missed_is_negative(self) -> None:
+        from sophia.gui.pages.chronos import OUTCOME_BADGE_COLORS
+
+        assert OUTCOME_BADGE_COLORS["missed"] == "negative"

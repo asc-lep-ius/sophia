@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import TYPE_CHECKING
 
@@ -27,6 +28,8 @@ from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.settings import settings_content
 from sophia.gui.pages.study import study_content
+from sophia.gui.pages.topics import topics_content
+from sophia.gui.services.chronos_service import sync_deadlines_from_gui
 from sophia.gui.services.session_health import SessionHealthMonitor
 from sophia.infra.di import create_app as create_di_container
 
@@ -39,6 +42,7 @@ log = structlog.get_logger()
 _exit_stack: contextlib.AsyncExitStack | None = None
 _container: AppContainer | None = None
 _health_monitor: SessionHealthMonitor | None = None
+_startup_fn: object = None  # exposed for testing
 
 
 def get_health_monitor() -> SessionHealthMonitor | None:
@@ -59,8 +63,7 @@ def configure(settings: Settings | None = None) -> None:
     app.add_route("/ready", ready)
 
     # DI lifecycle
-    @app.on_startup  # type: ignore[reportUnknownMemberType]
-    async def _startup() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def _startup() -> None:
         global _exit_stack, _container, _health_monitor  # noqa: PLW0603
         reset_state()
         _exit_stack = contextlib.AsyncExitStack()
@@ -79,6 +82,8 @@ def configure(settings: Settings | None = None) -> None:
                 resolved_settings.session_keepalive_interval,
             )
             _health_monitor.start()
+            if resolved_settings.auto_sync:
+                asyncio.create_task(sync_deadlines_from_gui(_container))
         except AuthError as exc:
             log.warning("gui_auth_error", error=str(exc))
             set_container_error(str(exc))
@@ -86,8 +91,12 @@ def configure(settings: Settings | None = None) -> None:
             handle_exception(exc)
             set_container_error(f"Startup failed: {exc}")
 
-    @app.on_shutdown  # type: ignore[reportUnknownMemberType]
-    async def _shutdown() -> None:  # pyright: ignore[reportUnusedFunction]
+    app.on_startup(_startup)  # type: ignore[reportUnknownMemberType]
+
+    global _startup_fn  # noqa: PLW0603
+    _startup_fn = _startup
+
+    async def _shutdown() -> None:
         global _exit_stack, _container, _health_monitor  # noqa: PLW0603
         if _health_monitor is not None:
             await _health_monitor.stop()
@@ -98,6 +107,8 @@ def configure(settings: Settings | None = None) -> None:
         _container = None
         reset_state()
         log.info("gui_stopped")
+
+    app.on_shutdown(_shutdown)  # type: ignore[reportUnknownMemberType]
 
     # Register pages
     _register_pages()
@@ -129,6 +140,10 @@ def _register_pages() -> None:
     @ui.page("/calibration")
     async def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
         await app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
+
+    @ui.page("/topics")
+    async def topics_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(topics_content, page_name="Topics"))
 
     @ui.page("/settings")
     async def settings_page() -> None:  # pyright: ignore[reportUnusedFunction]

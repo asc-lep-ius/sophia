@@ -75,6 +75,7 @@ CLIENT_SCROLL_POSITION: Final = "scroll_position"
 BROWSER_THEME_PREF: Final = "theme_pref"
 BROWSER_LATEX_ASSIST_LEVEL: Final = "latex_assist_level"
 BROWSER_HIGH_CONTRAST: Final = "high_contrast"
+BROWSER_EFFORT_CAPACITY: Final = "effort_capacity"
 
 # ---------------------------------------------------------------------------
 # Tier summary — convenience mapping for documentation / introspection
@@ -122,5 +123,6 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         BROWSER_THEME_PREF,
         BROWSER_LATEX_ASSIST_LEVEL,
         BROWSER_HIGH_CONTRAST,
+        BROWSER_EFFORT_CAPACITY,
     ],
 }

@@ -8,16 +8,25 @@ from typing import TYPE_CHECKING, Final
 import structlog
 from nicegui import app, ui
 
-from sophia.gui.components.chart_table import chart_with_table
 from sophia.gui.middleware.health import get_container
+from sophia.gui.pages.chronos_history import (
+    render_calibration_chart,
+    render_effort_chart,
+    render_past_deadlines_section,
+)
 from sophia.gui.services.chronos_service import (
+    DayEffort,
+    SyncResult,
     estimate_effort,
+    export_deadlines_ics,
     format_deadline_feedback,
-    get_deadline_calibration,
     get_deadline_priority,
     get_deadline_scaffold,
     get_deadline_tracked_time,
+    get_time_entries,
     get_upcoming_deadlines,
+    mark_deadline_complete,
+    record_manual_time_entry,
     reflect_on_deadline,
     start_deadline_timer,
     stop_deadline_timer,
@@ -49,6 +58,15 @@ _DEADLINE_TYPE_COLORS: Final[dict[str, str]] = {
 _HORIZON_DAYS: Final = 30
 _BREAKDOWN_CATEGORIES: Final = ["Reading", "Exercises", "Review"]
 
+OUTCOME_BADGE_COLORS: Final[dict[str, str]] = {
+    "on_time": "positive",
+    "late": "warning",
+    "missed": "negative",
+}
+
+# Sync debounce flag — prevents concurrent syncs within the same tab
+_sync_in_progress: bool = False
+
 
 # --- Pure helpers (testable) -------------------------------------------------
 
@@ -77,6 +95,58 @@ def format_hours(hours: float) -> str:
         minutes = round(hours * 60)
         return f"{minutes}min"
     return f"{hours:.1f}h"
+
+
+def format_calibration_error(predicted: float | None, actual: float) -> str:
+    """Format predicted vs actual into a calibration comparison with metacognitive prompt."""
+    if predicted is None:
+        return "No estimate recorded — try predicting next time!"
+    error = actual - predicted
+    return (
+        f"**Predicted: {predicted:.1f}h | Actual: {actual:.1f}h | Error: {error:.1f}h**\n\n"
+        "What factors did you miss or overweight in your estimate?"
+    )
+
+
+def classify_deadline_outcome(
+    due_at: datetime,
+    *,
+    completed_at: datetime | None = None,
+    now: datetime | None = None,
+) -> str:
+    """Classify a deadline as 'on_time', 'late', or 'missed'."""
+    if completed_at is not None:
+        return "late" if completed_at > due_at else "on_time"
+    if now is None:
+        now = datetime.now(UTC)
+    return "missed" if now > due_at else "on_time"
+
+
+_TIME_SOURCE_ICONS: Final[dict[str, str]] = {
+    "timer": "⏱️",
+    "manual": "✏️",
+}
+
+
+def format_time_source(source: str) -> str:
+    """Map a time entry source to its display icon."""
+    return _TIME_SOURCE_ICONS.get(source, "📝")
+
+
+def build_effort_subtitle(days: list[DayEffort], *, capacity: float = 4.0) -> str:
+    """Agency-oriented subtitle highlighting the day with most free capacity."""
+    if not days:
+        return "No upcoming effort to distribute"
+    best_date = ""
+    best_free = 0.0
+    for d in days:
+        free = capacity - d.total
+        if free > best_free:
+            best_free = free
+            best_date = d.date
+    if best_free <= 0:
+        return "All days are fully booked — consider re-prioritising"
+    return f"You have ~{best_free:.1f} free hours on {best_date}"
 
 
 # --- Storage helpers ---------------------------------------------------------
@@ -143,7 +213,13 @@ async def chronos_content() -> None:
         return
     _render_header(container)  # pyright: ignore[reportUnknownArgumentType]
     await _deadline_list(container)  # pyright: ignore[reportUnknownArgumentType]
-    await _render_calibration_chart(container)  # pyright: ignore[reportUnknownArgumentType]
+    await render_effort_chart(container)  # pyright: ignore[reportUnknownArgumentType]
+    await render_past_deadlines_section(  # pyright: ignore[reportUnknownArgumentType]
+        container,
+        get_course_filter=_get_course_filter,
+        render_reflection_form=_render_reflection_form,
+    )
+    await render_calibration_chart(container)  # pyright: ignore[reportUnknownArgumentType]
 
 
 # --- Header ------------------------------------------------------------------
@@ -159,19 +235,90 @@ def _render_header(container: AppContainer) -> None:
                 on_change=lambda e: _on_course_filter_change(e.value),
             ).classes("min-w-[140px]").props("dense outlined")
 
-            async def _sync() -> None:
-                ui.notify("Syncing deadlines\u2026", type="info")
-                result = await sync_deadlines_from_gui(container)  # pyright: ignore[reportUnknownArgumentType]
-                if result:
-                    ui.notify(f"Synced {len(result)} deadlines", type="positive")
-                else:
-                    ui.notify(
-                        "No deadlines found \u2014 check your TUWEL connection",
-                        type="warning",
-                    )
-                _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+            _render_sync_button(container)
+            _render_export_button(container)
 
-            ui.button("Sync", icon="sync", on_click=_sync).props("flat dense")
+
+def _render_sync_button(container: AppContainer) -> None:
+    """Sync button with progress indicator, debounce, and error-specific notifications."""
+    spinner = ui.spinner(size="sm").classes("hidden")
+    progress = ui.linear_progress(size="xs").classes("hidden w-32")
+    sync_btn = ui.button("Sync", icon="sync").props("flat dense")
+
+    async def _on_sync() -> None:
+        global _sync_in_progress  # noqa: PLW0603
+        if _sync_in_progress:
+            return
+        _sync_in_progress = True
+        sync_btn.disable()
+        spinner.classes(remove="hidden")
+
+        async def _progress(fraction: float, message: str) -> None:
+            if fraction < 0:
+                # Indeterminate phase
+                spinner.classes(remove="hidden")
+                progress.classes(add="hidden")
+            else:
+                spinner.classes(add="hidden")
+                progress.classes(remove="hidden")
+                progress.set_value(fraction)
+
+        try:
+            result = await sync_deadlines_from_gui(container, progress_callback=_progress)  # pyright: ignore[reportUnknownArgumentType]
+            _handle_sync_result(result)
+        finally:
+            _sync_in_progress = False
+            sync_btn.enable()
+            spinner.classes(add="hidden")
+            progress.classes(add="hidden")
+            _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+
+    sync_btn.on_click(_on_sync)
+
+
+def _handle_sync_result(result: SyncResult) -> None:
+    """Show error-specific notifications based on sync result status."""
+    if result.status == "success":
+        if result.deadline_count:
+            ui.notify(
+                f"Synced {result.deadline_count} deadlines \u2713",
+                type="positive",
+            )
+        else:
+            ui.notify("No deadlines found \u2014 check your TUWEL connection", type="warning")
+    elif result.status == "auth_expired":
+        ui.notify("Session expired \u2014 reconnect in Settings", type="warning")
+    elif result.status == "network_error":
+        ui.notify("Sync failed \u2014 check your connection", type="negative")
+    else:
+        ui.notify("Sync failed \u2014 check logs for details", type="negative")
+
+
+def _render_export_button(container: AppContainer) -> None:
+    """Export Calendar button — generates ICS and triggers browser download."""
+    export_btn = ui.button("Export Calendar", icon="calendar_month").props("flat dense")
+
+    async def _handle_ics_export() -> None:
+        export_btn.disable()
+        try:
+            ics_content = await export_deadlines_ics(container)  # pyright: ignore[reportUnknownArgumentType]
+            if not ics_content:
+                ui.notify(
+                    "No deadlines to export",
+                    type="warning",
+                )
+                return
+            ui.download(
+                ics_content.encode("utf-8"),
+                "deadlines.ics",
+            )
+        except Exception:
+            log.exception("ics_export_ui_failed")
+            ui.notify("Export failed", type="negative")
+        finally:
+            export_btn.enable()
+
+    export_btn.on_click(_handle_ics_export)
 
 
 def _on_course_filter_change(value: object) -> None:
@@ -195,12 +342,8 @@ async def _deadline_list(container: AppContainer) -> None:
     if not deadlines:
 
         async def _sync_from_empty() -> None:
-            ui.notify("Syncing deadlines\u2026", type="info")
             result = await sync_deadlines_from_gui(container)  # pyright: ignore[reportUnknownArgumentType]
-            if result:
-                ui.notify(f"Synced {len(result)} deadlines", type="positive")
-            else:
-                ui.notify("No deadlines found \u2014 check your TUWEL connection", type="warning")
+            _handle_sync_result(result)
             _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
         with ui.column().classes("w-full items-center py-12"):
@@ -308,18 +451,45 @@ async def _render_deadline_card(container: AppContainer, deadline: Deadline) -> 
                     on_click=_start,
                 ).props("flat dense").props('aria-label="Start timer"')
 
-            # Reflection for overdue deadlines
-            now_utc = datetime.now(UTC)
-            if deadline.due_at < now_utc:  # pyright: ignore[reportUnknownMemberType]
+            # Log Time (manual entry)
+            async def _show_log_time(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
+                await _render_log_time_dialog(container, dl)  # pyright: ignore[reportUnknownArgumentType]
 
-                async def _show_reflect(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
-                    await _render_reflection_form(container, dl)  # pyright: ignore[reportUnknownArgumentType]
+            ui.button("Log Time", icon="edit", on_click=_show_log_time).props("flat dense")
 
-                ui.button("Reflect", icon="psychology", on_click=_show_reflect).props("flat dense")
+            # Mark Complete
+            async def _mark_complete(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
+                _predicted, actual, _feedback = await mark_deadline_complete(container, dl.id)  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+                await _render_reflection_form(container, dl, pre_filled_hours=actual)  # pyright: ignore[reportUnknownArgumentType]
+
+            ui.button(
+                "Mark Complete",
+                icon="check_circle",
+                on_click=_mark_complete,
+            ).props("flat dense color=positive")
+
+            # Reflection for any deadline (not just overdue)
+            async def _show_reflect(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
+                await _render_reflection_form(container, dl)  # pyright: ignore[reportUnknownArgumentType]
+
+            ui.button("Reflect", icon="psychology", on_click=_show_reflect).props("flat dense")
 
         # Timer display if active
         if active_timer == deadline.id:  # pyright: ignore[reportUnknownMemberType]
             _render_timer_display()
+
+        # Time entries log
+        entries = await get_time_entries(container, deadline.id)  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+        if entries:
+            with ui.column().classes("mt-2 gap-1"):
+                for entry in entries:
+                    icon = format_time_source(str(entry["source"]))
+                    hours_text = format_hours(float(str(entry["hours"])))
+                    note = str(entry["note"]) if entry.get("note") else ""
+                    label = f"{icon} {hours_text}"
+                    if note:
+                        label += f" — {note}"
+                    ui.label(label).classes("text-xs text-gray-500")
 
 
 # --- Priority display --------------------------------------------------------
@@ -435,22 +605,80 @@ def _render_timer_display() -> None:
     ui.timer(1, _update_display)
 
 
+# --- Log Time dialog ---------------------------------------------------------
+
+_MIN_LOG_HOURS: Final = 0.25
+
+
+async def _render_log_time_dialog(container: AppContainer, deadline: Deadline) -> None:
+    """Show dialog for manual time entry logging."""
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+    with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
+        ui.label(f"Log Time: {deadline.name}").classes("font-bold text-lg")  # pyright: ignore[reportUnknownMemberType]
+
+        hours_input = ui.number(
+            "Hours",
+            value=_MIN_LOG_HOURS,
+            min=_MIN_LOG_HOURS,
+            step=_MIN_LOG_HOURS,
+        ).classes("w-full")
+        note_input = ui.textarea("Note (optional)").classes("w-full mt-2")
+        date_input = ui.date(value=today).classes("w-full mt-2")
+
+        error_label = ui.label("").classes("text-red-500 text-xs mt-1")
+        error_label.set_visibility(False)
+
+        async def _submit_log_time() -> None:
+            hours = float(hours_input.value or 0)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            if hours < _MIN_LOG_HOURS:
+                error_label.text = f"Enter at least {_MIN_LOG_HOURS} hours"
+                error_label.set_visibility(True)
+                return
+            error_label.set_visibility(False)
+            note = str(note_input.value or "").strip() or None  # pyright: ignore[reportUnknownMemberType]
+            recorded_at = str(date_input.value or today)  # pyright: ignore[reportUnknownMemberType]
+
+            await record_manual_time_entry(
+                container,
+                deadline.id,  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+                hours,
+                note=note,
+                recorded_at=recorded_at,
+            )  # pyright: ignore[reportUnknownArgumentType]
+            ui.notify(f"Logged {format_hours(hours)}", type="positive")
+            dialog.close()
+            _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+
+        with ui.row().classes("w-full justify-end mt-4 gap-2"):
+            ui.button("Save", on_click=_submit_log_time).props("color=primary")
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+
+    dialog.open()
+
+
 # --- Reflection form ---------------------------------------------------------
 
 
-async def _render_reflection_form(container: AppContainer, deadline: Deadline) -> None:
+async def _render_reflection_form(
+    container: AppContainer,
+    deadline: Deadline,
+    *,
+    pre_filled_hours: float | None = None,
+) -> None:
     """Show post-deadline reflection dialog with empathetic feedback."""
     with ui.dialog() as dialog, ui.card().classes("w-96 p-4"):
         ui.label(f"Reflect: {deadline.name}").classes("font-bold text-lg")  # pyright: ignore[reportUnknownMemberType]
 
         actual_input = ui.number(
             "Actual Hours Spent",
-            value=0.0,
+            value=pre_filled_hours or 0.0,
             min=0.0,
             step=0.5,
         ).classes("w-full")
         reflection_input = ui.textarea("What went well? What could improve?").classes("w-full mt-2")
         feedback_area = ui.markdown("").classes("mt-2")
+        calibration_area = ui.markdown("").classes("mt-2")
 
         async def _submit_reflection() -> None:
             actual = float(actual_input.value or 0)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
@@ -473,6 +701,8 @@ async def _render_reflection_form(container: AppContainer, deadline: Deadline) -
 
             feedback = format_deadline_feedback(predicted, actual)  # pyright: ignore[reportUnknownArgumentType]
             feedback_area.set_content(feedback)  # pyright: ignore[reportUnknownMemberType]
+            calibration = format_calibration_error(predicted, actual)  # pyright: ignore[reportUnknownArgumentType]
+            calibration_area.set_content(calibration)  # pyright: ignore[reportUnknownMemberType]
             ui.notify("Reflection saved!", type="positive")
             _deadline_list.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
 
@@ -481,41 +711,3 @@ async def _render_reflection_form(container: AppContainer, deadline: Deadline) -
             ui.button("Cancel", on_click=dialog.close).props("flat")
 
     dialog.open()
-
-
-# --- Calibration chart -------------------------------------------------------
-
-
-async def _render_calibration_chart(container: AppContainer) -> None:
-    """Render estimated vs actual hours as an ECharts bar chart."""
-    metrics = await get_deadline_calibration(container)  # pyright: ignore[reportUnknownArgumentType]
-    if not metrics:
-        return
-
-    domains = [m.domain for m in metrics]  # pyright: ignore[reportUnknownMemberType]
-    errors = [m.mean_error for m in metrics]  # pyright: ignore[reportUnknownMemberType]
-    abs_errors = [m.mean_absolute_error for m in metrics]  # pyright: ignore[reportUnknownMemberType]
-
-    with ui.card().classes("w-full p-4 mt-6"):
-        ui.label("Estimation Calibration").classes("text-lg font-bold mb-2")
-        chart_config = {
-            "tooltip": {"trigger": "axis"},
-            "legend": {"data": ["Mean Error", "Mean |Error|"]},
-            "xAxis": {"type": "category", "data": domains},
-            "yAxis": {"type": "value", "name": "Hours"},
-            "series": [
-                {"name": "Mean Error", "type": "bar", "data": errors},
-                {"name": "Mean |Error|", "type": "bar", "data": abs_errors},
-            ],
-        }
-        headers = ["Domain", "Mean Error", "Mean |Error|"]
-        rows = [
-            [str(d), f"{e:.2f}", f"{a:.2f}"]
-            for d, e, a in zip(domains, errors, abs_errors, strict=False)
-        ]
-        chart_with_table(
-            chart_config,
-            headers=headers,
-            rows=rows,
-            chart_id="chronos-calibration",
-        )

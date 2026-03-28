@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import sophia.gui.app as app_mod
 from sophia.config import Settings
 from sophia.gui.middleware.health import reset_state, set_container, set_container_error
 
@@ -96,3 +98,88 @@ class TestDILifecycle:
         set_container_error("Not logged in — run: sophia auth login")
         assert health._container_ref["container"] is None
         assert "Not logged in" in (health._container_ref["error"] or "")
+
+
+class TestAutoSyncSetting:
+    """Test auto_sync config field."""
+
+    def test_default_auto_sync_is_true(self) -> None:
+        s = Settings()
+        assert s.auto_sync is True
+
+    def test_auto_sync_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SOPHIA_AUTO_SYNC", "false")
+        s = Settings()
+        assert s.auto_sync is False
+
+    def test_auto_sync_explicit_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("SOPHIA_AUTO_SYNC", "true")
+        s = Settings()
+        assert s.auto_sync is True
+
+
+class TestAutoSyncStartup:
+    """Test that auto-sync fires as a non-blocking task on startup."""
+
+    _PATCH_BASE = "sophia.gui.app"
+
+    @pytest.mark.asyncio
+    async def test_auto_sync_creates_task_when_enabled(self) -> None:
+        """When auto_sync=True and container init succeeds, sync task is created."""
+        mock_settings = Settings(auto_sync=True)
+        mock_container = MagicMock()
+
+        with (
+            patch(
+                f"{self._PATCH_BASE}.create_di_container",
+            ) as mock_di,
+            patch(
+                f"{self._PATCH_BASE}.sync_deadlines_from_gui",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                f"{self._PATCH_BASE}.SessionHealthMonitor",
+            ) as mock_monitor_cls,
+            patch(f"{self._PATCH_BASE}.asyncio.create_task") as mock_create_task,
+        ):
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_cm.__aexit__ = AsyncMock(return_value=False)
+            mock_di.return_value = mock_cm
+            mock_monitor_cls.return_value = MagicMock()
+
+            app_mod.configure(mock_settings)
+            # The startup handler is registered; invoke it via the exposed reference
+            await app_mod._startup_fn()  # type: ignore[misc]
+
+            mock_create_task.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_auto_sync_skipped_when_disabled(self) -> None:
+        """When auto_sync=False, no sync task is created."""
+        mock_settings = Settings(auto_sync=False)
+        mock_container = MagicMock()
+
+        with (
+            patch(
+                f"{self._PATCH_BASE}.create_di_container",
+            ) as mock_di,
+            patch(
+                f"{self._PATCH_BASE}.sync_deadlines_from_gui",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                f"{self._PATCH_BASE}.SessionHealthMonitor",
+            ) as mock_monitor_cls,
+            patch(f"{self._PATCH_BASE}.asyncio.create_task") as mock_create_task,
+        ):
+            mock_cm = MagicMock()
+            mock_cm.__aenter__ = AsyncMock(return_value=mock_container)
+            mock_cm.__aexit__ = AsyncMock(return_value=False)
+            mock_di.return_value = mock_cm
+            mock_monitor_cls.return_value = MagicMock()
+
+            app_mod.configure(mock_settings)
+            await app_mod._startup_fn()  # type: ignore[misc]
+
+            mock_create_task.assert_not_called()
