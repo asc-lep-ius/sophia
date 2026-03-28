@@ -146,8 +146,7 @@ def _render_deps_step(stepper: ui.stepper) -> None:  # pyright: ignore[reportUnk
         with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
             ui.button("Check Again", icon="refresh", on_click=_check_again)  # pyright: ignore[reportUnknownMemberType]
     else:
-        with ui.row().classes("mt-4"):  # pyright: ignore[reportUnknownMemberType]
-            ui.button("Next", on_click=stepper.next)  # pyright: ignore[reportUnknownMemberType]
+        stepper.next()  # pyright: ignore[reportUnknownMemberType]
 
 
 def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:  # pyright: ignore[reportUnknownParameterType]
@@ -165,6 +164,11 @@ def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:
             ui.label(  # pyright: ignore[reportUnknownMemberType]
                 "Running in Docker — GPU requires nvidia-container-toolkit."
             ).classes("text-sm text-blue-800")
+            ui.link(  # pyright: ignore[reportUnknownMemberType]
+                "Setup guide",
+                "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html",
+                new_tab=True,
+            ).classes("text-xs text-blue-600 underline")
 
     gpu_icon = "memory" if has_gpu else "computer"
     with ui.row().classes("items-center gap-2 mb-4"):  # pyright: ignore[reportUnknownMemberType]

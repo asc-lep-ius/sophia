@@ -10,6 +10,7 @@ from nicegui import app, ui
 
 from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
+from sophia.gui.pages.lectures import is_hermes_setup_complete
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 
 if TYPE_CHECKING:
@@ -168,7 +169,7 @@ def _render_config_section(container: AppContainer) -> None:
 
 def _render_hermes_section() -> None:
     """Hermes Lecture Pipeline configuration card."""
-    is_complete = bool(app.storage.user.get(USER_HERMES_SETUP_COMPLETE, False))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    is_complete = is_hermes_setup_complete()
     label, icon, css = hermes_setup_status(is_complete)
 
     with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
