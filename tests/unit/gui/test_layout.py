@@ -11,11 +11,20 @@ from sophia.gui.state.storage_map import TAB_STUDY_SESSION_IDS, TIER_MAP
 
 class TestNavItems:
     def test_nav_items_count(self) -> None:
-        assert len(NAV_ITEMS) == 7
+        assert len(NAV_ITEMS) == 8
 
     def test_all_expected_paths_present(self) -> None:
         paths = {item["path"] for item in NAV_ITEMS}
-        expected = {"/", "/study", "/review", "/search", "/chronos", "/calibration", "/settings"}
+        expected = {
+            "/",
+            "/study",
+            "/review",
+            "/search",
+            "/chronos",
+            "/calibration",
+            "/lectures",
+            "/settings",
+        }
         assert paths == expected
 
     def test_all_items_have_required_keys(self) -> None:
