@@ -22,6 +22,7 @@ USER_CURRENT_COURSE: Final = "current_course"
 USER_ACTIVE_TOPIC: Final = "active_study_topic"
 USER_PREFERENCES: Final = "preferences"
 USER_ACTIVE_SESSIONS: Final = "active_sessions"
+USER_HERMES_SETUP_COMPLETE: Final = "hermes_setup_complete"
 
 # ``app.storage.tab`` — per browser tab, lost on tab close.
 TAB_STEPPER_STATE: Final = "stepper_state"
@@ -83,7 +84,13 @@ BROWSER_EFFORT_CAPACITY: Final = "effort_capacity"
 
 TIER_MAP: Final[dict[str, list[str]]] = {
     "general": [GENERAL_APP_CONTAINER],
-    "user": [USER_CURRENT_COURSE, USER_ACTIVE_TOPIC, USER_PREFERENCES, USER_ACTIVE_SESSIONS],
+    "user": [
+        USER_CURRENT_COURSE,
+        USER_ACTIVE_TOPIC,
+        USER_PREFERENCES,
+        USER_ACTIVE_SESSIONS,
+        USER_HERMES_SETUP_COMPLETE,
+    ],
     "tab": [
         TAB_STEPPER_STATE,
         TAB_IN_PROGRESS_ANSWERS,

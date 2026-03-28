@@ -24,6 +24,8 @@ from sophia.gui.middleware.health import (
 from sophia.gui.pages.calibration import calibration_content
 from sophia.gui.pages.chronos import chronos_content
 from sophia.gui.pages.dashboard import dashboard_content
+from sophia.gui.pages.lectures import lectures_content
+from sophia.gui.pages.lectures_setup import lectures_setup_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.settings import settings_content
@@ -144,6 +146,14 @@ def _register_pages() -> None:
     @ui.page("/topics")
     async def topics_page() -> None:  # pyright: ignore[reportUnusedFunction]
         await app_shell(lambda: error_boundary(topics_content, page_name="Topics"))
+
+    @ui.page("/lectures")
+    async def lectures_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(lectures_content, page_name="Lectures"))
+
+    @ui.page("/lectures/setup")
+    async def lectures_setup_page() -> None:  # pyright: ignore[reportUnusedFunction]
+        await app_shell(lambda: error_boundary(lectures_setup_content, page_name="Lecture Setup"))
 
     @ui.page("/settings")
     async def settings_page() -> None:  # pyright: ignore[reportUnusedFunction]
