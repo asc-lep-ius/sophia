@@ -140,7 +140,7 @@ test-gui-a11y:
 
 docker-gui-build:
   extends: .docker-gui-build
-  timeout: 45m
+  timeout: 75m
   script:
     - docker build --build-arg VARIANT=gpu -f Dockerfile.gui
       -t $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
