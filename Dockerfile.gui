@@ -7,17 +7,25 @@ FROM base AS builder
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
-RUN uv sync --extra web --no-dev --frozen
+ARG VARIANT=gpu
+RUN if [ "$VARIANT" = "cpu" ]; then \
+      uv sync --extra web --no-dev --frozen && \
+      . .venv/bin/activate && \
+      uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+      uv pip install faster-whisper chromadb sentence-transformers openai; \
+    else \
+      uv sync --extra web --extra hermes --no-dev --frozen; \
+    fi
 
 FROM base AS runtime
 WORKDIR /app
 COPY --from=builder /app /app
 ENV SOPHIA_DATA_DIR=/data
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 1000 sophia
 RUN mkdir -p /data /app/.nicegui && chown sophia:sophia /data /app/.nicegui
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
-    CMD ["curl", "-f", "http://localhost:8080/health"]
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
 USER sophia
 CMD ["/app/.venv/bin/python", "-m", "sophia", "gui", "--host", "0.0.0.0"]
