@@ -11,6 +11,12 @@ services:
       - ./downloads:/app/downloads
     stdin_open: true
     tty: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     stop_grace_period: 10s
     deploy:
       resources:
@@ -35,6 +41,11 @@ services:
       interval: 10s
       retries: 3
       start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   sophia-data:

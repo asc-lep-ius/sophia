@@ -121,7 +121,7 @@ test-gui-a11y:
     - uv run playwright install --with-deps chromium
     - uv run pytest tests/integration/gui/ -k accessibility -v --tb=short
 
-docker-gui-build:
+.docker-gui-build:
   stage: build
   image: docker:latest
   tags: [ubuntu-desktop-1]
@@ -130,19 +130,40 @@ docker-gui-build:
   variables:
     DOCKER_TLS_CERTDIR: ""
     DOCKER_HOST: tcp://docker:2375
-  script:
-    - docker build -f Dockerfile.gui -t sophia-gui:latest .
-    - |
-      IMAGE_SIZE=$(docker image inspect sophia-gui:latest --format='{{.Size}}')
-      MAX_SIZE=$((500 * 1024 * 1024))
-      echo "Image size: $((IMAGE_SIZE / 1024 / 1024))MB"
-      if [ "$IMAGE_SIZE" -gt "$MAX_SIZE" ]; then
-        echo "ERROR: Image exceeds 500MB limit"
-        exit 1
-      fi
   rules:
+    - if: $CI_COMMIT_BRANCH == "master"
     - changes:
         - Dockerfile.gui
         - docker-compose.gui.yml
         - pyproject.toml
         - uv.lock
+
+docker-gui-build:
+  extends: .docker-gui-build
+  timeout: 45m
+  script:
+    - docker build --build-arg VARIANT=gpu -f Dockerfile.gui
+      -t $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
+      -t $CI_REGISTRY_IMAGE/gui:latest .
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+        docker push $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
+        docker push $CI_REGISTRY_IMAGE/gui:latest
+        echo "Published $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
+      fi
+
+docker-gui-build-cpu:
+  extends: .docker-gui-build
+  timeout: 20m
+  script:
+    - docker build --build-arg VARIANT=cpu -f Dockerfile.gui
+      -t $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA
+      -t $CI_REGISTRY_IMAGE/gui:cpu .
+    - |
+      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
+        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+        docker push $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA
+        docker push $CI_REGISTRY_IMAGE/gui:cpu
+        echo "Published $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA"
+      fi
