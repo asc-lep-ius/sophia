@@ -3,7 +3,13 @@ FROM python:3.12-slim AS base
 ENV TERM=xterm-256color LANG=C.UTF-8 LC_ALL=C.UTF-8
 RUN pip install uv
 
-FROM base AS builder
+# GPU builds pass GPU_BASE_IMAGE=registry.gitlab.com/mipkovich/sophia/gui-base:latest
+# so that the heavy CUDA layers are pulled from the registry instead of re-uploaded
+# on every CI run. Falls back to the local 'base' stage for CPU or local builds.
+ARG GPU_BASE_IMAGE
+FROM ${GPU_BASE_IMAGE:-base} AS deps-preloaded
+
+FROM deps-preloaded AS builder
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
