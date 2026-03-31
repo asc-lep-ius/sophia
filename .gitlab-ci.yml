@@ -70,12 +70,7 @@ docker-build:
   stage: build
   image: docker:latest
   tags: [ubuntu-desktop-1]
-  services:
-    - docker:dind
-  variables:
-    # Disable TLS so dind listens on 2375 and the client can reach it
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_HOST: tcp://docker:2375
+  # Uses host Docker socket (mounted via runner config) instead of DinD.
   script:
     - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE:latest .
     - |
@@ -109,7 +104,7 @@ test-gui-e2e:
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/ -v --tb=short
+    - uv run pytest tests/integration/gui/ -m e2e -v --tb=short
 
 test-gui-a11y:
   extends: .python-job
@@ -119,7 +114,7 @@ test-gui-a11y:
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/ -k accessibility -v --tb=short
+    - uv run pytest tests/integration/gui/ -k accessibility -m e2e -v --tb=short
 
 .docker-gui-build:
   stage: build
