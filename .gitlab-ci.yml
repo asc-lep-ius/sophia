@@ -117,8 +117,6 @@ test-gui-smoke-tier2:
   stage: check
   variables:
     PYTHON_VERSION: "3.12"
-  timeout: 5 minutes
-  allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
     - uv run pytest tests/integration/gui/test_smoke_tier2.py -m e2e -v --tb=short
@@ -129,7 +127,9 @@ test-gui-smoke-hermes:
   variables:
     PYTHON_VERSION: "3.12"
   timeout: 10 minutes
-  allow_failure: true
+  before_script:
+    - pip install uv
+    - uv sync --extra web --extra hermes --extra test --group dev
   script:
     - uv run playwright install --with-deps chromium
     - uv run pytest tests/integration/gui/test_smoke_hermes_wizard.py -m e2e -v --tb=short
