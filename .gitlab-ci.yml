@@ -104,7 +104,33 @@ test-gui-e2e:
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/ -m e2e -v --tb=short
+    # Exclude smoke tests that start their own NiceGUI server — they can't share
+    # the session-scoped gui_base_url and must run in isolated jobs below.
+    - >-
+      uv run pytest tests/integration/gui/
+      --ignore=tests/integration/gui/test_smoke_hermes_wizard.py
+      --ignore=tests/integration/gui/test_smoke_tier2.py
+      -m e2e -v --tb=short
+
+test-gui-smoke-tier2:
+  extends: .python-job
+  stage: check
+  variables:
+    PYTHON_VERSION: "3.12"
+  allow_failure: true
+  script:
+    - uv run playwright install --with-deps chromium
+    - uv run pytest tests/integration/gui/test_smoke_tier2.py -m e2e -v --tb=short
+
+test-gui-smoke-hermes:
+  extends: .python-job
+  stage: check
+  variables:
+    PYTHON_VERSION: "3.12"
+  allow_failure: true
+  script:
+    - uv run playwright install --with-deps chromium
+    - uv run pytest tests/integration/gui/test_smoke_hermes_wizard.py -m e2e -v --tb=short
 
 test-gui-a11y:
   extends: .python-job
@@ -114,7 +140,7 @@ test-gui-a11y:
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/ -k accessibility -m e2e -v --tb=short
+    - uv run pytest tests/integration/gui/test_accessibility.py -m e2e -v --tb=short
 
 .docker-gui-build:
   stage: build
