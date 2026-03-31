@@ -125,11 +125,8 @@ test-gui-a11y:
   stage: build
   image: docker:latest
   tags: [ubuntu-desktop-1]
-  services:
-    - docker:dind
-  variables:
-    DOCKER_TLS_CERTDIR: ""
-    DOCKER_HOST: tcp://docker:2375
+  # Uses host Docker socket (mounted via runner config) instead of DinD.
+  # This reuses the host layer cache so CUDA layers are never re-downloaded.
   rules:
     - if: $CI_COMMIT_BRANCH == "master"
     - changes:
