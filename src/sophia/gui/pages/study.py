@@ -358,7 +358,7 @@ async def _render_stepper(
         .props('aria-live="polite"')
     )
 
-    with ui.stepper().props("header-nav=false").classes("w-full") as stepper:
+    with ui.stepper().props(":header-nav=false").classes("w-full") as stepper:
         with ui.step(_STEP_LABELS[0]):
             await _render_pretest(stepper, container, course_id, topics)
         with ui.step(_STEP_LABELS[1]):
