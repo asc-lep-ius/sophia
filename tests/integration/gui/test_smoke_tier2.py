@@ -275,6 +275,15 @@ def seeded_base_url() -> Generator[str, None, None]:
 
     yield base_url
 
+    # Teardown — shut down NiceGUI server, then close DB
+    from nicegui.server import Server
+
+    if hasattr(Server, "instance"):
+        Server.instance.should_exit = True
+    server_thread.join(timeout=10)
+
+    asyncio.run(db.close())
+
 
 def _goto(pg: Page, url: str) -> None:
     """Navigate and wait for NiceGUI to finish rendering."""

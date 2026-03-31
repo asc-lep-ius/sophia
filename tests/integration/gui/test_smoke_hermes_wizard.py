@@ -97,6 +97,13 @@ def hermes_server_url() -> Generator[str, None, None]:
 
     yield url
 
+    # Teardown — mirrors NiceGUI's Screen.stop_server()
+    from nicegui.server import Server
+
+    if hasattr(Server, "instance"):
+        Server.instance.should_exit = True
+    server_thread.join(timeout=10)
+
 
 @pytest.fixture
 def pg(page: Page) -> Page:
