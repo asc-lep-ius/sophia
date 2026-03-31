@@ -129,7 +129,10 @@ test-gui-smoke-hermes:
   timeout: 10 minutes
   before_script:
     - pip install uv
-    - uv sync --extra web --extra hermes --extra test --group dev
+    - uv sync --extra web --extra test --group dev
+    # CPU-only torch (~200MB) instead of CUDA torch (~3GB) — matches Dockerfile.gui cpu-builder
+    - uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+    - uv pip install faster-whisper chromadb sentence-transformers openai
   script:
     - uv run playwright install --with-deps chromium
     - uv run pytest tests/integration/gui/test_smoke_hermes_wizard.py -m e2e -v --tb=short
