@@ -154,33 +154,17 @@ test-gui-a11y:
     - if: $CI_COMMIT_BRANCH == "master"
     - changes:
         - Dockerfile.gui
-        - Dockerfile.gui.base
+        - Dockerfile.gui.cuda
         - docker-compose.gui.yml
         - pyproject.toml
         - uv.lock
-
-docker-gui-base-build:
-  extends: .docker-gui-build
-  timeout: 120m
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master"
-      when: manual
-      allow_failure: true
-  script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -f Dockerfile.gui.base
-      -t $CI_REGISTRY_IMAGE/gui-base:latest .
-    - docker push $CI_REGISTRY_IMAGE/gui-base:latest
 
 docker-gui-build:
   extends: .docker-gui-build
   timeout: 30m
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build
-      --target runtime
-      --build-arg GPU_BASE_IMAGE=$CI_REGISTRY_IMAGE/gui-base:latest
-      -f Dockerfile.gui
+    - docker build -f Dockerfile.gui
       -t $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
       -t $CI_REGISTRY_IMAGE/gui:latest .
     - |
@@ -190,17 +174,17 @@ docker-gui-build:
         echo "Published $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
       fi
 
-docker-gui-build-cpu:
+docker-gui-build-gpu:
   extends: .docker-gui-build
-  timeout: 20m
+  timeout: 30m
   script:
-    - docker build --target runtime-cpu -f Dockerfile.gui
-      -t $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA
-      -t $CI_REGISTRY_IMAGE/gui:cpu .
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -f Dockerfile.gui.cuda
+      -t $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA
+      -t $CI_REGISTRY_IMAGE/gui:cuda .
     - |
       if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-        docker push $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA
-        docker push $CI_REGISTRY_IMAGE/gui:cpu
-        echo "Published $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA"
+        docker push $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA
+        docker push $CI_REGISTRY_IMAGE/gui:cuda
+        echo "Published $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
       fi
