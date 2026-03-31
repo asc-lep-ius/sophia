@@ -117,6 +117,7 @@ test-gui-smoke-tier2:
   stage: check
   variables:
     PYTHON_VERSION: "3.12"
+  timeout: 5 minutes
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
@@ -127,6 +128,7 @@ test-gui-smoke-hermes:
   stage: check
   variables:
     PYTHON_VERSION: "3.12"
+  timeout: 10 minutes
   allow_failure: true
   script:
     - uv run playwright install --with-deps chromium
