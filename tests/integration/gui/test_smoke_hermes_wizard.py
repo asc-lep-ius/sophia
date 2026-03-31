@@ -193,14 +193,11 @@ class TestWizardStep2GPU:
     """AC: GPU detection and model recommendation."""
 
     def _navigate_to_step2(self, pg: Page, hermes_server_url: str) -> None:
-        """Get to step 2 — either auto-advances (deps present) or click Next."""
+        """Get to step 2 — auto-advances when deps present, skips otherwise."""
         _goto(pg, f"{hermes_server_url}/lectures/setup")
-        # If deps are missing, we won't be able to reach step 2 via normal flow
-        # but we can try clicking the step header directly
-        if pg.locator("text=missing package").count() > 0:
-            pg.locator("text=GPU & Compute").first.click()
-        # If deps are present, stepper auto-advances to step 2
         pg.wait_for_timeout(1000)
+        if pg.locator("text=missing package").count() > 0:
+            pytest.skip("hermes dependencies not installed — cannot navigate wizard")
 
     def test_gpu_detection_result(self, pg: Page, hermes_server_url: str) -> None:
         """AC: Shows GPU name + VRAM or 'No GPU detected — CPU mode'."""
@@ -239,9 +236,10 @@ class TestWizardStep3Storage:
         pg.wait_for_timeout(1000)
         # With all deps present, auto-advance lands on step 2 → one Next to step 3
         next_btn = pg.locator("button:has-text('Next')")
-        if next_btn.count() > 0:
-            next_btn.first.click()
-            pg.wait_for_timeout(500)
+        if next_btn.count() == 0:
+            pytest.skip("hermes dependencies not installed — cannot navigate wizard")
+        next_btn.first.click()
+        pg.wait_for_timeout(500)
 
     def test_storage_requirements_card(self, pg: Page, hermes_server_url: str) -> None:
         """AC: Shows estimated disk usage for selected model."""
@@ -277,9 +275,10 @@ class TestWizardStep4Save:
         # With all deps present, auto-advance lands on step 2 → two Nexts to step 4
         for _ in range(2):
             next_btn = pg.locator("button:has-text('Next')")
-            if next_btn.count() > 0:
-                next_btn.first.click()
-                pg.wait_for_timeout(500)
+            if next_btn.count() == 0:
+                pytest.skip("hermes dependencies not installed — cannot navigate wizard")
+            next_btn.first.click()
+            pg.wait_for_timeout(500)
 
     def test_config_summary(self, pg: Page, hermes_server_url: str) -> None:
         """AC: Shows full configuration summary before saving."""
@@ -318,9 +317,10 @@ class TestWizardCompletionFlow:
         # With all deps present, auto-advance lands on step 2 → two Nexts to step 4
         for _ in range(2):
             next_btn = pg.locator("button:has-text('Next')")
-            if next_btn.count() > 0:
-                next_btn.first.click()
-                pg.wait_for_timeout(500)
+            if next_btn.count() == 0:
+                pytest.skip("hermes dependencies not installed — cannot navigate wizard")
+            next_btn.first.click()
+            pg.wait_for_timeout(500)
 
         # Click Save & Complete
         save_btn = pg.locator("button:has-text('Save & Complete')")
