@@ -1,33 +1,59 @@
-# Multi-stage build for the Sophia GUI service
+# Multi-stage build for the Sophia GUI service.
+#
+# Two build targets:
+#   runtime     — GPU (default). Extends gui-base so CUDA layers are registry
+#                 cross-mounts, not re-uploaded. Only new layers per CI push:
+#                 ffmpeg (~50 MB) + app source + sophia package itself.
+#   runtime-cpu — CPU-only. Builds everything from scratch with CPU-pinned torch.
+#
+# GPU_BASE_IMAGE must be declared globally (before any FROM) to parameterise FROM.
+ARG GPU_BASE_IMAGE
+
+# ── Fallback base (used when GPU_BASE_IMAGE is unset: CPU builds, local dev) ──
 FROM python:3.12-slim AS base
 ENV TERM=xterm-256color LANG=C.UTF-8 LC_ALL=C.UTF-8
 RUN pip install uv
 
-# GPU builds pass GPU_BASE_IMAGE=registry.gitlab.com/mipkovich/sophia/gui-base:latest
-# so that the heavy CUDA layers are pulled from the registry instead of re-uploaded
-# on every CI run. Falls back to the local 'base' stage for CPU or local builds.
-ARG GPU_BASE_IMAGE
-FROM ${GPU_BASE_IMAGE:-base} AS deps-preloaded
-
-FROM deps-preloaded AS builder
+# ── CPU builder ────────────────────────────────────────────────────────────────
+# Installs all deps with CPU-pinned torch; venv only used by runtime-cpu.
+FROM base AS cpu-builder
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
-ARG VARIANT=gpu
-RUN if [ "$VARIANT" = "cpu" ]; then \
-      uv sync --extra web --no-dev --frozen && \
-      . .venv/bin/activate && \
-      uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
-      uv pip install faster-whisper chromadb sentence-transformers openai; \
-    else \
-      uv sync --extra web --extra hermes --no-dev --frozen; \
-    fi
+RUN uv sync --extra web --no-dev --frozen && \
+    . .venv/bin/activate && \
+    uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+    uv pip install faster-whisper chromadb sentence-transformers openai
 
-FROM base AS runtime
+# ── CPU runtime ────────────────────────────────────────────────────────────────
+FROM base AS runtime-cpu
 WORKDIR /app
-COPY --from=builder /app /app
 ENV SOPHIA_DATA_DIR=/data
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+COPY --from=cpu-builder /app/.venv /app/.venv
+COPY --from=cpu-builder /app/src /app/src
+COPY --from=cpu-builder /app/pyproject.toml /app/pyproject.toml
+COPY --from=cpu-builder /app/README.md /app/README.md
+RUN useradd --create-home --uid 1000 sophia
+RUN mkdir -p /data /app/.nicegui && chown sophia:sophia /data /app/.nicegui
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
+    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+USER sophia
+CMD ["/app/.venv/bin/python", "-m", "sophia", "gui", "--host", "0.0.0.0"]
+
+# ── GPU runtime (default target) ───────────────────────────────────────────────
+# Extends gui-base directly: CUDA/PyTorch layers are OCI cross-mounts in the
+# registry — zero bytes re-uploaded. Only new layers: ffmpeg + source + the
+# sophia package install (gui-base used --no-install-project so deps are cached).
+# Falls back to bare 'base' when GPU_BASE_IMAGE is unset (local dev).
+FROM ${GPU_BASE_IMAGE:-base} AS runtime
+WORKDIR /app
+ENV SOPHIA_DATA_DIR=/data
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ src/
+RUN uv sync --extra web --extra hermes --no-dev --frozen
 RUN useradd --create-home --uid 1000 sophia
 RUN mkdir -p /data /app/.nicegui && chown sophia:sophia /data /app/.nicegui
 EXPOSE 8080

@@ -158,7 +158,7 @@ docker-gui-build:
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker build
-      --build-arg VARIANT=gpu
+      --target runtime
       --build-arg GPU_BASE_IMAGE=$CI_REGISTRY_IMAGE/gui-base:latest
       -f Dockerfile.gui
       -t $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
@@ -174,7 +174,7 @@ docker-gui-build-cpu:
   extends: .docker-gui-build
   timeout: 20m
   script:
-    - docker build --build-arg VARIANT=cpu -f Dockerfile.gui
+    - docker build --target runtime-cpu -f Dockerfile.gui
       -t $CI_REGISTRY_IMAGE/gui:cpu-$CI_COMMIT_SHORT_SHA
       -t $CI_REGISTRY_IMAGE/gui:cpu .
     - |
