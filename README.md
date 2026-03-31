@@ -1054,6 +1054,9 @@ The test suite uses `pytest` with `pytest-asyncio` for async tests, `respx` for 
 | `make docker-gui-up` | Start GUI service (detached) |
 | `make docker-gui-down` | Stop GUI service |
 | `make docker-gui-logs` | Tail GUI service logs |
+| `make docker-gui-build-gpu` | Build GPU Docker image (NVIDIA) |
+| `make docker-gui-up-gpu` | Start GPU service (detached) |
+| `make docker-gui-down-gpu` | Stop GPU service |
 
 ### Docker
 
@@ -1066,13 +1069,16 @@ docker compose logs -f             # tail logs
 # Backup database from container
 make docker-backup                 # saves sophia-backup-YYYYMMDD.db
 
-# GUI Docker deployment
-docker compose -f docker-compose.gui.yml build    # build GUI image
-docker compose -f docker-compose.gui.yml up -d     # start GUI
-docker compose -f docker-compose.gui.yml down       # stop GUI
-docker compose -f docker-compose.gui.yml logs -f    # tail logs
-# Or use Makefile shortcuts:
+# GUI Docker deployment (CPU — default)
 make docker-gui-build && make docker-gui-up
+# Or directly:
+docker compose -f docker-compose.gui.yml up -d
+
+# GUI Docker deployment (GPU — requires NVIDIA Container Toolkit)
+make docker-gui-build-gpu && make docker-gui-up-gpu
+# Or directly:
+docker build -f Dockerfile.gui.cuda -t sophia-gui:cuda .
+docker compose -f docker-compose.gui.yml --profile gpu up -d sophia-gui-gpu
 ```
 
 ### CI/CD
@@ -1087,7 +1093,7 @@ GitLab CI runs on every push:
 6. **GUI unit tests** — `pytest tests/unit/gui/`
 7. **GUI E2E** — Playwright browser tests (allowed to fail)
 8. **GUI accessibility** — axe-core WCAG 2.1 AA audit (allowed to fail)
-9. **GUI Docker build** — builds GUI image, enforces 500MB size budget
+9. **GUI Docker build** — builds CPU + GPU images; pushes to GitLab Container Registry on `master`
 
 CI runs automatically via GitLab CI on every push.
 
