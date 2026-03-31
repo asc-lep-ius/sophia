@@ -237,6 +237,9 @@ def seeded_base_url() -> Generator[str, None, None]:
             nicegui_app.storage.user["current_course"] = course_id
             ui.label(f"Course set to {course_id}")
 
+        assert db is not None  # guaranteed by setup_thread.join() above
+        nicegui_app.on_shutdown(db.close)
+
         ui.run(
             host="127.0.0.1",
             port=port,
@@ -275,14 +278,12 @@ def seeded_base_url() -> Generator[str, None, None]:
 
     yield base_url
 
-    # Teardown — shut down NiceGUI server, then close DB
+    # Teardown — signal uvicorn to stop (triggers app.on_shutdown → db.close)
     from nicegui.server import Server
 
     if hasattr(Server, "instance"):
         Server.instance.should_exit = True
-    server_thread.join(timeout=10)
-
-    asyncio.run(db.close())
+    server_thread.join(timeout=30)
 
 
 def _goto(pg: Page, url: str) -> None:
