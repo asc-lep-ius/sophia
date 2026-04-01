@@ -100,7 +100,7 @@ async def lectures_setup_content() -> None:
 
     config_state: dict[str, Any] = {}
 
-    with ui.stepper().props("header-nav=false").classes("w-full") as stepper:  # pyright: ignore[reportUnknownMemberType]
+    with ui.stepper().props(":header-nav=false").classes("w-full") as stepper:  # pyright: ignore[reportUnknownMemberType]
         with ui.step("Dependencies"):  # pyright: ignore[reportUnknownMemberType]
             _render_deps_step(stepper)
 
