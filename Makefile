@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs
+.PHONY: dev setup-hermes test lint typecheck run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -66,3 +66,12 @@ docker-gui-down:                 ## Stop GUI service
 
 docker-gui-logs:                 ## Tail GUI service logs
 	docker compose -f docker-compose.gui.yml logs -f
+
+docker-gui-build-gpu:            ## Build GPU Docker image (requires NVIDIA Container Toolkit)
+	docker build -f Dockerfile.gui.cuda -t sophia-gui:cuda .
+
+docker-gui-up-gpu:               ## Start GPU service (detached, requires NVIDIA Container Toolkit)
+	docker compose -f docker-compose.gui.yml --profile gpu up -d sophia-gui-gpu
+
+docker-gui-down-gpu:             ## Stop GPU service
+	docker compose -f docker-compose.gui.yml --profile gpu down
