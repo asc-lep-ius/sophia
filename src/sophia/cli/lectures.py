@@ -30,7 +30,6 @@ def lectures_setup() -> None:
     """Detect hardware and configure the lecture knowledge base pipeline."""
     from rich.console import Console
     from rich.panel import Panel
-    from rich.prompt import Confirm
     from rich.table import Table
 
     from sophia.config import Settings
@@ -187,24 +186,6 @@ def lectures_setup() -> None:
         console.print("[green]✓ Config verified[/green]")
     else:
         console.print("[red]⚠ Config verification failed — please check the file[/red]")
-
-    from sophia.services.hermes_setup import check_hermes_deps, install_hermes_extras
-
-    missing = check_hermes_deps()
-    if not missing:
-        console.print("\n[bold green]✓ Hermes dependencies already installed[/bold green]")
-    else:
-        console.print(f"\n[yellow]Missing Hermes dependencies: {', '.join(missing)}[/yellow]")
-        if Confirm.ask("Install Hermes dependencies now?", default=True, console=console):
-            console.print("[dim]Installing sophia[hermes]… (output streamed below)[/dim]")
-            ok, msg = install_hermes_extras()
-            if ok:
-                console.print("[bold green]✓ Hermes dependencies installed[/bold green]")
-            else:
-                console.print(f"[red]Installation failed:[/red] {msg}")
-        else:
-            console.print("\n[dim]Manual install:[/dim]")
-            console.print("  [cyan]uv pip install -e '.[hermes]'[/cyan]")
 
     console.print("\n[dim]Next step:[/dim]")
     console.print("  [cyan]sophia lectures list[/cyan]")

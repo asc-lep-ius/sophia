@@ -1,4 +1,4 @@
-"""Hermes setup wizard — guided 4-step configuration for the lecture pipeline."""
+"""Hermes setup wizard — guided 2-step configuration for the lecture pipeline."""
 
 from __future__ import annotations
 
@@ -18,7 +18,6 @@ from sophia.domain.models import (
 from sophia.gui.middleware.health import get_container
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 from sophia.services.hermes_setup import (
-    check_hermes_deps,
     detect_gpu,
     recommend_config,
     save_hermes_config,
@@ -40,6 +39,14 @@ _MODEL_STORAGE_MB: dict[WhisperModel, int] = {
     WhisperModel.SMALL: 1000,
 }
 
+# Approximate model download sizes (MB) for first-use warning
+_MODEL_DOWNLOAD_MB: dict[WhisperModel, int] = {
+    WhisperModel.LARGE_V3: 3100,
+    WhisperModel.TURBO: 1500,
+    WhisperModel.MEDIUM: 1500,
+    WhisperModel.SMALL: 500,
+}
+
 
 # ---------------------------------------------------------------------------
 # Pure helpers
@@ -56,21 +63,17 @@ def estimate_storage_mb(model: WhisperModel) -> int:
     return _MODEL_STORAGE_MB.get(model, 2000)
 
 
+def estimate_download_mb(model: WhisperModel) -> int:
+    """Approximate download size in MB for the Whisper model weights."""
+    return _MODEL_DOWNLOAD_MB.get(model, 1500)
+
+
 def format_gpu_info(has_gpu: bool, gpu_name: str, vram_mb: int) -> str:
     """Format GPU detection results for display."""
     if not has_gpu:
         return "No GPU detected — CPU mode"
     vram_str = f"{vram_mb} MB VRAM" if vram_mb else ""
     return f"{gpu_name} — {vram_str}".rstrip(" —")
-
-
-def format_dep_status(missing: list[str]) -> tuple[str, str, str]:
-    """Return (text, icon, css_class) for dependency check result."""
-    if not missing:
-        return "All dependencies installed", "check_circle", "text-green-600"
-    count = len(missing)
-    noun = "package" if count == 1 else "packages"
-    return f"{count} missing {noun}", "error", "text-red-600"
 
 
 def build_config_summary(config: HermesConfig) -> list[str]:
@@ -90,7 +93,7 @@ def build_config_summary(config: HermesConfig) -> list[str]:
 
 
 async def lectures_setup_content() -> None:
-    """Render the 4-step Hermes setup wizard."""
+    """Render the 2-step Hermes setup wizard."""
     container = get_container()
     if container is None:
         ui.label("Application not initialized.").classes("text-red-700")  # pyright: ignore[reportUnknownMemberType]
@@ -101,17 +104,11 @@ async def lectures_setup_content() -> None:
     config_state: dict[str, Any] = {}
 
     with ui.stepper().props(":header-nav=false").classes("w-full") as stepper:  # pyright: ignore[reportUnknownMemberType]
-        with ui.step("Dependencies"):  # pyright: ignore[reportUnknownMemberType]
-            _render_deps_step(stepper)
-
         with ui.step("GPU & Compute"):  # pyright: ignore[reportUnknownMemberType]
             _render_gpu_step(stepper, config_state)
 
-        with ui.step("Storage"):  # pyright: ignore[reportUnknownMemberType]
-            _render_storage_step(stepper, config_state, container)
-
-        with ui.step("Save & Complete"):  # pyright: ignore[reportUnknownMemberType]
-            _render_save_step(stepper, config_state, container)
+        with ui.step("Review & Save"):  # pyright: ignore[reportUnknownMemberType]
+            _render_review_step(stepper, config_state, container)
 
 
 # ---------------------------------------------------------------------------
@@ -119,38 +116,8 @@ async def lectures_setup_content() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _render_deps_step(stepper: ui.stepper) -> None:  # pyright: ignore[reportUnknownParameterType]
-    """Step 1 — check and optionally install Hermes dependencies."""
-    missing = check_hermes_deps()
-    text, icon, css = format_dep_status(missing)
-
-    with ui.row().classes("items-center gap-2"):  # pyright: ignore[reportUnknownMemberType]
-        ui.icon(icon).classes(f"text-2xl {css}")  # pyright: ignore[reportUnknownMemberType]
-        ui.label(text).classes(f"text-lg font-medium {css}")  # pyright: ignore[reportUnknownMemberType]
-
-    if missing:
-        ui.label("Missing packages:").classes("mt-2 font-medium")  # pyright: ignore[reportUnknownMemberType]
-        for pkg in missing:
-            with ui.row().classes("items-center gap-1 ml-4"):  # pyright: ignore[reportUnknownMemberType]
-                ui.icon("close").classes("text-red-500 text-sm")  # pyright: ignore[reportUnknownMemberType]
-                ui.label(pkg).classes("font-mono text-sm")  # pyright: ignore[reportUnknownMemberType]
-
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Install with:").classes("mt-2 text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
-        ui.code("pip install sophia[hermes]").classes("mt-1")  # pyright: ignore[reportUnknownMemberType]
-
-        async def _check_again() -> None:
-            ui.notify("Checking dependencies...", type="info")  # pyright: ignore[reportUnknownMemberType]
-            ui.navigate.to("/lectures/setup")  # pyright: ignore[reportUnknownMemberType]
-
-        with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
-            ui.button("Check Again", icon="refresh", on_click=_check_again)  # pyright: ignore[reportUnknownMemberType]
-    else:
-        stepper.next()  # pyright: ignore[reportUnknownMemberType]
-
-
 def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:  # pyright: ignore[reportUnknownParameterType]
-    """Step 2 — detect GPU hardware and recommend compute settings."""
+    """Step 1 — detect GPU hardware and recommend compute settings."""
     has_gpu, gpu_name, vram_mb = detect_gpu()
     gpu_text = format_gpu_info(has_gpu, gpu_name, vram_mb)
     recommended = recommend_config(has_gpu, vram_mb)
@@ -200,16 +167,24 @@ def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:
     selected_model.on_value_change(_on_model_change)  # pyright: ignore[reportUnknownMemberType]
 
     with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
-        ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
-        ui.button("Next", on_click=stepper.next)  # pyright: ignore[reportUnknownMemberType]
+        ui.button("Review Settings", on_click=stepper.next)  # pyright: ignore[reportUnknownMemberType]
 
 
-def _render_storage_step(  # pyright: ignore[reportUnknownParameterType]
+def _render_review_step(  # pyright: ignore[reportUnknownParameterType]
     stepper: ui.stepper, config_state: dict[str, Any], container: AppContainer
 ) -> None:
-    """Step 3 — show storage requirements and data directory."""
+    """Step 2 — review storage, download warning, config summary, and save."""
     recommended = config_state.get("recommended")
+    if recommended is None:
+        ui.label("Error: no configuration generated. Go back to Step 1.").classes("text-red-600")  # pyright: ignore[reportUnknownMemberType]
+        ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
+        return
+
+    # --- Storage estimate (merged from old storage step) ---
     model = recommended.whisper.model if recommended else WhisperModel.SMALL
+    override = config_state.get("model_override")
+    if override:
+        model = WhisperModel(override)
     storage_mb = estimate_storage_mb(model)
 
     with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
@@ -225,6 +200,7 @@ def _render_storage_step(  # pyright: ignore[reportUnknownParameterType]
             "Transcripts + embeddings: ~500 MB per 100h of lectures"
         ).classes("text-sm text-gray-500 ml-8")
 
+    # --- Data directory ---
     with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
         ui.label("Data Directory").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
         ui.separator()  # pyright: ignore[reportUnknownMemberType]
@@ -237,9 +213,10 @@ def _render_storage_step(  # pyright: ignore[reportUnknownParameterType]
             ui.label("Config:").classes("text-sm text-gray-500 w-20")  # pyright: ignore[reportUnknownMemberType]
             ui.label(config_dir).classes("text-sm font-mono")  # pyright: ignore[reportUnknownMemberType]
 
+    # --- Docker volume warning ---
     if is_docker():
         with (
-            ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-400"),  # pyright: ignore[reportUnknownMemberType]
+            ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-400 mb-4"),  # pyright: ignore[reportUnknownMemberType]
             ui.row().classes("items-center gap-2"),  # pyright: ignore[reportUnknownMemberType]
         ):
             ui.icon("warning").classes("text-amber-600")  # pyright: ignore[reportUnknownMemberType]
@@ -247,27 +224,40 @@ def _render_storage_step(  # pyright: ignore[reportUnknownParameterType]
                 "Ensure a volume is mounted for data persistence in Docker."
             ).classes("text-sm text-amber-800")
 
-    with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
-        ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
-        ui.button("Next", on_click=stepper.next)  # pyright: ignore[reportUnknownMemberType]
+    # --- Model download size warning ---
+    download_mb = estimate_download_mb(model)
+    download_gb = download_mb / 1000
+    _LARGE_DOWNLOAD_THRESHOLD_MB = 1000
+    if download_mb >= _LARGE_DOWNLOAD_THRESHOLD_MB:
+        dl_text = (
+            f"\u26a0 First use will download the Whisper model (~{download_gb:.1f} GB). "
+            "This is a one-time download that persists across container restarts."
+        )
+        with (
+            ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-400 mb-4"),  # pyright: ignore[reportUnknownMemberType]
+            ui.row().classes("items-center gap-2"),  # pyright: ignore[reportUnknownMemberType]
+        ):
+            ui.icon("warning").classes("text-amber-600")  # pyright: ignore[reportUnknownMemberType]
+            ui.label(dl_text).classes("text-sm text-amber-800")  # pyright: ignore[reportUnknownMemberType]
+    else:
+        dl_text = (
+            f"\u2139 First use will download the Whisper model (~{download_mb} MB). "
+            "This is a one-time download."
+        )
+        with (
+            ui.card().classes("w-full bg-blue-50 border-l-4 border-blue-400 mb-4"),  # pyright: ignore[reportUnknownMemberType]
+            ui.row().classes("items-center gap-2"),  # pyright: ignore[reportUnknownMemberType]
+        ):
+            ui.icon("info").classes("text-blue-600")  # pyright: ignore[reportUnknownMemberType]
+            ui.label(dl_text).classes("text-sm text-blue-800")  # pyright: ignore[reportUnknownMemberType]
 
-
-def _render_save_step(  # pyright: ignore[reportUnknownParameterType]
-    stepper: ui.stepper, config_state: dict[str, Any], container: AppContainer
-) -> None:
-    """Step 4 — review config summary and save."""
-    recommended = config_state.get("recommended")
-    if recommended is None:
-        ui.label("Error: no configuration generated. Go back to Step 2.").classes("text-red-600")  # pyright: ignore[reportUnknownMemberType]
-        ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
-        return
-
+    # --- Config summary ---
     def _resolve_final_config() -> HermesConfig:
         """Resolve the final config from current state at call-time."""
-        override = config_state.get("model_override")
-        if override:
+        override_val = config_state.get("model_override")
+        if override_val:
             return _apply_model_override(
-                recommended, WhisperModel(override), config_state.get("has_gpu", False)
+                recommended, WhisperModel(override_val), config_state.get("has_gpu", False)
             )
         return recommended
 
@@ -285,6 +275,7 @@ def _render_save_step(  # pyright: ignore[reportUnknownParameterType]
             "Note: if you changed the Whisper model, the saved config will reflect your selection."
         ).classes("text-xs text-gray-400 mt-2 italic")
 
+    # --- LLM provider validation ---
     valid, msg = validate_llm_provider(recommended.llm)
     icon_name = "check_circle" if valid else "warning"
     css = "text-green-600" if valid else "text-amber-600"
@@ -292,10 +283,11 @@ def _render_save_step(  # pyright: ignore[reportUnknownParameterType]
         ui.icon(icon_name).classes(f"text-lg {css}")  # pyright: ignore[reportUnknownMemberType]
         ui.label(msg).classes(f"text-sm {css}")  # pyright: ignore[reportUnknownMemberType]
 
+    # --- Navigation ---
     with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
         ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
         ui.button(  # pyright: ignore[reportUnknownMemberType]
-            "Save & Complete",
+            "Save Configuration",
             icon="check",
             on_click=_on_save,
             color="primary",

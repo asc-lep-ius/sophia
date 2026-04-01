@@ -19,10 +19,8 @@ from sophia.domain.models import (
     WhisperModel,
 )
 from sophia.services.hermes_setup import (
-    check_hermes_deps,
     detect_gpu,
     get_provider_defaults,
-    install_hermes_extras,
     load_hermes_config,
     recommend_config,
     save_hermes_config,
@@ -283,55 +281,3 @@ class TestGetProviderDefaults:
         defaults = get_provider_defaults(LLMProvider.GITHUB)
         assert defaults["model"] == "openai/gpt-4o"
         assert defaults["api_key_env"] == "GITHUB_TOKEN"
-
-
-class TestCheckHermesDeps:
-    def test_all_available(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When all packages are importable, nothing is missing."""
-        monkeypatch.setattr("builtins.__import__", lambda name, *a, **kw: None)
-        assert check_hermes_deps() == []
-
-    def test_some_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Non-importable packages are reported as missing."""
-        import builtins
-
-        original_import = builtins.__import__
-
-        def _selective_import(name: str, *args: object, **kwargs: object) -> object:
-            if name == "faster_whisper":
-                raise ImportError
-            return original_import(name, *args, **kwargs)  # type: ignore[no-any-return]
-
-        monkeypatch.setattr("builtins.__import__", _selective_import)
-        missing = check_hermes_deps()
-        assert "faster-whisper" in missing
-
-
-class TestInstallHermesExtras:
-    def test_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Successful uv install returns (True, message)."""
-        import subprocess as sp
-
-        mock_popen = type("FakePopen", (), {"wait": lambda self: None, "returncode": 0})()
-        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: mock_popen)
-        ok, msg = install_hermes_extras()
-        assert ok is True
-        assert "success" in msg.lower()
-
-    def test_failure_returncode(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Non-zero exit code returns (False, message)."""
-        import subprocess as sp
-
-        mock_popen = type("FakePopen", (), {"wait": lambda self: None, "returncode": 1})()
-        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: mock_popen)
-        ok, _ = install_hermes_extras()
-        assert ok is False
-
-    def test_uv_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When uv binary is missing, returns (False, message)."""
-        import subprocess as sp
-
-        monkeypatch.setattr(sp, "Popen", lambda *a, **kw: (_ for _ in ()).throw(FileNotFoundError))
-        ok, msg = install_hermes_extras()
-        assert ok is False
-        assert "uv not found" in msg.lower()

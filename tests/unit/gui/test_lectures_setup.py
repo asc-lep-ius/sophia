@@ -20,8 +20,8 @@ from sophia.domain.models import (
 from sophia.gui.pages.lectures_setup import (
     _apply_model_override,
     build_config_summary,
+    estimate_download_mb,
     estimate_storage_mb,
-    format_dep_status,
     format_gpu_info,
     is_docker,
 )
@@ -69,6 +69,22 @@ class TestEstimateStorageMb:
         assert estimate_storage_mb(model) == expected
 
 
+class TestEstimateDownloadMb:
+    """Download size estimates per Whisper model."""
+
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            (WhisperModel.LARGE_V3, 3100),
+            (WhisperModel.TURBO, 1500),
+            (WhisperModel.MEDIUM, 1500),
+            (WhisperModel.SMALL, 500),
+        ],
+    )
+    def test_known_models(self, model: WhisperModel, expected: int) -> None:
+        assert estimate_download_mb(model) == expected
+
+
 class TestFormatGpuInfo:
     """Human-readable GPU detection summary."""
 
@@ -87,28 +103,6 @@ class TestFormatGpuInfo:
     def test_gpu_present_with_different_vram(self) -> None:
         result = format_gpu_info(has_gpu=True, gpu_name="NVIDIA A100", vram_mb=40960)
         assert result == "NVIDIA A100 — 40960 MB VRAM"
-
-
-class TestFormatDepStatus:
-    """Dependency check result formatting."""
-
-    def test_all_installed(self) -> None:
-        text, icon, css = format_dep_status([])
-        assert text == "All dependencies installed"
-        assert icon == "check_circle"
-        assert css == "text-green-600"
-
-    def test_one_missing(self) -> None:
-        text, icon, css = format_dep_status(["chromadb"])
-        assert text == "1 missing package"
-        assert icon == "error"
-        assert css == "text-red-600"
-
-    def test_multiple_missing(self) -> None:
-        text, icon, css = format_dep_status(["chromadb", "openai", "faster-whisper"])
-        assert text == "3 missing packages"
-        assert icon == "error"
-        assert css == "text-red-600"
 
 
 class TestBuildConfigSummary:
