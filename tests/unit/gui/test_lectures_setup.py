@@ -21,7 +21,6 @@ from sophia.gui.pages.lectures_setup import (
     _apply_model_override,
     build_config_summary,
     estimate_storage_mb,
-    format_dep_status,
     format_gpu_info,
     is_docker,
 )
@@ -87,28 +86,6 @@ class TestFormatGpuInfo:
     def test_gpu_present_with_different_vram(self) -> None:
         result = format_gpu_info(has_gpu=True, gpu_name="NVIDIA A100", vram_mb=40960)
         assert result == "NVIDIA A100 — 40960 MB VRAM"
-
-
-class TestFormatDepStatus:
-    """Dependency check result formatting."""
-
-    def test_all_installed(self) -> None:
-        text, icon, css = format_dep_status([])
-        assert text == "All dependencies installed"
-        assert icon == "check_circle"
-        assert css == "text-green-600"
-
-    def test_one_missing(self) -> None:
-        text, icon, css = format_dep_status(["chromadb"])
-        assert text == "1 missing package"
-        assert icon == "error"
-        assert css == "text-red-600"
-
-    def test_multiple_missing(self) -> None:
-        text, icon, css = format_dep_status(["chromadb", "openai", "faster-whisper"])
-        assert text == "3 missing packages"
-        assert icon == "error"
-        assert css == "text-red-600"
 
 
 class TestBuildConfigSummary:

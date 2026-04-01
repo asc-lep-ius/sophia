@@ -18,7 +18,6 @@ from sophia.domain.models import (
 from sophia.gui.middleware.health import get_container
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 from sophia.services.hermes_setup import (
-    check_hermes_deps,
     detect_gpu,
     recommend_config,
     save_hermes_config,
@@ -64,15 +63,6 @@ def format_gpu_info(has_gpu: bool, gpu_name: str, vram_mb: int) -> str:
     return f"{gpu_name} — {vram_str}".rstrip(" —")
 
 
-def format_dep_status(missing: list[str]) -> tuple[str, str, str]:
-    """Return (text, icon, css_class) for dependency check result."""
-    if not missing:
-        return "All dependencies installed", "check_circle", "text-green-600"
-    count = len(missing)
-    noun = "package" if count == 1 else "packages"
-    return f"{count} missing {noun}", "error", "text-red-600"
-
-
 def build_config_summary(config: HermesConfig) -> list[str]:
     """Build human-readable config summary lines."""
     return [
@@ -90,7 +80,7 @@ def build_config_summary(config: HermesConfig) -> list[str]:
 
 
 async def lectures_setup_content() -> None:
-    """Render the 4-step Hermes setup wizard."""
+    """Render the 3-step Hermes setup wizard."""
     container = get_container()
     if container is None:
         ui.label("Application not initialized.").classes("text-red-700")  # pyright: ignore[reportUnknownMemberType]
@@ -101,9 +91,6 @@ async def lectures_setup_content() -> None:
     config_state: dict[str, Any] = {}
 
     with ui.stepper().props(":header-nav=false").classes("w-full") as stepper:  # pyright: ignore[reportUnknownMemberType]
-        with ui.step("Dependencies"):  # pyright: ignore[reportUnknownMemberType]
-            _render_deps_step(stepper)
-
         with ui.step("GPU & Compute"):  # pyright: ignore[reportUnknownMemberType]
             _render_gpu_step(stepper, config_state)
 
@@ -117,36 +104,6 @@ async def lectures_setup_content() -> None:
 # ---------------------------------------------------------------------------
 # Step renderers
 # ---------------------------------------------------------------------------
-
-
-def _render_deps_step(stepper: ui.stepper) -> None:  # pyright: ignore[reportUnknownParameterType]
-    """Step 1 — check and optionally install Hermes dependencies."""
-    missing = check_hermes_deps()
-    text, icon, css = format_dep_status(missing)
-
-    with ui.row().classes("items-center gap-2"):  # pyright: ignore[reportUnknownMemberType]
-        ui.icon(icon).classes(f"text-2xl {css}")  # pyright: ignore[reportUnknownMemberType]
-        ui.label(text).classes(f"text-lg font-medium {css}")  # pyright: ignore[reportUnknownMemberType]
-
-    if missing:
-        ui.label("Missing packages:").classes("mt-2 font-medium")  # pyright: ignore[reportUnknownMemberType]
-        for pkg in missing:
-            with ui.row().classes("items-center gap-1 ml-4"):  # pyright: ignore[reportUnknownMemberType]
-                ui.icon("close").classes("text-red-500 text-sm")  # pyright: ignore[reportUnknownMemberType]
-                ui.label(pkg).classes("font-mono text-sm")  # pyright: ignore[reportUnknownMemberType]
-
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Install with:").classes("mt-2 text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
-        ui.code("pip install sophia[hermes]").classes("mt-1")  # pyright: ignore[reportUnknownMemberType]
-
-        async def _check_again() -> None:
-            ui.notify("Checking dependencies...", type="info")  # pyright: ignore[reportUnknownMemberType]
-            ui.navigate.to("/lectures/setup")  # pyright: ignore[reportUnknownMemberType]
-
-        with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
-            ui.button("Check Again", icon="refresh", on_click=_check_again)  # pyright: ignore[reportUnknownMemberType]
-    else:
-        stepper.next()  # pyright: ignore[reportUnknownMemberType]
 
 
 def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:  # pyright: ignore[reportUnknownParameterType]
