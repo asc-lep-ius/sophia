@@ -20,10 +20,12 @@ from sophia.domain.models import (
 from sophia.gui.pages.lectures_setup import (
     _apply_model_override,
     build_config_summary,
+    build_provider_label,
     estimate_download_mb,
     estimate_storage_mb,
     format_gpu_info,
     is_docker,
+    needs_api_key,
 )
 from sophia.services.hermes_setup import recommend_config
 
@@ -164,3 +166,41 @@ class TestApplyModelOverride:
         result = _apply_model_override(base, WhisperModel.LARGE_V3, has_gpu=False)
         assert result.llm == base.llm
         assert result.embeddings == base.embeddings
+
+
+class TestBuildProviderLabel:
+    """Human-friendly labels for every LLM provider."""
+
+    @pytest.mark.parametrize(
+        ("provider", "expected"),
+        [
+            (LLMProvider.GITHUB, "GitHub Models"),
+            (LLMProvider.GEMINI, "Google Gemini"),
+            (LLMProvider.GROQ, "Groq"),
+            (LLMProvider.OLLAMA, "Ollama (local)"),
+        ],
+    )
+    def test_label_for_provider(self, provider: LLMProvider, expected: str) -> None:
+        assert build_provider_label(provider) == expected
+
+    def test_all_providers_have_labels(self) -> None:
+        for provider in LLMProvider:
+            label = build_provider_label(provider)
+            assert isinstance(label, str)
+            assert len(label) > 0
+
+
+class TestNeedsApiKey:
+    """Ollama is local-only, all others need an API key."""
+
+    @pytest.mark.parametrize(
+        ("provider", "expected"),
+        [
+            (LLMProvider.GITHUB, True),
+            (LLMProvider.GEMINI, True),
+            (LLMProvider.GROQ, True),
+            (LLMProvider.OLLAMA, False),
+        ],
+    )
+    def test_needs_key(self, provider: LLMProvider, expected: bool) -> None:
+        assert needs_api_key(provider) is expected
