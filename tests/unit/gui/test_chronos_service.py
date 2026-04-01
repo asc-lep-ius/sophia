@@ -892,7 +892,7 @@ class TestGetEffortDistributionData:
         dl = _make_deadline(
             id="dl-1",
             name="HW 1",
-            due_at=datetime(2026, 3, 31, 23, 59, tzinfo=UTC),
+            due_at=datetime.now(UTC) + timedelta(days=7),
         )
 
         with (
