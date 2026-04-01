@@ -20,6 +20,7 @@ from sophia.domain.models import (
 from sophia.gui.pages.lectures_setup import (
     _apply_model_override,
     build_config_summary,
+    estimate_download_mb,
     estimate_storage_mb,
     format_gpu_info,
     is_docker,
@@ -66,6 +67,22 @@ class TestEstimateStorageMb:
     )
     def test_known_models(self, model: WhisperModel, expected: int) -> None:
         assert estimate_storage_mb(model) == expected
+
+
+class TestEstimateDownloadMb:
+    """Download size estimates per Whisper model."""
+
+    @pytest.mark.parametrize(
+        ("model", "expected"),
+        [
+            (WhisperModel.LARGE_V3, 3100),
+            (WhisperModel.TURBO, 1500),
+            (WhisperModel.MEDIUM, 1500),
+            (WhisperModel.SMALL, 500),
+        ],
+    )
+    def test_known_models(self, model: WhisperModel, expected: int) -> None:
+        assert estimate_download_mb(model) == expected
 
 
 class TestFormatGpuInfo:
