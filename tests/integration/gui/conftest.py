@@ -75,6 +75,13 @@ def gui_base_url() -> Generator[str, None, None]:
 
     yield base_url
 
+    # Teardown — mirrors NiceGUI's Screen.stop_server()
+    from nicegui.server import Server
+
+    if hasattr(Server, "instance"):
+        Server.instance.should_exit = True
+    server_thread.join(timeout=10)
+
 
 @pytest.fixture
 def gui_page(page: Page, gui_base_url: str) -> Page:
