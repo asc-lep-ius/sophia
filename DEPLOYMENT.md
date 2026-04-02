@@ -4,16 +4,16 @@
 
 ```bash
 # Start the GUI service
-docker compose -f docker-compose.gui.yml up -d
+docker compose up -d
 
 # Check status
-docker compose -f docker-compose.gui.yml ps
+docker compose ps
 
 # View logs
-docker compose -f docker-compose.gui.yml logs -f
+docker compose logs -f
 
 # Stop
-docker compose -f docker-compose.gui.yml down
+docker compose down
 ```
 
 The GUI is available at `http://localhost:8080` by default.
@@ -21,7 +21,7 @@ The GUI is available at `http://localhost:8080` by default.
 To use a different port, set `SOPHIA_GUI_PORT` in your `.env` file or environment:
 
 ```bash
-SOPHIA_GUI_PORT=9090 docker compose -f docker-compose.gui.yml up -d
+SOPHIA_GUI_PORT=9090 docker compose up -d
 ```
 
 ---
@@ -103,7 +103,7 @@ ssh -L 8080:localhost:8080 user@remote-host
 
 ### Docker Healthcheck
 
-The `docker-compose.gui.yml` includes a healthcheck that polls `/health`
+The `docker-compose.yml` includes a healthcheck that polls `/health`
 every 30 seconds. Check container health:
 
 ```bash

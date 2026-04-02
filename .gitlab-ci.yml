@@ -160,7 +160,7 @@ test-gui-a11y:
     - changes:
         - Dockerfile.gui
         - Dockerfile.gui.cuda
-        - docker-compose.gui.yml
+        - docker-compose.yml
         - pyproject.toml
         - uv.lock
 
