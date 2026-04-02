@@ -181,10 +181,11 @@ docker-gui-build:
 
 docker-gui-build-gpu:
   extends: .docker-gui-build
-  timeout: 1h
+  timeout: 20m
   script:
     - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - docker build -f Dockerfile.gui.cuda
+      --build-arg CUDA_BASE_IMAGE=$CI_REGISTRY_IMAGE/cuda-base:v1
       -t $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA
       -t $CI_REGISTRY_IMAGE/gui:cuda .
     - |
@@ -193,3 +194,20 @@ docker-gui-build-gpu:
         docker push $CI_REGISTRY_IMAGE/gui:cuda
         echo "Published $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
       fi
+
+# Rebuild the CUDA base image when ML deps (torch, transformers, etc.) change.
+# Triggered manually — run from master after updating pyproject.toml / uv.lock.
+docker-cuda-base:
+  stage: build
+  image: docker:latest
+  tags: [ubuntu-desktop-1]
+  rules:
+    - when: manual
+      allow_failure: true
+  timeout: 1h
+  script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+    - docker build -f ci/Dockerfile.cuda-base
+      -t $CI_REGISTRY_IMAGE/cuda-base:v1 .
+    - docker push $CI_REGISTRY_IMAGE/cuda-base:v1
+    - echo "Published $CI_REGISTRY_IMAGE/cuda-base:v1"
