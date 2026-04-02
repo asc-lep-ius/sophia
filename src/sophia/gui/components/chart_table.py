@@ -26,7 +26,7 @@ def chart_with_table(
     show_table = ui.switch("Show as table").props(
         f'aria-label="Toggle data table view for {chart_id}"'
     )
-    with ui.column().bind_visibility_from(show_table, "value"):  # pyright: ignore[reportUnknownMemberType]
+    with ui.column().bind_visibility_from(show_table, "value"):
         _render_accessible_table(headers=headers, rows=rows, table_id=chart_id)
 
 

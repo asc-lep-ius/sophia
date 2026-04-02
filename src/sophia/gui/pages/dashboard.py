@@ -59,12 +59,12 @@ def _render_header() -> None:
 
 @ui.refreshable  # type: ignore[misc]
 def _render_density_toggle() -> None:
-    current: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    current: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)
 
     def _set_mode(mode: str) -> None:
-        app.storage.tab[TAB_DENSITY_MODE] = mode  # pyright: ignore[reportUnknownMemberType]
-        _render_density_toggle.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
-        _dashboard_cards.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+        app.storage.tab[TAB_DENSITY_MODE] = mode
+        _render_density_toggle.refresh()  # type: ignore[attr-defined]
+        _dashboard_cards.refresh()  # type: ignore[attr-defined]
 
     with ui.button_group():
         for mode, icon, label in [
@@ -88,13 +88,13 @@ async def _dashboard_cards() -> None:
         loading_spinner(text="Connecting...")
         return
 
-    density: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+    density: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)
 
     try:
-        db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        reviews = await get_due_reviews(db)  # pyright: ignore[reportUnknownArgumentType]
-        deadlines = await get_deadlines(db)  # pyright: ignore[reportUnknownArgumentType]
-        plan_items = await build_plan_items(db)  # pyright: ignore[reportUnknownArgumentType]
+        db = container.db
+        reviews = await get_due_reviews(db)
+        deadlines = await get_deadlines(db)
+        plan_items = await build_plan_items(db)
     except Exception:
         log.exception("dashboard_data_fetch_failed")
         skeleton_card()
