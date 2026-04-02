@@ -6,7 +6,10 @@ import os
 import re
 import subprocess
 import tomllib
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+import httpx
 
 from sophia.domain.models import (
     ComputeDevice,
@@ -53,6 +56,24 @@ _PROVIDER_DEFAULTS: dict[LLMProvider, dict[str, str]] = {
     },
 }
 
+_PROVIDER_VALIDATION_URLS: dict[LLMProvider, str] = {
+    LLMProvider.GITHUB: "https://models.inference.ai.azure.com/models",
+    LLMProvider.GEMINI: "https://generativelanguage.googleapis.com/v1/models",
+    LLMProvider.GROQ: "https://api.groq.com/openai/v1/models",
+    LLMProvider.OLLAMA: "http://localhost:11434/api/tags",
+}
+
+_VALIDATION_TIMEOUT_SECONDS = 5
+
+
+@dataclass(frozen=True, slots=True)
+class GpuContext:
+    """GPU detection context for UI messaging."""
+
+    message: str
+    severity: str
+    icon: str
+
 
 def detect_gpu() -> tuple[bool, str, int]:
     """Detect GPU availability via nvidia-smi.
@@ -95,8 +116,19 @@ def detect_gpu() -> tuple[bool, str, int]:
     return True, gpu_name, vram_mb
 
 
-def recommend_config(has_gpu: bool, vram_mb: int) -> HermesConfig:
-    """Generate recommended config based on detected hardware."""
+def recommend_config(
+    has_gpu: bool,
+    vram_mb: int,
+    *,
+    provider: LLMProvider | None = None,
+    llm_model: str | None = None,
+    api_key_env: str | None = None,
+) -> HermesConfig:
+    """Generate recommended config based on detected hardware.
+
+    When *provider* is given, its defaults are used for the LLM section.
+    *llm_model* and *api_key_env* override the provider defaults when supplied.
+    """
     if has_gpu and vram_mb >= _HIGH_VRAM_THRESHOLD:
         whisper = HermesWhisperConfig(
             model=WhisperModel.LARGE_V3,
@@ -116,11 +148,12 @@ def recommend_config(has_gpu: bool, vram_mb: int) -> HermesConfig:
             compute_type=ComputeType.FLOAT32,
         )
 
-    defaults = _PROVIDER_DEFAULTS[LLMProvider.GITHUB]
+    selected = provider or LLMProvider.GITHUB
+    defaults = _PROVIDER_DEFAULTS[selected]
     llm = HermesLLMConfig(
-        provider=LLMProvider.GITHUB,
-        model=defaults["model"],
-        api_key_env=defaults["api_key_env"],
+        provider=selected,
+        model=llm_model or defaults["model"],
+        api_key_env=api_key_env if api_key_env is not None else defaults["api_key_env"],
     )
     embeddings = HermesEmbeddingConfig(
         provider=EmbeddingProvider.LOCAL,
@@ -189,3 +222,69 @@ def validate_llm_provider(config: HermesLLMConfig) -> tuple[bool, str]:
 def get_provider_defaults(provider: LLMProvider) -> dict[str, str]:
     """Return default model/api_key_env/embedding_model for a provider."""
     return dict(_PROVIDER_DEFAULTS[provider])
+
+
+def detect_gpu_context(has_gpu: bool, gpu_name: str, vram_mb: int) -> GpuContext:
+    """Return a 3-state context message based on GPU availability and Docker image type."""
+    if has_gpu:
+        return GpuContext(
+            message=f"GPU detected: {gpu_name}. Whisper will use GPU acceleration.",
+            severity="success",
+            icon="check_circle",
+        )
+
+    is_cuda_image = os.path.exists("/usr/local/cuda/") and os.environ.get("SOPHIA_DOCKER") == "1"
+    if is_cuda_image:
+        return GpuContext(
+            message=(
+                "GPU image detected but no GPU device is available. "
+                "Ensure nvidia-container-toolkit is installed on the host "
+                "and you started with `docker compose --profile gpu up`."
+            ),
+            severity="warning",
+            icon="warning",
+        )
+
+    return GpuContext(
+        message=(
+            "You're running the CPU image. Whisper will use CPU mode "
+            "— this is expected and works fine (transcription will be slower)."
+        ),
+        severity="info",
+        icon="info",
+    )
+
+
+async def validate_api_key_live(provider: LLMProvider, api_key: str) -> tuple[bool, str]:
+    """Validate an API key by making a lightweight HTTP request to the provider."""
+    url = _PROVIDER_VALIDATION_URLS[provider]
+    is_ollama = provider == LLMProvider.OLLAMA
+
+    headers: dict[str, str] = {}
+    params: dict[str, str] = {}
+
+    if provider == LLMProvider.GEMINI:
+        params["key"] = api_key
+    elif not is_ollama:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    try:
+        async with httpx.AsyncClient(timeout=_VALIDATION_TIMEOUT_SECONDS) as client:
+            resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectTimeout, httpx.ReadTimeout):
+        return False, "Connection timed out"
+    except httpx.ConnectError:
+        if is_ollama:
+            return False, "Cannot connect to Ollama — is it running on localhost:11434?"
+        return False, f"Cannot connect to {provider.value} API"
+
+    if resp.status_code == 200:  # noqa: PLR2004
+        if is_ollama:
+            return True, "Connected to Ollama"
+        return True, "Key verified"
+    if resp.status_code == 401:  # noqa: PLR2004
+        return False, "Invalid API key"
+    if resp.status_code == 429:  # noqa: PLR2004
+        return True, "Key format looks valid but rate-limited — try again later"
+
+    return False, f"Unexpected response ({resp.status_code})"

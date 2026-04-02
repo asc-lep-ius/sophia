@@ -99,18 +99,34 @@ async def lectures_content() -> None:
 # --- Setup required ----------------------------------------------------------
 
 
+_PIPELINE_FEATURES = (
+    "Download lecture recordings from TU Wien",
+    "Transcribe audio with Whisper (GPU or CPU)",
+    "Index transcripts for semantic search",
+    "Generate AI-powered study questions",
+)
+
+
 def _render_setup_required() -> None:
-    """Show info card prompting user to run the setup wizard."""
+    """Show info card explaining the pipeline and prompting setup."""
     with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):  # pyright: ignore[reportUnknownMemberType]
         ui.label("Lecture Pipeline Setup Required").classes(  # pyright: ignore[reportUnknownMemberType]
             "text-xl font-bold mb-2",
         )
         ui.label(  # pyright: ignore[reportUnknownMemberType]
-            "The lecture pipeline needs to be configured before you can "
-            "browse and search lecture content. The setup wizard will guide "
-            "you through dependency checks, hardware detection, and storage "
-            "configuration.",
-        ).classes("text-gray-600 mb-4")
+            "The lecture pipeline downloads, transcribes, and indexes your "
+            "TU Wien lectures for semantic search. Setup configures your "
+            "GPU, transcription model, and LLM provider.",
+        ).classes("text-gray-600 mb-3")
+
+        with ui.column().classes("gap-1 mb-3"):  # pyright: ignore[reportUnknownMemberType]
+            for feature in _PIPELINE_FEATURES:
+                with ui.row().classes("items-center gap-2"):  # pyright: ignore[reportUnknownMemberType]
+                    ui.icon("check_circle_outline").classes("text-green-500 text-sm")  # pyright: ignore[reportUnknownMemberType]
+                    ui.label(feature).classes("text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
+
+        ui.label("Takes ~2 minutes.").classes("text-sm text-gray-500 mb-4 italic")  # pyright: ignore[reportUnknownMemberType]
+
         ui.button(  # pyright: ignore[reportUnknownMemberType]
             "Run Setup",
             on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
@@ -137,6 +153,11 @@ def _render_header() -> None:
             value=_get_status_filter(),
             on_change=lambda e: (_set_status_filter(e.value), _lecture_list.refresh()),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
         ).props("outlined dense").classes("w-48")  # pyright: ignore[reportUnknownMemberType]
+
+        ui.button(  # pyright: ignore[reportUnknownMemberType]
+            icon="settings",
+            on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
+        ).props("flat round").tooltip("Re-run Setup")  # pyright: ignore[reportUnknownMemberType]
 
 
 # --- Lecture list (refreshable) ----------------------------------------------
