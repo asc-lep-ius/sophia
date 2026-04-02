@@ -13,14 +13,20 @@ from sophia.domain.models import (
     ComputeType,
     HermesConfig,
     HermesWhisperConfig,
+    LLMProvider,
     WhisperModel,
 )
 from sophia.gui.middleware.health import get_container
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 from sophia.services.hermes_setup import (
+    GpuContext,
     detect_gpu,
+    detect_gpu_context,
+    get_provider_defaults,
+    load_hermes_config,
     recommend_config,
     save_hermes_config,
+    validate_api_key_live,
     validate_llm_provider,
 )
 
@@ -87,6 +93,24 @@ def build_config_summary(config: HermesConfig) -> list[str]:
     ]
 
 
+_PROVIDER_LABELS: dict[LLMProvider, str] = {
+    LLMProvider.GITHUB: "GitHub Models",
+    LLMProvider.GEMINI: "Google Gemini",
+    LLMProvider.GROQ: "Groq",
+    LLMProvider.OLLAMA: "Ollama (local)",
+}
+
+
+def build_provider_label(provider: LLMProvider) -> str:
+    """Human-friendly label for the provider dropdown."""
+    return _PROVIDER_LABELS[provider]
+
+
+def needs_api_key(provider: LLMProvider) -> bool:
+    """Whether the provider requires an API key (Ollama runs locally)."""
+    return provider != LLMProvider.OLLAMA
+
+
 # ---------------------------------------------------------------------------
 # Main wizard content
 # ---------------------------------------------------------------------------
@@ -102,9 +126,11 @@ async def lectures_setup_content() -> None:
     ui.label("Lecture Pipeline Setup").classes("text-2xl font-bold mb-4")  # pyright: ignore[reportUnknownMemberType]
 
     config_state: dict[str, Any] = {}
+    existing_config = load_hermes_config(container.settings.config_dir)
+    config_state["existing_config"] = existing_config
 
     with ui.stepper().props(":header-nav=false").classes("w-full") as stepper:  # pyright: ignore[reportUnknownMemberType]
-        with ui.step("GPU & Compute"):  # pyright: ignore[reportUnknownMemberType]
+        with ui.step("GPU, Compute & LLM"):  # pyright: ignore[reportUnknownMemberType]
             _render_gpu_step(stepper, config_state)
 
         with ui.step("Review & Save"):  # pyright: ignore[reportUnknownMemberType]
@@ -117,30 +143,14 @@ async def lectures_setup_content() -> None:
 
 
 def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:  # pyright: ignore[reportUnknownParameterType]
-    """Step 1 — detect GPU hardware and recommend compute settings."""
+    """Step 1 — detect GPU, recommend compute settings, select LLM provider."""
     has_gpu, gpu_name, vram_mb = detect_gpu()
-    gpu_text = format_gpu_info(has_gpu, gpu_name, vram_mb)
     recommended = recommend_config(has_gpu, vram_mb)
+    existing: HermesConfig | None = config_state.get("existing_config")
 
-    if is_docker():
-        with (
-            ui.card().classes("w-full bg-blue-50 border-l-4 border-blue-400 mb-4"),  # pyright: ignore[reportUnknownMemberType]
-            ui.row().classes("items-center gap-2"),  # pyright: ignore[reportUnknownMemberType]
-        ):
-            ui.icon("info").classes("text-blue-600")  # pyright: ignore[reportUnknownMemberType]
-            ui.label(  # pyright: ignore[reportUnknownMemberType]
-                "Running in Docker — GPU requires nvidia-container-toolkit."
-            ).classes("text-sm text-blue-800")
-            ui.link(  # pyright: ignore[reportUnknownMemberType]
-                "Setup guide",
-                "https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html",
-                new_tab=True,
-            ).classes("text-xs text-blue-600 underline")
-
-    gpu_icon = "memory" if has_gpu else "computer"
-    with ui.row().classes("items-center gap-2 mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.icon(gpu_icon).classes("text-2xl")  # pyright: ignore[reportUnknownMemberType]
-        ui.label(gpu_text).classes("text-lg font-medium")  # pyright: ignore[reportUnknownMemberType]
+    # --- Context-aware GPU messaging ---
+    gpu_ctx = detect_gpu_context(has_gpu, gpu_name, vram_mb)
+    _render_gpu_context_card(gpu_ctx)
 
     if has_gpu and vram_mb:
         ui.label(  # pyright: ignore[reportUnknownMemberType]
@@ -152,22 +162,133 @@ def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:
         ).classes("text-sm text-gray-600 mb-2")
 
     model_options = [m.value for m in WhisperModel]
+    initial_model = existing.whisper.model.value if existing else recommended.whisper.model.value
     selected_model = ui.select(  # pyright: ignore[reportUnknownMemberType]
         options=model_options,
-        value=recommended.whisper.model.value,
+        value=initial_model,
         label="Whisper Model",
     ).classes("w-60")
 
     config_state["recommended"] = recommended
     config_state["has_gpu"] = has_gpu
+    config_state["vram_mb"] = vram_mb
 
     def _on_model_change() -> None:
         config_state["model_override"] = selected_model.value  # pyright: ignore[reportUnknownMemberType]
 
     selected_model.on_value_change(_on_model_change)  # pyright: ignore[reportUnknownMemberType]
 
+    # --- LLM provider section ---
+    ui.separator().classes("my-4")  # pyright: ignore[reportUnknownMemberType]
+    ui.label("LLM Provider").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
+
+    provider_options = {p.value: build_provider_label(p) for p in LLMProvider}
+    initial_provider = existing.llm.provider.value if existing else LLMProvider.GITHUB.value
+    initial_defaults = get_provider_defaults(LLMProvider(initial_provider))
+
+    provider_select = ui.select(  # pyright: ignore[reportUnknownMemberType]
+        options=provider_options,
+        value=initial_provider,
+        label="LLM Provider",
+    ).classes("w-60")
+
+    initial_llm_model = existing.llm.model if existing else initial_defaults["model"]
+    model_input = ui.select(  # pyright: ignore[reportUnknownMemberType]
+        options=[initial_llm_model],
+        value=initial_llm_model,
+        label="LLM Model",
+    ).classes("w-60")
+
+    # API key section — hidden for Ollama
+    has_existing_key = existing is not None and needs_api_key(LLMProvider(initial_provider))
+    config_state["keep_existing_key"] = has_existing_key
+
+    api_key_env = initial_defaults["api_key_env"]
+    with ui.column().classes("mt-2") as api_key_col:  # pyright: ignore[reportUnknownMemberType]
+        if has_existing_key:
+            keep_toggle = ui.toggle(  # pyright: ignore[reportUnknownMemberType]
+                ["Keep existing", "Enter new"],
+                value="Keep existing",
+            ).classes("mb-2")
+
+            masked_label = ui.label("API key: ••••••").classes("text-sm font-mono text-gray-500")  # pyright: ignore[reportUnknownMemberType]
+            api_key_input = (
+                ui.input(  # pyright: ignore[reportUnknownMemberType]
+                    label=api_key_env,
+                    password=True,
+                    password_toggle_button=True,
+                )
+                .classes("w-60")
+                .props('input-class="font-mono"')
+            )
+            api_key_input.set_visibility(False)  # pyright: ignore[reportUnknownMemberType]
+
+            def _on_toggle_change() -> None:
+                entering_new = keep_toggle.value == "Enter new"  # pyright: ignore[reportUnknownMemberType]
+                config_state["keep_existing_key"] = not entering_new
+                masked_label.set_visibility(not entering_new)  # pyright: ignore[reportUnknownMemberType]
+                api_key_input.set_visibility(entering_new)  # pyright: ignore[reportUnknownMemberType]
+
+            keep_toggle.on_value_change(_on_toggle_change)  # pyright: ignore[reportUnknownMemberType]
+        else:
+            api_key_input = (
+                ui.input(  # pyright: ignore[reportUnknownMemberType]
+                    label=api_key_env,
+                    password=True,
+                    password_toggle_button=True,
+                )
+                .classes("w-60")
+                .props('input-class="font-mono"')
+            )
+
+    api_key_col.bind_visibility_from(  # pyright: ignore[reportUnknownMemberType]
+        provider_select, "value", backward=lambda v: v != LLMProvider.OLLAMA.value
+    )
+
+    # Store initial LLM state
+    config_state["provider"] = initial_provider
+    config_state["llm_model"] = initial_llm_model
+    config_state["api_key_env"] = api_key_env
+
+    def _on_provider_change() -> None:
+        prov = LLMProvider(provider_select.value)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        defaults = get_provider_defaults(prov)
+        model_input.options = [defaults["model"]]  # pyright: ignore[reportUnknownMemberType]
+        model_input.value = defaults["model"]  # pyright: ignore[reportUnknownMemberType]
+        api_key_input.label = defaults["api_key_env"]  # pyright: ignore[reportUnknownMemberType]
+        config_state["provider"] = prov.value
+        config_state["llm_model"] = defaults["model"]
+        config_state["api_key_env"] = defaults["api_key_env"]
+        config_state["keep_existing_key"] = False
+
+    def _on_llm_model_change() -> None:
+        config_state["llm_model"] = model_input.value  # pyright: ignore[reportUnknownMemberType]
+
+    def _on_api_key_change() -> None:
+        config_state["api_key_value"] = api_key_input.value  # pyright: ignore[reportUnknownMemberType]
+
+    provider_select.on_value_change(_on_provider_change)  # pyright: ignore[reportUnknownMemberType]
+    model_input.on_value_change(_on_llm_model_change)  # pyright: ignore[reportUnknownMemberType]
+    api_key_input.on_value_change(_on_api_key_change)  # pyright: ignore[reportUnknownMemberType]
+
     with ui.row().classes("mt-4 gap-2"):  # pyright: ignore[reportUnknownMemberType]
         ui.button("Review Settings", on_click=stepper.next)  # pyright: ignore[reportUnknownMemberType]
+
+
+def _render_gpu_context_card(gpu_ctx: GpuContext) -> None:
+    """Render a color-coded card for the GPU detection result."""
+    _SEVERITY_STYLES: dict[str, tuple[str, str]] = {
+        "success": ("bg-green-50 border-l-4 border-green-400", "text-green-800"),
+        "warning": ("bg-amber-50 border-l-4 border-amber-400", "text-amber-800"),
+        "info": ("bg-blue-50 border-l-4 border-blue-400", "text-blue-800"),
+    }
+    card_cls, text_cls = _SEVERITY_STYLES.get(gpu_ctx.severity, _SEVERITY_STYLES["info"])
+    with (
+        ui.card().classes(f"w-full {card_cls} mb-4"),  # pyright: ignore[reportUnknownMemberType]
+        ui.row().classes("items-center gap-2"),  # pyright: ignore[reportUnknownMemberType]
+    ):
+        ui.icon(gpu_ctx.icon).classes(f"text-2xl {text_cls}")  # pyright: ignore[reportUnknownMemberType]
+        ui.label(gpu_ctx.message).classes(f"text-sm {text_cls}")  # pyright: ignore[reportUnknownMemberType]
 
 
 def _render_review_step(  # pyright: ignore[reportUnknownParameterType]
@@ -179,6 +300,25 @@ def _render_review_step(  # pyright: ignore[reportUnknownParameterType]
         ui.label("Error: no configuration generated. Go back to Step 1.").classes("text-red-600")  # pyright: ignore[reportUnknownMemberType]
         ui.button("Back", on_click=stepper.previous)  # pyright: ignore[reportUnknownMemberType]
         return
+
+    def _resolve_final_config() -> HermesConfig:
+        """Resolve the final config from current state at call-time."""
+        override_val = config_state.get("model_override")
+        provider_val = config_state.get("provider")
+        llm_model = config_state.get("llm_model")
+        api_key_env = config_state.get("api_key_env")
+        base = recommend_config(
+            config_state.get("has_gpu", False),
+            config_state.get("vram_mb", 0),
+            provider=LLMProvider(provider_val) if provider_val else None,
+            llm_model=llm_model,
+            api_key_env=api_key_env,
+        )
+        if override_val:
+            return _apply_model_override(
+                base, WhisperModel(override_val), config_state.get("has_gpu", False)
+            )
+        return base
 
     # --- Storage estimate (merged from old storage step) ---
     model = recommended.whisper.model if recommended else WhisperModel.SMALL
@@ -252,17 +392,16 @@ def _render_review_step(  # pyright: ignore[reportUnknownParameterType]
             ui.label(dl_text).classes("text-sm text-blue-800")  # pyright: ignore[reportUnknownMemberType]
 
     # --- Config summary ---
-    def _resolve_final_config() -> HermesConfig:
-        """Resolve the final config from current state at call-time."""
-        override_val = config_state.get("model_override")
-        if override_val:
-            return _apply_model_override(
-                recommended, WhisperModel(override_val), config_state.get("has_gpu", False)
-            )
-        return recommended
-
-    def _on_save() -> None:
+    async def _on_save() -> None:
         final = _resolve_final_config()
+        api_key = config_state.get("api_key_value", "")
+        keep_existing = config_state.get("keep_existing_key", False)
+        if api_key and not keep_existing and final.llm.provider != LLMProvider.OLLAMA:
+            valid_key, key_msg = await validate_api_key_live(final.llm.provider, api_key)
+            if not valid_key:
+                ui.notify(f"API key validation failed: {key_msg}", type="negative")  # pyright: ignore[reportUnknownMemberType]
+                return
+            ui.notify(key_msg, type="positive")  # pyright: ignore[reportUnknownMemberType]
         _complete_setup(final, container.settings.config_dir)
 
     summary_lines = build_config_summary(recommended)
@@ -272,11 +411,19 @@ def _render_review_step(  # pyright: ignore[reportUnknownParameterType]
         for line in summary_lines:
             ui.label(line).classes("text-sm font-mono mt-1")  # pyright: ignore[reportUnknownMemberType]
         ui.label(  # pyright: ignore[reportUnknownMemberType]
-            "Note: if you changed the Whisper model, the saved config will reflect your selection."
+            "Note: saved config will reflect your Whisper model and LLM provider selections."
         ).classes("text-xs text-gray-400 mt-2 italic")
 
     # --- LLM provider validation ---
-    valid, msg = validate_llm_provider(recommended.llm)
+    provider_val = config_state.get("provider")
+    preview_llm = recommend_config(
+        config_state.get("has_gpu", False),
+        config_state.get("vram_mb", 0),
+        provider=LLMProvider(provider_val) if provider_val else None,
+        llm_model=config_state.get("llm_model"),
+        api_key_env=config_state.get("api_key_env"),
+    ).llm
+    valid, msg = validate_llm_provider(preview_llm)
     icon_name = "check_circle" if valid else "warning"
     css = "text-green-600" if valid else "text-amber-600"
     with ui.row().classes("items-center gap-2 mt-2"):  # pyright: ignore[reportUnknownMemberType]
