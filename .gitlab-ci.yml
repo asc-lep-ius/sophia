@@ -177,9 +177,11 @@ test-gui-a11y:
   script:
     - uv run --no-sync pytest tests/integration/gui/test_accessibility.py -m e2e -v --tb=short
 
-# ── Build stage ─────────────────────────────────────────────────────────────
+# ── Build stage (content-addressed pull-or-build) ──────────────────────────
+# Each image is tagged with sha256(inputs)[0:16]. If that tag exists in the
+# registry, the push is skipped entirely — no multi-GB upload on every commit.
 
-docker-build:
+.docker-build-base:
   stage: build
   image: docker:27
   tags: [ubuntu-desktop-1]
@@ -191,68 +193,75 @@ docker-build:
         compare_to: refs/heads/master
         paths:
           - Dockerfile
-          - docker-compose.yml
-          - pyproject.toml
-          - uv.lock
-  script:
-    - *docker-push-with-retry
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE:latest" .
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        push_with_retry "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
-        push_with_retry "$CI_REGISTRY_IMAGE:latest"
-        echo "Published $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
-      fi
-
-.docker-gui-build:
-  stage: build
-  image: docker:27
-  tags: [ubuntu-desktop-1]
-  variables:
-    DOCKER_HOST: unix:///var/run/docker.sock
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master"
-    - changes:
-        compare_to: refs/heads/master
-        paths:
           - Dockerfile.gui
           - Dockerfile.gui.cuda
           - docker-compose.yml
           - pyproject.toml
           - uv.lock
 
-docker-gui-build:
-  extends: .docker-gui-build
+docker-build:
+  extends: .docker-build-base
   timeout: 30m
   script:
     - *docker-push-with-retry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker build -f Dockerfile.gui
-      -t "$CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
-      -t "$CI_REGISTRY_IMAGE/gui:latest" .
+    - TAG=$(cat Dockerfile pyproject.toml uv.lock | sha256sum | cut -c1-16)
+    - IMAGE="$CI_REGISTRY_IMAGE:${TAG}"
     - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        push_with_retry "$CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
-        push_with_retry "$CI_REGISTRY_IMAGE/gui:latest"
-        echo "Published $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
+      if docker pull "$IMAGE" 2>/dev/null; then
+        echo "Image $IMAGE already exists — skipping build/push"
+      else
+        echo "Image not found — building $IMAGE"
+        docker pull "$CI_REGISTRY_IMAGE:latest" 2>/dev/null || true
+        docker build --cache-from "$CI_REGISTRY_IMAGE:latest"
+          -t "$IMAGE" -t "$CI_REGISTRY_IMAGE:latest" .
+        push_with_retry "$IMAGE"
+        push_with_retry "$CI_REGISTRY_IMAGE:latest"
+        echo "Published $IMAGE"
       fi
 
-docker-gui-build-gpu:
-  extends: .docker-gui-build
-  timeout: 20m
+docker-gui-build:
+  extends: .docker-build-base
+  timeout: 30m
   script:
     - *docker-push-with-retry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-    - docker build -f Dockerfile.gui.cuda
-      --build-arg CUDA_BASE_IMAGE=$CI_REGISTRY_IMAGE/cuda-base:v1
-      -t "$CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
-      -t "$CI_REGISTRY_IMAGE/gui:cuda" .
+    - TAG=$(cat Dockerfile.gui pyproject.toml uv.lock | sha256sum | cut -c1-16)
+    - IMAGE="$CI_REGISTRY_IMAGE/gui:${TAG}"
     - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        push_with_retry "$CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
+      if docker pull "$IMAGE" 2>/dev/null; then
+        echo "Image $IMAGE already exists — skipping build/push"
+      else
+        echo "Image not found — building $IMAGE"
+        docker pull "$CI_REGISTRY_IMAGE/gui:latest" 2>/dev/null || true
+        docker build --cache-from "$CI_REGISTRY_IMAGE/gui:latest"
+          -f Dockerfile.gui -t "$IMAGE" -t "$CI_REGISTRY_IMAGE/gui:latest" .
+        push_with_retry "$IMAGE"
+        push_with_retry "$CI_REGISTRY_IMAGE/gui:latest"
+        echo "Published $IMAGE"
+      fi
+
+docker-gui-build-gpu:
+  extends: .docker-build-base
+  timeout: 2h
+  script:
+    - *docker-push-with-retry
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - TAG=$(cat Dockerfile.gui.cuda ci/Dockerfile.cuda-base pyproject.toml uv.lock | sha256sum | cut -c1-16)
+    - IMAGE="$CI_REGISTRY_IMAGE/gui:cuda-${TAG}"
+    - |
+      if docker pull "$IMAGE" 2>/dev/null; then
+        echo "Image $IMAGE already exists — skipping build/push"
+      else
+        echo "Image not found — building $IMAGE"
+        docker pull "$CI_REGISTRY_IMAGE/gui:cuda" 2>/dev/null || true
+        docker build --cache-from "$CI_REGISTRY_IMAGE/gui:cuda"
+          -f Dockerfile.gui.cuda
+          --build-arg CUDA_BASE_IMAGE=$CI_REGISTRY_IMAGE/cuda-base:v1
+          -t "$IMAGE" -t "$CI_REGISTRY_IMAGE/gui:cuda" .
+        push_with_retry "$IMAGE"
         push_with_retry "$CI_REGISTRY_IMAGE/gui:cuda"
-        echo "Published $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
+        echo "Published $IMAGE"
       fi
 
 # Rebuild the CUDA base image when ML deps (torch, transformers, etc.) change.
