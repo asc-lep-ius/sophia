@@ -85,7 +85,7 @@ test:3.14:
 docker-gui-build-gpu:
   stage: build
   tags: [hephaestus, build]
-  timeout: 30m
+  timeout: 1h
   image:
     name: gcr.io/kaniko-project/executor:v1.23.2-debug
     entrypoint: [""]
