@@ -1,14 +1,8 @@
 # Sophia CI — local GitLab runners + registry
-# Replace .gitlab-ci.yml in the sophia repo after migration
 #
-# Changes from gitlab.com version:
-#   - Registry: gitlab.hephaestus:5050 (localhost, ~60s push vs 75min)
-#   - Tags: hephaestus (build/test), workstation (training)
-#   - Removed push_with_retry (no longer needed)
-#   - GPU build timeout: 2h → 30m
-#   - Added training smoke test on workstation runner
-#   - All CUDA images pinned to 13.0+ (RTX 5070 Ti compatibility)
-#   - Kaniko OOM fix: --compressed-caching=false + --use-new-run
+# Docker builds use BuildKit (docker buildx) via DinD on the privileged runner.
+# Registry: gitlab.hephaestus:5050 (HTTP, insecure).
+# Tags: hephaestus (check/build), workstation (training).
 
 variables:
   LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
@@ -20,6 +14,31 @@ stages:
   - build
   - train
 
+# --- Docker build template (BuildKit + DinD) ---
+.docker-build:
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      command: ["--insecure-registry=gitlab.hephaestus:5050"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - |
+      cat > /tmp/buildkitd.toml << EOF
+      [registry."gitlab.hephaestus:5050"]
+        http = true
+      EOF
+    - docker buildx create --use --name ci-builder
+        --driver docker-container
+        --driver-opt network=host
+        --config /tmp/buildkitd.toml
+    - docker buildx inspect --bootstrap
+  after_script:
+    - docker buildx rm ci-builder 2>/dev/null || true
+  tags: [hephaestus, build]
+
 # --- CI image rebuild ---
 .ci-rebuild-rules:
   rules:
@@ -30,23 +49,17 @@ stages:
 
 rebuild-ci-image:
   stage: rebuild-ci
-  tags: [hephaestus, build]
-  image:
-    name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
-  extends: .ci-rebuild-rules
+  extends:
+    - .docker-build
+    - .ci-rebuild-rules
   script:
     - CI_HASH=$(cat ci/Dockerfile.ci pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - /kaniko/executor
-        --context "${CI_PROJECT_DIR}"
-        --dockerfile "${CI_PROJECT_DIR}/ci/Dockerfile.ci"
-        --destination "${LOCAL_REGISTRY}/ci:${CI_HASH}"
-        --cache=true
-        --cache-repo="${LOCAL_REGISTRY}/ci-cache"
-        --insecure-registry=gitlab.hephaestus:5050
-        --snapshot-mode=redo
-        --compressed-caching=false
-        --use-new-run
+    - docker buildx build
+        --file ci/Dockerfile.ci
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/ci:${CI_HASH}
+        --push .
 
 # --- Check stage ---
 lint:
@@ -88,24 +101,17 @@ test:3.14:
 # --- Build stage ---
 docker-gui-build-gpu:
   stage: build
-  tags: [hephaestus, build]
+  extends: .docker-build
   timeout: 1h
-  image:
-    name: gcr.io/kaniko-project/executor:v1.23.2-debug
-    entrypoint: [""]
   script:
     - GPU_HASH=$(cat Dockerfile.gui.cuda pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - /kaniko/executor
-        --context "${CI_PROJECT_DIR}"
-        --dockerfile "${CI_PROJECT_DIR}/Dockerfile.gui.cuda"
-        --destination "${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH}"
-        --destination "${LOCAL_REGISTRY}/gui-cuda:latest"
-        --cache=true
-        --cache-repo="${LOCAL_REGISTRY}/gui-cuda-cache"
-        --insecure-registry=gitlab.hephaestus:5050
-        --snapshot-mode=redo
-        --compressed-caching=false
-        --use-new-run
+    - docker buildx build
+        --file Dockerfile.gui.cuda
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH}
+        --tag ${LOCAL_REGISTRY}/gui-cuda:latest
+        --push .
   rules:
     - changes:
         - Dockerfile.gui.cuda
