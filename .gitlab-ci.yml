@@ -60,6 +60,7 @@ typecheck:
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends libatomic1
   script:
+    - uv sync --extra web
     - uv run pyright src/
 
 test:3.12:
