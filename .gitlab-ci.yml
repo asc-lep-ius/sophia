@@ -57,6 +57,8 @@ typecheck:
   stage: check
   tags: [hephaestus]
   image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends libatomic1
   script:
     - uv run pyright src/
 
@@ -65,6 +67,7 @@ test:3.12:
   tags: [hephaestus]
   image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
   script:
+    - uv sync --extra web --extra test
     - uv run pytest tests/ -x --tb=short --cov=sophia --cov-report=term
   coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/'
 
@@ -73,6 +76,7 @@ test:3.14:
   tags: [hephaestus]
   image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
   script:
+    - uv sync --extra web --extra test
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
