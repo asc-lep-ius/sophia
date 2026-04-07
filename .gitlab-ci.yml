@@ -8,6 +8,7 @@
 #   - GPU build timeout: 2h → 30m
 #   - Added training smoke test on workstation runner
 #   - All CUDA images pinned to 13.0+ (RTX 5070 Ti compatibility)
+#   - Kaniko OOM fix: --compressed-caching=false + --use-new-run
 
 variables:
   LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
@@ -44,6 +45,8 @@ rebuild-ci-image:
         --cache-repo="${LOCAL_REGISTRY}/ci-cache"
         --insecure-registry=gitlab.hephaestus:5050
         --snapshot-mode=redo
+        --compressed-caching=false
+        --use-new-run
 
 # --- Check stage ---
 lint:
@@ -101,6 +104,8 @@ docker-gui-build-gpu:
         --cache-repo="${LOCAL_REGISTRY}/gui-cuda-cache"
         --insecure-registry=gitlab.hephaestus:5050
         --snapshot-mode=redo
+        --compressed-caching=false
+        --use-new-run
   rules:
     - changes:
         - Dockerfile.gui.cuda
