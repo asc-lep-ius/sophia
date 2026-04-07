@@ -42,6 +42,7 @@ rebuild-ci-image:
         --destination "${LOCAL_REGISTRY}/ci:${CI_HASH}"
         --cache=true
         --cache-repo="${LOCAL_REGISTRY}/ci-cache"
+        --insecure-registry=gitlab.hephaestus:5050
 
 # --- Check stage ---
 lint:
@@ -92,6 +93,7 @@ docker-gui-build-gpu:
         --destination "${LOCAL_REGISTRY}/gui-cuda:latest"
         --cache=true
         --cache-repo="${LOCAL_REGISTRY}/gui-cuda-cache"
+        --insecure-registry=gitlab.hephaestus:5050
   rules:
     - changes:
         - Dockerfile.gui.cuda
