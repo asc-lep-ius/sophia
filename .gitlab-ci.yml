@@ -2,7 +2,7 @@
 #
 # Docker builds use BuildKit (docker buildx) via DinD on the privileged runner.
 # Registry: gitlab.hephaestus:5050 (HTTP, insecure).
-# Tags: hephaestus (check), privileged (docker builds), workstation (training).
+# Tags: hephaestus (check), privileged (docker builds).
 
 variables:
   LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
@@ -12,7 +12,6 @@ stages:
   - rebuild-ci
   - check
   - build
-  - train
 
 # --- Docker build template (BuildKit + DinD) ---
 .docker-build:
@@ -118,17 +117,3 @@ docker-gui-build-gpu:
         - pyproject.toml
         - uv.lock
         - src/**/*
-
-# --- Training (on workstation) ---
-train-smoke:
-  stage: train
-  tags: [workstation, gpu-train]
-  resource_group: gpu
-  image: "${LOCAL_REGISTRY}/gui-cuda:latest"
-  timeout: 30m
-  script:
-    - nvidia-smi
-    - python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
-    - echo "Training smoke test placeholder — add actual training command"
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
