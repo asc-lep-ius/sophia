@@ -104,13 +104,13 @@ async def topics_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]
+    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
     if course_id is None:
         ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500")
         return
 
-    _render_header(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
-    await _topic_list(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+    _render_header(container, course_id)
+    await _topic_list(container, course_id)
 
 
 # --- Header ------------------------------------------------------------------

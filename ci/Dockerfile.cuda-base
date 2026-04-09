@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+
+# Pre-built base image for sophia GPU builds.
+#
+# Contains: CUDA runtime, Python 3.12, uv, ffmpeg, and a pre-populated
+# .venv with all heavy dependencies (torch, faster-whisper, transformers, etc.).
+#
+# Rebuild when: pyproject.toml or uv.lock changes with new ML deps.
+#
+# Build & push:
+#   docker build -f ci/Dockerfile.cuda-base -t registry.gitlab.com/mipkovich/sophia/cuda-base:v1 .
+#   docker push registry.gitlab.com/mipkovich/sophia/cuda-base:v1
+
+# ── Builder: install all deps ──────────────────────────────────────────────
+FROM python:3.12-slim AS builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /usr/local/bin/uv
+
+WORKDIR /app
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_PREFERENCE=only-system
+
+COPY pyproject.toml uv.lock README.md ./
+COPY src/ src/
+
+# Default PyPI torch includes CUDA support — no custom index needed.
+RUN uv sync --extra web --extra hermes --no-dev --frozen
+
+# ── Runtime: CUDA base with pre-built venv ─────────────────────────────────
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TERM=xterm-256color \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Python 3.12 + ffmpeg (whisper audio processing)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        software-properties-common gpg-agent \
+    && add-apt-repository ppa:deadsnakes/ppa \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        python3.12 python3.12-venv ffmpeg \
+    && apt-get purge -y software-properties-common gpg-agent \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3.12 /usr/bin/python
+
+COPY --from=ghcr.io/astral-sh/uv:0.10.10 /uv /usr/local/bin/uv
+
+WORKDIR /app
+ENV UV_LINK_MODE=copy \
+    UV_PYTHON_PREFERENCE=only-system \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+COPY --from=builder /app/.venv /app/.venv

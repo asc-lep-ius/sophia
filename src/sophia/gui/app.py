@@ -120,43 +120,43 @@ def _register_pages() -> None:
     """Register all NiceGUI page routes."""
 
     @ui.page("/")
-    async def dashboard_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def dashboard_page() -> None:
         await app_shell(lambda: error_boundary(dashboard_content, page_name="Dashboard"))
 
     @ui.page("/study")
-    async def study_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def study_page() -> None:
         await app_shell(lambda: error_boundary(study_content, page_name="Study"))
 
     @ui.page("/review")
-    async def review_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def review_page() -> None:
         await app_shell(lambda: error_boundary(review_content, page_name="Review"))
 
     @ui.page("/search")
-    async def search_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def search_page() -> None:
         await app_shell(lambda: error_boundary(search_content, page_name="Search"))
 
     @ui.page("/chronos")
-    async def chronos_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def chronos_page() -> None:
         await app_shell(lambda: error_boundary(chronos_content, page_name="Chronos"))
 
     @ui.page("/calibration")
-    async def calibration_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def calibration_page() -> None:
         await app_shell(lambda: error_boundary(calibration_content, page_name="Calibration"))
 
     @ui.page("/topics")
-    async def topics_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def topics_page() -> None:
         await app_shell(lambda: error_boundary(topics_content, page_name="Topics"))
 
     @ui.page("/lectures")
-    async def lectures_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def lectures_page() -> None:
         await app_shell(lambda: error_boundary(lectures_content, page_name="Lectures"))
 
     @ui.page("/lectures/setup")
-    async def lectures_setup_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def lectures_setup_page() -> None:
         await app_shell(lambda: error_boundary(lectures_setup_content, page_name="Lecture Setup"))
 
     @ui.page("/settings")
-    async def settings_page() -> None:  # pyright: ignore[reportUnusedFunction]
+    async def settings_page() -> None:
         await app_shell(lambda: error_boundary(settings_content, page_name="Settings"))
 
 

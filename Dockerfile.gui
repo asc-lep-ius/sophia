@@ -33,9 +33,11 @@ COPY --from=cpu-builder /app/src /app/src
 COPY --from=cpu-builder /app/pyproject.toml /app/pyproject.toml
 COPY --from=cpu-builder /app/README.md /app/README.md
 RUN useradd --create-home --uid 1000 sophia
-RUN mkdir -p /data /app/.nicegui && chown sophia:sophia /data /app/.nicegui
+RUN mkdir -p /data /app/.nicegui /home/sophia/.cache/huggingface \
+    && chown sophia:sophia /data /app/.nicegui /home/sophia/.cache/huggingface
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+ENV HF_HOME=/home/sophia/.cache/huggingface
 USER sophia
 CMD ["/app/.venv/bin/python", "-m", "sophia", "gui", "--host", "0.0.0.0"]

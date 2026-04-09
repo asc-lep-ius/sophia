@@ -190,7 +190,7 @@ def _render_header() -> None:
 
         def _toggle_interleaved(e: object) -> None:
             _set_interleaved(not _get_interleaved())
-            _study_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+            _study_session.refresh()  # type: ignore[attr-defined]
 
         ui.switch("Interleaved Mode", value=_get_interleaved(), on_change=_toggle_interleaved)
 
@@ -207,8 +207,8 @@ def _render_resume_prompt(
         step_display = state.step_index + 1
         ui.label(f"In-progress session for '{state.topic}' (step {step_display}/5).")
         with ui.row().classes("mt-4 gap-2"):
-            ui.button("Resume", on_click=on_resume).props("color=primary")  # pyright: ignore[reportArgumentType]
-            ui.button("Start Fresh", on_click=on_discard).props("color=negative outline")  # pyright: ignore[reportArgumentType]
+            ui.button("Resume", on_click=on_resume).props("color=primary")
+            ui.button("Start Fresh", on_click=on_discard).props("color=negative outline")
 
 
 # --- Core session stepper ----------------------------------------------------
@@ -236,7 +236,7 @@ async def _study_session() -> None:
     # Resolve topics
     if interleaved:
         try:
-            available = await select_interleave_topics(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+            available = await select_interleave_topics(container, course_id)
         except Exception:
             log.exception("interleave_topic_fetch_failed")
             available = [topic]
@@ -254,20 +254,20 @@ async def _study_session() -> None:
     session_id = _build_session_id(course_id, topics, interleaved=interleaved)
 
     # Check for existing session to resume
-    store = SessionStore(app.storage.user)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    store = SessionStore(app.storage.user)
     existing = store.load_state(session_id)
     if existing and not _get_session_id():
 
         def _resume() -> None:
             _set_session_id(session_id)
             _set_step_index(existing.step_index)
-            _study_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+            _study_session.refresh()  # type: ignore[attr-defined]
 
         def _discard() -> None:
             store.discard_session(session_id)
             _reset_session_state()
             _set_session_id(session_id)
-            _study_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+            _study_session.refresh()  # type: ignore[attr-defined]
 
         _render_resume_prompt(session_id, existing, on_resume=_resume, on_discard=_discard)
         return
@@ -282,7 +282,7 @@ async def _study_session() -> None:
         if step == 0 and not existing:
             session_ids: dict[str, int] = {}
             for t in topics:
-                sess = await start_session(container, course_id, t)  # pyright: ignore[reportUnknownArgumentType]
+                sess = await start_session(container, course_id, t)
                 session_ids[t] = sess.id
             _set_session_ids(session_ids)
     except Exception:
@@ -296,7 +296,7 @@ async def _study_session() -> None:
 
     # Render stepper
     try:
-        await _render_stepper(container, course_id, topics, interleaved)  # pyright: ignore[reportUnknownArgumentType]
+        await _render_stepper(container, course_id, topics, interleaved)
     except Exception:
         log.exception("study_session_render_failed")
         skeleton_card()
@@ -378,8 +378,8 @@ async def _render_stepper(
     def _on_ctrl_enter(e: object) -> None:
         key = getattr(e, "key", "")
         action = getattr(e, "action", False)
-        modifiers = getattr(e, "modifiers", None) or {}  # pyright: ignore[reportUnknownVariableType]
-        if action and key == "Enter" and getattr(modifiers, "ctrl", False):  # pyright: ignore[reportUnknownArgumentType]
+        modifiers = getattr(e, "modifiers", None) or {}
+        if action and key == "Enter" and getattr(modifiers, "ctrl", False):
             current = _get_step_index()
             if current < len(_STEP_LABELS) - 1:
                 if not _can_advance_from_step(current, num_topics=len(topics)):
@@ -521,7 +521,7 @@ async def _render_study_phase(
     ui.textarea(
         value=insight,
         label="Key insight",
-        on_change=lambda e: _on_insight_change(e.value),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        on_change=lambda e: _on_insight_change(e.value),
     ).classes("w-full")
 
     has_insight = bool(insight.strip()) if insight else False
@@ -631,7 +631,7 @@ def _render_reflection(stepper: ui.stepper) -> None:
     ui.label("Write your reflection:").classes("text-lg font-semibold mt-4")
 
     def _on_reflection_change(e: object) -> None:
-        _set_reflection(getattr(e, "value", ""))  # pyright: ignore[reportUnknownArgumentType]
+        _set_reflection(getattr(e, "value", ""))
 
     ui.textarea(
         value=_get_reflection(),
@@ -675,14 +675,14 @@ async def _render_flashcard_step(
         def _make_front_handler(d: dict[str, str]) -> Callable[[str], None]:
             def _h(text: str) -> None:
                 d["v"] = text
-                _card_preview.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+                _card_preview.refresh()  # type: ignore[attr-defined]
 
             return _h
 
         def _make_back_handler(d: dict[str, str]) -> Callable[[str], None]:
             def _h(text: str) -> None:
                 d["v"] = text
-                _card_preview.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+                _card_preview.refresh()  # type: ignore[attr-defined]
 
             return _h
 
@@ -709,7 +709,7 @@ async def _render_flashcard_step(
                 log.exception("flashcard_save_failed", topic=topic)
                 ui.notify("Failed to save flashcard.", type="negative")
 
-        ui.button("Save Flashcard", on_click=_save_card, icon="save").props(  # pyright: ignore[reportArgumentType]
+        ui.button("Save Flashcard", on_click=_save_card, icon="save").props(
             "color=primary outline",
         ).classes("mt-2")
 
@@ -719,13 +719,13 @@ async def _render_flashcard_step(
         await _complete_study_session(container, course_id, topics)
         _reset_session_state()
         # Discard persisted session
-        store = SessionStore(app.storage.user)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+        store = SessionStore(app.storage.user)
         store.discard_session(_get_session_id())
-        _study_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+        _study_session.refresh()  # type: ignore[attr-defined]
 
     with ui.stepper_navigation():
         ui.button("Back", on_click=lambda: _retreat_step(stepper, 3)).props("flat")
-        ui.button("Finish Session", on_click=_finish_session, icon="check_circle").props(  # pyright: ignore[reportArgumentType]
+        ui.button("Finish Session", on_click=_finish_session, icon="check_circle").props(
             "color=positive",
         )
 

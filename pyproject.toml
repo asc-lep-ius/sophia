@@ -106,6 +106,21 @@ reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnusedFunction = false
 
+[[tool.pyright.executionEnvironments]]
+root = "src/sophia/gui"
+reportUnknownMemberType = false
+reportUnknownLambdaType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportReturnType = false
+reportFunctionMemberAccess = false
+reportUnusedFunction = false
+reportArgumentType = false
+reportAssignmentType = false
+reportCallIssue = false
+reportUntypedFunctionDecorator = false
+
 [tool.coverage.run]
 omit = ["src/sophia/__main__.py"]
 

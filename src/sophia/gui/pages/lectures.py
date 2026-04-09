@@ -42,7 +42,7 @@ _STATUS_FILTER_OPTIONS: dict[str, str] = {
 
 def is_hermes_setup_complete() -> bool:
     """Check if Hermes setup wizard has been completed."""
-    return bool(app.storage.user.get(USER_HERMES_SETUP_COMPLETE, False))  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    return bool(app.storage.user.get(USER_HERMES_SETUP_COMPLETE, False))
 
 
 # --- Storage helpers ---------------------------------------------------------
@@ -50,30 +50,30 @@ def is_hermes_setup_complete() -> bool:
 
 def _get_status_filter() -> str:
     try:
-        val = app.storage.tab.get(TAB_LECTURES_STATUS_FILTER, STATUS_FILTER_ALL)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-        return str(val) if val else STATUS_FILTER_ALL  # pyright: ignore[reportUnknownArgumentType]
+        val = app.storage.tab.get(TAB_LECTURES_STATUS_FILTER, STATUS_FILTER_ALL)
+        return str(val) if val else STATUS_FILTER_ALL
     except RuntimeError:
         return STATUS_FILTER_ALL
 
 
 def _set_status_filter(value: str) -> None:
     try:
-        app.storage.tab[TAB_LECTURES_STATUS_FILTER] = value  # pyright: ignore[reportUnknownMemberType]
+        app.storage.tab[TAB_LECTURES_STATUS_FILTER] = value
     except RuntimeError:
         log.debug("set_status_filter_no_tab_storage")
 
 
 def _get_search_query() -> str:
     try:
-        val = app.storage.tab.get(TAB_LECTURES_SEARCH_QUERY, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-        return str(val) if val else ""  # pyright: ignore[reportUnknownArgumentType]
+        val = app.storage.tab.get(TAB_LECTURES_SEARCH_QUERY, "")
+        return str(val) if val else ""
     except RuntimeError:
         return ""
 
 
 def _set_search_query(value: str) -> None:
     try:
-        app.storage.tab[TAB_LECTURES_SEARCH_QUERY] = value  # pyright: ignore[reportUnknownMemberType]
+        app.storage.tab[TAB_LECTURES_SEARCH_QUERY] = value
     except RuntimeError:
         log.debug("set_search_query_no_tab_storage")
 
@@ -85,7 +85,7 @@ async def lectures_content() -> None:
     """Render the Lectures page — redirects to setup if not configured."""
     container = get_container()
     if container is None:
-        ui.label("Application not initialized.").classes("text-red-700")  # pyright: ignore[reportUnknownMemberType]
+        ui.label("Application not initialized.").classes("text-red-700")
         return
 
     if not is_hermes_setup_complete():
@@ -109,27 +109,27 @@ _PIPELINE_FEATURES = (
 
 def _render_setup_required() -> None:
     """Show info card explaining the pipeline and prompting setup."""
-    with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Lecture Pipeline Setup Required").classes(  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):
+        ui.label("Lecture Pipeline Setup Required").classes(
             "text-xl font-bold mb-2",
         )
-        ui.label(  # pyright: ignore[reportUnknownMemberType]
+        ui.label(
             "The lecture pipeline downloads, transcribes, and indexes your "
             "TU Wien lectures for semantic search. Setup configures your "
             "GPU, transcription model, and LLM provider.",
         ).classes("text-gray-600 mb-3")
 
-        with ui.column().classes("gap-1 mb-3"):  # pyright: ignore[reportUnknownMemberType]
+        with ui.column().classes("gap-1 mb-3"):
             for feature in _PIPELINE_FEATURES:
-                with ui.row().classes("items-center gap-2"):  # pyright: ignore[reportUnknownMemberType]
-                    ui.icon("check_circle_outline").classes("text-green-500 text-sm")  # pyright: ignore[reportUnknownMemberType]
-                    ui.label(feature).classes("text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("check_circle_outline").classes("text-green-500 text-sm")
+                    ui.label(feature).classes("text-sm text-gray-600")
 
-        ui.label("Takes ~2 minutes.").classes("text-sm text-gray-500 mb-4 italic")  # pyright: ignore[reportUnknownMemberType]
+        ui.label("Takes ~2 minutes.").classes("text-sm text-gray-500 mb-4 italic")
 
-        ui.button(  # pyright: ignore[reportUnknownMemberType]
+        ui.button(
             "Run Setup",
-            on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
+            on_click=lambda: ui.navigate.to("/lectures/setup"),
         ).props("color=primary")
 
 
@@ -138,26 +138,26 @@ def _render_setup_required() -> None:
 
 def _render_header() -> None:
     """Search input + status filter dropdown."""
-    with ui.row().classes("w-full items-center gap-4 mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Lectures").classes("text-2xl font-bold")  # pyright: ignore[reportUnknownMemberType]
-        ui.space()  # pyright: ignore[reportUnknownMemberType]
+    with ui.row().classes("w-full items-center gap-4 mb-4"):
+        ui.label("Lectures").classes("text-2xl font-bold")
+        ui.space()
 
-        ui.input(  # pyright: ignore[reportUnknownMemberType]
+        ui.input(
             placeholder="Search lectures…",
             value=_get_search_query(),
-            on_change=lambda e: (_set_search_query(e.value), _lecture_list.refresh()),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-        ).props("outlined dense clearable").classes("w-64 hidden sm:block")  # pyright: ignore[reportUnknownMemberType]
+            on_change=lambda e: (_set_search_query(e.value), _lecture_list.refresh()),
+        ).props("outlined dense clearable").classes("w-64 hidden sm:block")
 
-        ui.select(  # pyright: ignore[reportUnknownMemberType]
+        ui.select(
             options=_STATUS_FILTER_OPTIONS,
             value=_get_status_filter(),
-            on_change=lambda e: (_set_status_filter(e.value), _lecture_list.refresh()),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-        ).props("outlined dense").classes("w-48")  # pyright: ignore[reportUnknownMemberType]
+            on_change=lambda e: (_set_status_filter(e.value), _lecture_list.refresh()),
+        ).props("outlined dense").classes("w-48")
 
-        ui.button(  # pyright: ignore[reportUnknownMemberType]
+        ui.button(
             icon="settings",
-            on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
-        ).props("flat round").tooltip("Re-run Setup")  # pyright: ignore[reportUnknownMemberType]
+            on_click=lambda: ui.navigate.to("/lectures/setup"),
+        ).props("flat round").tooltip("Re-run Setup")
 
 
 # --- Lecture list (refreshable) ----------------------------------------------
@@ -198,20 +198,20 @@ async def _lecture_list() -> None:
 
 def _render_empty_state() -> None:
     """No lectures at all — prompt the user to sync."""
-    with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("No Lectures Found").classes("text-xl font-bold mb-2")  # pyright: ignore[reportUnknownMemberType]
-        ui.label(  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):
+        ui.label("No Lectures Found").classes("text-xl font-bold mb-2")
+        ui.label(
             "No lectures found. Sync your courses to discover available recordings.",
         ).classes("text-gray-600 mb-4")
-        ui.button(  # pyright: ignore[reportUnknownMemberType]
+        ui.button(
             "Sync Now",
-            on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
+            on_click=lambda: ui.navigate.to("/lectures/setup"),
         ).props("color=primary")
 
 
 def _render_no_results() -> None:
     """Filters active but nothing matches."""
-    ui.label("No lectures match the current filters.").classes(  # pyright: ignore[reportUnknownMemberType]
+    ui.label("No lectures match the current filters.").classes(
         "text-gray-500 italic mt-4",
     )
 
@@ -220,23 +220,23 @@ def _render_module_group(module_id: int, episodes: list[EpisodeStatus]) -> None:
     """Render a collapsible group of lectures for one module."""
     indexed_count = sum(1 for ep in episodes if is_fully_indexed(ep))
     with (
-        ui.expansion(  # pyright: ignore[reportUnknownMemberType]
+        ui.expansion(
             f"Module {module_id}",
             caption=f"{len(episodes)} lectures · {indexed_count} indexed",
         )
         .classes("w-full mb-2")
         .props("default-opened")
-    ):  # pyright: ignore[reportUnknownMemberType]
+    ):
         for ep in episodes:
             _render_episode_card(ep)
 
 
 def _render_episode_card(ep: EpisodeStatus) -> None:
     """Single lecture row with status badges."""
-    with ui.card().classes("w-full p-3 mb-1"), ui.row().classes("w-full items-center gap-2"):  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("w-full p-3 mb-1"), ui.row().classes("w-full items-center gap-2"):
         # Lecture number + title
         number_label = f"#{ep.lecture_number} " if ep.lecture_number else ""
-        ui.label(f"{number_label}{ep.title}").classes(  # pyright: ignore[reportUnknownMemberType]
+        ui.label(f"{number_label}{ep.title}").classes(
             "font-medium flex-grow",
         )
 
@@ -252,11 +252,11 @@ def _status_badge(label: str, status: str | None) -> None:
     icon = "check_circle" if completed else "pending"
     color = "positive" if completed else "grey"
 
-    ui.chip(  # pyright: ignore[reportUnknownMemberType]
+    ui.chip(
         label,
         icon=icon,
         color=color,
-    ).props("dense outline").classes(  # pyright: ignore[reportUnknownMemberType]
+    ).props("dense outline").classes(
         "text-xs "
         # Hide label text on small screens, show icon only
         "[&_.q-chip__content]:hidden sm:[&_.q-chip__content]:inline",

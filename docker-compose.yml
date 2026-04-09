@@ -1,5 +1,71 @@
+# Default:  docker compose up
+# GPU:      docker compose --profile gpu up sophia-gui-gpu
+# CLI:      docker compose --profile cli up
+
+x-gui-common: &gui-common
+  volumes:
+    - sophia-data:/data
+    - model-cache:/home/sophia/.cache/huggingface
+    - ${SOPHIA_CONFIG_DIR:-~/.config/sophia}:/config
+  environment:
+    - SOPHIA_GUI_HOST=0.0.0.0
+    - SOPHIA_GUI_PORT=8080
+    - SOPHIA_DATA_DIR=/data
+    - SOPHIA_CONFIG_DIR=/config
+    - SOPHIA_LOG_FORMAT=json
+    - SOPHIA_DOCKER=1
+    - HF_HOME=/home/sophia/.cache/huggingface
+  env_file: .env
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+  stop_grace_period: 15s
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+    interval: 30s
+    timeout: 5s
+    retries: 3
+    start_period: 10s
+
 services:
+  sophia-gui:
+    <<: *gui-common
+    ports:
+      - "${SOPHIA_GUI_PORT:-8080}:8080"
+    build:
+      context: .
+      dockerfile: Dockerfile.gui
+    image: sophia-gui:latest
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: "1.0"
+
+  sophia-gui-gpu:
+    <<: *gui-common
+    profiles: ["gpu"]
+    ports:
+      - "${SOPHIA_GUI_PORT:-8080}:8080"
+    build:
+      context: .
+      dockerfile: Dockerfile.gui.cuda
+    image: sophia-gui:cuda
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
   sophia:
+    profiles: ["cli"]
     build: .
     env_file: .env
     environment:
@@ -31,7 +97,7 @@ services:
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
-    profiles: [scraping]
+    profiles: ["scraping"]
     ports:
       - "8191:8191"
     environment:
@@ -49,3 +115,4 @@ services:
 
 volumes:
   sophia-data:
+  model-cache:
