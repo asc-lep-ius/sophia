@@ -146,44 +146,44 @@ def _render_session_summary(*, total: int, scores: list[float]) -> None:
 
 
 def _get_review_index() -> int:
-    return app.storage.tab.get(TAB_REVIEW_INDEX, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_REVIEW_INDEX, 0)
 
 
 def _set_review_index(idx: int) -> None:
-    app.storage.tab[TAB_REVIEW_INDEX] = idx  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_REVIEW_INDEX] = idx
 
 
 def _get_review_scores() -> list[float]:
-    return app.storage.tab.get(TAB_REVIEW_SCORES, [])  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_REVIEW_SCORES, [])
 
 
 def _append_review_score(score: float) -> None:
     scores = _get_review_scores()
     scores.append(score)
-    app.storage.tab[TAB_REVIEW_SCORES] = scores  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_REVIEW_SCORES] = scores
 
 
 def _get_show_back() -> bool:
-    return app.storage.tab.get(TAB_REVIEW_SHOW_BACK, False)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_REVIEW_SHOW_BACK, False)
 
 
 def _set_show_back(value: bool) -> None:
-    app.storage.tab[TAB_REVIEW_SHOW_BACK] = value  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_REVIEW_SHOW_BACK] = value
 
 
 def _get_recall_text() -> str:
-    return app.storage.tab.get(TAB_REVIEW_RECALL_TEXT, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_REVIEW_RECALL_TEXT, "")
 
 
 def _set_recall_text(value: str) -> None:
-    app.storage.tab[TAB_REVIEW_RECALL_TEXT] = value  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_REVIEW_RECALL_TEXT] = value
 
 
 def _reset_session_state() -> None:
-    app.storage.tab[TAB_REVIEW_INDEX] = 0  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_REVIEW_SCORES] = []  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_REVIEW_SHOW_BACK] = False  # pyright: ignore[reportUnknownMemberType]
-    app.storage.tab[TAB_REVIEW_RECALL_TEXT] = ""  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_REVIEW_INDEX] = 0
+    app.storage.tab[TAB_REVIEW_SCORES] = []
+    app.storage.tab[TAB_REVIEW_SHOW_BACK] = False
+    app.storage.tab[TAB_REVIEW_RECALL_TEXT] = ""
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +200,8 @@ async def _review_session() -> None:
         return
 
     try:
-        db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        reviews = await get_due_review_items(db)  # pyright: ignore[reportUnknownArgumentType]
+        db = container.db
+        reviews = await get_due_review_items(db)
     except Exception:
         log.exception("review_fetch_failed")
         skeleton_card()
@@ -236,7 +236,7 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
     def _handle_recall(text: str) -> None:
         _set_show_back(True)
         _set_recall_text(text)
-        _review_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+        _review_session.refresh()  # type: ignore[attr-defined]
 
     async def _handle_rate(rating: int) -> None:
         score = rating_to_score(rating)
@@ -248,19 +248,19 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
         try:
             container = get_container()
             if container:
-                db = container.db  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                await complete_review_item(db, card.topic, card.course_id, score)  # pyright: ignore[reportUnknownArgumentType]
+                db = container.db
+                await complete_review_item(db, card.topic, card.course_id, score)
         except Exception:
             log.exception("review_complete_failed", topic=card.topic)
 
-        _review_session.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+        _review_session.refresh()  # type: ignore[attr-defined]
 
     previews = compute_interval_previews(card.difficulty, card.stability)
     review_card(
         front=card.topic,
         back=f"Review: {card.topic}",
         on_submit_recall=_handle_recall,
-        on_rate=_handle_rate,  # pyright: ignore[reportArgumentType]
+        on_rate=_handle_rate,
         interval_previews=previews,
         show_back=show_back,
         recall_text=recall_text,
@@ -268,14 +268,14 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
 
     # Keyboard shortcuts
     def _handle_key(e: KeyEventArguments) -> None:
-        if not e.action:  # pyright: ignore[reportUnknownMemberType]
+        if not e.action:
             return
-        key = e.key  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        if key == "Escape":  # pyright: ignore[reportUnknownMemberType]
+        key = e.key
+        if key == "Escape":
             ui.navigate.to("/")
-        elif not _get_show_back() and key == " ":  # pyright: ignore[reportUnknownMemberType]
+        elif not _get_show_back() and key == " ":
             _handle_recall("")
-        elif _get_show_back() and key in ("1", "2", "3", "4"):  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
-            ui.timer(0, lambda r=int(str(key)): _handle_rate(r), once=True)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+        elif _get_show_back() and key in ("1", "2", "3", "4"):
+            ui.timer(0, lambda r=int(str(key)): _handle_rate(r), once=True)
 
     ui.keyboard(on_key=_handle_key)

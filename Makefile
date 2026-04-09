@@ -56,22 +56,22 @@ test-all:                        ## Run all tests (unit + E2E)
 	uv run pytest --tb=short -q && uv run pytest -m e2e --tb=short -q
 
 docker-gui-build:                ## Build GUI Docker image
-	docker build -f Dockerfile.gui -t sophia-gui:latest .
+	docker compose build sophia-gui
 
 docker-gui-up:                   ## Start GUI service (detached)
-	docker compose -f docker-compose.gui.yml up -d
+	docker compose up -d
 
 docker-gui-down:                 ## Stop GUI service
-	docker compose -f docker-compose.gui.yml down
+	docker compose down
 
 docker-gui-logs:                 ## Tail GUI service logs
-	docker compose -f docker-compose.gui.yml logs -f
+	docker compose logs -f sophia-gui
 
 docker-gui-build-gpu:            ## Build GPU Docker image (requires NVIDIA Container Toolkit)
-	docker build -f Dockerfile.gui.cuda -t sophia-gui:cuda .
+	docker compose build sophia-gui-gpu
 
 docker-gui-up-gpu:               ## Start GPU service (detached, requires NVIDIA Container Toolkit)
-	docker compose -f docker-compose.gui.yml --profile gpu up -d sophia-gui-gpu
+	docker compose --profile gpu up -d sophia-gui-gpu
 
 docker-gui-down-gpu:             ## Stop GPU service
-	docker compose -f docker-compose.gui.yml --profile gpu down
+	docker compose --profile gpu down

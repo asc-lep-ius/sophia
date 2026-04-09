@@ -76,51 +76,51 @@ def _score_color(score: float) -> str:
 
 
 def _get_query() -> str:
-    return app.storage.tab.get(TAB_SEARCH_QUERY, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_SEARCH_QUERY, "")
 
 
 def _set_query(value: str) -> None:
-    app.storage.tab[TAB_SEARCH_QUERY] = value  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_SEARCH_QUERY] = value
 
 
 def _get_results() -> list[dict[str, object]]:
-    return app.storage.tab.get(TAB_SEARCH_RESULTS, [])  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_SEARCH_RESULTS, [])
 
 
 def _set_results(results: list[dict[str, object]]) -> None:
-    app.storage.tab[TAB_SEARCH_RESULTS] = results  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_SEARCH_RESULTS] = results
 
 
 def _get_selected_index() -> int | None:
-    return app.storage.tab.get(TAB_SEARCH_SELECTED_INDEX)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_SEARCH_SELECTED_INDEX)
 
 
 def _set_selected_index(idx: int | None) -> None:
-    app.storage.tab[TAB_SEARCH_SELECTED_INDEX] = idx  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_SEARCH_SELECTED_INDEX] = idx
 
 
 def _get_bloom_level() -> int:
-    return app.storage.tab.get(TAB_SEARCH_BLOOM_LEVEL, 0)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_SEARCH_BLOOM_LEVEL, 0)
 
 
 def _set_bloom_level(level: int) -> None:
-    app.storage.tab[TAB_SEARCH_BLOOM_LEVEL] = level  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_SEARCH_BLOOM_LEVEL] = level
 
 
 def _get_bloom_response() -> str:
-    return app.storage.tab.get(TAB_SEARCH_BLOOM_RESPONSE, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+    return app.storage.tab.get(TAB_SEARCH_BLOOM_RESPONSE, "")
 
 
 def _set_bloom_response(text: str) -> None:
-    app.storage.tab[TAB_SEARCH_BLOOM_RESPONSE] = text  # pyright: ignore[reportUnknownMemberType]
+    app.storage.tab[TAB_SEARCH_BLOOM_RESPONSE] = text
 
 
-def _get_course_filter() -> str:  # pyright: ignore[reportUnusedFunction]
-    return app.storage.tab.get(TAB_SEARCH_COURSE_FILTER, "")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+def _get_course_filter() -> str:
+    return app.storage.tab.get(TAB_SEARCH_COURSE_FILTER, "")
 
 
-def _set_course_filter(value: str) -> None:  # pyright: ignore[reportUnusedFunction]
-    app.storage.tab[TAB_SEARCH_COURSE_FILTER] = value  # pyright: ignore[reportUnknownMemberType]
+def _set_course_filter(value: str) -> None:
+    app.storage.tab[TAB_SEARCH_COURSE_FILTER] = value
 
 
 # --- UI components -----------------------------------------------------------
@@ -133,12 +133,12 @@ def search_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]
+    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
     if course_id is None:
         ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500")
         return
 
-    _render_header(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+    _render_header(container, course_id)
     _search_results()
 
 
@@ -161,7 +161,7 @@ def _render_header(container: AppContainer, course_id: int) -> None:
             if not query.strip():
                 _set_results([])
                 _set_selected_index(None)
-                _search_results.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+                _search_results.refresh()  # type: ignore[attr-defined]
                 return
             await _execute_search(container, course_id, query)
 
@@ -172,7 +172,7 @@ def _render_header(container: AppContainer, course_id: int) -> None:
 
 async def _execute_search(container: AppContainer, course_id: int, query: str) -> None:
     """Run the search and refresh results."""
-    results = await search_lectures(container, course_id, query)  # pyright: ignore[reportUnknownArgumentType]
+    results = await search_lectures(container, course_id, query)
     serialized = [
         {
             "episode_id": r.episode_id,
@@ -185,10 +185,10 @@ async def _execute_search(container: AppContainer, course_id: int, query: str) -
         }
         for r in results
     ]
-    _set_results(serialized)  # pyright: ignore[reportArgumentType]
+    _set_results(serialized)
     _set_selected_index(None)
     _set_bloom_response("")
-    _search_results.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+    _search_results.refresh()  # type: ignore[attr-defined]
 
 
 @ui.refreshable
@@ -238,9 +238,9 @@ def _render_result_card(
 ) -> None:
     """Single result card — title, score, timestamp, preview."""
     title = str(result.get("title", "Untitled"))
-    score = float(result.get("score", 0.0))  # pyright: ignore[reportArgumentType]
-    start = float(result.get("start_time", 0.0))  # pyright: ignore[reportArgumentType]
-    end = float(result.get("end_time", 0.0))  # pyright: ignore[reportArgumentType]
+    score = float(result.get("score", 0.0))
+    start = float(result.get("start_time", 0.0))
+    end = float(result.get("end_time", 0.0))
     chunk = str(result.get("chunk_text", ""))
     preview = chunk[:_CHUNK_PREVIEW_LENGTH] + ("…" if len(chunk) > _CHUNK_PREVIEW_LENGTH else "")
 
@@ -276,15 +276,15 @@ def _select_result(idx: int) -> None:
         return
     _set_selected_index(idx)
     _set_bloom_response("")
-    _search_results.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+    _search_results.refresh()  # type: ignore[attr-defined]
 
 
 def _render_result_detail(result: dict[str, object]) -> None:
     """Expanded view of the selected result with full chunk text."""
     chunk_text = str(result.get("chunk_text", ""))
     title = str(result.get("title", "Untitled"))
-    start = float(result.get("start_time", 0.0))  # pyright: ignore[reportArgumentType]
-    end = float(result.get("end_time", 0.0))  # pyright: ignore[reportArgumentType]
+    start = float(result.get("start_time", 0.0))
+    end = float(result.get("end_time", 0.0))
 
     with ui.card().classes("w-full mt-4 bg-blue-50"):
         ui.label(title).classes("font-bold text-xl mb-2")
@@ -323,7 +323,7 @@ def _render_bloom_prompt() -> None:
             _set_bloom_response(current)
             _set_bloom_level(_next_bloom_level(level))
             _set_selected_index(None)
-            _search_results.refresh()  # type: ignore[attr-defined]  # pyright: ignore[reportFunctionMemberAccess]
+            _search_results.refresh()  # type: ignore[attr-defined]
 
         ui.button("Submit & Continue", on_click=_submit_response).classes("mt-2").props(
             "color=amber"

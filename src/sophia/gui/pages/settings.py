@@ -78,9 +78,9 @@ def hermes_setup_status(is_complete: bool) -> tuple[str, str, str]:
 def perform_logout(container: AppContainer) -> None:
     """Clear session file and NiceGUI user storage, then redirect."""
     clear_session(session_path(container.settings.config_dir))
-    app.storage.user.clear()  # pyright: ignore[reportUnknownMemberType]
-    ui.notify("Logged out successfully", type="positive")  # pyright: ignore[reportUnknownMemberType]
-    ui.navigate.to("/settings")  # pyright: ignore[reportUnknownMemberType]
+    app.storage.user.clear()
+    ui.notify("Logged out successfully", type="positive")
+    ui.navigate.to("/settings")
     log.info("user_logged_out")
 
 
@@ -91,10 +91,10 @@ async def settings_content() -> None:
     """Render the Settings page with auth, job status, and config sections."""
     container = get_container()
     if container is None:
-        ui.label("Application not initialized.").classes("text-red-700")  # pyright: ignore[reportUnknownMemberType]
+        ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    ui.label("Settings").classes("text-2xl font-bold mb-4")  # pyright: ignore[reportUnknownMemberType]
+    ui.label("Settings").classes("text-2xl font-bold mb-4")
 
     _render_auth_section(container)
     _render_job_status_section()
@@ -104,63 +104,63 @@ async def settings_content() -> None:
 
 def _render_auth_section(container: AppContainer) -> None:
     """Auth & Connection Status card."""
-    with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Auth & Connection Status").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Auth & Connection Status").classes("text-lg font-semibold mb-2")
+        ui.separator()
 
         monitor = get_health_monitor()
         status_text, status_css = health_status_label(monitor)
 
-        with ui.row().classes("items-center gap-2 mt-2"):  # pyright: ignore[reportUnknownMemberType]
-            ui.icon("wifi" if monitor and monitor.is_healthy else "wifi_off").classes("text-xl")  # pyright: ignore[reportUnknownMemberType]
-            ui.label(status_text).classes(f"font-medium {status_css}")  # pyright: ignore[reportUnknownMemberType]
+        with ui.row().classes("items-center gap-2 mt-2"):
+            ui.icon("wifi" if monitor and monitor.is_healthy else "wifi_off").classes("text-xl")
+            ui.label(status_text).classes(f"font-medium {status_css}")
 
         # Session age
         creds = load_session(session_path(container.settings.config_dir))
         if creds is not None:
             age = format_session_age(creds.created_at)
-            ui.label(f"Session age: {age}").classes("text-sm text-gray-600 mt-1")  # pyright: ignore[reportUnknownMemberType]
-            ui.label("Services: TUWEL").classes("text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
+            ui.label(f"Session age: {age}").classes("text-sm text-gray-600 mt-1")
+            ui.label("Services: TUWEL").classes("text-sm text-gray-600")
         else:
-            ui.label(  # pyright: ignore[reportUnknownMemberType]
+            ui.label(
                 'Run "sophia auth login" in terminal to connect to TUWEL',
             ).classes("text-sm text-gray-500 mt-1 italic")
 
         # Logout button
         def _on_logout() -> None:
-            with ui.dialog() as dialog, ui.card():  # pyright: ignore[reportUnknownMemberType]
-                ui.label("Are you sure you want to log out?").classes("mb-2")  # pyright: ignore[reportUnknownMemberType]
-                with ui.row().classes("gap-2"):  # pyright: ignore[reportUnknownMemberType]
-                    ui.button("Cancel", on_click=dialog.close)  # pyright: ignore[reportUnknownMemberType]
-                    ui.button(  # pyright: ignore[reportUnknownMemberType]
+            with ui.dialog() as dialog, ui.card():
+                ui.label("Are you sure you want to log out?").classes("mb-2")
+                with ui.row().classes("gap-2"):
+                    ui.button("Cancel", on_click=dialog.close)
+                    ui.button(
                         "Log out",
                         on_click=lambda: (dialog.close(), perform_logout(container)),
                         color="red",
                     )
-            dialog.open()  # pyright: ignore[reportUnknownMemberType]
+            dialog.open()
 
-        ui.button("Log out", icon="logout", on_click=_on_logout).classes("mt-3").props(  # pyright: ignore[reportUnknownMemberType]
+        ui.button("Log out", icon="logout", on_click=_on_logout).classes("mt-3").props(
             "outline",
         )
 
 
 def _render_job_status_section() -> None:
     """Basic Job Status card."""
-    with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Job Status").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Job Status").classes("text-lg font-semibold mb-2")
+        ui.separator()
 
-        with ui.row().classes("items-center gap-2 mt-2"):  # pyright: ignore[reportUnknownMemberType]
-            ui.icon("sync").classes("text-xl text-gray-500")  # pyright: ignore[reportUnknownMemberType]
-            ui.label("Deadline sync: Never synced").classes("text-sm text-gray-600")  # pyright: ignore[reportUnknownMemberType]
+        with ui.row().classes("items-center gap-2 mt-2"):
+            ui.icon("sync").classes("text-xl text-gray-500")
+            ui.label("Deadline sync: Never synced").classes("text-sm text-gray-600")
 
 
 def _render_config_section(container: AppContainer) -> None:
     """Configuration Display card."""
     settings = container.settings
-    with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Configuration").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Configuration").classes("text-lg font-semibold mb-2")
+        ui.separator()
 
         _config_row("Data directory", str(settings.data_dir))
         _config_row("Config directory", str(settings.config_dir))
@@ -172,33 +172,33 @@ def _render_hermes_section() -> None:
     is_complete = is_hermes_setup_complete()
     label, icon, css = hermes_setup_status(is_complete)
 
-    with ui.card().classes("w-full mb-4"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label("Lecture Pipeline (Hermes)").classes("text-lg font-semibold mb-2")  # pyright: ignore[reportUnknownMemberType]
-        ui.separator()  # pyright: ignore[reportUnknownMemberType]
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Lecture Pipeline (Hermes)").classes("text-lg font-semibold mb-2")
+        ui.separator()
 
-        with ui.row().classes("items-center gap-2 mt-2"):  # pyright: ignore[reportUnknownMemberType]
-            ui.icon(icon).classes(f"text-xl {css}")  # pyright: ignore[reportUnknownMemberType]
-            ui.label(label).classes(f"font-medium {css}")  # pyright: ignore[reportUnknownMemberType]
+        with ui.row().classes("items-center gap-2 mt-2"):
+            ui.icon(icon).classes(f"text-xl {css}")
+            ui.label(label).classes(f"font-medium {css}")
 
         if is_complete:
 
             def _rerun() -> None:
-                app.storage.user[USER_HERMES_SETUP_COMPLETE] = False  # pyright: ignore[reportUnknownMemberType]
-                ui.navigate.to("/lectures/setup")  # pyright: ignore[reportUnknownMemberType]
+                app.storage.user[USER_HERMES_SETUP_COMPLETE] = False
+                ui.navigate.to("/lectures/setup")
 
-            ui.button("Re-run Setup", icon="refresh", on_click=_rerun).classes("mt-3").props(  # pyright: ignore[reportUnknownMemberType]
+            ui.button("Re-run Setup", icon="refresh", on_click=_rerun).classes("mt-3").props(
                 "outline",
             )
         else:
-            ui.button(  # pyright: ignore[reportUnknownMemberType]
+            ui.button(
                 "Run Setup",
                 icon="play_arrow",
-                on_click=lambda: ui.navigate.to("/lectures/setup"),  # pyright: ignore[reportUnknownMemberType]
+                on_click=lambda: ui.navigate.to("/lectures/setup"),
             ).classes("mt-3")
 
 
 def _config_row(label: str, value: str) -> None:
     """Single key-value config display row."""
-    with ui.row().classes("items-center gap-4 mt-2"):  # pyright: ignore[reportUnknownMemberType]
-        ui.label(label).classes("text-sm text-gray-500 w-40")  # pyright: ignore[reportUnknownMemberType]
-        ui.label(value).classes("text-sm font-mono")  # pyright: ignore[reportUnknownMemberType]
+    with ui.row().classes("items-center gap-4 mt-2"):
+        ui.label(label).classes("text-sm text-gray-500 w-40")
+        ui.label(value).classes("text-sm font-mono")

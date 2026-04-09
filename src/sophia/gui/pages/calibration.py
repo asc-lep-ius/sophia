@@ -60,24 +60,24 @@ _TIER_Y_REVERSE: Final[dict[int, str]] = {0: "cued", 1: "explain", 2: "transfer"
 def extract_scatter_rows(chart: dict[str, Any]) -> list[list[str]]:
     """Extract [predicted, actual] rows from a scatter chart config."""
     series = chart.get("series", [{}])
-    data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
-    return [[f"{pt[0]:.2f}", f"{pt[1]:.2f}"] for pt in data if len(pt) >= 2]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    data = series[0].get("data", []) if series else []
+    return [[f"{pt[0]:.2f}", f"{pt[1]:.2f}"] for pt in data if len(pt) >= 2]
 
 
 def extract_bar_rows(chart: dict[str, Any]) -> list[list[str]]:
     """Extract [label, value] rows from a bar chart config."""
-    labels = chart.get("yAxis", {}).get("data") or chart.get("xAxis", {}).get("data") or []  # pyright: ignore[reportUnknownVariableType]
+    labels = chart.get("yAxis", {}).get("data") or chart.get("xAxis", {}).get("data") or []
     series = chart.get("series", [{}])
-    values = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
-    return [[str(label), str(v)] for label, v in zip(labels, values, strict=False)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    values = series[0].get("data", []) if series else []
+    return [[str(label), str(v)] for label, v in zip(labels, values, strict=False)]
 
 
 def extract_line_rows(chart: dict[str, Any]) -> list[list[str]]:
     """Extract [x, y] rows from a line chart config."""
     x_data = chart.get("xAxis", {}).get("data", [])
     series = chart.get("series", [{}])
-    y_data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
-    return [[str(x), f"{y:.2f}"] for x, y in zip(x_data, y_data, strict=False)]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+    y_data = series[0].get("data", []) if series else []
+    return [[str(x), f"{y:.2f}"] for x, y in zip(x_data, y_data, strict=False)]
 
 
 def extract_heatmap_rows(chart: dict[str, Any]) -> list[list[str]]:
@@ -85,11 +85,11 @@ def extract_heatmap_rows(chart: dict[str, Any]) -> list[list[str]]:
     x_labels = chart.get("xAxis", {}).get("data", [])
     y_labels = chart.get("yAxis", {}).get("data", [])
     series = chart.get("series", [{}])
-    data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    data = series[0].get("data", []) if series else []
     rows: list[list[str]] = []
-    for pt in data:  # pyright: ignore[reportUnknownVariableType]
-        if len(pt) >= 3:  # pyright: ignore[reportUnknownArgumentType]
-            xi, yi = int(pt[0]), int(pt[1])  # pyright: ignore[reportUnknownArgumentType]
+    for pt in data:
+        if len(pt) >= 3:
+            xi, yi = int(pt[0]), int(pt[1])
             topic = x_labels[xi] if xi < len(x_labels) else str(xi)
             course = y_labels[yi] if yi < len(y_labels) else str(yi)
             rows.append([str(topic), str(course), f"{pt[2]:.2f}"])
@@ -100,22 +100,21 @@ def extract_tier_rows(chart: dict[str, Any]) -> list[list[str]]:
     """Extract [session, tier_name] rows from a tier progression chart."""
     x_data = chart.get("xAxis", {}).get("data", [])
     series = chart.get("series", [{}])
-    y_data = series[0].get("data", []) if series else []  # pyright: ignore[reportUnknownVariableType]
+    y_data = series[0].get("data", []) if series else []
     return [
-        [str(x), _TIER_Y_REVERSE.get(int(y), str(y))]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
-        for x, y in zip(x_data, y_data, strict=False)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+        [str(x), _TIER_Y_REVERSE.get(int(y), str(y))] for x, y in zip(x_data, y_data, strict=False)
     ]
 
 
 # --- Storage helpers ---------------------------------------------------------
 
 
-def _get_course_filter() -> int | None:  # pyright: ignore[reportUnusedFunction]
-    return app.storage.tab.get(TAB_CALIBRATION_COURSE_FILTER)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportReturnType]
+def _get_course_filter() -> int | None:
+    return app.storage.tab.get(TAB_CALIBRATION_COURSE_FILTER)
 
 
-def _set_course_filter(value: int | None) -> None:  # pyright: ignore[reportUnusedFunction]
-    app.storage.tab[TAB_CALIBRATION_COURSE_FILTER] = value  # pyright: ignore[reportUnknownMemberType]
+def _set_course_filter(value: int | None) -> None:
+    app.storage.tab[TAB_CALIBRATION_COURSE_FILTER] = value
 
 
 # --- Pure helpers ------------------------------------------------------------
@@ -222,13 +221,13 @@ async def calibration_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAssignmentType]
+    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
     if course_id is None:
         ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500")
         return
 
     _render_header()
-    await _charts(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+    await _charts(container, course_id)
 
 
 # --- Header ------------------------------------------------------------------
@@ -243,9 +242,9 @@ def _render_header() -> None:
 
 
 @ui.refreshable
-async def _charts(container: AppContainer, course_id: int) -> None:  # pyright: ignore[reportUnknownParameterType]
+async def _charts(container: AppContainer, course_id: int) -> None:
     """Main chart grid — fetches data and renders all five visualisations."""
-    ratings = await get_calibration_ratings(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+    ratings = await get_calibration_ratings(container, course_id)
 
     if not ratings:
         ui.label("No calibration data yet — complete a study session to see insights.").classes(
@@ -253,7 +252,7 @@ async def _charts(container: AppContainer, course_id: int) -> None:  # pyright: 
         )
         return
 
-    blind_spots = await get_blind_spot_topics(container, course_id)  # pyright: ignore[reportUnknownArgumentType]
+    blind_spots = await get_blind_spot_topics(container, course_id)
 
     with ui.grid(columns=2).classes("w-full gap-4"):
         # Chart 1: Confidence Scatter
@@ -360,12 +359,12 @@ def _render_mastery_heatmap(ratings: list[ConfidenceRating]) -> None:
 
 
 async def _render_tier_progression(
-    container: AppContainer,  # pyright: ignore[reportUnknownParameterType]
+    container: AppContainer,
     course_id: int,
     topic: str,
 ) -> None:
     """Step chart showing cued → explain → transfer progression for a topic."""
-    sessions: list[StudySession] = await get_study_sessions_for_topic(container, course_id, topic)  # pyright: ignore[reportUnknownArgumentType]
+    sessions: list[StudySession] = await get_study_sessions_for_topic(container, course_id, topic)
     progression = compute_tier_progression(sessions)
     chart_data = build_tier_progression_chart(progression, topic)
     series = chart_data.get("series", [{}])
@@ -388,7 +387,7 @@ async def _render_tier_progression(
 
 
 async def _render_difficulty_feedback(
-    container: AppContainer,  # pyright: ignore[reportUnknownParameterType]
+    container: AppContainer,
     course_id: int,
     ratings: list[ConfidenceRating],
 ) -> None:
@@ -406,7 +405,7 @@ async def _render_difficulty_feedback(
             container,
             course_id,
             rating.topic,
-        )  # pyright: ignore[reportUnknownArgumentType]
+        )
         if not sessions:
             continue
 

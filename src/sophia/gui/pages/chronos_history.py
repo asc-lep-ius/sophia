@@ -98,15 +98,15 @@ _DEFAULT_CAPACITY: Final = 4.0
 def _get_capacity() -> float:
     """Read effort capacity from browser storage, defaulting to 4h/day."""
     try:
-        val = app.storage.browser.get(BROWSER_EFFORT_CAPACITY, _DEFAULT_CAPACITY)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-        return float(val)  # pyright: ignore[reportUnknownArgumentType]
+        val = app.storage.browser.get(BROWSER_EFFORT_CAPACITY, _DEFAULT_CAPACITY)
+        return float(val)
     except (RuntimeError, TypeError, ValueError):
         return _DEFAULT_CAPACITY
 
 
 async def render_effort_chart(container: AppContainer) -> None:
     """Render the effort distribution stacked bar chart with capacity overlay."""
-    days = await get_effort_distribution_data(container)  # pyright: ignore[reportUnknownArgumentType]
+    days = await get_effort_distribution_data(container)
     if not days:
         return
 
@@ -185,16 +185,16 @@ async def render_past_deadlines_section(
 
         async def _refresh_past_list() -> None:
             results_container.clear()
-            selected = str(outcome_filter.value)  # pyright: ignore[reportUnknownMemberType]
-            sorted_past = sorted(past, key=lambda d: d.due_at, reverse=True)  # pyright: ignore[reportUnknownMemberType, reportUnknownLambdaType]
+            selected = str(outcome_filter.value)
+            sorted_past = sorted(past, key=lambda d: d.due_at, reverse=True)
 
             visible_count = 0
             for deadline in sorted_past:
-                reflection = await get_deadline_reflection(container, deadline.id)  # pyright: ignore[reportUnknownArgumentType, reportUnknownMemberType]
+                reflection = await get_deadline_reflection(container, deadline.id)
                 has_reflection = reflection is not None
                 outcome = _classify_deadline_outcome(
-                    deadline.due_at,  # pyright: ignore[reportUnknownArgumentType]
-                    completed_at=deadline.due_at if has_reflection else None,  # pyright: ignore[reportUnknownArgumentType]
+                    deadline.due_at,
+                    completed_at=deadline.due_at if has_reflection else None,
                 )
 
                 if selected != "all" and outcome != selected:
@@ -210,13 +210,13 @@ async def render_past_deadlines_section(
                         badge_color,
                         reflection,
                         render_reflection_form=render_reflection_form,
-                    )  # pyright: ignore[reportUnknownArgumentType]
+                    )
 
             if visible_count == 0:
                 with results_container:
                     ui.label("No deadlines match this filter").classes("text-gray-500 text-sm py-4")
 
-        outcome_filter.on_value_change(lambda _: _refresh_past_list())  # pyright: ignore[reportUnknownMemberType]
+        outcome_filter.on_value_change(lambda _: _refresh_past_list())
         await _refresh_past_list()
 
 
@@ -237,17 +237,17 @@ async def _render_past_deadline_card(
                     outcome.replace("_", " ").title(),
                     color=badge_color,
                 ).classes("text-xs")
-                type_color = _DEADLINE_TYPE_COLORS.get(deadline.deadline_type.value, "gray")  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                type_color = _DEADLINE_TYPE_COLORS.get(deadline.deadline_type.value, "gray")
                 ui.badge(
-                    deadline.deadline_type.value.upper(),  # pyright: ignore[reportUnknownMemberType]
+                    deadline.deadline_type.value.upper(),
                     color=type_color,
                 ).classes("text-xs")
-                ui.label(deadline.name).classes("font-bold")  # pyright: ignore[reportUnknownMemberType]
+                ui.label(deadline.name).classes("font-bold")
             with ui.row().classes("items-center gap-2"):
-                ui.label(f"Due: {deadline.due_at.strftime('%b %d')}").classes(  # pyright: ignore[reportUnknownMemberType]
+                ui.label(f"Due: {deadline.due_at.strftime('%b %d')}").classes(
                     "text-sm text-gray-500"
                 )
-                ui.label(deadline.course_name).classes("text-sm text-gray-500")  # pyright: ignore[reportUnknownMemberType]
+                ui.label(deadline.course_name).classes("text-sm text-gray-500")
 
         # Expandable details: reflection + calibration
         if reflection:
@@ -267,8 +267,8 @@ async def _render_past_deadline_card(
         else:
             with ui.row().classes("mt-1 gap-2"):
 
-                async def _show_reflect(dl: Deadline = deadline) -> None:  # pyright: ignore[reportUnknownParameterType]
-                    await render_reflection_form(container, dl)  # type: ignore[operator]  # pyright: ignore[reportUnknownArgumentType]
+                async def _show_reflect(dl: Deadline = deadline) -> None:
+                    await render_reflection_form(container, dl)  # type: ignore[operator]
 
                 ui.button(
                     "Add Reflection",
@@ -282,13 +282,13 @@ async def _render_past_deadline_card(
 
 async def render_calibration_chart(container: AppContainer) -> None:
     """Render estimated vs actual hours as an ECharts bar chart."""
-    metrics = await get_deadline_calibration(container)  # pyright: ignore[reportUnknownArgumentType]
+    metrics = await get_deadline_calibration(container)
     if not metrics:
         return
 
-    domains = [m.domain for m in metrics]  # pyright: ignore[reportUnknownMemberType]
-    errors = [m.mean_error for m in metrics]  # pyright: ignore[reportUnknownMemberType]
-    abs_errors = [m.mean_absolute_error for m in metrics]  # pyright: ignore[reportUnknownMemberType]
+    domains = [m.domain for m in metrics]
+    errors = [m.mean_error for m in metrics]
+    abs_errors = [m.mean_absolute_error for m in metrics]
 
     with ui.card().classes("w-full p-4 mt-6"):
         ui.label("Estimation Calibration").classes("text-lg font-bold mb-2")

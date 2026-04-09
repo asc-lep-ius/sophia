@@ -1072,13 +1072,12 @@ make docker-backup                 # saves sophia-backup-YYYYMMDD.db
 # GUI Docker deployment (CPU — default)
 make docker-gui-build && make docker-gui-up
 # Or directly:
-docker compose -f docker-compose.gui.yml up -d
+docker compose up -d
 
 # GUI Docker deployment (GPU — requires NVIDIA Container Toolkit)
 make docker-gui-build-gpu && make docker-gui-up-gpu
 # Or directly:
-docker build -f Dockerfile.gui.cuda -t sophia-gui:cuda .
-docker compose -f docker-compose.gui.yml --profile gpu up -d sophia-gui-gpu
+docker compose --profile gpu up -d sophia-gui-gpu
 ```
 
 ### CI/CD

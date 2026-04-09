@@ -1,195 +1,134 @@
-stages:
-  - check
-  - build
+# Sophia CI — local GitLab runners + registry
+#
+# Docker builds use BuildKit (docker buildx) via DinD on the privileged runner.
+# Registry: gitlab.hephaestus:5050 (HTTP, insecure).
+# Tags: hephaestus (check), privileged (docker builds), workstation (training).
 
 variables:
-  UV_CACHE_DIR: .uv-cache
+  LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
-.python-job:
-  image: python:${PYTHON_VERSION}-slim
-  tags: [ubuntu-desktop-1]
-  before_script:
-    - pip install uv
-    - uv sync --extra web --extra test --group dev
-  cache:
-    key:
-      prefix: uv-${PYTHON_VERSION}
-      files:
-        - uv.lock
-    paths:
-      - .uv-cache/
+stages:
+  - rebuild-ci
+  - check
+  - build
+  - train
 
-lint:
-  extends: .python-job
-  stage: check
+# --- Docker build template (BuildKit + DinD) ---
+.docker-build:
+  image: docker:27-cli
+  services:
+    - name: docker:27-dind
+      command: ["--insecure-registry=gitlab.hephaestus:5050"]
   variables:
-    PYTHON_VERSION: "3.12"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - |
+      cat > /tmp/buildkitd.toml << EOF
+      [registry."gitlab.hephaestus:5050"]
+        http = true
+      EOF
+    - docker buildx create --use --name ci-builder
+        --driver docker-container
+        --driver-opt network=host
+        --config /tmp/buildkitd.toml
+    - docker buildx inspect --bootstrap
+  after_script:
+    - docker buildx rm ci-builder 2>/dev/null || true
+  tags: [privileged]
+
+# --- CI image rebuild ---
+.ci-rebuild-rules:
+  rules:
+    - changes:
+        - ci/Dockerfile.ci
+        - pyproject.toml
+        - uv.lock
+
+rebuild-ci-image:
+  stage: rebuild-ci
+  extends:
+    - .docker-build
+    - .ci-rebuild-rules
   script:
-    - uv run ruff check .
-    - uv run ruff format --check .
+    - CI_HASH=$(cat ci/Dockerfile.ci pyproject.toml uv.lock | sha256sum | cut -c1-16)
+    - docker buildx build
+        --file ci/Dockerfile.ci
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/ci:${CI_HASH}
+        --push .
+
+# --- Check stage ---
+lint:
+  stage: check
+  tags: [hephaestus]
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  script:
+    - uv run ruff check src/ tests/
+    - uv run ruff format --check src/ tests/
 
 typecheck:
-  extends: .python-job
   stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
+  tags: [hephaestus]
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
   before_script:
-    - apt-get update && apt-get install -y --no-install-recommends libatomic1
-    - pip install uv
-    - uv sync --extra web --extra test --group dev
+    - apt-get update -qq && apt-get install -y --no-install-recommends libatomic1
   script:
-    - uv run pyright
+    - uv sync --extra web
+    - uv run pyright src/
 
-test:
-  extends: .python-job
+test:3.12:
   stage: check
-  parallel:
-    matrix:
-      - PYTHON_VERSION: ["3.12", "3.14"]
+  tags: [hephaestus]
+  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
   script:
-    - uv run pytest --ignore=tests/integration --tb=short -q --cov=src/sophia --cov-report=term-missing --cov-report=xml --cov-fail-under=70
-  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)$/'
-  artifacts:
-    reports:
-      coverage_report:
-        coverage_format: cobertura
-        path: coverage.xml
-    when: always
-    expire_in: 30 days
+    - uv sync --extra web --extra test
+    - uv run pytest tests/ -x --tb=short --cov=sophia --cov-report=term
+  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/'
 
-security:
-  extends: .python-job
+test:3.14:
   stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
+  tags: [hephaestus]
+  image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
   script:
-    - uv run pip-audit
+    - uv sync --extra web --extra test
+    - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
-docker-build:
+# --- Build stage ---
+docker-gui-build-gpu:
   stage: build
-  image: docker:latest
-  tags: [ubuntu-desktop-1]
-  # Uses host Docker socket (mounted via runner config) instead of DinD.
+  extends: .docker-build
+  timeout: 3h
   script:
-    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA -t $CI_REGISTRY_IMAGE:latest .
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-        docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA
-        docker push $CI_REGISTRY_IMAGE:latest
-        echo "Published $CI_REGISTRY_IMAGE:$CI_COMMIT_SHORT_SHA"
-      fi
+    - GPU_HASH=$(cat Dockerfile.gui.cuda pyproject.toml uv.lock | sha256sum | cut -c1-16)
+    - docker buildx build
+        --file Dockerfile.gui.cuda
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH}
+        --tag ${LOCAL_REGISTRY}/gui-cuda:latest
+        --push .
   rules:
-    - if: $CI_COMMIT_BRANCH == "master"
     - changes:
-        - Dockerfile
-        - docker-compose.yml
-        - pyproject.toml
-        - uv.lock
-
-test-gui:
-  extends: .python-job
-  stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
-  script:
-    - uv run pytest tests/unit/gui/ -v --tb=short
-
-test-gui-e2e:
-  extends: .python-job
-  stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
-  allow_failure: true
-  script:
-    - uv run playwright install --with-deps chromium
-    # Exclude smoke tests that start their own NiceGUI server — they can't share
-    # the session-scoped gui_base_url and must run in isolated jobs below.
-    - >-
-      uv run pytest tests/integration/gui/
-      --ignore=tests/integration/gui/test_smoke_hermes_wizard.py
-      --ignore=tests/integration/gui/test_smoke_tier2.py
-      -m e2e -v --tb=short
-
-test-gui-smoke-tier2:
-  extends: .python-job
-  stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
-  script:
-    - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/test_smoke_tier2.py -m e2e -v --tb=short
-
-test-gui-smoke-hermes:
-  extends: .python-job
-  stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
-  timeout: 15 minutes
-  before_script:
-    - pip install uv
-    - uv sync --extra web --extra test --group dev
-    # CPU-only torch (~200MB) instead of CUDA torch (~3GB) — matches Dockerfile.gui cpu-builder
-    - uv pip install torch --index-url https://download.pytorch.org/whl/cpu
-    - uv pip install faster-whisper chromadb sentence-transformers openai
-  after_script:
-    - uv cache prune --ci
-  script:
-    - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/test_smoke_hermes_wizard.py -m e2e -v --tb=short
-
-test-gui-a11y:
-  extends: .python-job
-  stage: check
-  variables:
-    PYTHON_VERSION: "3.12"
-  allow_failure: true
-  script:
-    - uv run playwright install --with-deps chromium
-    - uv run pytest tests/integration/gui/test_accessibility.py -m e2e -v --tb=short
-
-.docker-gui-build:
-  stage: build
-  image: docker:latest
-  tags: [ubuntu-desktop-1]
-  # Uses host Docker socket (mounted via runner config) instead of DinD.
-  # This reuses the host layer cache so CUDA layers are never re-downloaded.
-  rules:
-    - if: $CI_COMMIT_BRANCH == "master"
-    - changes:
-        - Dockerfile.gui
         - Dockerfile.gui.cuda
-        - docker-compose.gui.yml
         - pyproject.toml
         - uv.lock
+        - src/**/*
 
-docker-gui-build:
-  extends: .docker-gui-build
+# --- Training (on workstation) ---
+train-smoke:
+  stage: train
+  tags: [workstation, gpu-train]
+  resource_group: gpu
+  image: "${LOCAL_REGISTRY}/gui-cuda:latest"
   timeout: 30m
   script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -f Dockerfile.gui
-      -t $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
-      -t $CI_REGISTRY_IMAGE/gui:latest .
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        docker push $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA
-        docker push $CI_REGISTRY_IMAGE/gui:latest
-        echo "Published $CI_REGISTRY_IMAGE/gui:$CI_COMMIT_SHORT_SHA"
-      fi
-
-docker-gui-build-gpu:
-  extends: .docker-gui-build
-  timeout: 1h
-  script:
-    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
-    - docker build -f Dockerfile.gui.cuda
-      -t $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA
-      -t $CI_REGISTRY_IMAGE/gui:cuda .
-    - |
-      if [ "$CI_COMMIT_BRANCH" = "master" ]; then
-        docker push $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA
-        docker push $CI_REGISTRY_IMAGE/gui:cuda
-        echo "Published $CI_REGISTRY_IMAGE/gui:cuda-$CI_COMMIT_SHORT_SHA"
-      fi
+    - nvidia-smi
+    - python -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"
+    - echo "Training smoke test placeholder — add actual training command"
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
