@@ -51,6 +51,16 @@ def needs_processing(ep: EpisodeStatus) -> bool:
     return not is_fully_indexed(ep)
 
 
+def count_unprocessed(episodes: list[EpisodeStatus]) -> int:
+    """Count episodes that still need pipeline processing."""
+    return sum(1 for ep in episodes if needs_processing(ep))
+
+
+def get_unprocessed(episodes: list[EpisodeStatus]) -> list[EpisodeStatus]:
+    """Return only episodes that still need pipeline processing."""
+    return [ep for ep in episodes if needs_processing(ep)]
+
+
 def filter_episodes(
     episodes: list[EpisodeStatus],
     *,

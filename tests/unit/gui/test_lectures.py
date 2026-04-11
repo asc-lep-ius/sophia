@@ -11,7 +11,9 @@ from sophia.gui.services.hermes_service import (
     STATUS_FILTER_ALL,
     STATUS_FILTER_INDEXED,
     STATUS_FILTER_NEEDS_PROCESSING,
+    count_unprocessed,
     filter_episodes,
+    get_unprocessed,
     is_fully_indexed,
     needs_processing,
 )
@@ -152,3 +154,46 @@ class TestFilterEpisodes:
     def test_empty_list(self) -> None:
         result = filter_episodes([], status_filter=STATUS_FILTER_ALL, search_query="x")
         assert result == []
+
+
+# --- count_unprocessed / get_unprocessed -------------------------------------
+
+
+class TestCountUnprocessed:
+    """Count episodes that still need pipeline work."""
+
+    def test_all_indexed(self) -> None:
+        eps = [_ep(episode_id="e1"), _ep(episode_id="e2")]
+        assert count_unprocessed(eps) == 0
+
+    def test_some_unprocessed(self) -> None:
+        eps = [_ep(episode_id="e1"), _ep(episode_id="e2", idx=None)]
+        assert count_unprocessed(eps) == 1
+
+    def test_all_unprocessed(self) -> None:
+        eps = [_ep(dl="queued", tr=None, idx=None), _ep(idx=None)]
+        assert count_unprocessed(eps) == 2
+
+    def test_empty_list(self) -> None:
+        assert count_unprocessed([]) == 0
+
+
+class TestGetUnprocessed:
+    """Filter to only unprocessed episodes."""
+
+    def test_returns_only_unprocessed(self) -> None:
+        eps = [
+            _ep(episode_id="e1"),
+            _ep(episode_id="e2", idx=None),
+            _ep(episode_id="e3", tr=None, idx=None),
+        ]
+        result = get_unprocessed(eps)
+        assert len(result) == 2
+        assert {ep.episode_id for ep in result} == {"e2", "e3"}
+
+    def test_empty_when_all_indexed(self) -> None:
+        eps = [_ep(episode_id="e1"), _ep(episode_id="e2")]
+        assert get_unprocessed(eps) == []
+
+    def test_empty_list(self) -> None:
+        assert get_unprocessed([]) == []

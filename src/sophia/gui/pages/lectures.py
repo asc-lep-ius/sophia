@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import structlog
@@ -15,8 +16,11 @@ from sophia.gui.services.hermes_service import (
     filter_episodes,
     get_lecture_modules,
     get_module_lectures,
+    get_unprocessed,
     is_fully_indexed,
+    needs_processing,
 )
+from sophia.gui.services.pipeline_service import PipelineRunner, estimate_storage
 from sophia.gui.state.storage_map import (
     TAB_LECTURES_SEARCH_QUERY,
     TAB_LECTURES_STATUS_FILTER,
@@ -27,6 +31,10 @@ if TYPE_CHECKING:
     from sophia.services.hermes_manage import EpisodeStatus
 
 log = structlog.get_logger()
+
+# --- Module-level pipeline runner (singleton per server process) --------------
+
+_runner = PipelineRunner()
 
 # --- Filter options ----------------------------------------------------------
 
@@ -93,6 +101,7 @@ async def lectures_content() -> None:
         return
 
     _render_header()
+    await _render_batch_actions()
     await _lecture_list()
 
 
@@ -158,6 +167,91 @@ def _render_header() -> None:
             icon="settings",
             on_click=lambda: ui.navigate.to("/lectures/setup"),
         ).props("flat round").tooltip("Re-run Setup")
+
+
+# --- Batch actions -----------------------------------------------------------
+
+
+async def _render_batch_actions() -> None:
+    """Show batch processing bar when there are unprocessed episodes."""
+    container = get_container()
+    if not container:
+        return
+
+    db = container.db
+    modules = await get_lecture_modules(db)
+    all_episodes: list[EpisodeStatus] = []
+    module_ids: list[int] = []
+    for mod in modules:
+        episodes = await get_module_lectures(db, mod.module_id)
+        all_episodes.extend(episodes)
+        module_ids.append(mod.module_id)
+
+    unprocessed = get_unprocessed(all_episodes)
+    n_unprocessed = len(unprocessed)
+
+    if n_unprocessed == 0:
+        return
+
+    state = _runner.get_state()
+    storage_gb = estimate_storage(n_unprocessed)
+
+    with ui.row().classes("w-full items-center gap-3 mb-4 p-3 bg-blue-50 rounded"):
+        if state.running:
+            ui.spinner("dots", size="sm")
+            progress = (
+                f"{state.completed_episodes}/{state.total_episodes}"
+                if state.total_episodes
+                else "..."
+            )
+            ui.label(f"Processing {progress}…").classes("text-sm")
+            if state.current_episode:
+                ui.label(f"({state.current_episode})").classes("text-xs text-gray-500")
+            ui.space()
+            ui.button("Cancel", on_click=_runner.cancel).props("flat color=negative dense")
+        else:
+            ui.icon("play_circle_filled").classes("text-blue-600")
+            ui.label(f"{n_unprocessed} unprocessed").classes("font-medium")
+            ui.label(f"~{storage_gb:.1f} GB estimated").classes("text-xs text-gray-500")
+            ui.space()
+
+            async def _start_batch() -> None:
+                if not module_ids:
+                    return
+                ep_ids = [ep.episode_id for ep in unprocessed]
+                module_id = module_ids[0]
+                if _runner.get_state().running:
+                    ui.notify("Pipeline already running", type="warning")
+                    return
+
+                with ui.dialog() as confirm_dialog, ui.card().classes("p-4"):
+                    ui.label("Confirm Batch Processing").classes("text-lg font-bold mb-2")
+                    ui.label(
+                        f"This will process {n_unprocessed} lectures and requires "
+                        f"approximately {storage_gb:.1f} GB of disk space.",
+                    ).classes("mb-3")
+                    with ui.row().classes("justify-end gap-2"):
+                        ui.button("Cancel", on_click=confirm_dialog.close).props("flat dense")
+
+                        async def _confirmed() -> None:
+                            confirm_dialog.close()
+                            ui.notify(
+                                f"Starting batch processing of {n_unprocessed} lectures…",
+                                type="info",
+                            )
+                            asyncio.create_task(
+                                _runner.start_batch(container, module_id, ep_ids),
+                            )
+                            _lecture_list.refresh()
+
+                        ui.button("Process", on_click=_confirmed).props("color=primary dense")
+
+                confirm_dialog.open()
+
+            ui.button(
+                f"Process {n_unprocessed} Lectures",
+                on_click=_start_batch,
+            ).props("color=primary dense")
 
 
 # --- Lecture list (refreshable) ----------------------------------------------
@@ -228,11 +322,11 @@ def _render_module_group(module_id: int, episodes: list[EpisodeStatus]) -> None:
         .props("default-opened")
     ):
         for ep in episodes:
-            _render_episode_card(ep)
+            _render_episode_card(ep, module_id)
 
 
-def _render_episode_card(ep: EpisodeStatus) -> None:
-    """Single lecture row with status badges."""
+def _render_episode_card(ep: EpisodeStatus, module_id: int) -> None:
+    """Single lecture row with status badges and action buttons."""
     with ui.card().classes("w-full p-3 mb-1"), ui.row().classes("w-full items-center gap-2"):
         # Lecture number + title
         number_label = f"#{ep.lecture_number} " if ep.lecture_number else ""
@@ -244,6 +338,57 @@ def _render_episode_card(ep: EpisodeStatus) -> None:
         _status_badge("Downloaded", ep.download_status)
         _status_badge("Transcribed", ep.transcription_status)
         _status_badge("Indexed", ep.index_status)
+
+        # Action buttons — only show for stages that haven't completed
+        if needs_processing(ep):
+            _render_episode_actions(ep, module_id)
+
+
+def _render_episode_actions(ep: EpisodeStatus, module_id: int) -> None:
+    """Per-episode action buttons for incomplete pipeline stages."""
+    container = get_container()
+    state = _runner.get_state()
+    is_active = state.running and state.current_episode == ep.episode_id
+
+    if is_active:
+        ui.spinner("dots", size="sm").tooltip("Processing…")
+        return
+
+    if state.running:
+        return
+
+    with ui.row().classes("gap-1"):
+        if ep.download_status != "completed":
+            _action_btn("download", "Download", ep, module_id, container)
+        elif ep.transcription_status != "completed":
+            _action_btn("mic", "Transcribe", ep, module_id, container)
+        elif ep.index_status != "completed":
+            _action_btn("index", "Index", ep, module_id, container)
+
+        if needs_processing(ep):
+            _action_btn("play_arrow", "Process", ep, module_id, container)
+
+
+def _action_btn(
+    icon: str, tooltip: str, ep: EpisodeStatus, module_id: int, container: object
+) -> None:
+    """Small icon button that triggers the module pipeline from one episode.
+
+    Each pipeline stage internally skips already-completed episodes, so this
+    effectively processes all pending work in the module.
+    """
+
+    async def _on_click() -> None:
+        if _runner.get_state().running:
+            ui.notify("Pipeline already running", type="warning")
+            return
+        ui.notify(f"{tooltip}: {ep.title}", type="info")
+        asyncio.create_task(
+            _runner.start_single(container, module_id, ep.episode_id),  # type: ignore[arg-type]
+        )
+        _lecture_list.refresh()
+
+    ui.button(icon=icon, on_click=_on_click).props("flat round dense size=sm").tooltip(tooltip)
 
 
 def _status_badge(label: str, status: str | None) -> None:
