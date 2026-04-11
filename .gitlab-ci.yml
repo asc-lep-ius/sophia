@@ -97,6 +97,15 @@ test:3.14:
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
+gpu-smoke:
+  stage: check
+  tags: [hephaestus, gpu]
+  image: nvidia/cuda:12.4.1-base-ubuntu22.04
+  script:
+    - nvidia-smi
+  rules:
+    - when: manual
+
 # --- Build stage ---
 docker-gui-build-gpu:
   stage: build
