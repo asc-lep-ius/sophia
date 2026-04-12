@@ -25,6 +25,7 @@ USER_ACTIVE_SESSIONS: Final = "active_sessions"
 USER_HERMES_SETUP_COMPLETE: Final = "hermes_setup_complete"
 USER_QUICKSTART_COMPLETED: Final = "quickstart_completed"
 USER_QUICKSTART_SELECTED_COURSES: Final = "quickstart_selected_courses"
+USER_JOBS: Final = "jobs"
 
 # ``app.storage.tab`` — per browser tab, lost on tab close.
 TAB_STEPPER_STATE: Final = "stepper_state"
@@ -101,6 +102,7 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         USER_HERMES_SETUP_COMPLETE,
         USER_QUICKSTART_COMPLETED,
         USER_QUICKSTART_SELECTED_COURSES,
+        USER_JOBS,
     ],
     "tab": [
         TAB_STEPPER_STATE,

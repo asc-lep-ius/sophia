@@ -170,6 +170,8 @@ class TestSettingsContentWithContainer:
             f"{_PATCH_BASE}.app.storage",
             MagicMock(user={}),
         )
+        # _jobs_content is @ui.refreshable which requires a real NiceGUI slot
+        monkeypatch.setattr(f"{_PATCH_BASE}._jobs_content", lambda: None)
 
     async def test_renders_auth_section_not_connected(
         self,
@@ -249,7 +251,7 @@ class TestSettingsContentWithContainer:
         assert str(mock_container.settings.data_dir) in all_text
         assert "300" in all_text  # keepalive interval
 
-    async def test_renders_job_status_never_synced(
+    async def test_renders_jobs_section_header(
         self,
         monkeypatch: pytest.MonkeyPatch,
         mock_container: MagicMock,
@@ -271,7 +273,7 @@ class TestSettingsContentWithContainer:
         await settings_content()
 
         all_text = " ".join(label_texts)
-        assert "Never synced" in all_text
+        assert "Background Jobs" in all_text
 
 
 class TestLogoutAction:

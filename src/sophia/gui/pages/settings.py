@@ -11,6 +11,7 @@ from nicegui import app, ui
 from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.lectures import is_hermes_setup_complete
+from sophia.gui.services.job_registry import JobEntry, JobRegistry
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE, USER_QUICKSTART_COMPLETED
 
 if TYPE_CHECKING:
@@ -72,6 +73,56 @@ def hermes_setup_status(is_complete: bool) -> tuple[str, str, str]:
     return "Not configured", "pending", "text-gray-500"
 
 
+# --- Job display helpers (tested directly) -----------------------------------
+
+_STATUS_BADGES: dict[str, tuple[str, str]] = {
+    "queued": ("gray", "hourglass_empty"),
+    "running": ("blue", "sync"),
+    "completed": ("green", "check_circle"),
+    "failed": ("red", "error"),
+    "cancelled": ("orange", "cancel"),
+}
+
+
+def job_status_badge(status: str) -> tuple[str, str, str]:
+    """Return (label, color, icon) for a job status string."""
+    color, icon = _STATUS_BADGES.get(status, ("gray", "help"))
+    return status.capitalize(), color, icon
+
+
+def format_elapsed(started_at: datetime | None) -> str:
+    """Human-readable elapsed time from *started_at* until now."""
+    if started_at is None:
+        return "—"
+    delta = datetime.now(UTC) - started_at
+    total_minutes = int(delta.total_seconds() // 60)
+    if total_minutes < 1:
+        return "< 1m"
+    hours, minutes = divmod(total_minutes, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def format_duration(
+    started_at: datetime | None,
+    completed_at: datetime | None,
+) -> str:
+    """Human-readable duration between two timestamps."""
+    if started_at is None or completed_at is None:
+        return "—"
+    total_seconds = int((completed_at - started_at).total_seconds())
+    if total_seconds < 0:
+        return "—"
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m {seconds}s"
+    return f"{seconds}s"
+
+
 # --- Logout action -----------------------------------------------------------
 
 
@@ -97,7 +148,7 @@ async def settings_content() -> None:
     ui.label("Settings").classes("text-2xl font-bold mb-4")
 
     _render_auth_section(container)
-    _render_job_status_section()
+    _render_jobs_section()
     _render_config_section(container)
     _render_hermes_section()
     _render_quickstart_section()
@@ -145,15 +196,86 @@ def _render_auth_section(container: AppContainer) -> None:
         )
 
 
-def _render_job_status_section() -> None:
-    """Basic Job Status card."""
+def _render_jobs_section() -> None:
+    """Background Jobs card — active jobs, history, cancel actions."""
     with ui.card().classes("w-full mb-4"):
-        ui.label("Job Status").classes("text-lg font-semibold mb-2")
+        ui.label("Background Jobs").classes("text-lg font-semibold mb-2")
         ui.separator()
+        _jobs_content()
 
+
+@ui.refreshable
+def _jobs_content() -> None:
+    """Refreshable inner content for the jobs section."""
+    registry = JobRegistry()
+    active = registry.get_active()
+    history = registry.get_history()
+
+    if not active and not history:
         with ui.row().classes("items-center gap-2 mt-2"):
-            ui.icon("sync").classes("text-xl text-gray-500")
-            ui.label("Deadline sync: Never synced").classes("text-sm text-gray-600")
+            ui.icon("info").classes("text-xl text-gray-400")
+            ui.label(
+                "No background jobs yet. Jobs appear here when you sync "
+                "deadlines, process lectures, or extract topics.",
+            ).classes("text-sm text-gray-500 italic")
+        return
+
+    if active:
+        ui.label("Active").classes("text-sm font-semibold text-gray-700 mt-2")
+        for job in active:
+            _render_active_job(registry, job)
+
+    if history:
+        ui.label("History").classes("text-sm font-semibold text-gray-700 mt-4")
+        for job in history:
+            _render_history_job(job)
+
+
+def _render_active_job(registry: JobRegistry, job: JobEntry) -> None:
+    """Render a single active (queued/running) job row."""
+    label, color, icon = job_status_badge(job.status)
+    with ui.row().classes("items-center gap-3 mt-2 w-full"):
+        ui.icon(icon).classes(f"text-lg text-{color}-500")
+        ui.label(job.name).classes("text-sm font-medium flex-1")
+        ui.badge(label, color=color).props("outline")
+        if job.status == "running":
+            ui.linear_progress(value=job.progress).classes("w-24").props("rounded")
+            ui.label(f"{job.progress:.0%}").classes("text-xs text-gray-500 w-10")
+        elapsed = format_elapsed(job.started_at)
+        ui.label(elapsed).classes("text-xs text-gray-400 w-16")
+
+        def _cancel(jid: str = job.id) -> None:
+            registry.cancel(jid)
+            _jobs_content.refresh()  # type: ignore[attr-defined]
+
+        ui.button(icon="close", on_click=_cancel).props("flat dense round size=sm").tooltip(
+            "Cancel"
+        )
+
+
+def _render_history_job(job: JobEntry) -> None:
+    """Render a single completed/failed/cancelled job row."""
+    label, color, icon = job_status_badge(job.status)
+    duration = format_duration(job.started_at, job.completed_at)
+    timestamp = job.completed_at.strftime("%Y-%m-%d %H:%M") if job.completed_at else "—"
+
+    if job.status == "failed" and job.error:
+        with ui.expansion(text="").classes("w-full mt-1") as exp:
+            with exp.add_slot("header"), ui.row().classes("items-center gap-3 w-full"):
+                ui.icon(icon).classes(f"text-lg text-{color}-500")
+                ui.label(job.name).classes("text-sm flex-1")
+                ui.badge(label, color=color).props("outline")
+                ui.label(duration).classes("text-xs text-gray-400 w-16")
+                ui.label(timestamp).classes("text-xs text-gray-400")
+            ui.label(job.error).classes("text-xs text-red-600 font-mono whitespace-pre-wrap")
+        return
+
+    with ui.row().classes("items-center gap-3 mt-2 w-full"):
+        ui.icon(icon).classes(f"text-lg text-{color}-500")
+        ui.label(job.name).classes("text-sm flex-1")
+        ui.badge(label, color=color).props("outline")
+        ui.label(duration).classes("text-xs text-gray-400 w-16")
+        ui.label(timestamp).classes("text-xs text-gray-400")
 
 
 def _render_config_section(container: AppContainer) -> None:
