@@ -45,6 +45,8 @@ stages:
         - ci/Dockerfile.ci
         - pyproject.toml
         - uv.lock
+    - when: manual
+      allow_failure: true
 
 rebuild-ci-image:
   stage: rebuild-ci
@@ -58,13 +60,23 @@ rebuild-ci-image:
         --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache
         --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max
         --tag ${LOCAL_REGISTRY}/ci:${CI_HASH}
+        --tag ${LOCAL_REGISTRY}/ci:latest
         --push .
+
+# --- Pre-built CI image template ---
+.python-job:
+  image: "${LOCAL_REGISTRY}/ci:latest"
+  variables:
+    UV_LINK_MODE: copy
+    UV_PROJECT_ENVIRONMENT: /app/.venv
+  before_script:
+    - uv sync --extra web --extra test --group dev
 
 # --- Check stage ---
 lint:
   stage: check
   tags: [hephaestus]
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  extends: .python-job
   script:
     - uv run ruff check src/ tests/
     - uv run ruff format --check src/ tests/
@@ -72,21 +84,17 @@ lint:
 typecheck:
   stage: check
   tags: [hephaestus]
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
-  before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends libatomic1
+  extends: .python-job
   script:
-    - uv sync --extra web
     - uv run pyright src/
 
 test:3.12:
   stage: check
   tags: [hephaestus]
-  image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+  extends: .python-job
   script:
-    - uv sync --extra web --extra test
     - uv run pytest tests/ -x --tb=short --cov=sophia --cov-report=term
-  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/'
+  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/' 
 
 test:3.14:
   stage: check
