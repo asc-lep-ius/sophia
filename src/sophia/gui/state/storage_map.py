@@ -69,6 +69,9 @@ TAB_CHRONOS_ESTIMATE_DRAFT: Final = "chronos_estimate_draft"
 TAB_CALIBRATION_COURSE_FILTER: Final = "calibration_course_filter"
 TAB_CALIBRATION_CHART_TYPE: Final = "calibration_chart_type"
 
+# Tab-scoped — Registration page
+TAB_REGISTER_EXPANDED_COURSE: Final = "register_expanded_course"
+
 # Tab-scoped — Dashboard density
 TAB_DENSITY_MODE: Final = "dashboard_density_mode"
 

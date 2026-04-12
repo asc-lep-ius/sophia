@@ -26,6 +26,7 @@ from sophia.gui.pages.chronos import chronos_content
 from sophia.gui.pages.dashboard import dashboard_content
 from sophia.gui.pages.lectures import lectures_content
 from sophia.gui.pages.lectures_setup import lectures_setup_content
+from sophia.gui.pages.register import register_content
 from sophia.gui.pages.review import review_content
 from sophia.gui.pages.search import search_content
 from sophia.gui.pages.settings import settings_content
@@ -146,6 +147,10 @@ def _register_pages() -> None:
     @ui.page("/topics")
     async def topics_page() -> None:
         await app_shell(lambda: error_boundary(topics_content, page_name="Topics"))
+
+    @ui.page("/register")
+    async def register_page() -> None:
+        await app_shell(lambda: error_boundary(register_content, page_name="Register"))
 
     @ui.page("/lectures")
     async def lectures_page() -> None:
