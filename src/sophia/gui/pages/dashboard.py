@@ -11,7 +11,8 @@ from nicegui import app, ui
 from sophia.domain.models import DeadlineType, PlanItemType
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
-from sophia.gui.state.storage_map import TAB_DENSITY_MODE
+from sophia.gui.pages.quickstart import show_quickstart_wizard
+from sophia.gui.state.storage_map import TAB_DENSITY_MODE, USER_QUICKSTART_COMPLETED
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.chronos import get_deadlines
@@ -42,6 +43,12 @@ COLOR_NOT_STUDIED = "#6b7280"
 async def dashboard_content() -> None:
     """Main dashboard entry point — called by app_shell + error_boundary."""
     await ui.context.client.connected()  # required before accessing app.storage.tab
+
+    if not app.storage.user.get(USER_QUICKSTART_COMPLETED, False):
+        container = get_container()
+        if container:
+            await show_quickstart_wizard(container)
+
     _render_header()
     await _dashboard_cards()
 

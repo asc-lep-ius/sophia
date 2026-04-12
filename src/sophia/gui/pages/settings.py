@@ -11,7 +11,7 @@ from nicegui import app, ui
 from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.lectures import is_hermes_setup_complete
-from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
+from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE, USER_QUICKSTART_COMPLETED
 
 if TYPE_CHECKING:
     from sophia.gui.services.session_health import SessionHealthMonitor
@@ -100,6 +100,7 @@ async def settings_content() -> None:
     _render_job_status_section()
     _render_config_section(container)
     _render_hermes_section()
+    _render_quickstart_section()
 
 
 def _render_auth_section(container: AppContainer) -> None:
@@ -202,3 +203,28 @@ def _config_row(label: str, value: str) -> None:
     with ui.row().classes("items-center gap-4 mt-2"):
         ui.label(label).classes("text-sm text-gray-500 w-40")
         ui.label(value).classes("text-sm font-mono")
+
+
+def _render_quickstart_section() -> None:
+    """Quickstart Wizard status and re-run option."""
+    is_complete = app.storage.user.get(USER_QUICKSTART_COMPLETED, False)
+    with ui.card().classes("w-full mb-4"):
+        ui.label("Quickstart Wizard").classes("text-lg font-semibold mb-2")
+        ui.separator()
+
+        if is_complete:
+            with ui.row().classes("items-center gap-2 mt-2"):
+                ui.icon("check_circle").classes("text-xl text-green-600")
+                ui.label("Completed").classes("font-medium text-green-600")
+
+            def _rerun() -> None:
+                app.storage.user[USER_QUICKSTART_COMPLETED] = False
+                ui.navigate.to("/")
+
+            ui.button("Re-run Quickstart", icon="refresh", on_click=_rerun).classes(
+                "mt-3",
+            ).props("outline")
+        else:
+            with ui.row().classes("items-center gap-2 mt-2"):
+                ui.icon("pending").classes("text-xl text-gray-500")
+                ui.label("Not yet completed").classes("text-sm text-gray-500")
