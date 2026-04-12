@@ -9,9 +9,15 @@ import structlog
 from nicegui import app, ui
 
 from sophia.domain.models import DeadlineType, PlanItemType
+from sophia.gui.components.course_overview import render_course_cards
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.quickstart import show_quickstart_wizard
+from sophia.gui.services.overview_service import (
+    compute_workload_insights,
+    get_course_summaries,
+    rank_by_urgency,
+)
 from sophia.gui.state.storage_map import TAB_DENSITY_MODE, USER_QUICKSTART_COMPLETED
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
@@ -19,6 +25,7 @@ from sophia.services.chronos import get_deadlines
 
 if TYPE_CHECKING:
     from sophia.domain.models import Deadline, PlanItem, ReviewSchedule
+    from sophia.gui.services.overview_service import CourseSummary
 
 log = structlog.get_logger()
 
@@ -102,6 +109,7 @@ async def _dashboard_cards() -> None:
         reviews = await get_due_reviews(db)
         deadlines = await get_deadlines(db)
         plan_items = await build_plan_items(db)
+        summaries = await get_course_summaries(db)
     except Exception:
         log.exception("dashboard_data_fetch_failed")
         skeleton_card()
@@ -109,11 +117,11 @@ async def _dashboard_cards() -> None:
 
     with ui.column().classes("w-full transition-opacity duration-200"):
         if density == DENSITY_FOCUS:
-            _render_focus_mode(reviews, deadlines, plan_items)
+            _render_focus_mode(reviews, deadlines, plan_items, summaries)
         elif density == DENSITY_FULL:
-            _render_full_mode(reviews, deadlines, plan_items)
+            _render_full_mode(reviews, deadlines, plan_items, summaries)
         else:
-            _render_standard_mode(reviews, deadlines, plan_items)
+            _render_standard_mode(reviews, deadlines, plan_items, summaries)
 
 
 # ---------------------------------------------------------------------------
@@ -125,8 +133,11 @@ def _render_focus_mode(
     reviews: list[ReviewSchedule],
     deadlines: list[Deadline],
     plan_items: list[PlanItem],
+    summaries: list[CourseSummary] | None = None,
 ) -> None:
-    """Minimal view: due count + Socratic prompt."""
+    """Minimal view: most urgent course + due count + Socratic prompt."""
+    if summaries:
+        render_course_cards(rank_by_urgency(summaries)[:1], "focus")
     _render_due_reviews_card(reviews)
     _render_socratic_prompt(reviews, deadlines, plan_items)
 
@@ -135,8 +146,11 @@ def _render_standard_mode(
     reviews: list[ReviewSchedule],
     deadlines: list[Deadline],
     plan_items: list[PlanItem],
+    summaries: list[CourseSummary] | None = None,
 ) -> None:
-    """Default view: reviews + deadlines + plan items + prompt."""
+    """Default view: course cards + reviews + deadlines + plan items + prompt."""
+    if summaries:
+        render_course_cards(rank_by_urgency(summaries), "standard")
     with ui.row().classes("w-full gap-4 flex-wrap"):
         with ui.column().classes("flex-1 min-w-[300px]"):
             _render_due_reviews_card(reviews)
@@ -150,9 +164,21 @@ def _render_full_mode(
     reviews: list[ReviewSchedule],
     deadlines: list[Deadline],
     plan_items: list[PlanItem],
+    summaries: list[CourseSummary] | None = None,
 ) -> None:
-    """Full view: everything from standard + chart placeholders."""
-    _render_standard_mode(reviews, deadlines, plan_items)
+    """Full view: course cards with insights + standard content + chart placeholders."""
+    if summaries:
+        ranked = rank_by_urgency(summaries)
+        insights = compute_workload_insights(summaries)
+        render_course_cards(ranked, "full", insights)
+    # Standard content without re-rendering course cards
+    with ui.row().classes("w-full gap-4 flex-wrap"):
+        with ui.column().classes("flex-1 min-w-[300px]"):
+            _render_due_reviews_card(reviews)
+            _render_deadlines_card(deadlines)
+        with ui.column().classes("flex-1 min-w-[300px]"):
+            _render_plan_items_card(plan_items)
+    _render_socratic_prompt(reviews, deadlines, plan_items)
     with ui.row().classes("w-full gap-4 flex-wrap mt-4"):
         _render_chart_placeholder("Calibration chart", "tune")
         _render_chart_placeholder("Activity chart", "bar_chart")
