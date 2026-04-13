@@ -99,10 +99,10 @@ async def show_quickstart_wizard(container: AppContainer) -> None:
         ui.card().classes("w-full max-w-2xl mx-auto"),
     ):
         with ui.stepper().props("vertical").classes("w-full") as stepper:
-            _step_welcome(scaffold)
+            _step_welcome(stepper, scaffold)
             await _step_courses(stepper, container, _refreshables)
             await _step_predictions(stepper, container, scaffold, _refreshables)
-            _step_feature_tour(scaffold)
+            _step_feature_tour(stepper, scaffold)
             await _step_first_action(stepper, container, dialog, _refreshables)
 
         with ui.row().classes("w-full justify-end mt-2"):
@@ -126,7 +126,7 @@ def _close_wizard(dialog: ui.dialog) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _step_welcome(scaffold: int) -> None:
+def _step_welcome(stepper: ui.stepper, scaffold: int) -> None:
     with ui.step("Welcome to Sophia"):
         ui.label("Welcome to Sophia").classes("text-xl font-bold mb-2")
 
@@ -147,7 +147,7 @@ def _step_welcome(scaffold: int) -> None:
         ).classes("w-full").props("rows=3")
 
         with ui.stepper_navigation():
-            ui.button("Next", on_click=stepper_next)
+            ui.button("Next", on_click=stepper.next)
 
 
 # ---------------------------------------------------------------------------
@@ -180,16 +180,16 @@ async def _step_courses(
 
                 cb.on_value_change(_toggle)
 
-        async def _advance_and_save(e: Any = None) -> None:  # noqa: ANN401
+        async def _advance_and_save() -> None:
             chosen = [cid for cid, on in selected.items() if on]
             app.storage.user[USER_QUICKSTART_SELECTED_COURSES] = chosen
             for refresh_fn in refreshables:
                 refresh_fn()
-            stepper_next(e)
+            stepper.next()
 
         with ui.stepper_navigation():
             ui.button("Next", on_click=_advance_and_save)
-            ui.button("Back", on_click=stepper_prev).props("flat")
+            ui.button("Back", on_click=stepper.previous).props("flat")
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +258,8 @@ async def _step_predictions(
         refreshables.append(_content.refresh)
 
         with ui.stepper_navigation():
-            ui.button("Next", on_click=stepper_next)
-            ui.button("Back", on_click=stepper_prev).props("flat")
+            ui.button("Next", on_click=stepper.next)
+            ui.button("Back", on_click=stepper.previous).props("flat")
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +267,7 @@ async def _step_predictions(
 # ---------------------------------------------------------------------------
 
 
-def _step_feature_tour(scaffold: int) -> None:
+def _step_feature_tour(stepper: ui.stepper, scaffold: int) -> None:
     with ui.step("Feature Tour"):
         ui.label("Your Learning Hub").classes("text-lg font-bold mb-2")
 
@@ -275,7 +275,7 @@ def _step_feature_tour(scaffold: int) -> None:
             ("Dashboard", "dashboard", "Overview of your academic landscape"),
             ("Study", "school", "Guided study sessions with the predict→act→reflect cycle"),
             ("Review", "rate_review", "Spaced-repetition review of mastered topics"),
-            ("Chronos", "schedule", "Deadline coaching and time estimation calibration"),
+            ("Deadlines", "schedule", "Deadline coaching and time estimation calibration"),
         ]
         for label, icon, desc in pages:
             with ui.row().classes("items-center gap-3 mb-2"):
@@ -295,8 +295,8 @@ def _step_feature_tour(scaffold: int) -> None:
             )
 
         with ui.stepper_navigation():
-            ui.button("Next", on_click=stepper_next)
-            ui.button("Back", on_click=stepper_prev).props("flat")
+            ui.button("Next", on_click=stepper.next)
+            ui.button("Back", on_click=stepper.previous).props("flat")
 
 
 # ---------------------------------------------------------------------------
@@ -340,39 +340,4 @@ async def _step_first_action(
         refreshables.append(_content.refresh)
 
         with ui.stepper_navigation():
-            ui.button("Back", on_click=stepper_prev).props("flat")
-
-
-# ---------------------------------------------------------------------------
-# Stepper nav helpers
-# ---------------------------------------------------------------------------
-
-
-def stepper_next(e: Any = None) -> None:  # noqa: ANN401
-    """Advance the stepper from within a step."""
-    sender = e.sender if e else None
-    if sender:
-        stepper = _find_stepper(sender)
-        if stepper:
-            stepper.next()
-
-
-def stepper_prev(e: Any = None) -> None:  # noqa: ANN401
-    """Go back in the stepper from within a step."""
-    sender = e.sender if e else None
-    if sender:
-        stepper = _find_stepper(sender)
-        if stepper:
-            stepper.previous()
-
-
-def _find_stepper(element: Any) -> ui.stepper | None:  # noqa: ANN401
-    """Walk up parent chain to find the enclosing stepper."""
-    current = element
-    while current is not None:
-        if isinstance(current, ui.stepper):
-            return current
-        current = getattr(current, "parent_slot", None)
-        if current is not None:
-            current = getattr(current, "parent", None)
-    return None
+            ui.button("Back", on_click=stepper.previous).props("flat")
