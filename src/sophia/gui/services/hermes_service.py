@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
@@ -12,6 +13,7 @@ from sophia.services.hermes_manage import get_pipeline_status as _get_pipeline_s
 if TYPE_CHECKING:
     import aiosqlite
 
+    from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
 
 log = structlog.get_logger()
@@ -32,6 +34,17 @@ class ModuleInfo:
 
     module_id: int
     series_id: str
+
+
+@dataclass
+class DiscoveredModule:
+    """A module discovered from Moodle/Opencast but not yet in the local DB."""
+
+    course_shortname: str
+    course_fullname: str
+    module_id: int
+    module_name: str
+    episode_count: int
 
 
 # --- Pure helpers (stateless, testable) --------------------------------------
@@ -105,3 +118,53 @@ async def get_module_lectures(db: aiosqlite.Connection, module_id: int) -> list[
     except Exception:
         log.exception("get_module_lectures_failed", module_id=module_id)
         return []
+
+
+# --- Discovery (Moodle + Opencast) ------------------------------------------
+
+
+async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredModule]:
+    """Query Moodle for enrolled courses and find Opencast modules with episodes.
+
+    Returns only modules that have at least one episode. Does not write to DB
+    or trigger downloads — purely a read-only discovery step.
+    """
+    courses = await container.moodle.get_enrolled_courses()
+    if not courses:
+        return []
+
+    sections_by_course = await asyncio.gather(
+        *(container.moodle.get_course_content(c.id) for c in courses),
+    )
+
+    opencast_modules: list[tuple[str, str, int, str]] = []
+    for course, sections in zip(courses, sections_by_course, strict=True):
+        for section in sections:
+            for module in section.modules:
+                if module.modname == "opencast":
+                    opencast_modules.append(
+                        (course.shortname, course.fullname, module.id, module.name),
+                    )
+
+    if not opencast_modules:
+        return []
+
+    episode_lists = await asyncio.gather(
+        *(container.opencast.get_series_episodes(mid) for _, _, mid, _ in opencast_modules),
+    )
+
+    return [
+        DiscoveredModule(
+            course_shortname=shortname,
+            course_fullname=fullname,
+            module_id=mid,
+            module_name=name,
+            episode_count=len(episodes),
+        )
+        for (shortname, fullname, mid, name), episodes in zip(
+            opencast_modules,
+            episode_lists,
+            strict=True,
+        )
+        if episodes
+    ]

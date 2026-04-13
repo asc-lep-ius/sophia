@@ -6,6 +6,7 @@ from sophia.gui.state.storage_map import (
     TIER_MAP,
     USER_QUICKSTART_COMPLETED,
     USER_QUICKSTART_SELECTED_COURSES,
+    USER_QUICKSTART_SKIPPED,
 )
 
 
@@ -20,6 +21,12 @@ class TestQuickstartStorageKeys:
 
     def test_selected_courses_in_tier_map(self) -> None:
         assert USER_QUICKSTART_SELECTED_COURSES in TIER_MAP["user"]
+
+    def test_quickstart_skipped_constant_value(self) -> None:
+        assert USER_QUICKSTART_SKIPPED == "quickstart_skipped"
+
+    def test_quickstart_skipped_in_tier_map(self) -> None:
+        assert USER_QUICKSTART_SKIPPED in TIER_MAP["user"]
 
     def test_session_count_not_in_storage_map(self) -> None:
         """USER_SESSION_COUNT was dead code and should be removed."""

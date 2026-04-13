@@ -13,6 +13,7 @@ from sophia.gui.services.hermes_service import (
     STATUS_FILTER_ALL,
     STATUS_FILTER_INDEXED,
     STATUS_FILTER_NEEDS_PROCESSING,
+    discover_lecture_modules,
     filter_episodes,
     get_lecture_modules,
     get_module_lectures,
@@ -291,16 +292,70 @@ async def _lecture_list() -> None:
 
 
 def _render_empty_state() -> None:
-    """No lectures at all — prompt the user to sync."""
-    with ui.card().classes("max-w-lg mx-auto mt-8 p-6"):
+    """No lectures — discover from Moodle/Opencast or prompt setup."""
+    if not is_hermes_setup_complete():
+        _render_setup_required()
+        return
+
+    with ui.card().classes("max-w-lg mx-auto mt-8 p-6") as card:
         ui.label("No Lectures Found").classes("text-xl font-bold mb-2")
         ui.label(
             "No lectures found. Sync your courses to discover available recordings.",
         ).classes("text-gray-600 mb-4")
-        ui.button(
-            "Sync Now",
-            on_click=lambda: ui.navigate.to("/lectures/setup"),
-        ).props("color=primary")
+
+        async def _discover_and_process() -> None:
+            container = get_container()
+            if not container:
+                ui.notify("Application not initialized", type="negative")
+                return
+
+            if _runner.get_state().running:
+                ui.notify("Pipeline already running", type="warning")
+                return
+
+            card.clear()
+            with card:
+                spinner = ui.spinner("dots", size="lg").classes("mx-auto")
+                status = ui.label("Discovering lectures…").classes(
+                    "text-gray-500 text-center",
+                )
+
+            try:
+                modules = await discover_lecture_modules(container)
+            except Exception:
+                log.exception("lecture_discovery_failed")
+                spinner.set_visibility(False)
+                status.text = ""
+                ui.notify("Discovery failed — check your connection", type="negative")
+                return
+
+            if not modules:
+                spinner.set_visibility(False)
+                status.text = "No lecture recordings found in enrolled courses."
+                ui.notify("No lecture recordings found", type="warning")
+                return
+
+            total_eps = sum(m.episode_count for m in modules)
+            status.text = (
+                f"Found {len(modules)} module(s) with {total_eps} episode(s). Starting pipeline…"
+            )
+
+            for mod in modules:
+                status.text = f"Processing {mod.module_name}…"
+                try:
+                    await _runner.start_batch(container, mod.module_id, [])
+                except Exception:
+                    log.exception("pipeline_module_failed", module_id=mod.module_id)
+
+            spinner.set_visibility(False)
+            status.text = ""
+            ui.notify(
+                f"Discovered and processed {len(modules)} module(s)",
+                type="positive",
+            )
+            _lecture_list.refresh()
+
+        ui.button("Sync Now", on_click=_discover_and_process).props("color=primary")
 
 
 def _render_no_results() -> None:

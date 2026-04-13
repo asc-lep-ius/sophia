@@ -101,3 +101,27 @@ class TestFormatConfidencePrompt:
     def test_levels_differ(self) -> None:
         texts = {format_confidence_prompt(level) for level in range(4)}
         assert len(texts) >= 3  # at least 3 distinct prompts
+
+
+# ---------------------------------------------------------------------------
+# Broken helpers removed
+# ---------------------------------------------------------------------------
+
+
+class TestBrokenHelpersRemoved:
+    """stepper_next, stepper_prev, _find_stepper were broken and should be removed."""
+
+    def test_stepper_next_removed(self) -> None:
+        import sophia.gui.pages.quickstart as mod
+
+        assert not hasattr(mod, "stepper_next")
+
+    def test_stepper_prev_removed(self) -> None:
+        import sophia.gui.pages.quickstart as mod
+
+        assert not hasattr(mod, "stepper_prev")
+
+    def test_find_stepper_removed(self) -> None:
+        import sophia.gui.pages.quickstart as mod
+
+        assert not hasattr(mod, "_find_stepper")

@@ -18,7 +18,11 @@ from sophia.gui.services.overview_service import (
     get_course_summaries,
     rank_by_urgency,
 )
-from sophia.gui.state.storage_map import TAB_DENSITY_MODE, USER_QUICKSTART_COMPLETED
+from sophia.gui.state.storage_map import (
+    TAB_DENSITY_MODE,
+    USER_QUICKSTART_COMPLETED,
+    USER_QUICKSTART_SKIPPED,
+)
 from sophia.services.athena_chronos import build_plan_items
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.chronos import get_deadlines
@@ -51,7 +55,9 @@ async def dashboard_content() -> None:
     """Main dashboard entry point — called by app_shell + error_boundary."""
     await ui.context.client.connected()  # required before accessing app.storage.tab
 
-    if not app.storage.user.get(USER_QUICKSTART_COMPLETED, False):
+    wizard_done = app.storage.user.get(USER_QUICKSTART_COMPLETED, False)
+    wizard_skipped = app.storage.user.get(USER_QUICKSTART_SKIPPED, False)
+    if not wizard_done and not wizard_skipped:
         container = get_container()
         if container:
             await show_quickstart_wizard(container)
