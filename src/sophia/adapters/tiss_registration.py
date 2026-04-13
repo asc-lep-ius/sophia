@@ -249,7 +249,8 @@ class TissRegistrationAdapter:
             if isinstance(exc, httpx.TooManyRedirects):
                 msg = "TISS session expired — log in again with: sophia auth login"
                 raise AuthError(msg) from exc
-            raise RegistrationError(f"HTTP request failed: {url}") from exc
+            msg = "TISS connection failed — check your internet connection"
+            raise RegistrationError(msg) from exc
 
         soup, resp = self._parse(resp)
         redirect_path = _extract_deltaspike_redirect(soup)
@@ -262,7 +263,8 @@ class TissRegistrationAdapter:
                 if isinstance(exc, httpx.TooManyRedirects):
                     msg = "TISS session expired — log in again with: sophia auth login"
                     raise AuthError(msg) from exc
-                raise RegistrationError(f"HTTP request failed: {redirect_url}") from exc
+                msg = "TISS connection failed — check your internet connection"
+                raise RegistrationError(msg) from exc
             soup, resp = self._parse(resp)
 
         return soup, resp
@@ -276,7 +278,7 @@ class TissRegistrationAdapter:
             if isinstance(exc, httpx.TooManyRedirects):
                 msg = "TISS session expired — log in again with: sophia auth login"
                 raise AuthError(msg) from exc
-            raise RegistrationError(f"POST failed: {url}") from exc
+            raise RegistrationError("TISS request failed — try again later") from exc
         return self._parse(resp)
 
     @staticmethod

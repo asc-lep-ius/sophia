@@ -721,3 +721,59 @@ class TestTooManyRedirectsHandling:
         )
         with pytest.raises(AuthError, match="session expired"):
             TissRegistrationAdapter._parse(resp)  # pyright: ignore[reportPrivateUsage]
+
+
+class TestErrorMessageSanitization:
+    """RegistrationError messages must never contain URLs or session tokens."""
+
+    @respx.mock
+    async def test_fetch_connect_error_does_not_leak_url(self) -> None:
+        url = f"{HOST}/education/favorites.xhtml"
+        respx.get(url).mock(
+            side_effect=httpx.ConnectError("connection refused", request=httpx.Request("GET", url)),
+        )
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+            with pytest.raises(RegistrationError, match="connection") as exc_info:
+                await adapter._get(url)  # pyright: ignore[reportPrivateUsage]
+            assert HOST not in str(exc_info.value)
+
+    @respx.mock
+    async def test_fetch_deltaspike_redirect_error_does_not_leak_url(self) -> None:
+        deltaspike_html = (
+            "<html><head><title>Loading...</title></head><body>"
+            "<script>var redirectUrl = '/education/favorites.xhtml';</script>"
+            "</body></html>"
+        )
+        call_count = 0
+
+        def _side_effect(request: httpx.Request) -> httpx.Response:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return httpx.Response(200, html=deltaspike_html, request=request)
+            raise httpx.ConnectError("connection refused", request=request)
+
+        respx.get(url__startswith=f"{HOST}/education/favorites.xhtml").mock(
+            side_effect=_side_effect,
+        )
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+            with pytest.raises(RegistrationError, match="connection") as exc_info:
+                await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
+            assert "dswid" not in str(exc_info.value)
+            assert HOST not in str(exc_info.value)
+
+    @respx.mock
+    async def test_post_error_does_not_leak_url(self) -> None:
+        url = f"{HOST}/education/course/courseRegistration.xhtml"
+        respx.post(url).mock(
+            side_effect=httpx.ConnectError(
+                "connection refused", request=httpx.Request("POST", url)
+            ),
+        )
+        async with httpx.AsyncClient() as http:
+            adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+            with pytest.raises(RegistrationError, match="request failed") as exc_info:
+                await adapter._post(url, data={"key": "val"})  # pyright: ignore[reportPrivateUsage]
+            assert HOST not in str(exc_info.value)
