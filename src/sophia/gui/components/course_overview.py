@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from nicegui import ui
+from nicegui import app, ui
 
 from sophia.gui.services.overview_service import health_tooltip
+from sophia.gui.state.storage_map import USER_CURRENT_COURSE
 
 if TYPE_CHECKING:
     from sophia.gui.services.overview_service import CourseSummary
@@ -25,11 +26,18 @@ _HEALTH_ICONS: Final[dict[str, str]] = {
 }
 
 _OVERDUE_COLOR: Final[str] = "#b91c1c"
+_SELECTED_BORDER: Final[str] = "border-left: 4px solid #2563eb"
 
 
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+
+def select_course(course_id: int, course_name: str) -> None:
+    """Set the active course in user storage and notify."""
+    app.storage.user[USER_CURRENT_COURSE] = course_id
+    ui.notify(f"Selected: {course_name}", type="positive", position="bottom")
 
 
 def render_course_cards(
@@ -64,7 +72,7 @@ def _render_cards_grid(summaries: list[CourseSummary]) -> None:
 
 
 def _render_course_card(summary: CourseSummary) -> None:
-    """Single course status card."""
+    """Single course status card — clickable to select the course."""
     color = _HEALTH_COLORS.get(summary.health, _HEALTH_COLORS["green"])
     icon = _HEALTH_ICONS.get(summary.health, _HEALTH_ICONS["green"])
     tooltip_text = health_tooltip(summary)
@@ -76,7 +84,18 @@ def _render_course_card(summary: CourseSummary) -> None:
         or summary.topics_rated > 0
     )
 
-    with ui.card().classes("w-full p-4"):
+    selected = app.storage.user.get(USER_CURRENT_COURSE) == summary.course_id
+    border_style = _SELECTED_BORDER if selected else ""
+
+    card = ui.card().classes("w-full p-4 cursor-pointer hover:shadow-lg transition-shadow")
+    if border_style:
+        card.style(border_style)
+    card.on(
+        "click",
+        lambda _e, _s=summary: select_course(_s.course_id, _s.course_name),
+    )
+
+    with card:
         # Header: health icon + course name
         with ui.row().classes("items-center gap-2 mb-2"):
             health_icon = ui.icon(icon).style(f"color: {color}").classes("text-xl")
