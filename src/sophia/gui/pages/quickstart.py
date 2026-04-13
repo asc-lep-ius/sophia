@@ -55,7 +55,7 @@ def suggest_first_action(
         days = max(0, (nearest["due_at"] - datetime.now(UTC)).days)
         unit = "day" if days == 1 else "days"
         return (
-            f"Your nearest deadline is {nearest['name']} in {days} {unit}. Head to Chronos.",
+            f"Your nearest deadline is {nearest['name']} in {days} {unit}. Head to Deadlines.",
             "/chronos",
         )
     if topics:
