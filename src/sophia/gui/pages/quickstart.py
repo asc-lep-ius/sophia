@@ -15,7 +15,11 @@ from sophia.gui.services.quickstart_service import (
     get_topics_for_courses,
     save_initial_confidence,
 )
-from sophia.gui.state.storage_map import USER_QUICKSTART_COMPLETED, USER_QUICKSTART_SELECTED_COURSES
+from sophia.gui.state.storage_map import (
+    USER_QUICKSTART_COMPLETED,
+    USER_QUICKSTART_SELECTED_COURSES,
+    USER_QUICKSTART_SKIPPED,
+)
 
 if TYPE_CHECKING:
     from sophia.domain.models import TopicMapping
@@ -105,19 +109,29 @@ async def show_quickstart_wizard(container: AppContainer) -> None:
             _step_feature_tour(stepper, scaffold)
             await _step_first_action(stepper, container, dialog, _refreshables)
 
-        with ui.row().classes("w-full justify-end mt-2"):
+        with ui.row().classes("w-full justify-between items-center mt-2"):
+            ui.label("You can re-run this wizard anytime from Settings.").classes(
+                "text-xs text-gray-400 italic"
+            )
             ui.button(
                 "Skip",
                 icon="skip_next",
-                on_click=lambda: _close_wizard(dialog),
+                on_click=lambda: _skip_wizard(dialog),
             ).props("flat")
 
     dialog.open()
 
 
 def _close_wizard(dialog: ui.dialog) -> None:
-    """Mark wizard complete and close."""
+    """Mark wizard completed and close."""
     app.storage.user[USER_QUICKSTART_COMPLETED] = True
+    app.storage.user[USER_QUICKSTART_SKIPPED] = False
+    dialog.close()
+
+
+def _skip_wizard(dialog: ui.dialog) -> None:
+    """Mark wizard skipped (not completed) and close."""
+    app.storage.user[USER_QUICKSTART_SKIPPED] = True
     dialog.close()
 
 

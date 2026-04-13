@@ -12,7 +12,11 @@ from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.lectures import is_hermes_setup_complete
 from sophia.gui.services.job_registry import JobEntry, JobRegistry
-from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE, USER_QUICKSTART_COMPLETED
+from sophia.gui.state.storage_map import (
+    USER_HERMES_SETUP_COMPLETE,
+    USER_QUICKSTART_COMPLETED,
+    USER_QUICKSTART_SKIPPED,
+)
 
 if TYPE_CHECKING:
     from sophia.gui.services.session_health import SessionHealthMonitor
@@ -330,6 +334,7 @@ def _config_row(label: str, value: str) -> None:
 def _render_quickstart_section() -> None:
     """Quickstart Wizard status and re-run option."""
     is_complete = app.storage.user.get(USER_QUICKSTART_COMPLETED, False)
+    is_skipped = app.storage.user.get(USER_QUICKSTART_SKIPPED, False)
     with ui.card().classes("w-full mb-4"):
         ui.label("Quickstart Wizard").classes("text-lg font-semibold mb-2")
         ui.separator()
@@ -338,15 +343,22 @@ def _render_quickstart_section() -> None:
             with ui.row().classes("items-center gap-2 mt-2"):
                 ui.icon("check_circle").classes("text-xl text-green-600")
                 ui.label("Completed").classes("font-medium text-green-600")
+        elif is_skipped:
+            with ui.row().classes("items-center gap-2 mt-2"):
+                ui.icon("skip_next").classes("text-xl text-gray-500")
+                ui.label("Skipped").classes("font-medium text-gray-500")
+        else:
+            with ui.row().classes("items-center gap-2 mt-2"):
+                ui.icon("pending").classes("text-xl text-gray-500")
+                ui.label("Not yet completed").classes("text-sm text-gray-500")
+
+        if is_complete or is_skipped:
 
             def _rerun() -> None:
                 app.storage.user[USER_QUICKSTART_COMPLETED] = False
+                app.storage.user[USER_QUICKSTART_SKIPPED] = False
                 ui.navigate.to("/")
 
             ui.button("Re-run Quickstart", icon="refresh", on_click=_rerun).classes(
                 "mt-3",
             ).props("outline")
-        else:
-            with ui.row().classes("items-center gap-2 mt-2"):
-                ui.icon("pending").classes("text-xl text-gray-500")
-                ui.label("Not yet completed").classes("text-sm text-gray-500")
