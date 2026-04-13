@@ -135,7 +135,10 @@ def search_content() -> None:
 
     course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
     if course_id is None:
-        ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500")
+        with ui.column().classes("w-full items-center py-12"):
+            ui.icon("search", color="gray").classes("text-6xl")
+            ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500 mt-4")
+            ui.link("Go to Dashboard", "/").classes("mt-2")
         return
 
     _render_header(container, course_id)
