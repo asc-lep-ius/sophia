@@ -14,6 +14,7 @@ from sophia.gui.services.quickstart_service import (
     get_nearest_deadline,
     get_topics_for_courses,
     save_initial_confidence,
+    save_manual_topics,
 )
 
 if TYPE_CHECKING:
@@ -116,6 +117,71 @@ class TestGetCompletedSessionCount:
         mock_container.db.execute = AsyncMock(side_effect=RuntimeError("db error"))
         result = await get_completed_session_count(mock_container)
         assert result == 0
+
+
+# ---------------------------------------------------------------------------
+# save_manual_topics
+# ---------------------------------------------------------------------------
+
+
+class TestSaveManualTopics:
+    @pytest.mark.asyncio
+    async def test_saves_topics(self, mock_container: AppContainer) -> None:
+        with patch(
+            "sophia.gui.services.quickstart_service._save_manual_topic",
+            new_callable=AsyncMock,
+            return_value=None,
+        ) as mock_save:
+            await save_manual_topics(mock_container, course_id=1, topics=["A", "B"])
+        assert mock_save.call_count == 2
+        mock_save.assert_any_call(mock_container, "A", 1)
+        mock_save.assert_any_call(mock_container, "B", 1)
+
+    @pytest.mark.asyncio
+    async def test_returns_saved_mappings(self, mock_container: AppContainer) -> None:
+        from sophia.domain.models import TopicMapping, TopicSource
+
+        mapping = TopicMapping(topic="Algebra", course_id=1, source=TopicSource.MANUAL)
+        with patch(
+            "sophia.gui.services.quickstart_service._save_manual_topic",
+            new_callable=AsyncMock,
+            return_value=mapping,
+        ):
+            result = await save_manual_topics(mock_container, course_id=1, topics=["Algebra"])
+        assert result == [mapping]
+
+    @pytest.mark.asyncio
+    async def test_skips_duplicates(self, mock_container: AppContainer) -> None:
+        from sophia.domain.models import TopicMapping, TopicSource
+
+        mapping = TopicMapping(topic="A", course_id=1, source=TopicSource.MANUAL)
+        with patch(
+            "sophia.gui.services.quickstart_service._save_manual_topic",
+            new_callable=AsyncMock,
+            side_effect=[mapping, None, mapping],
+        ):
+            result = await save_manual_topics(mock_container, course_id=1, topics=["A", "B", "C"])
+        assert len(result) == 2
+
+    @pytest.mark.asyncio
+    async def test_error_returns_empty(self, mock_container: AppContainer) -> None:
+        with patch(
+            "sophia.gui.services.quickstart_service._save_manual_topic",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("db"),
+        ):
+            result = await save_manual_topics(mock_container, course_id=1, topics=["X"])
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_empty_list_is_noop(self, mock_container: AppContainer) -> None:
+        with patch(
+            "sophia.gui.services.quickstart_service._save_manual_topic",
+            new_callable=AsyncMock,
+        ) as mock_save:
+            result = await save_manual_topics(mock_container, course_id=1, topics=[])
+        mock_save.assert_not_called()
+        assert result == []
 
 
 # ---------------------------------------------------------------------------

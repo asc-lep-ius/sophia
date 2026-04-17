@@ -234,6 +234,19 @@ async def extract_topics_from_lectures(
         mappings.append(TopicMapping(topic=label, course_id=course_id, source=TopicSource.LECTURE))
     await app.db.commit()
 
+    # Reconcile manual predictions against extracted topics
+    from sophia.services.athena_reconciliation import reconcile_manual_topics
+
+    result = await reconcile_manual_topics(app.db, course_id)
+    if result.matched or result.unmatched_manual or result.new_moodle:
+        log.info(
+            "topics_reconciled",
+            module_id=module_id,
+            matched=len(result.matched),
+            unmatched=len(result.unmatched_manual),
+            new_moodle=len(result.new_moodle),
+        )
+
     log.info("topics_extracted", module_id=module_id, count=len(mappings))
     return mappings
 
@@ -325,6 +338,31 @@ async def get_course_topics(
         )
         for row in rows
     ]
+
+
+async def save_manual_topic(
+    app: AppContainer,
+    topic: str,
+    course_id: int,
+) -> TopicMapping | None:
+    """Save a user-entered topic with source='manual'. Returns None if empty/duplicate."""
+    stripped = topic.strip()
+    if not stripped:
+        return None
+
+    cursor = await app.db.execute(
+        "INSERT OR IGNORE INTO topic_mappings (topic, course_id, source, frequency) "
+        "VALUES (?, ?, ?, 1)",
+        (stripped, course_id, TopicSource.MANUAL.value),
+    )
+    await app.db.commit()
+
+    if cursor.rowcount == 0:
+        log.debug("manual_topic_duplicate", topic=stripped, course_id=course_id)
+        return None
+
+    log.info("manual_topic_saved", topic=stripped, course_id=course_id)
+    return TopicMapping(topic=stripped, course_id=course_id, source=TopicSource.MANUAL)
 
 
 # ---------------------------------------------------------------------------

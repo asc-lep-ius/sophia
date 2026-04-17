@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 import structlog
-from nicegui import ui
+from nicegui import app, ui
 
 from sophia.gui.components.confidence_rating import confidence_rating
 from sophia.gui.middleware.health import get_container
@@ -17,6 +17,7 @@ from sophia.gui.services.topic_service import (
     save_confidence_prediction,
 )
 from sophia.gui.state.course_state import get_current_course
+from sophia.gui.state.storage_map import USER_RECONCILIATION_DISMISSED
 
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, TopicMapping
@@ -113,6 +114,7 @@ async def topics_content() -> None:
         return
 
     _render_header(container, course_id)
+    await _render_reconciliation_banner(container, course_id)
     await _topic_list(container, course_id)
 
 
@@ -129,6 +131,44 @@ def _render_header(container: AppContainer, course_id: int) -> None:
                 icon="auto_awesome",
                 on_click=lambda: _handle_extract(container, course_id),
             ).props("outline")
+
+
+# --- Reconciliation banner ---------------------------------------------------
+
+
+async def _render_reconciliation_banner(container: AppContainer, course_id: int) -> None:
+    """Show reconciliation results banner (dismissible per-course)."""
+    dismissed: dict[str, bool] = app.storage.user.get(USER_RECONCILIATION_DISMISSED, {})
+    if dismissed.get(str(course_id)):
+        return
+
+    from sophia.services.athena_reconciliation import (
+        format_reconciliation_message,
+        reconcile_manual_topics,
+    )
+
+    result = await reconcile_manual_topics(container.db, course_id)
+    message = format_reconciliation_message(result)
+    if not message:
+        return
+
+    card = ui.card().classes("w-full bg-blue-50 border-l-4 border-blue-400 mb-4")
+    with card, ui.row().classes("w-full items-start justify-between"):
+        with ui.column().classes("gap-1"):
+            ui.label("Prediction Results").classes("font-bold text-blue-800")
+            ui.label(message).classes("text-blue-700 text-sm")
+
+        def _dismiss() -> None:
+            dismissed_state: dict[str, bool] = app.storage.user.get(
+                USER_RECONCILIATION_DISMISSED, {}
+            )
+            dismissed_state[str(course_id)] = True
+            app.storage.user[USER_RECONCILIATION_DISMISSED] = dismissed_state
+            card.delete()
+
+        ui.button(icon="close", on_click=_dismiss).props("flat dense round").classes(
+            "text-blue-500"
+        )
 
 
 async def _handle_extract(container: AppContainer, course_id: int) -> None:

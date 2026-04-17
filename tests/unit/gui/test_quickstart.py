@@ -9,6 +9,8 @@ import pytest
 from sophia.gui.pages.quickstart import (
     compute_scaffold_level,
     format_confidence_prompt,
+    format_prediction_guidance,
+    format_skip_text,
     suggest_first_action,
 )
 
@@ -104,6 +106,52 @@ class TestFormatConfidencePrompt:
 
 
 # ---------------------------------------------------------------------------
+# format_prediction_guidance
+# ---------------------------------------------------------------------------
+
+
+class TestFormatPredictionGuidance:
+    @pytest.mark.parametrize("level", [1, 2, 3])
+    def test_non_zero_levels_return_text(self, level: int) -> None:
+        assert len(format_prediction_guidance(level)) > 0
+
+    def test_full_scaffold_mentions_prior_knowledge_or_predict(self) -> None:
+        text = format_prediction_guidance(3)
+        assert "prior knowledge" in text.lower() or "predict" in text.lower()
+
+    def test_open_scaffold_returns_empty(self) -> None:
+        assert format_prediction_guidance(0) == ""
+
+    def test_levels_differ(self) -> None:
+        texts = {format_prediction_guidance(level) for level in range(4)}
+        assert len(texts) >= 3
+
+
+# ---------------------------------------------------------------------------
+# format_skip_text
+# ---------------------------------------------------------------------------
+
+
+class TestFormatSkipText:
+    @pytest.mark.parametrize("level", range(4))
+    def test_all_levels_return_text(self, level: int) -> None:
+        assert len(format_skip_text(level)) > 0
+
+    def test_high_scaffold_mentions_prior_knowledge(self) -> None:
+        text = format_skip_text(3)
+        assert "prior knowledge" in text.lower()
+
+    def test_low_scaffold_is_shorter(self) -> None:
+        high = format_skip_text(3)
+        low = format_skip_text(0)
+        assert len(low) < len(high)
+
+    def test_all_mention_study_page(self) -> None:
+        for level in range(4):
+            assert "study" in format_skip_text(level).lower()
+
+
+# ---------------------------------------------------------------------------
 # Broken helpers removed
 # ---------------------------------------------------------------------------
 
@@ -125,3 +173,23 @@ class TestBrokenHelpersRemoved:
         import sophia.gui.pages.quickstart as mod
 
         assert not hasattr(mod, "_find_stepper")
+
+
+# ---------------------------------------------------------------------------
+# Integration: save_manual_topics available in quickstart
+# ---------------------------------------------------------------------------
+
+
+class TestManualTopicIntegration:
+    """Phase 4: quickstart imports save_manual_topics for manual topic input."""
+
+    def test_save_manual_topics_importable_from_service(self) -> None:
+        from sophia.gui.services.quickstart_service import save_manual_topics
+
+        assert callable(save_manual_topics)
+
+    def test_save_manual_topics_reexported_in_quickstart(self) -> None:
+        """Quickstart module should import save_manual_topics for the UI."""
+        import sophia.gui.pages.quickstart as mod
+
+        assert hasattr(mod, "save_manual_topics")

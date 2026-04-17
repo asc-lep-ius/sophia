@@ -27,6 +27,7 @@ USER_QUICKSTART_COMPLETED: Final = "quickstart_completed"
 USER_QUICKSTART_SKIPPED: Final = "quickstart_skipped"
 USER_QUICKSTART_SELECTED_COURSES: Final = "quickstart_selected_courses"
 USER_JOBS: Final = "jobs"
+USER_RECONCILIATION_DISMISSED: Final = "reconciliation_dismissed"
 
 # ``app.storage.tab`` — per browser tab, lost on tab close.
 TAB_STEPPER_STATE: Final = "stepper_state"
