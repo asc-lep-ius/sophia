@@ -1,6 +1,8 @@
-"""Tests for the Hermes search page — pure helpers and constants."""
+"""Tests for the Hermes search page — pure helpers, constants, and error handling."""
 
 from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -98,6 +100,184 @@ class TestExports:
         from sophia.gui.pages.search import search_content
 
         assert callable(search_content)
+
+
+# ---------------------------------------------------------------------------
+# _execute_search error handling
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteSearch:
+    """Test error handling in the async search execution path."""
+
+    @pytest.mark.asyncio
+    async def test_runtime_error_shows_notification(self) -> None:
+        """RuntimeError from stale tab storage → ui.notify, no crash."""
+        from sophia.gui.pages.search import _execute_search
+
+        container = MagicMock()
+        mock_result = MagicMock(
+            episode_id=1,
+            title="Lecture 1",
+            chunk_text="text",
+            start_time=0.0,
+            end_time=60.0,
+            score=0.9,
+            source="test",
+        )
+
+        with (
+            patch(
+                "sophia.gui.pages.search.search_lectures",
+                new_callable=AsyncMock,
+                return_value=[mock_result],
+            ),
+            patch(
+                "sophia.gui.pages.search._set_results",
+                side_effect=RuntimeError("storage unavailable"),
+            ),
+            patch("sophia.gui.pages.search.ui") as mock_ui,
+        ):
+            await _execute_search(container, 1, "test query")
+
+            mock_ui.notify.assert_called_once()
+            call_kwargs = mock_ui.notify.call_args
+            assert call_kwargs[1].get("type") == "negative" or "negative" in str(call_kwargs)
+
+    @pytest.mark.asyncio
+    async def test_domain_error_shows_notification(self) -> None:
+        """EmbeddingError from search service → ui.notify with descriptive message."""
+        from sophia.domain.errors import EmbeddingError
+        from sophia.gui.pages.search import _execute_search
+
+        container = MagicMock()
+
+        with (
+            patch(
+                "sophia.gui.pages.search.search_lectures",
+                new_callable=AsyncMock,
+                side_effect=EmbeddingError("embedder not loaded"),
+            ),
+            patch("sophia.gui.pages.search.ui") as mock_ui,
+        ):
+            await _execute_search(container, 1, "test query")
+
+            mock_ui.notify.assert_called_once()
+            call_args = mock_ui.notify.call_args
+            msg = call_args[0][0] if call_args[0] else call_args[1].get("message", "")
+            assert "search" in msg.lower() or "error" in msg.lower()
+
+    @pytest.mark.asyncio
+    async def test_happy_path_sets_results(self) -> None:
+        """Successful search → results stored, UI refreshed."""
+        from sophia.gui.pages.search import _execute_search
+
+        container = MagicMock()
+        mock_result = MagicMock(
+            episode_id=1,
+            title="Lecture 1",
+            chunk_text="text",
+            start_time=0.0,
+            end_time=60.0,
+            score=0.9,
+            source="test",
+        )
+
+        with (
+            patch(
+                "sophia.gui.pages.search.search_lectures",
+                new_callable=AsyncMock,
+                return_value=[mock_result],
+            ),
+            patch("sophia.gui.pages.search._set_results") as mock_set,
+            patch("sophia.gui.pages.search._set_selected_index"),
+            patch("sophia.gui.pages.search._set_bloom_response"),
+            patch("sophia.gui.pages.search._search_results"),
+        ):
+            await _execute_search(container, 1, "test query")
+
+            mock_set.assert_called_once()
+            stored = mock_set.call_args[0][0]
+            assert len(stored) == 1
+            assert stored[0]["title"] == "Lecture 1"
+
+    @pytest.mark.asyncio
+    async def test_hermes_error_shows_notification(self) -> None:
+        """HermesError from search service → inline error notification."""
+        from sophia.domain.errors import HermesError
+        from sophia.gui.pages.search import _execute_search
+
+        container = MagicMock()
+
+        with (
+            patch(
+                "sophia.gui.pages.search.search_lectures",
+                new_callable=AsyncMock,
+                side_effect=HermesError("ChromaDB offline"),
+            ),
+            patch("sophia.gui.pages.search.ui") as mock_ui,
+        ):
+            await _execute_search(container, 1, "test query")
+
+            mock_ui.notify.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# search_service wrapper
+# ---------------------------------------------------------------------------
+
+
+class TestSearchService:
+    """Test that the service wrapper propagates domain errors."""
+
+    @pytest.mark.asyncio
+    async def test_sophia_error_propagates(self) -> None:
+        """SophiaError subtypes must not be swallowed — they propagate to caller."""
+        from sophia.domain.errors import EmbeddingError
+        from sophia.gui.services.search_service import search_lectures
+
+        container = MagicMock()
+
+        with (
+            patch(
+                "sophia.gui.services.search_service._search_lectures",
+                new_callable=AsyncMock,
+                side_effect=EmbeddingError("embedder failed"),
+            ),
+            pytest.raises(EmbeddingError, match="embedder failed"),
+        ):
+            await search_lectures(container, 1, "test")
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_caught(self) -> None:
+        """Non-domain errors are caught, logged, and return empty list."""
+        from sophia.gui.services.search_service import search_lectures
+
+        container = MagicMock()
+
+        with patch(
+            "sophia.gui.services.search_service._search_lectures",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("network down"),
+        ):
+            result = await search_lectures(container, 1, "test")
+            assert result == []
+
+    @pytest.mark.asyncio
+    async def test_happy_path_returns_results(self) -> None:
+        """Successful search returns results unmodified."""
+        from sophia.gui.services.search_service import search_lectures
+
+        container = MagicMock()
+        expected = [MagicMock()]
+
+        with patch(
+            "sophia.gui.services.search_service._search_lectures",
+            new_callable=AsyncMock,
+            return_value=expected,
+        ):
+            result = await search_lectures(container, 1, "test")
+            assert result is expected
 
     def test_format_timestamp_callable(self) -> None:
         from sophia.gui.pages.search import format_timestamp

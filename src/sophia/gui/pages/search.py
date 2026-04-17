@@ -175,23 +175,30 @@ def _render_header(container: AppContainer, course_id: int) -> None:
 
 async def _execute_search(container: AppContainer, course_id: int, query: str) -> None:
     """Run the search and refresh results."""
-    results = await search_lectures(container, course_id, query)
-    serialized = [
-        {
-            "episode_id": r.episode_id,
-            "title": r.title,
-            "chunk_text": r.chunk_text,
-            "start_time": r.start_time,
-            "end_time": r.end_time,
-            "score": r.score,
-            "source": r.source,
-        }
-        for r in results
-    ]
-    _set_results(serialized)
-    _set_selected_index(None)
-    _set_bloom_response("")
-    _search_results.refresh()  # type: ignore[attr-defined]
+    try:
+        results = await search_lectures(container, course_id, query)
+        serialized = [
+            {
+                "episode_id": r.episode_id,
+                "title": r.title,
+                "chunk_text": r.chunk_text,
+                "start_time": r.start_time,
+                "end_time": r.end_time,
+                "score": r.score,
+                "source": r.source,
+            }
+            for r in results
+        ]
+        _set_results(serialized)
+        _set_selected_index(None)
+        _set_bloom_response("")
+        _search_results.refresh()  # type: ignore[attr-defined]
+    except RuntimeError:
+        log.exception("search_storage_error", course_id=course_id, query=query)
+        ui.notify("Search failed — please refresh the page.", type="negative")
+    except Exception:
+        log.exception("search_execution_failed", course_id=course_id, query=query)
+        ui.notify("Search is temporarily unavailable. Please try again later.", type="negative")
 
 
 @ui.refreshable
