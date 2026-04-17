@@ -8,6 +8,7 @@ import structlog
 
 from sophia.services.athena_confidence import rate_confidence as _rate_confidence
 from sophia.services.athena_study import get_course_topics as _get_course_topics
+from sophia.services.athena_study import save_manual_topic as _save_manual_topic
 from sophia.services.chronos import get_deadlines as _get_deadlines
 
 if TYPE_CHECKING:
@@ -65,6 +66,26 @@ async def save_initial_confidence(
         log.info("quickstart_confidence_saved", count=len(ratings))
     except Exception:
         log.exception("quickstart_save_confidence_failed")
+
+
+async def save_manual_topics(
+    app: AppContainer,
+    *,
+    course_id: int,
+    topics: list[str],
+) -> list[TopicMapping]:
+    """Save manual topics from the wizard. Returns saved TopicMappings."""
+    try:
+        saved: list[TopicMapping] = []
+        for t in topics:
+            mapping = await _save_manual_topic(app, t, course_id)
+            if mapping is not None:
+                saved.append(mapping)
+        log.info("quickstart_manual_topics_saved", count=len(saved))
+        return saved
+    except Exception:
+        log.exception("quickstart_save_manual_topics_failed")
+        return []
 
 
 async def get_completed_session_count(app: AppContainer) -> int:

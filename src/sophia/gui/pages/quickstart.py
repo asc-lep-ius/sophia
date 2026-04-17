@@ -85,6 +85,36 @@ def format_confidence_prompt(scaffold_level: int) -> str:
     return "Confidence ratings:"
 
 
+def format_prediction_guidance(scaffold_level: int) -> str:
+    """Return scaffold-aware guidance text for manual topic prediction step."""
+    if scaffold_level >= 3:
+        return (
+            "What topics do you think this course covers? "
+            "Generating expectations activates prior knowledge — "
+            "even rough guesses improve learning. "
+            "After your first sync, you'll see how your predictions compare "
+            "to actual course content."
+        )
+    if scaffold_level == 2:
+        return (
+            "What topics do you expect to cover? "
+            "You'll compare these with actual course topics later."
+        )
+    if scaffold_level == 1:
+        return "Enter expected topics:"
+    return ""
+
+
+def format_skip_text(scaffold_level: int) -> str:
+    """Return scaffold-aware text for the skip-prediction option."""
+    if scaffold_level >= 2:
+        return (
+            "Even a rough guess activates prior knowledge and improves learning. "
+            "But if you prefer, you can set predictions later from the Study page."
+        )
+    return "You can set predictions later from the Study page."
+
+
 # ---------------------------------------------------------------------------
 # Wizard dialog
 # ---------------------------------------------------------------------------

@@ -327,6 +327,31 @@ async def get_course_topics(
     ]
 
 
+async def save_manual_topic(
+    app: AppContainer,
+    topic: str,
+    course_id: int,
+) -> TopicMapping | None:
+    """Save a user-entered topic with source='manual'. Returns None if empty/duplicate."""
+    stripped = topic.strip()
+    if not stripped:
+        return None
+
+    cursor = await app.db.execute(
+        "INSERT OR IGNORE INTO topic_mappings (topic, course_id, source, frequency) "
+        "VALUES (?, ?, ?, 1)",
+        (stripped, course_id, TopicSource.MANUAL.value),
+    )
+    await app.db.commit()
+
+    if cursor.rowcount == 0:
+        log.debug("manual_topic_duplicate", topic=stripped, course_id=course_id)
+        return None
+
+    log.info("manual_topic_saved", topic=stripped, course_id=course_id)
+    return TopicMapping(topic=stripped, course_id=course_id, source=TopicSource.MANUAL)
+
+
 # ---------------------------------------------------------------------------
 # Question generation (RAG-grounded)
 # ---------------------------------------------------------------------------
