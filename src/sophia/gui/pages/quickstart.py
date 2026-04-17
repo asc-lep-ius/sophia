@@ -14,6 +14,7 @@ from sophia.gui.services.quickstart_service import (
     get_nearest_deadline,
     get_topics_for_courses,
     save_initial_confidence,
+    save_manual_topics,
 )
 from sophia.gui.state.storage_map import (
     USER_QUICKSTART_COMPLETED,
@@ -241,12 +242,98 @@ async def _step_courses(
 # ---------------------------------------------------------------------------
 
 
+def _render_manual_topic_input(
+    stepper: ui.stepper,
+    container: AppContainer,
+    scaffold: int,
+    selected_ids: list[int],
+    manual_topics: list[str],
+    manual_ratings: dict[str, int],
+    refreshable_content: Any,
+) -> None:
+    """Render interactive manual topic input when no synced topics exist."""
+    guidance = format_prediction_guidance(scaffold)
+    if guidance:
+        ui.label(guidance).classes("mb-3 text-gray-600")
+
+    course_id = selected_ids[0] if selected_ids else None
+
+    with ui.row().classes("items-center gap-2 w-full"):
+        topic_input = ui.input(
+            placeholder="e.g. Linear Algebra, Thermodynamics…",
+        ).classes("flex-grow")
+
+        def _add_topic() -> None:
+            text = (topic_input.value or "").strip()
+            if not text:
+                return
+            if text in manual_topics:
+                ui.notify("Topic already added.", type="warning")
+                return
+            manual_topics.append(text)
+            topic_input.value = ""
+            refreshable_content.refresh()
+
+        ui.button("Add", icon="add", on_click=_add_topic).props("outline dense")
+
+    if manual_topics:
+        ui.label("Your predicted topics:").classes("mt-3 mb-1 font-medium text-sm")
+        with ui.row().classes("gap-2 flex-wrap mb-3"):
+            for topic_text in manual_topics:
+
+                def _remove(t: str = topic_text) -> None:
+                    manual_topics.remove(t)
+                    manual_ratings.pop(t, None)
+                    refreshable_content.refresh()
+
+                ui.chip(topic_text, removable=True, on_remove=_remove).props("outline")
+
+        ui.label(format_confidence_prompt(scaffold)).classes("mb-2 text-sm")
+        for topic_text in manual_topics:
+            with ui.row().classes("items-center gap-2 mb-2"):
+                ui.label(topic_text).classes("w-48 truncate")
+                group = ui.button_group()
+                with group:
+                    for level in range(1, 6):
+
+                        def _rate(
+                            topic: str = topic_text,
+                            val: int = level,
+                        ) -> None:
+                            manual_ratings[topic] = val
+
+                        ui.button(str(level), on_click=_rate).props("flat dense")
+
+        async def _save_manual() -> None:
+            if not course_id:
+                ui.notify("Select a course first.", type="warning")
+                return
+            await save_manual_topics(container, course_id=course_id, topics=manual_topics)
+            if manual_ratings:
+                await save_initial_confidence(
+                    container, course_id=course_id, ratings=manual_ratings
+                )
+            ui.notify("Predictions saved!", type="positive")
+
+        ui.button("Save Predictions", on_click=_save_manual).props("outline").classes("mt-2")
+
+    ui.separator().classes("my-3")
+    skip_text = format_skip_text(scaffold)
+    ui.label(skip_text).classes("text-sm text-gray-500 italic")
+    ui.button("Skip predictions", icon="skip_next", on_click=stepper.next).props(
+        "flat dense"
+    ).classes("mt-1")
+
+
 async def _step_predictions(
     stepper: ui.stepper,
     container: AppContainer,
     scaffold: int,
     refreshables: list[Any],
 ) -> None:
+    manual_topics: list[str] = []
+    manual_ratings: dict[str, int] = {}
+
     with ui.step("First Prediction"):
 
         @ui.refreshable
@@ -259,8 +346,14 @@ async def _step_predictions(
             displayed_topics = topics[:5]
 
             if not displayed_topics:
-                ui.label("Topics will appear after your first study sync.").classes(
-                    "text-gray-500 italic"
+                _render_manual_topic_input(
+                    stepper,
+                    container,
+                    scaffold,
+                    selected_ids,
+                    manual_topics,
+                    manual_ratings,
+                    _content,
                 )
             else:
                 prompt = format_confidence_prompt(scaffold)

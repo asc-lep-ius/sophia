@@ -173,3 +173,23 @@ class TestBrokenHelpersRemoved:
         import sophia.gui.pages.quickstart as mod
 
         assert not hasattr(mod, "_find_stepper")
+
+
+# ---------------------------------------------------------------------------
+# Integration: save_manual_topics available in quickstart
+# ---------------------------------------------------------------------------
+
+
+class TestManualTopicIntegration:
+    """Phase 4: quickstart imports save_manual_topics for manual topic input."""
+
+    def test_save_manual_topics_importable_from_service(self) -> None:
+        from sophia.gui.services.quickstart_service import save_manual_topics
+
+        assert callable(save_manual_topics)
+
+    def test_save_manual_topics_reexported_in_quickstart(self) -> None:
+        """Quickstart module should import save_manual_topics for the UI."""
+        import sophia.gui.pages.quickstart as mod
+
+        assert hasattr(mod, "save_manual_topics")
