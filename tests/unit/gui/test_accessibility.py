@@ -7,8 +7,8 @@ from nicegui import ui
 from nicegui.testing import user_simulation
 
 from sophia.gui.components.keyboard_shortcuts import (
-    _NAV_ROUTES,
-    _SHORTCUTS,
+    _NAV_ROUTES,  # pyright: ignore[reportPrivateUsage]
+    _SHORTCUTS,  # pyright: ignore[reportPrivateUsage]
     register_keyboard_shortcuts,
 )
 from sophia.gui.pages.calibration import (
@@ -19,7 +19,7 @@ from sophia.gui.pages.calibration import (
     extract_scatter_rows,
     extract_tier_rows,
 )
-from sophia.gui.pages.study import _questions_complete
+from sophia.gui.pages.study import _questions_complete  # pyright: ignore[reportPrivateUsage]
 
 
 class TestKeyboardShortcutData:
