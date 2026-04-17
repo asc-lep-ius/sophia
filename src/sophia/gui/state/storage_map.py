@@ -79,6 +79,9 @@ TAB_REGISTER_EXPANDED_COURSE: Final = "register_expanded_course"
 # Tab-scoped — Dashboard density
 TAB_DENSITY_MODE: Final = "dashboard_density_mode"
 
+# Tab-scoped — per-tab course selection
+TAB_CURRENT_COURSE: Final = "tab_current_course"
+
 # ``app.storage.client`` — per WebSocket connection, transient.
 CLIENT_PANEL_STATE: Final = "panel_state"
 CLIENT_SCROLL_POSITION: Final = "scroll_position"
@@ -141,6 +144,7 @@ TIER_MAP: Final[dict[str, list[str]]] = {
         TAB_CALIBRATION_COURSE_FILTER,
         TAB_CALIBRATION_CHART_TYPE,
         TAB_DENSITY_MODE,
+        TAB_CURRENT_COURSE,
     ],
     "client": [CLIENT_PANEL_STATE, CLIENT_SCROLL_POSITION],
     "browser": [

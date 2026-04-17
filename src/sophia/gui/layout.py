@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from nicegui import ui
 
+from sophia.gui.components.course_selector import render_course_selector
 from sophia.gui.components.keyboard_shortcuts import register_keyboard_shortcuts
 
 if TYPE_CHECKING:
@@ -141,7 +142,7 @@ async def app_shell(content_fn: Callable[[], Any]) -> None:
         .props('aria-label="Main navigation"')
         .classes("sophia-sidebar bg-gray-900 text-white")
     ):
-        _sidebar_content()
+        await _sidebar_content()
 
     # Mobile bottom nav — hidden on large screens
     with (
@@ -160,8 +161,10 @@ async def app_shell(content_fn: Callable[[], Any]) -> None:
     register_keyboard_shortcuts()
 
 
-def _sidebar_content() -> None:
+async def _sidebar_content() -> None:
     ui.label("Sophia").classes("text-2xl font-bold p-6 border-b border-gray-700")
+    await render_course_selector()
+    ui.separator().classes("bg-gray-700")
     with ui.column().classes("flex-1 py-4 gap-1"):
         for item in NAV_ITEMS:
             with ui.link(target=item["path"]).classes(

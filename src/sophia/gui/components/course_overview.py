@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Final
 
-from nicegui import app, ui
+from nicegui import ui
 
 from sophia.gui.services.overview_service import health_tooltip
-from sophia.gui.state.storage_map import USER_CURRENT_COURSE
+from sophia.gui.state.course_state import get_current_course, set_current_course
 
 if TYPE_CHECKING:
     from sophia.gui.services.overview_service import CourseSummary
@@ -36,7 +36,7 @@ _SELECTED_BORDER: Final[str] = "border-left: 4px solid #2563eb"
 
 def select_course(course_id: int, course_name: str) -> None:
     """Set the active course in user storage and notify."""
-    app.storage.user[USER_CURRENT_COURSE] = course_id
+    set_current_course(course_id)
     ui.notify(f"Selected: {course_name}", type="positive", position="bottom")
 
 
@@ -84,7 +84,7 @@ def _render_course_card(summary: CourseSummary) -> None:
         or summary.topics_rated > 0
     )
 
-    selected = app.storage.user.get(USER_CURRENT_COURSE) == summary.course_id
+    selected = get_current_course() == summary.course_id
     border_style = _SELECTED_BORDER if selected else ""
 
     card = ui.card().classes("w-full p-4 cursor-pointer hover:shadow-lg transition-shadow")

@@ -9,6 +9,7 @@ from nicegui import app, ui
 
 from sophia.gui.middleware.health import get_container
 from sophia.gui.services.search_service import search_lectures
+from sophia.gui.state.course_state import get_current_course
 from sophia.gui.state.storage_map import (
     TAB_SEARCH_BLOOM_LEVEL,
     TAB_SEARCH_BLOOM_RESPONSE,
@@ -16,7 +17,6 @@ from sophia.gui.state.storage_map import (
     TAB_SEARCH_QUERY,
     TAB_SEARCH_RESULTS,
     TAB_SEARCH_SELECTED_INDEX,
-    USER_CURRENT_COURSE,
 )
 
 if TYPE_CHECKING:
@@ -133,7 +133,7 @@ def search_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
+    course_id = get_current_course()
     if course_id is None:
         with ui.column().classes("w-full items-center py-12"):
             ui.icon("search", color="gray").classes("text-6xl")

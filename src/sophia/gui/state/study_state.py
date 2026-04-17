@@ -10,6 +10,7 @@ from typing import Final
 
 from nicegui import app
 
+from sophia.gui.state.course_state import get_current_course
 from sophia.gui.state.storage_map import (
     TAB_STUDY_INSIGHT,
     TAB_STUDY_INTERLEAVED,
@@ -25,7 +26,6 @@ from sophia.gui.state.storage_map import (
     TAB_STUDY_TIMER_REMAINING,
     TAB_STUDY_TOPICS,
     USER_ACTIVE_TOPIC,
-    USER_CURRENT_COURSE,
 )
 
 DEFAULT_REFLECTION_SECONDS: Final = 30
@@ -139,7 +139,7 @@ def set_novel_topic(value: bool) -> None:
 
 
 def get_course_id() -> int:
-    return app.storage.user.get(USER_CURRENT_COURSE, 0)
+    return get_current_course() or 0
 
 
 def get_active_topic() -> str:
