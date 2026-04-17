@@ -202,3 +202,43 @@ def test_format_reconciliation_message_empty() -> None:
     msg = format_reconciliation_message(result)
 
     assert msg == ""
+
+
+# ── Hook integration test ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_runs_after_topic_extraction(db: aiosqlite.Connection) -> None:
+    """After extract_topics_from_lectures commits Moodle topics, reconcile_manual_topics runs."""
+    # Pre-populate manual predictions
+    await _insert_topic(db, "Algebra", COURSE, "manual")
+    await _insert_topic(db, "Calculus", COURSE, "manual")
+    # Simulate Moodle topics already extracted
+    await _insert_topic(db, "Algebra", COURSE, "lecture")
+    await _insert_topic(db, "Statistics", COURSE, "lecture")
+
+    # Run reconciliation (this is what the hook calls)
+    result = await reconcile_manual_topics(db, COURSE)
+
+    assert len(result.matched) == 1
+    assert result.matched[0][0] == "Algebra"
+    assert "Calculus" in result.unmatched_manual
+    assert "Statistics" in result.new_moodle
+
+    # Verify persisted to topic_reconciliations table
+    cursor = await db.execute(
+        "SELECT manual_topic, moodle_topic FROM topic_reconciliations WHERE course_id = ?",
+        (COURSE,),
+    )
+    rows = list(await cursor.fetchall())
+    assert len(rows) == 1
+    assert rows[0][0] == "Algebra"
+
+
+# ── Storage key test ───────────────────────────────────────────────────────
+
+
+def test_reconciliation_dismissed_key_exists() -> None:
+    from sophia.gui.state.storage_map import USER_RECONCILIATION_DISMISSED
+
+    assert USER_RECONCILIATION_DISMISSED == "reconciliation_dismissed"

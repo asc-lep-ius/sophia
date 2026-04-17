@@ -234,6 +234,19 @@ async def extract_topics_from_lectures(
         mappings.append(TopicMapping(topic=label, course_id=course_id, source=TopicSource.LECTURE))
     await app.db.commit()
 
+    # Reconcile manual predictions against extracted topics
+    from sophia.services.athena_reconciliation import reconcile_manual_topics
+
+    result = await reconcile_manual_topics(app.db, course_id)
+    if result.matched or result.unmatched_manual or result.new_moodle:
+        log.info(
+            "topics_reconciled",
+            module_id=module_id,
+            matched=len(result.matched),
+            unmatched=len(result.unmatched_manual),
+            new_moodle=len(result.new_moodle),
+        )
+
     log.info("topics_extracted", module_id=module_id, count=len(mappings))
     return mappings
 
