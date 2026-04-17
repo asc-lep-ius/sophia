@@ -18,9 +18,9 @@ from sophia.gui.services.calibration_service import (
     get_calibration_ratings,
     get_study_sessions_for_topic,
 )
+from sophia.gui.state.course_state import get_current_course
 from sophia.gui.state.storage_map import (
     TAB_CALIBRATION_COURSE_FILTER,
-    USER_CURRENT_COURSE,
 )
 
 if TYPE_CHECKING:
@@ -221,7 +221,7 @@ async def calibration_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
+    course_id = get_current_course()
     if course_id is None:
         with ui.column().classes("w-full items-center py-12"):
             ui.icon("tune", color="gray").classes("text-6xl")

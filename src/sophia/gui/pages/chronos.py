@@ -32,11 +32,11 @@ from sophia.gui.services.chronos_service import (
     stop_deadline_timer,
     sync_deadlines_from_gui,
 )
+from sophia.gui.state.course_state import get_current_course
 from sophia.gui.state.storage_map import (
     TAB_CHRONOS_ACTIVE_TIMER,
     TAB_CHRONOS_COURSE_FILTER,
     TAB_CHRONOS_ESTIMATE_DRAFT,
-    USER_CURRENT_COURSE,
 )
 
 if TYPE_CHECKING:
@@ -197,7 +197,7 @@ def _set_estimate_draft(draft: dict[str, object]) -> None:
 
 def _get_current_course() -> int:
     try:
-        return app.storage.user.get(USER_CURRENT_COURSE, 0)
+        return get_current_course() or 0
     except RuntimeError:
         return 0
 

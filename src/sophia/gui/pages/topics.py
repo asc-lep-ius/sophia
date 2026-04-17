@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Final
 
 import structlog
-from nicegui import app, ui
+from nicegui import ui
 
 from sophia.gui.components.confidence_rating import confidence_rating
 from sophia.gui.middleware.health import get_container
@@ -16,7 +16,7 @@ from sophia.gui.services.topic_service import (
     get_topic_confidence,
     save_confidence_prediction,
 )
-from sophia.gui.state.storage_map import USER_CURRENT_COURSE
+from sophia.gui.state.course_state import get_current_course
 
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, TopicMapping
@@ -104,7 +104,7 @@ async def topics_content() -> None:
         ui.label("Application not initialized.").classes("text-red-700")
         return
 
-    course_id: int | None = app.storage.user.get(USER_CURRENT_COURSE)
+    course_id = get_current_course()
     if course_id is None:
         with ui.column().classes("w-full items-center py-12"):
             ui.icon("topic", color="gray").classes("text-6xl")
