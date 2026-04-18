@@ -34,6 +34,7 @@ class ModuleInfo:
 
     module_id: int
     series_id: str
+    course_name: str = ""
 
 
 @dataclass
@@ -102,10 +103,12 @@ async def get_lecture_modules(db: aiosqlite.Connection) -> list[ModuleInfo]:
     """Query distinct modules that have lecture downloads."""
     try:
         cursor = await db.execute(
-            "SELECT DISTINCT module_id, series_id FROM lecture_downloads",
+            "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
+            "FROM lecture_downloads ld "
+            "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id",
         )
         rows = await cursor.fetchall()
-        return [ModuleInfo(module_id=row[0], series_id=row[1]) for row in rows]
+        return [ModuleInfo(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
     except Exception:
         log.exception("get_lecture_modules_failed")
         return []
@@ -126,8 +129,8 @@ async def get_module_lectures(db: aiosqlite.Connection, module_id: int) -> list[
 async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredModule]:
     """Query Moodle for enrolled courses and find Opencast modules with episodes.
 
-    Returns only modules that have at least one episode. Does not write to DB
-    or trigger downloads — purely a read-only discovery step.
+    Returns only modules that have at least one episode. Persists course→module
+    mappings to the lecture_modules table for display name resolution.
     """
     courses = await container.moodle.get_enrolled_courses()
     if not courses:
@@ -148,6 +151,14 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
 
     if not opencast_modules:
         return []
+
+    for shortname, fullname, mid, _name in opencast_modules:
+        await container.db.execute(
+            "INSERT OR REPLACE INTO lecture_modules (module_id, course_name, course_shortname) "
+            "VALUES (?, ?, ?)",
+            (mid, fullname, shortname),
+        )
+    await container.db.commit()
 
     episode_lists = await asyncio.gather(
         *(container.opencast.get_series_episodes(mid) for _, _, mid, _ in opencast_modules),

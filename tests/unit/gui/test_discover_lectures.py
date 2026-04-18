@@ -18,6 +18,7 @@ def _make_container(
 ) -> MagicMock:
     """Build a fake AppContainer with mocked moodle/opencast."""
     container = MagicMock()
+    container.db = AsyncMock()
     container.moodle = AsyncMock()
     container.opencast = AsyncMock()
     container.moodle.get_enrolled_courses.return_value = courses or []
