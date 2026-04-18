@@ -112,8 +112,15 @@ class PipelineRunner:
                 total_episodes=1,
             )
             try:
-                result = await run_pipeline(container, module_id)
-                self._state = self._state.mark_completed()
+                result = await run_pipeline(
+                    container,
+                    module_id,
+                    cancel_check=lambda: self._cancel_requested,
+                )
+                if result.cancelled:
+                    self._state = self._state.mark_cancelled()
+                else:
+                    self._state = self._state.mark_completed()
                 return result
             except Exception as exc:
                 log.exception("pipeline_single_failed", episode_id=episode_id)
@@ -147,13 +154,17 @@ class PipelineRunner:
             )
 
             try:
-                await run_pipeline(container, module_id)
+                result = await run_pipeline(
+                    container,
+                    module_id,
+                    cancel_check=lambda: self._cancel_requested,
+                )
             except Exception:
                 log.exception("pipeline_batch_failed", module_id=module_id)
                 self._state = self._state.mark_failed("batch pipeline failed")
                 return False
 
-            if self._cancel_requested:
+            if result.cancelled:
                 self._state = self._state.mark_cancelled()
             else:
                 self._state = PipelineState(

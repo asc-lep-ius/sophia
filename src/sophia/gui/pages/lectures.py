@@ -209,7 +209,16 @@ async def _render_batch_actions() -> None:
             if state.current_episode:
                 ui.label(f"({state.current_episode})").classes("text-xs text-gray-500")
             ui.space()
-            ui.button("Cancel", on_click=_runner.cancel).props("flat color=negative dense")
+
+            if _runner._cancel_requested:
+                ui.button("Cancelling…").props("flat color=negative dense disable")
+            else:
+
+                def _on_cancel() -> None:
+                    _runner.cancel()
+                    _lecture_list.refresh()
+
+                ui.button("Cancel", on_click=_on_cancel).props("flat color=negative dense")
         else:
             ui.icon("play_circle_filled").classes("text-blue-600")
             ui.label(f"{n_unprocessed} unprocessed").classes("font-medium")
