@@ -37,6 +37,10 @@ class RegistrationError(SophiaError):
     """Course or group registration failed."""
 
 
+class NetworkError(RegistrationError):
+    """Network connectivity failure — host unreachable or timeout."""
+
+
 class HermesError(SophiaError):
     """Hermes lecture pipeline error."""
 
