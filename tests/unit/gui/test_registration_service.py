@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, NetworkError
 from sophia.domain.models import (
     FavoriteCourse,
     RegistrationGroup,
@@ -147,6 +147,22 @@ class TestGetFavorites:
         assert result.status == "error"
         assert "boom" in (result.error_message or "")
 
+    @pytest.mark.asyncio
+    async def test_network_error_returns_network_error(self, mock_container: AppContainer) -> None:
+        from sophia.gui.services.registration_service import get_favorites
+
+        mock_adapter = MagicMock()
+        mock_adapter.get_favorites = AsyncMock(side_effect=NetworkError("Cannot reach TISS"))
+
+        with (
+            patch(f"{_PATCH_BASE}._load_credentials", return_value=MagicMock()),
+            patch(f"{_PATCH_BASE}._make_adapter", return_value=mock_adapter),
+        ):
+            result = await get_favorites(mock_container)
+
+        assert result.status == "network_error"
+        assert "Cannot reach TISS" in (result.error_message or "")
+
 
 # -- get_registration_status -------------------------------------------------
 
@@ -256,6 +272,22 @@ class TestRegisterCourse:
             result = await register_course(mock_container, _COURSE, _SEMESTER)
 
         assert result.status == "auth_expired"
+
+    @pytest.mark.asyncio
+    async def test_network_error_returns_network_error(self, mock_container: AppContainer) -> None:
+        from sophia.gui.services.registration_service import register_course
+
+        mock_adapter = MagicMock()
+        mock_adapter.register = AsyncMock(side_effect=NetworkError("Cannot reach TISS"))
+
+        with (
+            patch(f"{_PATCH_BASE}._load_credentials", return_value=MagicMock()),
+            patch(f"{_PATCH_BASE}._make_adapter", return_value=mock_adapter),
+        ):
+            result = await register_course(mock_container, _COURSE, _SEMESTER)
+
+        assert result.status == "network_error"
+        assert "Cannot reach TISS" in (result.error_message or "")
 
 
 # -- get_exam_dates ----------------------------------------------------------

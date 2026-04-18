@@ -10,7 +10,7 @@ import structlog
 
 from sophia.adapters.auth import TissSessionCredentials, load_tiss_session, tiss_session_path
 from sophia.adapters.tiss_registration import TissRegistrationAdapter
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, NetworkError
 
 if TYPE_CHECKING:
     from sophia.domain.models import (
@@ -120,6 +120,9 @@ async def get_favorites(
     except AuthError:
         log.warning("registration_auth_expired")
         return FavoritesResult(status="auth_expired")
+    except NetworkError as exc:
+        log.warning("registration_network_error")
+        return FavoritesResult(status="network_error", error_message=str(exc))
     except Exception as exc:
         log.exception("get_favorites_failed")
         return FavoritesResult(status="error", error_message=str(exc))
@@ -142,6 +145,9 @@ async def get_registration_status(
     except AuthError:
         log.warning("registration_status_auth_expired", course=course_number)
         return StatusResult(status="auth_expired")
+    except NetworkError as exc:
+        log.warning("registration_network_error", course=course_number)
+        return StatusResult(status="network_error", error_message=str(exc))
     except Exception as exc:
         log.exception("get_registration_status_failed", course=course_number)
         return StatusResult(status="error", error_message=str(exc))
@@ -164,6 +170,9 @@ async def get_groups(
     except AuthError:
         log.warning("registration_groups_auth_expired", course=course_number)
         return GroupsResult(status="auth_expired")
+    except NetworkError as exc:
+        log.warning("registration_network_error", course=course_number)
+        return GroupsResult(status="network_error", error_message=str(exc))
     except Exception as exc:
         log.exception("get_groups_failed", course=course_number)
         return GroupsResult(status="error", error_message=str(exc))
@@ -188,6 +197,9 @@ async def register_course(
     except AuthError:
         log.warning("registration_auth_expired", course=course_number)
         return RegisterResult(status="auth_expired")
+    except NetworkError as exc:
+        log.warning("registration_network_error", course=course_number)
+        return RegisterResult(status="network_error", error_message=str(exc))
     except Exception as exc:
         log.exception("register_course_failed", course=course_number)
         return RegisterResult(status="error", error_message=str(exc))
