@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import structlog
-
+from sophia.gui.services.error_service import gui_error_handler
 from sophia.services.athena_chronos import get_course_confidence as _get_course_confidence
 from sophia.services.athena_confidence import (
     get_blind_spots as _get_blind_spots,
@@ -19,8 +18,6 @@ if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, StudySession
     from sophia.infra.di import AppContainer
 
-log = structlog.get_logger()
-
 # ---------------------------------------------------------------------------
 # Tier thresholds for mapping post-test scores to difficulty tiers
 # ---------------------------------------------------------------------------
@@ -33,42 +30,30 @@ _TIER_TRANSFER = 0.8
 # ---------------------------------------------------------------------------
 
 
+@gui_error_handler(operation="get_calibration_ratings", fallback=[])
 async def get_calibration_ratings(app: AppContainer, course_id: int) -> list[ConfidenceRating]:
     """Fetch confidence ratings for a course."""
-    try:
-        return await _get_confidence_ratings(app.db, course_id)
-    except Exception:
-        log.exception("get_calibration_ratings_failed", course_id=course_id)
-        return []
+    return await _get_confidence_ratings(app.db, course_id)
 
 
+@gui_error_handler(operation="get_blind_spot_topics", fallback=[])
 async def get_blind_spot_topics(app: AppContainer, course_id: int) -> list[ConfidenceRating]:
     """Fetch overconfident blind-spot topics for a course."""
-    try:
-        return await _get_blind_spots(app.db, course_id)
-    except Exception:
-        log.exception("get_blind_spots_failed", course_id=course_id)
-        return []
+    return await _get_blind_spots(app.db, course_id)
 
 
+@gui_error_handler(operation="get_course_avg_confidence", fallback=None)
 async def get_course_avg_confidence(app: AppContainer, course_id: int) -> float | None:
     """Get average confidence score for a course."""
-    try:
-        return await _get_course_confidence(app.db, course_id)
-    except Exception:
-        log.exception("get_course_confidence_failed", course_id=course_id)
-        return None
+    return await _get_course_confidence(app.db, course_id)
 
 
+@gui_error_handler(operation="get_study_sessions_for_topic", fallback=[])
 async def get_study_sessions_for_topic(
     app: AppContainer, course_id: int, topic: str
 ) -> list[StudySession]:
     """Fetch study sessions for a specific topic."""
-    try:
-        return await _get_study_sessions(app.db, course_id, topic)
-    except Exception:
-        log.exception("get_study_sessions_failed", course_id=course_id, topic=topic)
-        return []
+    return await _get_study_sessions(app.db, course_id, topic)
 
 
 # ---------------------------------------------------------------------------

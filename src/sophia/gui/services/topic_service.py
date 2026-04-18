@@ -6,8 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import structlog
-
+from sophia.gui.services.error_service import gui_error_handler
 from sophia.services.athena_confidence import (
     get_confidence_ratings as _get_confidence_ratings,
 )
@@ -29,18 +28,14 @@ if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, TopicMapping
     from sophia.infra.di import AppContainer
 
-log = structlog.get_logger()
 
-
+@gui_error_handler(operation="get_course_topics", fallback=[])
 async def get_course_topics(app: AppContainer, *, course_id: int) -> list[TopicMapping]:
     """Fetch all extracted topics for a course."""
-    try:
-        return await _get_course_topics(app, course_id)
-    except Exception:
-        log.exception("get_course_topics_failed", course_id=course_id)
-        return []
+    return await _get_course_topics(app, course_id)
 
 
+@gui_error_handler(operation="extract_topics", fallback=[])
 async def extract_topics(
     app: AppContainer,
     *,
@@ -49,13 +44,10 @@ async def extract_topics(
     force: bool = False,
 ) -> list[TopicMapping]:
     """Trigger topic extraction from lecture transcripts."""
-    try:
-        return await _extract_topics(app, module_id, on_progress=on_progress, force=force)
-    except Exception:
-        log.exception("extract_topics_failed", module_id=module_id)
-        return []
+    return await _extract_topics(app, module_id, on_progress=on_progress, force=force)
 
 
+@gui_error_handler(operation="get_topic_confidence", fallback=None)
 async def get_topic_confidence(
     app: AppContainer,
     *,
@@ -63,14 +55,11 @@ async def get_topic_confidence(
     topic: str,
 ) -> ConfidenceRating | None:
     """Get the latest confidence rating for a specific topic."""
-    try:
-        ratings = await _get_confidence_ratings(app.db, course_id)
-        return next((r for r in ratings if r.topic == topic), None)
-    except Exception:
-        log.exception("get_topic_confidence_failed", course_id=course_id, topic=topic)
-        return None
+    ratings = await _get_confidence_ratings(app.db, course_id)
+    return next((r for r in ratings if r.topic == topic), None)
 
 
+@gui_error_handler(operation="save_confidence_prediction", fallback=None)
 async def save_confidence_prediction(
     app: AppContainer,
     *,
@@ -79,13 +68,10 @@ async def save_confidence_prediction(
     rating: int,
 ) -> ConfidenceRating | None:
     """Store a confidence prediction (1-5 scale) for a topic."""
-    try:
-        return await _rate_confidence(app, topic, course_id, rating)
-    except Exception:
-        log.exception("save_confidence_prediction_failed", topic=topic, course_id=course_id)
-        return None
+    return await _rate_confidence(app, topic, course_id, rating)
 
 
+@gui_error_handler(operation="export_anki_deck", fallback=None)
 async def export_anki_deck(
     app: AppContainer,
     *,
@@ -98,21 +84,17 @@ async def export_anki_deck(
     Returns the raw .apkg bytes for browser download, or None if no cards
     exist or an error occurs (including missing genanki dependency).
     """
-    try:
-        from sophia.services.athena_export import export_anki_deck as _export_anki_deck
+    from sophia.services.athena_export import export_anki_deck as _export_anki_deck
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = Path(tmpdir) / "deck.apkg"
-            count = await _export_anki_deck(
-                app.db,
-                course_id,
-                output_path,
-                episode_id=episode_id,
-                interleaved=interleaved,
-            )
-            if count == 0:
-                return None
-            return output_path.read_bytes()
-    except Exception:
-        log.exception("export_anki_deck_failed", course_id=course_id)
-        return None
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_path = Path(tmpdir) / "deck.apkg"
+        count = await _export_anki_deck(
+            app.db,
+            course_id,
+            output_path,
+            episode_id=episode_id,
+            interleaved=interleaved,
+        )
+        if count == 0:
+            return None
+        return output_path.read_bytes()

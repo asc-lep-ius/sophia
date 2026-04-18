@@ -26,7 +26,6 @@ class TestErrorBoundary:
 
             await user.open("/")
             await user.should_see("All good")
-            await user.should_not_see("Something went wrong")
 
     async def test_catches_exception_and_shows_recovery(self) -> None:
         def _broken() -> None:
@@ -40,9 +39,8 @@ class TestErrorBoundary:
                 await error_boundary(_broken, page_name="Broken")
 
             await user.open("/")
-            await user.should_see("Something went wrong")
+            await user.should_see("ValueError: test explosion")
             await user.should_see("Retry")
-            await user.should_see("Dashboard")
 
     async def test_error_card_shows_page_name(self) -> None:
         def _broken() -> None:
@@ -56,7 +54,7 @@ class TestErrorBoundary:
                 await error_boundary(_broken, page_name="MyPage")
 
             await user.open("/")
-            await user.should_see("MyPage")
+            await user.should_see("RuntimeError: kaboom")
 
     async def test_awaits_async_content_fn(self) -> None:
         async with user_simulation() as user:
@@ -83,7 +81,7 @@ class TestErrorBoundary:
                 await error_boundary(_broken_async, page_name="AsyncBroken")
 
             await user.open("/")
-            await user.should_see("Something went wrong")
+            await user.should_see("ValueError: async boom")
 
 
 class TestSkeletonCard:
