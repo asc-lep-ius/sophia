@@ -6,8 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-import structlog
-
+from sophia.gui.services.error_service import gui_error_handler
 from sophia.services.hermes_manage import get_pipeline_status as _get_pipeline_status
 
 if TYPE_CHECKING:
@@ -15,8 +14,6 @@ if TYPE_CHECKING:
 
     from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
-
-log = structlog.get_logger()
 
 # --- Status filter constants -------------------------------------------------
 
@@ -99,28 +96,22 @@ def filter_episodes(
 # --- Async service wrappers --------------------------------------------------
 
 
+@gui_error_handler(operation="get_lecture_modules", fallback=[])
 async def get_lecture_modules(db: aiosqlite.Connection) -> list[ModuleInfo]:
     """Query distinct modules that have lecture downloads."""
-    try:
-        cursor = await db.execute(
-            "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
-            "FROM lecture_downloads ld "
-            "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id",
-        )
-        rows = await cursor.fetchall()
-        return [ModuleInfo(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
-    except Exception:
-        log.exception("get_lecture_modules_failed")
-        return []
+    cursor = await db.execute(
+        "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
+        "FROM lecture_downloads ld "
+        "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id",
+    )
+    rows = await cursor.fetchall()
+    return [ModuleInfo(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
 
 
+@gui_error_handler(operation="get_module_lectures", fallback=[])
 async def get_module_lectures(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Fetch pipeline status for all episodes in a module."""
-    try:
-        return await _get_pipeline_status(db, module_id)
-    except Exception:
-        log.exception("get_module_lectures_failed", module_id=module_id)
-        return []
+    return await _get_pipeline_status(db, module_id)
 
 
 # --- Discovery (Moodle + Opencast) ------------------------------------------
