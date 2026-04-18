@@ -5,25 +5,15 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-from enum import Enum, auto
 from typing import Any
 
 import structlog
 from nicegui import ui
 
 from sophia.domain.errors import AuthError, NetworkError, SophiaError
+from sophia.gui.components.error_display import ErrorCategory
 
 log = structlog.get_logger()
-
-
-class ErrorCategory(Enum):
-    """Broad error categories for UI display."""
-
-    AUTH = auto()
-    NETWORK = auto()
-    STORAGE = auto()
-    DOMAIN = auto()
-    UNKNOWN = auto()
 
 
 def classify_error(exc: Exception) -> ErrorCategory:

@@ -12,8 +12,8 @@ from sophia.domain.errors import (
     NetworkError,
     SophiaError,
 )
+from sophia.gui.components.error_display import ErrorCategory
 from sophia.gui.services.error_service import (
-    ErrorCategory,
     classify_error,
     gui_error_handler,
 )
