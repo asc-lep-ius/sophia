@@ -135,6 +135,9 @@ async def _favorites_section(container: AppContainer) -> None:
     if result.status == "auth_expired":
         _render_auth_expired()
         return
+    if result.status == "network_error":
+        _render_network_error(result.error_message or "Cannot reach TISS")
+        return
     if result.status == "error":
         _render_error(result.error_message or "Unknown error")
         return
@@ -325,13 +328,35 @@ def _render_auth_expired() -> None:
     with ui.card().classes("w-full mt-4 p-4"):
         ui.icon("error", color="red").classes("text-3xl")
         ui.label("Session expired — re-authenticate in Settings").classes("text-lg font-semibold")
+        ui.button(
+            "Go to Settings",
+            icon="settings",
+            on_click=lambda: ui.navigate.to("/settings"),
+        ).props("outline")
+
+
+def _render_network_error(message: str) -> None:
+    """Render message when TISS is unreachable (network/VPN issue)."""
+    with ui.card().classes("w-full mt-4 p-4"):
+        ui.icon("wifi_off", color="orange").classes("text-3xl")
+        ui.label("Cannot reach TISS").classes("text-lg font-semibold")
+        ui.label("Check your internet connection or VPN.").classes("text-sm text-gray-500")
+        with ui.expansion("Details").classes("w-full"):
+            ui.label(message).classes("text-sm text-gray-500")
+        ui.button(
+            "Retry",
+            icon="refresh",
+            on_click=lambda: _favorites_section.refresh(),  # type: ignore[attr-defined]
+        ).props("outline")
 
 
 def _render_error(message: str) -> None:
     """Render an error message with retry button."""
     with ui.card().classes("w-full mt-4 p-4"):
         ui.icon("error", color="red").classes("text-3xl")
-        ui.label(f"Error: {message}").classes("text-lg")
+        ui.label("Something went wrong").classes("text-lg font-semibold")
+        with ui.expansion("Details").classes("w-full"):
+            ui.label(message).classes("text-sm text-gray-500")
         ui.button(
             "Retry",
             icon="refresh",

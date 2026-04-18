@@ -17,7 +17,7 @@ import httpx
 import structlog
 from bs4 import BeautifulSoup, Tag, XMLParsedAsHTMLWarning
 
-from sophia.domain.errors import AuthError, RegistrationError
+from sophia.domain.errors import AuthError, NetworkError, RegistrationError
 from sophia.domain.models import (
     FavoriteCourse,
     RegistrationGroup,
@@ -249,7 +249,10 @@ class TissRegistrationAdapter:
             if isinstance(exc, httpx.TooManyRedirects):
                 msg = "TISS session expired — log in again with: sophia auth login"
                 raise AuthError(msg) from exc
-            msg = "TISS connection failed — check your internet connection"
+            if isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout):
+                msg = "Cannot reach TISS — check VPN or network connection"
+                raise NetworkError(msg) from exc
+            msg = f"TISS request failed: {exc}"
             raise RegistrationError(msg) from exc
 
         soup, resp = self._parse(resp)
@@ -263,7 +266,10 @@ class TissRegistrationAdapter:
                 if isinstance(exc, httpx.TooManyRedirects):
                     msg = "TISS session expired — log in again with: sophia auth login"
                     raise AuthError(msg) from exc
-                msg = "TISS connection failed — check your internet connection"
+                if isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout):
+                    msg = "Cannot reach TISS — check VPN or network connection"
+                    raise NetworkError(msg) from exc
+                msg = f"TISS request failed: {exc}"
                 raise RegistrationError(msg) from exc
             soup, resp = self._parse(resp)
 
@@ -278,7 +284,10 @@ class TissRegistrationAdapter:
             if isinstance(exc, httpx.TooManyRedirects):
                 msg = "TISS session expired — log in again with: sophia auth login"
                 raise AuthError(msg) from exc
-            raise RegistrationError("TISS request failed — try again later") from exc
+            if isinstance(exc, httpx.ConnectError | httpx.ConnectTimeout):
+                msg = "Cannot reach TISS — check VPN or network connection"
+                raise NetworkError(msg) from exc
+            raise RegistrationError(f"TISS request failed: {exc}") from exc
         return self._parse(resp)
 
     @staticmethod
