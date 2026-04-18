@@ -43,6 +43,7 @@ async def download_lectures(
     module_id: int,
     *,
     on_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> list[LectureDownloadResult]:
     """Orchestrate lecture downloads for a given Opencast module.
 
@@ -56,6 +57,10 @@ async def download_lectures(
     results: list[LectureDownloadResult] = []
 
     for ep in episodes:
+        if cancel_check and cancel_check():
+            log.info("download_cancelled", module_id=module_id, completed=len(results))
+            break
+
         if ep.episode_id in skip_ids:
             results.append(
                 LectureDownloadResult(

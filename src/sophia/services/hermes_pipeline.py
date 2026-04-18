@@ -31,6 +31,7 @@ class PipelineResult:
     indexing: list[IndexingResult] = field(default_factory=lambda: [])
     topics: list[TopicMapping] = field(default_factory=lambda: [])
     material_chunks: int = 0
+    cancelled: bool = False
 
 
 async def run_pipeline(
@@ -39,6 +40,7 @@ async def run_pipeline(
     *,
     index_materials: bool = False,
     course_id: int | None = None,
+    cancel_check: Callable[[], bool] | None = None,
     on_download_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
     on_transcribe_start: Callable[[str, str], None] | None = None,
     on_transcribe_complete: Callable[[str, int], None] | None = None,
@@ -56,17 +58,47 @@ async def run_pipeline(
 
     log.info("pipeline_start", module_id=module_id)
 
-    result.downloads = await download_lectures(app, module_id, on_progress=on_download_progress)
+    if cancel_check and cancel_check():
+        log.info("pipeline_cancelled", module_id=module_id, stage="before_download")
+        result.cancelled = True
+        return result
+
+    result.downloads = await download_lectures(
+        app, module_id, on_progress=on_download_progress, cancel_check=cancel_check
+    )
 
     await assign_lecture_numbers(app.db, module_id)
 
+    if cancel_check and cancel_check():
+        log.info("pipeline_cancelled", module_id=module_id, stage="after_download")
+        result.cancelled = True
+        return result
+
     result.transcriptions = await transcribe_lectures(
-        app, module_id, on_start=on_transcribe_start, on_complete=on_transcribe_complete
+        app,
+        module_id,
+        on_start=on_transcribe_start,
+        on_complete=on_transcribe_complete,
+        cancel_check=cancel_check,
     )
 
+    if cancel_check and cancel_check():
+        log.info("pipeline_cancelled", module_id=module_id, stage="after_transcribe")
+        result.cancelled = True
+        return result
+
     result.indexing = await index_lectures(
-        app, module_id, on_start=on_index_start, on_complete=on_index_complete
+        app,
+        module_id,
+        on_start=on_index_start,
+        on_complete=on_index_complete,
+        cancel_check=cancel_check,
     )
+
+    if cancel_check and cancel_check():
+        log.info("pipeline_cancelled", module_id=module_id, stage="after_index")
+        result.cancelled = True
+        return result
 
     result.topics = await extract_topics_from_lectures(
         app, module_id, on_progress=on_topic_progress, force=True

@@ -196,6 +196,7 @@ async def index_lectures(
     *,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> list[IndexingResult]:
     """Orchestrate indexing for transcribed lectures in a module.
 
@@ -212,6 +213,10 @@ async def index_lectures(
     store: ChromaKnowledgeStore | None = None
 
     for episode_id, title in transcriptions:
+        if cancel_check and cancel_check():
+            log.info("indexing_cancelled", module_id=module_id, completed=len(results))
+            break
+
         if episode_id in indexed_ids:
             results.append(
                 IndexingResult(episode_id=episode_id, title=title, chunk_count=0, status="skipped")

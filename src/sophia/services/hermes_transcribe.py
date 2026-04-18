@@ -46,6 +46,7 @@ async def transcribe_lectures(
     *,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> list[TranscriptionResult]:
     """Orchestrate transcription for downloaded lectures in a module.
 
@@ -60,6 +61,10 @@ async def transcribe_lectures(
     transcriber: WhisperTranscriber | None = None
 
     for episode_id, title, file_path in downloads:
+        if cancel_check and cancel_check():
+            log.info("transcription_cancelled", module_id=module_id, completed=len(results))
+            break
+
         if episode_id in completed_ids:
             results.append(
                 TranscriptionResult(
