@@ -19,7 +19,7 @@ from sophia.adapters.tiss_registration import (
     _safe_float,  # pyright: ignore[reportPrivateUsage]
     _viewstate,  # pyright: ignore[reportPrivateUsage]
 )
-from sophia.domain.errors import AuthError, RegistrationError
+from sophia.domain.errors import AuthError, NetworkError, RegistrationError
 from sophia.domain.models import RegistrationStatus
 
 HOST = "https://tiss.tuwien.ac.at"
@@ -734,7 +734,7 @@ class TestErrorMessageSanitization:
         )
         async with httpx.AsyncClient() as http:
             adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
-            with pytest.raises(RegistrationError, match="connection") as exc_info:
+            with pytest.raises(NetworkError, match="Cannot reach TISS") as exc_info:
                 await adapter._get(url)  # pyright: ignore[reportPrivateUsage]
             assert HOST not in str(exc_info.value)
 
@@ -759,7 +759,7 @@ class TestErrorMessageSanitization:
         )
         async with httpx.AsyncClient() as http:
             adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
-            with pytest.raises(RegistrationError, match="connection") as exc_info:
+            with pytest.raises(NetworkError, match="Cannot reach TISS") as exc_info:
                 await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
             assert "dswid" not in str(exc_info.value)
             assert HOST not in str(exc_info.value)
@@ -774,6 +774,74 @@ class TestErrorMessageSanitization:
         )
         async with httpx.AsyncClient() as http:
             adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
-            with pytest.raises(RegistrationError, match="request failed") as exc_info:
+            with pytest.raises(NetworkError, match="Cannot reach TISS") as exc_info:
                 await adapter._post(url, data={"key": "val"})  # pyright: ignore[reportPrivateUsage]
             assert HOST not in str(exc_info.value)
+
+
+class TestGetErrorClassification:
+    """Verify _get() raises the right error type for different httpx exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_network_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(NetworkError, match="Cannot reach TISS"):
+            await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_connect_timeout_raises_network_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.get = AsyncMock(side_effect=httpx.ConnectTimeout("Timed out"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(NetworkError, match="Cannot reach TISS"):
+            await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_too_many_redirects_raises_auth_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.get = AsyncMock(side_effect=httpx.TooManyRedirects("Too many redirects"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(AuthError, match="session expired"):
+            await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_other_http_error_raises_registration_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.get = AsyncMock(side_effect=httpx.ReadTimeout("Read timed out"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(RegistrationError, match="TISS request failed"):
+            await adapter._get(f"{HOST}/education/favorites.xhtml")  # pyright: ignore[reportPrivateUsage]
+
+
+class TestPostErrorClassification:
+    """Verify _post() raises the right error type for different httpx exceptions."""
+
+    @pytest.mark.asyncio
+    async def test_connect_error_raises_network_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(NetworkError, match="Cannot reach TISS"):
+            await adapter._post(f"{HOST}/education/favorites.xhtml", {})  # pyright: ignore[reportPrivateUsage]
+
+    @pytest.mark.asyncio
+    async def test_too_many_redirects_raises_auth_error(self) -> None:
+        from unittest.mock import AsyncMock
+
+        http = AsyncMock(spec=httpx.AsyncClient)
+        http.post = AsyncMock(side_effect=httpx.TooManyRedirects("Too many redirects"))
+        adapter = TissRegistrationAdapter(http=http, credentials=_make_creds(), host=HOST)
+        with pytest.raises(AuthError, match="session expired"):
+            await adapter._post(f"{HOST}/education/favorites.xhtml", {})  # pyright: ignore[reportPrivateUsage]

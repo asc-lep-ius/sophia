@@ -209,7 +209,16 @@ async def _render_batch_actions() -> None:
             if state.current_episode:
                 ui.label(f"({state.current_episode})").classes("text-xs text-gray-500")
             ui.space()
-            ui.button("Cancel", on_click=_runner.cancel).props("flat color=negative dense")
+
+            if _runner._cancel_requested:
+                ui.button("Cancelling…").props("flat color=negative dense disable")
+            else:
+
+                def _on_cancel() -> None:
+                    _runner.cancel()
+                    _lecture_list.refresh()
+
+                ui.button("Cancel", on_click=_on_cancel).props("flat color=negative dense")
         else:
             ui.icon("play_circle_filled").classes("text-blue-600")
             ui.label(f"{n_unprocessed} unprocessed").classes("font-medium")
@@ -282,7 +291,7 @@ async def _lecture_list() -> None:
         if not filtered:
             continue
         any_visible = True
-        _render_module_group(mod.module_id, filtered)
+        _render_module_group(mod.module_id, filtered, mod.course_name)
 
     if not any_visible:
         _render_no_results()
@@ -365,12 +374,17 @@ def _render_no_results() -> None:
     )
 
 
-def _render_module_group(module_id: int, episodes: list[EpisodeStatus]) -> None:
+def _render_module_group(
+    module_id: int,
+    episodes: list[EpisodeStatus],
+    course_name: str = "",
+) -> None:
     """Render a collapsible group of lectures for one module."""
     indexed_count = sum(1 for ep in episodes if is_fully_indexed(ep))
+    display_name = course_name if course_name else f"Module {module_id}"
     with (
         ui.expansion(
-            f"Module {module_id}",
+            display_name,
             caption=f"{len(episodes)} lectures · {indexed_count} indexed",
         )
         .classes("w-full mb-2")

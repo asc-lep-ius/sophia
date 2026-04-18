@@ -158,8 +158,8 @@ class TestPipelineRunnerConcurrency:
 
         async def _slow_pipeline(*_args: object, **_kwargs: object) -> PipelineResult:
             gate.set()
-            await asyncio.sleep(0.2)
-            return PipelineResult()
+            runner.cancel()
+            return PipelineResult(cancelled=True)
 
         with patch(
             "sophia.gui.services.pipeline_service.run_pipeline",
@@ -168,8 +168,6 @@ class TestPipelineRunnerConcurrency:
             task = asyncio.create_task(
                 runner.start_batch(container, 1, ["e1", "e2", "e3"]),
             )
-            await gate.wait()
-            runner.cancel()
             await task
 
         state = runner.get_state()
@@ -275,7 +273,8 @@ class TestStartBatchSingleCall:
         ):
             await runner.start_batch(container, 42, ["e1", "e2", "e3"])
 
-        mock_run.assert_awaited_once_with(container, 42)
+        mock_run.assert_awaited_once()
+        assert mock_run.call_args[0] == (container, 42)
 
     @pytest.mark.asyncio
     async def test_marks_all_episodes_completed(self) -> None:
@@ -293,3 +292,66 @@ class TestStartBatchSingleCall:
         assert state.running is False
         assert state.completed_episodes == 3
         assert state.total_episodes == 3
+
+
+# --- Issue 83: cancel_check wiring ------------------------------------------
+
+
+class TestCancelCheckWiring:
+    """Verify cancel_check is threaded from PipelineRunner to run_pipeline."""
+
+    @pytest.mark.asyncio
+    async def test_start_batch_passes_cancel_check(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+
+        mock_run = AsyncMock(return_value=PipelineResult())
+        with patch(
+            "sophia.gui.services.pipeline_service.run_pipeline",
+            mock_run,
+        ):
+            await runner.start_batch(container, 42, ["e1", "e2", "e3"])
+
+        mock_run.assert_awaited_once()
+        assert "cancel_check" in mock_run.call_args[1]
+        assert callable(mock_run.call_args[1]["cancel_check"])
+
+    @pytest.mark.asyncio
+    async def test_cancel_check_returns_true_after_cancel(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+        captured_fn: list = []
+
+        async def _capture(*_a: object, **kw: object) -> PipelineResult:
+            captured_fn.append(kw.get("cancel_check"))
+            return PipelineResult()
+
+        with patch(
+            "sophia.gui.services.pipeline_service.run_pipeline",
+            side_effect=_capture,
+        ):
+            await runner.start_batch(container, 42, ["e1"])
+
+        assert len(captured_fn) == 1
+        cancel_check = captured_fn[0]
+        assert cancel_check is not None
+        assert cancel_check() is False
+        runner.cancel()
+        assert cancel_check() is True
+
+    @pytest.mark.asyncio
+    async def test_batch_cancelled_result_marks_state_cancelled(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+
+        cancelled_result = PipelineResult(cancelled=True)
+        with patch(
+            "sophia.gui.services.pipeline_service.run_pipeline",
+            new_callable=AsyncMock,
+            return_value=cancelled_result,
+        ):
+            await runner.start_batch(container, 1, ["e1", "e2", "e3"])
+
+        state = runner.get_state()
+        assert state.cancelled is True
+        assert state.running is False

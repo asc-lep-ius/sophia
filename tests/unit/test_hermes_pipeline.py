@@ -203,6 +203,175 @@ async def test_pipeline_passes_module_id() -> None:
 
 
 # ------------------------------------------------------------------
+# Cancellation
+# ------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pipeline_stops_on_cancel_before_first_stage() -> None:
+    """cancel_check returning True immediately → downloads never called."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    mock_download = AsyncMock(return_value=[])
+
+    container = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
+        patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            AsyncMock(return_value=[]),
+        ),
+        patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
+    ):
+        result = await run_pipeline(container, module_id=42, cancel_check=lambda: True)
+
+    mock_download.assert_not_called()
+    assert result.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_stops_between_stages() -> None:
+    """Cancel after download → transcribe not called."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    call_count = 0
+
+    def _cancel_after_download() -> bool:
+        return call_count >= 1
+
+    async def _download(*a: Any, **kw: Any) -> list[Any]:
+        nonlocal call_count
+        call_count += 1
+        return [_make_download()]
+
+    mock_transcribe = AsyncMock(return_value=[])
+
+    container = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
+        patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            AsyncMock(return_value=[]),
+        ),
+        patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
+    ):
+        result = await run_pipeline(container, module_id=42, cancel_check=_cancel_after_download)
+
+    assert result.downloads == [_make_download()]
+    mock_transcribe.assert_not_called()
+    assert result.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_cancel_check_none_processes_all() -> None:
+    """Backward compatibility: cancel_check=None processes everything."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    call_order: list[str] = []
+
+    async def _download(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("download")
+        return []
+
+    async def _transcribe(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("transcribe")
+        return []
+
+    async def _index(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("index")
+        return []
+
+    async def _topics(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("topics")
+        return []
+
+    container = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
+        patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
+        patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
+        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
+        patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
+    ):
+        result = await run_pipeline(container, module_id=42, cancel_check=None)
+
+    assert call_order == ["download", "transcribe", "index", "topics"]
+    assert result.cancelled is False
+
+
+@pytest.mark.asyncio
+async def test_pipeline_result_cancelled_flag() -> None:
+    """verify result.cancelled is True when cancelled."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    container = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_pipeline.download_lectures", AsyncMock(return_value=[])),
+        patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            AsyncMock(return_value=[]),
+        ),
+        patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
+    ):
+        result = await run_pipeline(container, module_id=42, cancel_check=lambda: True)
+
+    assert result.cancelled is True
+    assert result.downloads == []
+    assert result.transcriptions == []
+    assert result.indexing == []
+    assert result.topics == []
+
+
+@pytest.mark.asyncio
+async def test_cancel_check_forwarded_to_stages() -> None:
+    """Verify cancel_check is passed through to each stage function."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    cancel_fn = MagicMock(return_value=False)
+    mock_download = AsyncMock(return_value=[])
+    mock_transcribe = AsyncMock(return_value=[])
+    mock_index = AsyncMock(return_value=[])
+
+    container = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
+        patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
+        patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            AsyncMock(return_value=[]),
+        ),
+        patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
+    ):
+        await run_pipeline(container, module_id=42, cancel_check=cancel_fn)
+
+    assert mock_download.call_args[1].get("cancel_check") is cancel_fn
+    assert mock_transcribe.call_args[1].get("cancel_check") is cancel_fn
+    assert mock_index.call_args[1].get("cancel_check") is cancel_fn
+
+
+# ------------------------------------------------------------------
 # Empty module — no episodes
 # ------------------------------------------------------------------
 

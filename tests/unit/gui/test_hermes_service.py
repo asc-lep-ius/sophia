@@ -20,17 +20,28 @@ class TestGetLectureModules:
     @pytest.mark.asyncio
     async def test_returns_module_info_list(self) -> None:
         cursor = AsyncMock()
-        cursor.fetchall.return_value = [(101, "s1"), (202, "s2")]
+        cursor.fetchall.return_value = [(101, "s1", "Intro to CS"), (202, "s2", "Algorithms")]
         db = AsyncMock()
         db.execute.return_value = cursor
 
         result = await get_lecture_modules(db)
 
         assert result == [
-            ModuleInfo(module_id=101, series_id="s1"),
-            ModuleInfo(module_id=202, series_id="s2"),
+            ModuleInfo(module_id=101, series_id="s1", course_name="Intro to CS"),
+            ModuleInfo(module_id=202, series_id="s2", course_name="Algorithms"),
         ]
         db.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_null_course_name_defaults_to_empty(self) -> None:
+        cursor = AsyncMock()
+        cursor.fetchall.return_value = [(303, "s3", "")]
+        db = AsyncMock()
+        db.execute.return_value = cursor
+
+        result = await get_lecture_modules(db)
+
+        assert result == [ModuleInfo(module_id=303, series_id="s3", course_name="")]
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_no_rows(self) -> None:
@@ -85,11 +96,16 @@ class TestModuleInfo:
     """Verify the ModuleInfo dataclass."""
 
     def test_equality(self) -> None:
-        a = ModuleInfo(module_id=1, series_id="s1")
-        b = ModuleInfo(module_id=1, series_id="s1")
+        a = ModuleInfo(module_id=1, series_id="s1", course_name="CS 101")
+        b = ModuleInfo(module_id=1, series_id="s1", course_name="CS 101")
         assert a == b
 
     def test_fields(self) -> None:
-        m = ModuleInfo(module_id=42, series_id="abc")
+        m = ModuleInfo(module_id=42, series_id="abc", course_name="Advanced SE")
         assert m.module_id == 42
         assert m.series_id == "abc"
+        assert m.course_name == "Advanced SE"
+
+    def test_course_name_defaults_to_empty(self) -> None:
+        m = ModuleInfo(module_id=1, series_id="s1")
+        assert m.course_name == ""
