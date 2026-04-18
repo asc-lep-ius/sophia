@@ -282,7 +282,7 @@ async def _lecture_list() -> None:
         if not filtered:
             continue
         any_visible = True
-        _render_module_group(mod.module_id, filtered)
+        _render_module_group(mod.module_id, filtered, mod.course_name)
 
     if not any_visible:
         _render_no_results()
@@ -365,12 +365,17 @@ def _render_no_results() -> None:
     )
 
 
-def _render_module_group(module_id: int, episodes: list[EpisodeStatus]) -> None:
+def _render_module_group(
+    module_id: int,
+    episodes: list[EpisodeStatus],
+    course_name: str = "",
+) -> None:
     """Render a collapsible group of lectures for one module."""
     indexed_count = sum(1 for ep in episodes if is_fully_indexed(ep))
+    display_name = course_name if course_name else f"Module {module_id}"
     with (
         ui.expansion(
-            f"Module {module_id}",
+            display_name,
             caption=f"{len(episodes)} lectures · {indexed_count} indexed",
         )
         .classes("w-full mb-2")
