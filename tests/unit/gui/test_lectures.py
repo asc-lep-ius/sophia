@@ -11,6 +11,7 @@ from sophia.gui.pages.lectures import (
     LectureRecord,
     StageToggleState,
     build_course_tree_nodes,
+    build_pipeline_notification,
     build_stage_render_states,
     build_stage_warnings,
     course_episode_ids,
@@ -232,3 +233,31 @@ class TestStageRenderHelpers:
         assert render_states[0].symbol == "⏳"
         assert render_states[0].status == "pending"
         assert render_states[0].progress == 0.0
+
+
+class TestPipelineNotificationHelpers:
+    def test_returns_warning_when_batch_has_no_successful_lectures(self) -> None:
+        message, level = build_pipeline_notification(
+            PipelineState(
+                completed_episodes=1,
+                successful_episodes=0,
+                total_episodes=1,
+            ),
+            success=False,
+        )
+
+        assert message == "No lectures were processed successfully"
+        assert level == "warning"
+
+    def test_returns_positive_when_every_selected_lecture_succeeds(self) -> None:
+        message, level = build_pipeline_notification(
+            PipelineState(
+                completed_episodes=2,
+                successful_episodes=2,
+                total_episodes=2,
+            ),
+            success=True,
+        )
+
+        assert message == "Processed 2 lecture(s)"
+        assert level == "positive"

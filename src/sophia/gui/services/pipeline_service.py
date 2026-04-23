@@ -86,8 +86,15 @@ class EpisodeProgress:
 
     def is_finished(self) -> bool:
         """Return whether every selected stage reached a terminal state."""
-        return all(
+        return bool(self.stages_to_run) and all(
             self.stage_states[stage].status in _TERMINAL_STAGE_STATUSES
+            for stage in self.stages_to_run
+        )
+
+    def is_successful(self) -> bool:
+        """Return whether every selected stage completed without failure."""
+        return bool(self.stages_to_run) and all(
+            self.stage_states[stage].status in _SUCCESSFUL_STAGE_STATUSES
             for stage in self.stages_to_run
         )
 
@@ -137,6 +144,7 @@ class PipelineState:
     current_episode: str | None = None
     status_message: str = ""
     completed_episodes: int = 0
+    successful_episodes: int = 0
     total_episodes: int = 0
     error: str | None = None
     cancelled: bool = False
@@ -381,6 +389,7 @@ class PipelineRunner:
             self._state.running = False
             self._state.cancelled = result.cancelled
             self._state.completed_episodes = 0 if result.cancelled else 1
+            self._state.successful_episodes = 0 if result.cancelled else 1
             return result
 
     async def start_batch(
@@ -415,6 +424,7 @@ class PipelineRunner:
             self._state.cancelled = result.cancelled
             if not result.cancelled:
                 self._state.completed_episodes = len(episode_ids)
+                self._state.successful_episodes = len(episode_ids)
             return True
 
     async def run_selective_pipeline(
@@ -429,11 +439,15 @@ class PipelineRunner:
 
         async with self._lock:
             self._cancel_event.clear()
-            validated, warnings = await validate_stage_prerequisites(container, selections)
-            self._reset_selective_state(validated, warnings)
+            requested = [_coerce_selection(selection) for selection in selections]
+            validated, warnings = await validate_stage_prerequisites(container, requested)
+            self._reset_selective_state(requested, validated, warnings)
 
             if not validated:
                 self._state.running = False
+                self._state.current_stage = None
+                self._state.stage_progress = 1.0 if self._state.total_episodes else 0.0
+                self._state.status_message = "No runnable stages"
                 return False
 
             try:
@@ -491,12 +505,8 @@ class PipelineRunner:
             self._state.current_episode = None
             self._state.stage_progress = 1.0
             self._state.status_message = "Pipeline complete"
-            self._state.completed_episodes = sum(
-                1
-                for episode_progress in self._state.episode_progress.values()
-                if episode_progress.is_finished()
-            )
-            return True
+            self._recalculate_episode_counts()
+            return self._state.successful_episodes == self._state.total_episodes
 
     async def _run_stage(
         self,
@@ -533,24 +543,54 @@ class PipelineRunner:
 
     def _reset_selective_state(
         self,
-        selections: Sequence[ValidatedEpisodeSelection],
+        selections: Sequence[EpisodeStageSelection],
+        validated: Sequence[ValidatedEpisodeSelection],
         warnings: Sequence[PrerequisiteWarning],
     ) -> None:
-        warning_map: dict[str, list[str]] = {}
+        warning_map: dict[str, list[PrerequisiteWarning]] = {}
         for warning in warnings:
-            warning_map.setdefault(warning.episode_id, []).append(warning.message)
+            warning_map.setdefault(warning.episode_id, []).append(warning)
+
+        validated_map = {selection.episode_id: selection for selection in validated}
 
         episode_progress: dict[str, EpisodeProgress] = {}
         for selection in selections:
+            validated_selection = validated_map.get(selection.episode_id)
+            episode_warnings = warning_map.get(selection.episode_id, [])
+            stage_states = {
+                stage: StageProgress(current_stage=stage) for stage in selection.stages_to_run
+            }
+            block_all_selected_stages = validated_selection is None and bool(episode_warnings)
+
+            for stage, stage_progress in stage_states.items():
+                blocked_message = next(
+                    (
+                        warning.message
+                        for warning in episode_warnings
+                        if warning.stage is stage
+                    ),
+                    None,
+                )
+                if blocked_message is None and block_all_selected_stages:
+                    blocked_message = episode_warnings[0].message
+                if blocked_message is None:
+                    continue
+
+                stage_progress.status = StageStatus.BLOCKED
+                stage_progress.stage_progress = 1.0
+                stage_progress.detail = blocked_message
+
             episode_progress[selection.episode_id] = EpisodeProgress(
                 episode_id=selection.episode_id,
-                module_id=selection.module_id,
-                title=selection.title,
+                module_id=validated_selection.module_id if validated_selection is not None else 0,
+                title=(
+                    validated_selection.title
+                    if validated_selection is not None
+                    else selection.episode_id
+                ),
                 stages_to_run=selection.stages_to_run,
-                stage_states={
-                    stage: StageProgress(current_stage=stage) for stage in selection.stages_to_run
-                },
-                warnings=warning_map.get(selection.episode_id, []),
+                stage_states=stage_states,
+                warnings=[warning.message for warning in episode_warnings],
             )
 
         self._state = PipelineState(
@@ -561,10 +601,11 @@ class PipelineRunner:
         )
         self._stage_episode_ids = {
             stage: {
-                selection.episode_id for selection in selections if stage in selection.stages_to_run
+                selection.episode_id for selection in validated if stage in selection.stages_to_run
             }
             for stage in _SELECTIVE_STAGE_ORDER
         }
+        self._recalculate_episode_counts()
 
     def _can_run_stage(self, episode_id: str, stage: PipelineStage) -> bool:
         episode_progress = self._state.episode_progress.get(episode_id)
@@ -595,6 +636,7 @@ class PipelineRunner:
             stage_progress = episode_progress.stage_states[stage]
             if stage_progress.status is StageStatus.PENDING:
                 stage_progress.status = StageStatus.BLOCKED
+                stage_progress.stage_progress = 1.0
                 stage_progress.detail = "Blocked by earlier stage failure"
 
     def _mark_cancelled(self) -> None:
@@ -605,6 +647,7 @@ class PipelineRunner:
             for stage_progress in episode_progress.stage_states.values():
                 if stage_progress.status in {StageStatus.PENDING, StageStatus.RUNNING}:
                     stage_progress.status = StageStatus.CANCELLED
+        self._recalculate_episode_counts()
 
     def _update_stage_progress(self, stage: PipelineStage) -> None:
         episode_ids = self._stage_episode_ids.get(stage, set())
@@ -639,8 +682,14 @@ class PipelineRunner:
         if episode_progress is None or not episode_progress.is_finished():
             return
 
+        self._recalculate_episode_counts()
+
+    def _recalculate_episode_counts(self) -> None:
         self._state.completed_episodes = sum(
             1 for progress in self._state.episode_progress.values() if progress.is_finished()
+        )
+        self._state.successful_episodes = sum(
+            1 for progress in self._state.episode_progress.values() if progress.is_successful()
         )
 
     def _apply_stage_results(self, stage: PipelineStage, results: Sequence[object]) -> None:
@@ -657,6 +706,7 @@ class PipelineRunner:
             result_status = getattr(result, "status", "completed")
             if result_status == "failed":
                 stage_progress.status = StageStatus.FAILED
+                stage_progress.stage_progress = 1.0
                 stage_progress.detail = getattr(result, "error", "failed") or "failed"
                 self._block_following_stages(episode_id, stage)
             elif result_status == "skipped":

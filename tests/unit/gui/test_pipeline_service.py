@@ -225,6 +225,102 @@ class TestSelectivePipelineRunner:
         assert state.episode_progress["e2"].stage_states[PipelineStage.INDEX].detail == "12 chunks"
 
     @pytest.mark.asyncio
+    async def test_failed_stage_does_not_count_as_successful_completion(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+        container.db = MagicMock()
+
+        with (
+            patch(
+                "sophia.gui.services.pipeline_service.get_episode_artifacts",
+                new=AsyncMock(
+                    return_value={
+                        "e1": _artifact(
+                            "e1",
+                            10,
+                            title="Lecture 1",
+                            has_download=False,
+                            has_transcript=False,
+                        )
+                    }
+                ),
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.download_lectures",
+                new=AsyncMock(
+                    return_value=[
+                        MagicMock(episode_id="e1", status="failed", error="network error")
+                    ]
+                ),
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.transcribe_lectures",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.index_lectures",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.assign_lecture_numbers",
+                new=AsyncMock(),
+            ),
+        ):
+            success = await runner.run_selective_pipeline(
+                container,
+                [("e1", {PipelineStage.DOWNLOAD})],
+            )
+
+        state = runner.get_state()
+        assert success is False
+        assert state.completed_episodes == 1
+        assert state.successful_episodes == 0
+        assert (
+            state.episode_progress["e1"].stage_states[PipelineStage.DOWNLOAD].status
+            is StageStatus.FAILED
+        )
+
+    @pytest.mark.asyncio
+    async def test_rejected_selection_remains_visible_as_blocked_progress(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+        container.db = MagicMock()
+
+        with patch(
+            "sophia.gui.services.pipeline_service.get_episode_artifacts",
+            new=AsyncMock(
+                return_value={
+                    "e1": _artifact(
+                        "e1",
+                        10,
+                        title="Lecture 1",
+                        has_download=True,
+                        has_transcript=False,
+                    )
+                }
+            ),
+        ):
+            success = await runner.run_selective_pipeline(
+                container,
+                [("e1", {PipelineStage.INDEX})],
+            )
+
+        state = runner.get_state()
+        assert success is False
+        assert state.completed_episodes == 1
+        assert state.successful_episodes == 0
+        assert state.total_episodes == 1
+        assert state.episode_progress["e1"].warnings == ["Indexing requires a transcript."]
+        assert (
+            state.episode_progress["e1"].stage_states[PipelineStage.INDEX].status
+            is StageStatus.BLOCKED
+        )
+        assert (
+            state.episode_progress["e1"].stage_states[PipelineStage.INDEX].detail
+            == "Indexing requires a transcript."
+        )
+
+    @pytest.mark.asyncio
     async def test_download_progress_callback_updates_state(self) -> None:
         runner = PipelineRunner()
         container = MagicMock()

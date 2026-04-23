@@ -272,6 +272,27 @@ def build_stage_render_states(
     return render_states
 
 
+def build_pipeline_notification(state: PipelineState, success: bool) -> tuple[str, str]:
+    """Return the completion toast message and level for a selective pipeline run."""
+    if state.cancelled:
+        return "Pipeline cancelled", "warning"
+    if state.error:
+        return state.error, "negative"
+    if success:
+        return f"Processed {state.successful_episodes} lecture(s)", "positive"
+
+    unsuccessful_episodes = max(state.completed_episodes - state.successful_episodes, 0)
+    if state.successful_episodes > 0:
+        return (
+            f"Processed {state.successful_episodes} lecture(s); "
+            f"{unsuccessful_episodes} lecture(s) failed or were blocked",
+            "warning",
+        )
+    if unsuccessful_episodes > 0:
+        return "No lectures were processed successfully", "warning"
+    return "Nothing was processed", "warning"
+
+
 def _tree_episode_id(episode_id: str) -> str:
     return f"episode:{episode_id}"
 
@@ -560,14 +581,8 @@ async def _start_selected_pipeline(
     on_refresh()
 
     state = _runner.get_state()
-    if state.cancelled:
-        ui.notify("Pipeline cancelled", type="warning")
-    elif success:
-        ui.notify(f"Processed {state.completed_episodes} lecture(s)", type="positive")
-    elif state.error:
-        ui.notify(state.error, type="negative")
-    else:
-        ui.notify("Nothing was processed", type="warning")
+    message, level = build_pipeline_notification(state, success)
+    ui.notify(message, type=level)
 
 
 def _handle_tree_tick(
@@ -633,8 +648,13 @@ def _render_progress_panel(
         ui.label().bind_text_from(
             state,
             "completed_episodes",
-            backward=lambda completed: f"Completed {completed}/{state.total_episodes}",
+            backward=lambda completed: f"Finished {completed}/{state.total_episodes}",
         ).classes("text-sm text-gray-500 mt-2")
+        ui.label().bind_text_from(
+            state,
+            "successful_episodes",
+            backward=lambda successful: f"Successful {successful}/{state.total_episodes}",
+        ).classes("text-sm text-gray-500")
         if state.error:
             ui.label(state.error).classes("text-sm text-red-700")
 
