@@ -42,6 +42,7 @@ async def download_lectures(
     app: AppContainer,
     module_id: int,
     *,
+    episode_ids: set[str] | None = None,
     on_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> list[LectureDownloadResult]:
@@ -50,6 +51,8 @@ async def download_lectures(
     Returns one result per episode discovered (completed / skipped / failed).
     """
     episodes = await app.opencast.get_series_episodes(module_id)
+    if episode_ids is not None:
+        episodes = [ep for ep in episodes if ep.episode_id in episode_ids]
     if not episodes:
         return []
 

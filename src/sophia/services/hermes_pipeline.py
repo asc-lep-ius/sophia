@@ -38,6 +38,7 @@ async def run_pipeline(
     app: AppContainer,
     module_id: int,
     *,
+    episode_ids: set[str] | None = None,
     index_materials: bool = False,
     course_id: int | None = None,
     cancel_check: Callable[[], bool] | None = None,
@@ -64,7 +65,11 @@ async def run_pipeline(
         return result
 
     result.downloads = await download_lectures(
-        app, module_id, on_progress=on_download_progress, cancel_check=cancel_check
+        app,
+        module_id,
+        episode_ids=episode_ids,
+        on_progress=on_download_progress,
+        cancel_check=cancel_check,
     )
 
     await assign_lecture_numbers(app.db, module_id)
@@ -77,6 +82,7 @@ async def run_pipeline(
     result.transcriptions = await transcribe_lectures(
         app,
         module_id,
+        episode_ids=episode_ids,
         on_start=on_transcribe_start,
         on_complete=on_transcribe_complete,
         cancel_check=cancel_check,
@@ -90,6 +96,7 @@ async def run_pipeline(
     result.indexing = await index_lectures(
         app,
         module_id,
+        episode_ids=episode_ids,
         on_start=on_index_start,
         on_complete=on_index_complete,
         cancel_check=cancel_check,

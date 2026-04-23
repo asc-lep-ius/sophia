@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from sophia.gui.services.error_service import gui_error_handler
@@ -43,6 +44,36 @@ class DiscoveredModule:
     module_id: int
     module_name: str
     episode_count: int
+
+
+@dataclass(frozen=True)
+class EpisodeArtifacts:
+    """Resolved artifact availability for a lecture episode."""
+
+    episode_id: str
+    module_id: int
+    title: str
+    download_status: str
+    transcription_status: str | None
+    index_status: str | None
+    has_download: bool
+    has_transcript: bool
+    has_index: bool
+
+
+@dataclass
+class EpisodePipelineRecord:
+    """Resolved pipeline metadata and artifact paths for a single episode."""
+
+    episode_id: str
+    module_id: int
+    title: str
+    download_status: str
+    transcription_status: str | None
+    index_status: str | None
+    lecture_number: int | None
+    download_path: str | None
+    transcript_path: str | None
 
 
 # --- Pure helpers (stateless, testable) --------------------------------------
@@ -112,6 +143,129 @@ async def get_lecture_modules(db: aiosqlite.Connection) -> list[ModuleInfo]:
 async def get_module_lectures(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
     """Fetch pipeline status for all episodes in a module."""
     return await _get_pipeline_status(db, module_id)
+
+
+@gui_error_handler(operation="get_episode_artifacts", fallback={})
+async def get_episode_artifacts(
+    db: aiosqlite.Connection,
+    episode_ids: list[str],
+) -> dict[str, EpisodeArtifacts]:
+    """Return resolved download/transcript/index artifact state for episodes."""
+    if not episode_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(episode_ids))
+    cursor = await db.execute(
+        f"""SELECT
+               ld.episode_id,
+               ld.module_id,
+               ld.title,
+               ld.status,
+               ld.file_path,
+               t.status,
+               t.srt_path,
+               ki.status
+           FROM lecture_downloads ld
+           LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
+           LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
+           WHERE ld.episode_id IN ({placeholders})""",
+        episode_ids,
+    )
+    rows = await cursor.fetchall()
+
+    artifacts: dict[str, EpisodeArtifacts] = {}
+    for row in rows:
+        download_path = Path(row[4]) if row[4] else None
+        transcript_path = Path(row[6]) if row[6] else None
+        artifacts[row[0]] = EpisodeArtifacts(
+            episode_id=row[0],
+            module_id=row[1],
+            title=row[2],
+            download_status=row[3],
+            transcription_status=row[5],
+            index_status=row[7],
+            has_download=(
+                row[3] == "completed" and download_path is not None and download_path.exists()
+            ),
+            has_transcript=row[5] == "completed"
+            and transcript_path is not None
+            and transcript_path.exists(),
+            has_index=row[7] == "completed",
+        )
+
+    return artifacts
+
+
+async def get_episode_pipeline_records(
+    db: aiosqlite.Connection,
+    episode_ids: list[str],
+) -> dict[str, EpisodePipelineRecord]:
+    """Resolve module, status, and artifact paths for specific episodes."""
+    if not episode_ids:
+        return {}
+
+    placeholders = ",".join("?" * len(episode_ids))
+    cursor = await db.execute(
+        f"""SELECT
+               ld.episode_id,
+               ld.module_id,
+               ld.title,
+               ld.status,
+               t.status,
+               ki.status,
+               ld.lecture_number,
+               ld.file_path,
+               t.srt_path
+           FROM lecture_downloads ld
+           LEFT JOIN transcriptions t ON t.episode_id = ld.episode_id
+           LEFT JOIN knowledge_index ki ON ki.episode_id = ld.episode_id
+           WHERE ld.episode_id IN ({placeholders})""",  # noqa: S608
+        episode_ids,
+    )
+    rows = await cursor.fetchall()
+    return {
+        row[0]: EpisodePipelineRecord(
+            episode_id=row[0],
+            module_id=row[1],
+            title=row[2],
+            download_status=row[3],
+            transcription_status=row[4],
+            index_status=row[5],
+            lecture_number=row[6],
+            download_path=row[7],
+            transcript_path=row[8],
+        )
+        for row in rows
+    }
+
+
+async def has_download_artifact(db: aiosqlite.Connection, episode_id: str) -> bool:
+    """Return True when the completed download points to a file on disk."""
+    cursor = await db.execute(
+        "SELECT file_path FROM lecture_downloads WHERE episode_id = ? AND status = 'completed'",
+        (episode_id,),
+    )
+    row = await cursor.fetchone()
+    return bool(row and row[0] and Path(row[0]).exists())
+
+
+async def has_transcript_artifact(db: aiosqlite.Connection, episode_id: str) -> bool:
+    """Return True when the completed transcription points to an SRT file on disk."""
+    cursor = await db.execute(
+        "SELECT srt_path FROM transcriptions WHERE episode_id = ? AND status = 'completed'",
+        (episode_id,),
+    )
+    row = await cursor.fetchone()
+    return bool(row and row[0] and Path(row[0]).exists())
+
+
+async def has_index_artifact(db: aiosqlite.Connection, episode_id: str) -> bool:
+    """Return True when an episode already has a completed index row."""
+    cursor = await db.execute(
+        "SELECT 1 FROM knowledge_index WHERE episode_id = ? AND status = 'completed'",
+        (episode_id,),
+    )
+    return await cursor.fetchone() is not None
 
 
 # --- Discovery (Moodle + Opencast) ------------------------------------------

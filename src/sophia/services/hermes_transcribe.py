@@ -44,6 +44,7 @@ async def transcribe_lectures(
     app: AppContainer,
     module_id: int,
     *,
+    episode_ids: set[str] | None = None,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
@@ -53,6 +54,8 @@ async def transcribe_lectures(
     Returns one result per episode (completed / skipped / failed).
     """
     downloads = await _get_downloads(app.db, module_id)
+    if episode_ids is not None:
+        downloads = [row for row in downloads if row[0] in episode_ids]
     if not downloads:
         return []
 

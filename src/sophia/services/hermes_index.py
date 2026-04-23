@@ -194,6 +194,7 @@ async def index_lectures(
     app: AppContainer,
     module_id: int,
     *,
+    episode_ids: set[str] | None = None,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
@@ -204,6 +205,8 @@ async def index_lectures(
     then chunks, embeds, and stores each episode's segments.
     """
     transcriptions = await _get_transcriptions(app.db, module_id)
+    if episode_ids is not None:
+        transcriptions = [row for row in transcriptions if row[0] in episode_ids]
     if not transcriptions:
         return []
 

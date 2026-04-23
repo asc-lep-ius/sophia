@@ -1,37 +1,55 @@
-"""Tests for the Lectures landing page — setup-complete gate logic & pure helpers."""
+"""Tests for the Lectures page helper logic."""
 
 from __future__ import annotations
 
+from typing import TypedDict, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sophia.gui.pages.lectures import is_hermes_setup_complete
-from sophia.gui.services.hermes_service import (
-    STATUS_FILTER_ALL,
-    STATUS_FILTER_INDEXED,
-    STATUS_FILTER_NEEDS_PROCESSING,
-    count_unprocessed,
-    filter_episodes,
-    get_unprocessed,
-    is_fully_indexed,
-    needs_processing,
+from sophia.gui.pages.lectures import (
+    LectureRecord,
+    StageToggleState,
+    build_course_tree_nodes,
+    build_stage_render_states,
+    build_stage_warnings,
+    course_episode_ids,
+    is_hermes_setup_complete,
+    lecture_needs_selected_stages,
+    select_all_unprocessed_episode_ids,
+    selected_stages,
+)
+from sophia.gui.services.pipeline_service import (
+    EpisodeProgress,
+    PipelineStage,
+    PipelineState,
+    StageProgress,
+    StageStatus,
 )
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 from sophia.services.hermes_manage import EpisodeStatus
 
-# --- Fixtures ----------------------------------------------------------------
+
+class _LectureTreeLeaf(TypedDict):
+    id: str
+    label: str
+
+
+class _CourseTreeNode(TypedDict):
+    id: str
+    label: str
+    children: list[_LectureTreeLeaf]
 
 
 def _ep(
     *,
+    episode_id: str = "e1",
+    title: str = "Lecture 1",
+    lecture_number: int | None = None,
     dl: str = "completed",
     tr: str | None = "completed",
     idx: str | None = "completed",
-    title: str = "Lecture 1",
-    episode_id: str = "e1",
 ) -> EpisodeStatus:
-    """Shorthand factory for EpisodeStatus."""
     return EpisodeStatus(
         episode_id=episode_id,
         title=title,
@@ -39,24 +57,23 @@ def _ep(
         skip_reason=None,
         transcription_status=tr,
         index_status=idx,
+        lecture_number=lecture_number,
     )
 
 
-# --- Existing tests ----------------------------------------------------------
+def _record(
+    episode: EpisodeStatus,
+    *,
+    module_id: int = 1,
+    course_name: str = "Course A",
+) -> LectureRecord:
+    return LectureRecord(module_id=module_id, course_name=course_name, episode=episode)
 
 
 class TestIsHermesSetupComplete:
-    """Verify the boolean gate that controls setup-vs-dashboard rendering."""
-
     def test_returns_false_when_key_missing(self) -> None:
         mock_app = MagicMock()
         mock_app.storage.user = {}
-        with patch("sophia.gui.pages.lectures.app", mock_app):
-            assert is_hermes_setup_complete() is False
-
-    def test_returns_false_when_key_is_false(self) -> None:
-        mock_app = MagicMock()
-        mock_app.storage.user = {USER_HERMES_SETUP_COMPLETE: False}
         with patch("sophia.gui.pages.lectures.app", mock_app):
             assert is_hermes_setup_complete() is False
 
@@ -67,133 +84,151 @@ class TestIsHermesSetupComplete:
             assert is_hermes_setup_complete() is True
 
 
-# --- Pure helper tests -------------------------------------------------------
+class TestStageSelection:
+    def test_selected_stages_respects_checkbox_order(self) -> None:
+        toggle_state = StageToggleState(download=False, transcribe=True, index=True)
+        assert selected_stages(toggle_state) == (
+            PipelineStage.TRANSCRIBE,
+            PipelineStage.INDEX,
+        )
+
+    def test_lecture_needs_selected_stages(self) -> None:
+        episode = _ep(dl="completed", tr="completed", idx=None)
+        assert lecture_needs_selected_stages(
+            episode,
+            (PipelineStage.INDEX,),
+        ) is True
+        assert lecture_needs_selected_stages(
+            episode,
+            (PipelineStage.DOWNLOAD,),
+        ) is False
 
 
-class TestIsFullyIndexed:
-    """All three pipeline stages must be 'completed'."""
-
-    def test_all_completed(self) -> None:
-        assert is_fully_indexed(_ep()) is True
-
-    @pytest.mark.parametrize(
-        ("dl", "tr", "idx"),
-        [
-            ("queued", "completed", "completed"),
-            ("completed", None, "completed"),
-            ("completed", "completed", None),
-            ("completed", "completed", "queued"),
-            ("failed", "completed", "completed"),
-            ("completed", "failed", None),
-            ("skipped", None, None),
-        ],
-    )
-    def test_not_fully_indexed(self, dl: str, tr: str | None, idx: str | None) -> None:
-        assert is_fully_indexed(_ep(dl=dl, tr=tr, idx=idx)) is False
-
-
-class TestNeedsProcessing:
-    """Inverse of is_fully_indexed."""
-
-    def test_fully_indexed_does_not_need_processing(self) -> None:
-        assert needs_processing(_ep()) is False
-
-    def test_partial_needs_processing(self) -> None:
-        assert needs_processing(_ep(idx=None)) is True
-
-    def test_failed_needs_processing(self) -> None:
-        assert needs_processing(_ep(dl="failed")) is True
-
-
-class TestFilterEpisodes:
-    """Status filter and text search."""
-
-    @pytest.fixture
-    def episodes(self) -> list[EpisodeStatus]:
-        return [
-            _ep(title="Intro to ML", episode_id="e1"),
-            _ep(title="Deep Learning", episode_id="e2", idx=None),
-            _ep(title="Reinforcement Learning", episode_id="e3", tr=None, idx=None),
+class TestSelectionHelpers:
+    def test_select_all_unprocessed_excludes_processed_lectures(self) -> None:
+        records = [
+            _record(_ep(episode_id="e1", idx="completed")),
+            _record(_ep(episode_id="e2", idx=None)),
+            _record(_ep(episode_id="e3", dl="queued", tr=None, idx=None)),
         ]
 
-    def test_filter_all(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(episodes, status_filter=STATUS_FILTER_ALL, search_query="")
-        assert len(result) == 3
+        selected = select_all_unprocessed_episode_ids(records, (PipelineStage.INDEX,))
 
-    def test_filter_indexed(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(episodes, status_filter=STATUS_FILTER_INDEXED, search_query="")
-        assert len(result) == 1
-        assert result[0].episode_id == "e1"
+        assert selected == {"e2", "e3"}
 
-    def test_filter_needs_processing(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(
-            episodes,
-            status_filter=STATUS_FILTER_NEEDS_PROCESSING,
-            search_query="",
-        )
-        assert len(result) == 2
-
-    def test_search_by_title(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(episodes, status_filter=STATUS_FILTER_ALL, search_query="deep")
-        assert len(result) == 1
-        assert result[0].title == "Deep Learning"
-
-    def test_search_case_insensitive(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(episodes, status_filter=STATUS_FILTER_ALL, search_query="INTRO")
-        assert len(result) == 1
-
-    def test_combined_filter_and_search(self, episodes: list[EpisodeStatus]) -> None:
-        result = filter_episodes(
-            episodes,
-            status_filter=STATUS_FILTER_NEEDS_PROCESSING,
-            search_query="reinforcement",
-        )
-        assert len(result) == 1
-        assert result[0].episode_id == "e3"
-
-    def test_empty_list(self) -> None:
-        result = filter_episodes([], status_filter=STATUS_FILTER_ALL, search_query="x")
-        assert result == []
-
-
-# --- count_unprocessed / get_unprocessed -------------------------------------
-
-
-class TestCountUnprocessed:
-    """Count episodes that still need pipeline work."""
-
-    def test_all_indexed(self) -> None:
-        eps = [_ep(episode_id="e1"), _ep(episode_id="e2")]
-        assert count_unprocessed(eps) == 0
-
-    def test_some_unprocessed(self) -> None:
-        eps = [_ep(episode_id="e1"), _ep(episode_id="e2", idx=None)]
-        assert count_unprocessed(eps) == 1
-
-    def test_all_unprocessed(self) -> None:
-        eps = [_ep(dl="queued", tr=None, idx=None), _ep(idx=None)]
-        assert count_unprocessed(eps) == 2
-
-    def test_empty_list(self) -> None:
-        assert count_unprocessed([]) == 0
-
-
-class TestGetUnprocessed:
-    """Filter to only unprocessed episodes."""
-
-    def test_returns_only_unprocessed(self) -> None:
-        eps = [
-            _ep(episode_id="e1"),
-            _ep(episode_id="e2", idx=None),
-            _ep(episode_id="e3", tr=None, idx=None),
+    def test_course_episode_ids_returns_only_requested_course(self) -> None:
+        records = [
+            _record(_ep(episode_id="e1"), course_name="Course A"),
+            _record(_ep(episode_id="e2"), course_name="Course A"),
+            _record(_ep(episode_id="e3"), course_name="Course B"),
         ]
-        result = get_unprocessed(eps)
-        assert len(result) == 2
-        assert {ep.episode_id for ep in result} == {"e2", "e3"}
 
-    def test_empty_when_all_indexed(self) -> None:
-        eps = [_ep(episode_id="e1"), _ep(episode_id="e2")]
-        assert get_unprocessed(eps) == []
+        assert course_episode_ids(records, "Course A") == {"e1", "e2"}
 
-    def test_empty_list(self) -> None:
-        assert get_unprocessed([]) == []
+
+class TestWarningHelpers:
+    def test_transcribe_without_download_warns(self) -> None:
+        records_by_id = {
+            "e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))
+        }
+
+        warnings = build_stage_warnings(
+            records_by_id,
+            {"e1"},
+            (PipelineStage.TRANSCRIBE,),
+        )
+
+        assert warnings == ["Lecture 1: Transcribe requires Download."]
+
+    def test_index_without_transcript_warns(self) -> None:
+        records_by_id = {
+            "e1": _record(_ep(episode_id="e1", dl="completed", tr=None, idx=None))
+        }
+
+        warnings = build_stage_warnings(
+            records_by_id,
+            {"e1"},
+            (PipelineStage.INDEX,),
+        )
+
+        assert warnings == [
+            "Lecture 1: Index requires Transcribe or an existing transcript.",
+        ]
+
+    def test_download_and_transcribe_satisfy_local_prerequisites(self) -> None:
+        records_by_id = {
+            "e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))
+        }
+
+        warnings = build_stage_warnings(
+            records_by_id,
+            {"e1"},
+            (PipelineStage.DOWNLOAD, PipelineStage.TRANSCRIBE),
+        )
+
+        assert warnings == []
+
+
+class TestTreeHelpers:
+    def test_build_course_tree_nodes_groups_by_course(self) -> None:
+        records = [
+            _record(_ep(episode_id="e1", lecture_number=1), course_name="Course A"),
+            _record(_ep(episode_id="e2", lecture_number=2), course_name="Course A"),
+            _record(_ep(episode_id="e3"), course_name="Course B"),
+        ]
+
+        nodes = cast("list[_CourseTreeNode]", build_course_tree_nodes(records))
+
+        assert len(nodes) == 2
+        assert nodes[0]["label"] == "Course A (2)"
+        assert nodes[0]["children"][0]["id"] == "episode:e1"
+        assert nodes[0]["children"][0]["label"] == "#1 Lecture 1"
+
+
+class TestStageRenderHelpers:
+    def test_build_stage_render_states_uses_live_progress_state(self) -> None:
+        pipeline_state = PipelineState(
+            episode_progress={
+                "e1": EpisodeProgress(
+                    episode_id="e1",
+                    module_id=1,
+                    title="Lecture 1",
+                    stages_to_run=(PipelineStage.DOWNLOAD,),
+                    stage_states={
+                        PipelineStage.DOWNLOAD: StageProgress(
+                            current_stage=PipelineStage.DOWNLOAD,
+                            stage_progress=0.5,
+                            status=StageStatus.RUNNING,
+                            detail="50/100 bytes",
+                        )
+                    },
+                )
+            }
+        )
+
+        render_states = build_stage_render_states(
+            "e1",
+            (PipelineStage.DOWNLOAD,),
+            pipeline_state,
+        )
+
+        assert render_states == [
+            pytest.param(
+                render_states[0],
+                id="live-progress",
+            ).values[0]
+        ]
+        assert render_states[0].symbol == "🔄"
+        assert render_states[0].progress == 0.5
+        assert render_states[0].detail == "50/100 bytes"
+
+    def test_build_stage_render_states_defaults_to_pending(self) -> None:
+        render_states = build_stage_render_states(
+            "missing",
+            (PipelineStage.TRANSCRIBE,),
+            PipelineState(),
+        )
+
+        assert render_states[0].symbol == "⏳"
+        assert render_states[0].status == "pending"
+        assert render_states[0].progress == 0.0
