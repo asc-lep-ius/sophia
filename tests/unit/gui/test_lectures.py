@@ -94,14 +94,20 @@ class TestStageSelection:
 
     def test_lecture_needs_selected_stages(self) -> None:
         episode = _ep(dl="completed", tr="completed", idx=None)
-        assert lecture_needs_selected_stages(
-            episode,
-            (PipelineStage.INDEX,),
-        ) is True
-        assert lecture_needs_selected_stages(
-            episode,
-            (PipelineStage.DOWNLOAD,),
-        ) is False
+        assert (
+            lecture_needs_selected_stages(
+                episode,
+                (PipelineStage.INDEX,),
+            )
+            is True
+        )
+        assert (
+            lecture_needs_selected_stages(
+                episode,
+                (PipelineStage.DOWNLOAD,),
+            )
+            is False
+        )
 
 
 class TestSelectionHelpers:
@@ -128,9 +134,7 @@ class TestSelectionHelpers:
 
 class TestWarningHelpers:
     def test_transcribe_without_download_warns(self) -> None:
-        records_by_id = {
-            "e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))
-        }
+        records_by_id = {"e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))}
 
         warnings = build_stage_warnings(
             records_by_id,
@@ -141,9 +145,7 @@ class TestWarningHelpers:
         assert warnings == ["Lecture 1: Transcribe requires Download."]
 
     def test_index_without_transcript_warns(self) -> None:
-        records_by_id = {
-            "e1": _record(_ep(episode_id="e1", dl="completed", tr=None, idx=None))
-        }
+        records_by_id = {"e1": _record(_ep(episode_id="e1", dl="completed", tr=None, idx=None))}
 
         warnings = build_stage_warnings(
             records_by_id,
@@ -156,9 +158,7 @@ class TestWarningHelpers:
         ]
 
     def test_download_and_transcribe_satisfy_local_prerequisites(self) -> None:
-        records_by_id = {
-            "e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))
-        }
+        records_by_id = {"e1": _record(_ep(episode_id="e1", dl="queued", tr=None, idx=None))}
 
         warnings = build_stage_warnings(
             records_by_id,

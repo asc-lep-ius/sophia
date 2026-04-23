@@ -183,11 +183,7 @@ def select_all_unprocessed_episode_ids(
 
 def course_episode_ids(records: list[LectureRecord], course_name: str) -> set[str]:
     """Return all lecture IDs for a course group."""
-    return {
-        record.episode.episode_id
-        for record in records
-        if record.course_name == course_name
-    }
+    return {record.episode.episode_id for record in records if record.course_name == course_name}
 
 
 def build_stage_warnings(
@@ -649,8 +645,10 @@ def _render_progress_panel(
             continue
 
         caption = f"{record.course_name} · {len(episode_stages)} selected stage(s)"
-        with ui.expansion(record.episode.title, caption=caption).classes("w-full mb-2").props(
-            "default-opened"
+        with (
+            ui.expansion(record.episode.title, caption=caption)
+            .classes("w-full mb-2")
+            .props("default-opened")
         ):
             with ui.row().classes("w-full items-center gap-2 mb-3"):
                 _status_chip("Downloaded", record.episode.download_status == "completed")
@@ -726,8 +724,7 @@ def _render_empty_state(on_refresh: Callable[[], None]) -> None:
 
             total_eps = sum(module.episode_count for module in modules)
             status.text = (
-                f"Found {len(modules)} module(s) with {total_eps} episode(s). "
-                "Starting pipeline…"
+                f"Found {len(modules)} module(s) with {total_eps} episode(s). Starting pipeline…"
             )
 
             for module in modules:
