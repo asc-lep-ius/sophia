@@ -153,10 +153,9 @@ class TestErrorDisplay:
                     raise RuntimeError(msg)  # noqa: TRY301
                 except Exception as e:
                     exc = e
-                if exc is not None:
-                    error_display(exc)
-                    error_display(exc)
-                    error_display(exc)
+                error_display(exc)
+                error_display(exc)
+                error_display(exc)
 
             await user.open("/")
             await user.should_see("×3")
@@ -172,10 +171,9 @@ class TestErrorDisplay:
                     raise RuntimeError(msg)  # noqa: TRY301
                 except Exception as e:
                     exc = e
-                if exc is not None:
-                    error_display(exc)
-                    clear_errors()
-                    error_display(exc)
+                error_display(exc)
+                clear_errors()
+                error_display(exc)
 
             await user.open("/")
             # After clear, the second display should create a new card, not increment
