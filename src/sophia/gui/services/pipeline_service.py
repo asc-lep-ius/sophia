@@ -564,11 +564,7 @@ class PipelineRunner:
 
             for stage, stage_progress in stage_states.items():
                 blocked_message = next(
-                    (
-                        warning.message
-                        for warning in episode_warnings
-                        if warning.stage is stage
-                    ),
+                    (warning.message for warning in episode_warnings if warning.stage is stage),
                     None,
                 )
                 if blocked_message is None and block_all_selected_stages:
