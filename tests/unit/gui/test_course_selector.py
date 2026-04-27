@@ -30,6 +30,13 @@ class _FakeSummary:
 _MODULE = "sophia.gui.components.course_selector"
 
 
+class _UnavailableTabStorage:
+    """Simulate NiceGUI tab storage before a client connection exists."""
+
+    def get(self, _key: str) -> None:
+        raise RuntimeError("app.storage.tab can only be used with a client connection")
+
+
 @pytest.fixture()
 def _patches() -> Generator[dict[str, Any]]:
     """Patch all external dependencies of course_selector."""
@@ -75,6 +82,27 @@ class TestNoContainer:
         await render_course_selector()
 
         _patches["init_course_for_tab"].assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_pre_client_tab_storage_does_not_crash_initial_render(self) -> None:
+        storage = MagicMock()
+        storage.tab = _UnavailableTabStorage()
+        storage.user = {}
+
+        with (
+            patch(f"{_MODULE}.get_container", return_value=None),
+            patch(f"{_MODULE}.ui") as mock_ui,
+            patch("sophia.gui.state.course_state.app") as mock_app,
+        ):
+            mock_ui.element.return_value.__enter__ = MagicMock()
+            mock_ui.element.return_value.__exit__ = MagicMock()
+            mock_app.storage = storage
+
+            from sophia.gui.components.course_selector import render_course_selector
+
+            await render_course_selector()
+
+        mock_ui.label.assert_called_once_with("Not connected")
 
 
 class TestEmptyCourses:
