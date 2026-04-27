@@ -27,6 +27,7 @@ async def render_course_selector() -> None:
     Fetches courses from DB, renders a ``ui.select``, and binds to
     course_state.  Handles: no container, no courses, fetch errors.
     """
+    await ui.context.client.connected()
     init_course_for_tab()
 
     container = get_container()

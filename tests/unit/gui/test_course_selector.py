@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from sophia.gui.state.storage_map import TAB_CURRENT_COURSE, USER_CURRENT_COURSE
+
 if TYPE_CHECKING:
     from collections.abc import Generator
 
@@ -37,6 +39,24 @@ class _UnavailableTabStorage:
         raise RuntimeError("app.storage.tab can only be used with a client connection")
 
 
+class _DeferredTabStorage:
+    """Simulate tab storage becoming available after client connection."""
+
+    def __init__(self) -> None:
+        self.available = False
+        self.data: dict[str, int] = {}
+
+    def get(self, key: str) -> int | None:
+        if not self.available:
+            raise RuntimeError("app.storage.tab can only be used with a client connection")
+        return self.data.get(key)
+
+    def __setitem__(self, key: str, value: int) -> None:
+        if not self.available:
+            raise RuntimeError("app.storage.tab can only be used with a client connection")
+        self.data[key] = value
+
+
 @pytest.fixture()
 def _patches() -> Generator[dict[str, Any]]:
     """Patch all external dependencies of course_selector."""
@@ -48,6 +68,7 @@ def _patches() -> Generator[dict[str, Any]]:
         patch(f"{_MODULE}.init_course_for_tab") as mock_init_tab,
         patch(f"{_MODULE}.ui") as mock_ui,
     ):
+        mock_ui.context.client.connected = AsyncMock()
         mock_ui.element.return_value.__enter__ = MagicMock()
         mock_ui.element.return_value.__exit__ = MagicMock()
 
@@ -94,6 +115,7 @@ class TestNoContainer:
             patch(f"{_MODULE}.ui") as mock_ui,
             patch("sophia.gui.state.course_state.app") as mock_app,
         ):
+            mock_ui.context.client.connected = AsyncMock()
             mock_ui.element.return_value.__enter__ = MagicMock()
             mock_ui.element.return_value.__exit__ = MagicMock()
             mock_app.storage = storage
@@ -135,6 +157,37 @@ class TestFetchError:
 
 class TestRendersSelect:
     @pytest.mark.asyncio
+    async def test_waits_for_client_connection_before_tab_access(
+        self,
+        _patches: dict[str, Any],
+    ) -> None:
+        events: list[str] = []
+
+        async def _connected() -> None:
+            events.append("connected")
+
+        def _init_tab() -> None:
+            events.append("init")
+
+        def _get_current() -> int:
+            events.append("read")
+            return 1
+
+        _patches["ui"].context.client.connected.side_effect = _connected
+        _patches["init_course_for_tab"].side_effect = _init_tab
+        _patches["get_container"].return_value = MagicMock()
+        _patches["get_course_summaries"].return_value = [
+            _FakeSummary(course_id=1, course_name="Math"),
+        ]
+        _patches["get_current_course"].side_effect = _get_current
+
+        from sophia.gui.components.course_selector import render_course_selector
+
+        await render_course_selector()
+
+        assert events == ["connected", "init", "read"]
+
+    @pytest.mark.asyncio
     async def test_renders_with_correct_options(self, _patches: dict[str, Any]) -> None:
         container = MagicMock()
         _patches["get_container"].return_value = container
@@ -168,6 +221,41 @@ class TestRendersSelect:
 
         call_kwargs = _patches["ui"].select.call_args.kwargs
         assert call_kwargs["value"] is None
+
+    @pytest.mark.asyncio
+    async def test_seeds_tab_storage_after_client_connection(self) -> None:
+        storage = MagicMock()
+        tab_storage = _DeferredTabStorage()
+        storage.tab = tab_storage
+        storage.user = {USER_CURRENT_COURSE: 7}
+        container = MagicMock()
+
+        async def _connected() -> None:
+            tab_storage.available = True
+
+        with (
+            patch(f"{_MODULE}.get_container", return_value=container),
+            patch(
+                f"{_MODULE}.get_course_summaries",
+                new=AsyncMock(
+                    return_value=[_FakeSummary(course_id=7, course_name="Chemistry")],
+                ),
+            ),
+            patch(f"{_MODULE}.ui") as mock_ui,
+            patch("sophia.gui.state.course_state.app") as mock_app,
+        ):
+            mock_ui.context.client.connected = AsyncMock(side_effect=_connected)
+            mock_ui.element.return_value.__enter__ = MagicMock()
+            mock_ui.element.return_value.__exit__ = MagicMock()
+            mock_app.storage = storage
+
+            from sophia.gui.components.course_selector import render_course_selector
+
+            await render_course_selector()
+
+        assert tab_storage.data[TAB_CURRENT_COURSE] == 7
+        assert mock_ui.select.call_args.kwargs["value"] == 7
+        mock_ui.context.client.connected.assert_awaited_once()
 
 
 class TestOnChange:
