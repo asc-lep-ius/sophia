@@ -128,6 +128,11 @@ def recommend_config(
 
     When *provider* is given, its defaults are used for the LLM section.
     *llm_model* and *api_key_env* override the provider defaults when supplied.
+
+    Note: float16 is recommended for GPUs as an optimal default. If the runtime
+    detects that float16 is not efficiently supported on the target device
+    (e.g., older GPUs), the transcriber will automatically fall back to a
+    supported compute type such as int8 or float32.
     """
     if has_gpu and vram_mb >= _HIGH_VRAM_THRESHOLD:
         whisper = HermesWhisperConfig(

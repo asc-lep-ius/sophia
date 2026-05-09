@@ -106,19 +106,86 @@ class WhisperTranscriber:
                 "faster-whisper not installed — run: uv pip install sophia[hermes]"
             ) from None
 
+        # Resolve compute type — fall back if the requested type is unsupported
+        compute_type = self._resolve_compute_type(self._config.device, self._config.compute_type)
+
         log.info(
             "loading_whisper_model",
             model=self._config.model,
             device=self._config.device,
-            compute_type=self._config.compute_type,
+            compute_type=compute_type,
         )
         self._model = FWModel(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
             self._config.model,
             device=self._config.device,
-            compute_type=self._config.compute_type,
+            compute_type=compute_type,
             download_root=str(self._model_dir) if self._model_dir else None,
         )
         return self._model  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+
+    def _resolve_compute_type(self, device: str, requested: str) -> str:
+        """Return a supported compute type, falling back if requested is unavailable.
+
+        Queries CTranslate2 at runtime for supported types on the target device.
+        Falls back to efficient alternatives when the requested type is unsupported.
+        """
+        try:
+            import ctranslate2  # type: ignore[import-not-found]
+        except ImportError:
+            # CTranslate2 unavailable — let faster-whisper handle it
+            return requested
+
+        try:
+            supported: set[str] = set(
+                ctranslate2.get_supported_compute_types(device)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+            )
+        except Exception:
+            # If query fails, proceed with the requested type
+            log.warning(
+                "compute_type_query_failed",
+                device=device,
+                requested=requested,
+                fallback=requested,
+            )
+            return requested
+
+        if requested in supported:
+            return requested
+
+        # Choose a fallback based on device and what's available
+        if device == "cuda":
+            # Prefer int8 or int8_float32 for GPU efficiency, then float32
+            for fallback in ("int8", "int8_float32", "float32"):
+                if fallback in supported:
+                    log.warning(
+                        "compute_type_fallback",
+                        device=device,
+                        requested=requested,
+                        fallback=fallback,
+                        supported=sorted(supported),
+                    )
+                    return fallback
+        else:
+            # CPU fallback priority: int8 > int16 > float32
+            for fallback in ("int8", "int16", "float32"):
+                if fallback in supported:
+                    log.warning(
+                        "compute_type_fallback",
+                        device=device,
+                        requested=requested,
+                        fallback=fallback,
+                        supported=sorted(supported),
+                    )
+                    return fallback
+
+        # No suitable fallback found — return requested and let faster-whisper fail
+        log.warning(
+            "no_compute_type_fallback",
+            device=device,
+            requested=requested,
+            supported=sorted(supported),
+        )
+        return requested
 
     def transcribe(
         self,

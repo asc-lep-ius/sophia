@@ -234,3 +234,95 @@ def test_transcriber_invokes_progress_callback(tmp_path: Path) -> None:
     assert len(progress_calls) > 0
     # Final call should report all segments processed
     assert progress_calls[-1] == (3, 3)
+
+
+# ---------------------------------------------------------------------------
+# Compute type fallback
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_compute_type_fallback_cuda_float16_to_int8() -> None:
+    """When float16 is unsupported on CUDA, fall back to int8."""
+    from unittest.mock import MagicMock, patch
+
+    from sophia.domain.models import ComputeDevice, ComputeType
+
+    config = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+    transcriber = WhisperTranscriber(config)
+
+    mock_ct2 = MagicMock()
+    mock_ct2.get_supported_compute_types.return_value = ["float32", "int8", "int8_float32"]
+
+    with patch.dict("sys.modules", {"ctranslate2": mock_ct2}):
+        resolved = transcriber._resolve_compute_type("cuda", "float16")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == "int8"
+
+
+def test_resolve_compute_type_supported_remains() -> None:
+    """When the requested compute type is supported, it's used as-is."""
+    from unittest.mock import MagicMock, patch
+
+    from sophia.domain.models import ComputeDevice, ComputeType
+
+    config = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+    transcriber = WhisperTranscriber(config)
+
+    mock_ct2 = MagicMock()
+    mock_ct2.get_supported_compute_types.return_value = ["float16", "float32", "int8"]
+
+    with patch.dict("sys.modules", {"ctranslate2": mock_ct2}):
+        resolved = transcriber._resolve_compute_type("cuda", "float16")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == "float16"
+
+
+def test_resolve_compute_type_ctranslate2_unavailable() -> None:
+    """When ctranslate2 is not installed, return requested type."""
+    from unittest.mock import patch
+
+    from sophia.domain.models import ComputeDevice, ComputeType
+
+    config = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+    transcriber = WhisperTranscriber(config)
+
+    with patch.dict("sys.modules", {"ctranslate2": None}):
+        resolved = transcriber._resolve_compute_type("cuda", "float16")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == "float16"
+
+
+def test_resolve_compute_type_query_fails() -> None:
+    """When supported types query fails, return requested type."""
+    from unittest.mock import MagicMock, patch
+
+    from sophia.domain.models import ComputeDevice, ComputeType
+
+    config = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+    transcriber = WhisperTranscriber(config)
+
+    mock_ct2 = MagicMock()
+    mock_ct2.get_supported_compute_types.side_effect = RuntimeError("Device error")
+
+    with patch.dict("sys.modules", {"ctranslate2": mock_ct2}):
+        resolved = transcriber._resolve_compute_type("cuda", "float16")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == "float16"
+
+
+def test_resolve_compute_type_cpu_fallback() -> None:
+    """When float16 is unsupported on CPU, fall back to int8."""
+    from unittest.mock import MagicMock, patch
+
+    from sophia.domain.models import ComputeDevice, ComputeType
+
+    config = HermesWhisperConfig(device=ComputeDevice.CPU, compute_type=ComputeType.FLOAT16)
+    transcriber = WhisperTranscriber(config)
+
+    mock_ct2 = MagicMock()
+    mock_ct2.get_supported_compute_types.return_value = ["float32", "int16", "int8"]
+
+    with patch.dict("sys.modules", {"ctranslate2": mock_ct2}):
+        resolved = transcriber._resolve_compute_type("cpu", "float16")  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == "int8"
