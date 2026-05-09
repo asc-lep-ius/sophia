@@ -197,9 +197,10 @@ class WhisperTranscriber:
 
         Args:
             audio_path: Path to the audio file to transcribe.
-            on_progress: Optional callback invoked as segments are processed.
+            on_progress: Optional callback invoked during segment generation.
                          Signature: (current: int, total: int) -> None.
-                         Total may be an estimate until all segments are known.
+                         Current is processed seconds; total is duration if
+                         known, else segment count.
         """
         model: Any = self._ensure_model()
         try:
@@ -210,35 +211,63 @@ class WhisperTranscriber:
                 word_timestamps=False,
                 hallucination_silence_threshold=_HALLUCINATION_SILENCE_THRESHOLD,
             )
-            raw_segments = list(segments_iter)
         except TranscriptionError:
             raise
         except Exception as exc:
             raise TranscriptionError(str(exc)) from exc
 
-        log.info("transcription_raw", path=str(audio_path), segment_count=len(raw_segments))
+        # Determine duration for progress if available
+        total_duration: float | None = None
+        if hasattr(_info, "duration"):
+            try:
+                total_duration = float(_info.duration)  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+                if total_duration <= 0:
+                    total_duration = None
+            except (TypeError, ValueError):
+                total_duration = None
 
         result: list[TranscriptSegment] = []
         prev_text: str | None = None
-        for seg in raw_segments:
+        raw_count = 0
+
+        # Consume the generator incrementally — this is where the slow transcription happens
+        for seg in segments_iter:
+            raw_count += 1
             text = seg.text.strip()
+
+            # Filter hallucinations
             if is_hallucination(
                 text, no_speech_prob=seg.no_speech_prob, avg_logprob=seg.avg_logprob
             ):
                 continue
+
+            # Filter duplicates
             if text == prev_text:
                 continue
+
             result.append(TranscriptSegment(start=seg.start, end=seg.end, text=text))
             prev_text = text
 
-            # Report progress after each kept segment
+            # Fire progress callback during generator consumption
             if on_progress:
-                on_progress(len(result), len(result))
+                if total_duration is not None and total_duration > 0:
+                    # Use timestamp vs duration for honest progress
+                    current_seconds = int(seg.end)
+                    total_seconds = int(total_duration)
+                    on_progress(current_seconds, total_seconds)
+                else:
+                    # Fallback: report segment count with moving estimate
+                    # Use raw_count + 5 as denominator to avoid premature 100%
+                    on_progress(raw_count, raw_count + 5)
 
-        # Final progress report with accurate total
+        # Final progress report with accurate count
         if on_progress and result:
-            on_progress(len(result), len(result))
+            if total_duration is not None and total_duration > 0:
+                total_seconds = int(total_duration)
+                on_progress(total_seconds, total_seconds)
+            else:
+                on_progress(raw_count, raw_count)
 
-        dropped = len(raw_segments) - len(result)
+        dropped = raw_count - len(result)
         log.info("transcription_filtered", path=str(audio_path), kept=len(result), dropped=dropped)
         return result

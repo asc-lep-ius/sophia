@@ -205,7 +205,83 @@ def test_transcriber_wraps_exceptions(tmp_path: Path) -> None:
 
 
 def test_transcriber_invokes_progress_callback(tmp_path: Path) -> None:
-    """Verify that the real transcriber segment loop invokes the progress callback."""
+    """Verify that progress callbacks fire DURING generator consumption, not after.
+
+    This test uses a generator that records yield events, allowing us to verify
+    that callbacks are invoked interleaved with segment generation (the real slow path).
+    """
+    audio = tmp_path / "lecture.mp3"
+    audio.touch()
+
+    events: list[str] = []
+
+    def fake_segment_generator():
+        """Generator that records when it yields each segment."""
+        for i in range(3):
+            events.append(f"yield_{i}")
+            yield MockSegment(i * 5.0, (i + 1) * 5.0, f"Segment {i}.")
+
+    mock_model = MagicMock()
+    mock_info = MagicMock()
+    mock_info.duration = 15.0  # 3 segments × 5 seconds
+    mock_model.transcribe.return_value = (fake_segment_generator(), mock_info)
+
+    transcriber = _make_transcriber(mock_model)
+
+    progress_calls: list[tuple[int, int]] = []
+
+    def on_progress(current: int, total: int) -> None:
+        events.append(f"progress_{current}_{total}")
+        progress_calls.append((current, total))
+
+    result = transcriber.transcribe(audio, on_progress=on_progress)
+
+    # Should have 3 segments after filtering
+    assert len(result) == 3
+
+    # Progress callback should have been invoked during iteration
+    assert len(progress_calls) > 0
+
+    # Critical assertion: verify callbacks fired DURING generator consumption
+    # Events should alternate: yield_0, progress_X_Y, yield_1, progress_X_Y, ...
+    # Find first yield and first progress — progress must come after at least one yield
+    first_yield_idx = next(i for i, e in enumerate(events) if e.startswith("yield_"))
+    first_progress_idx = next(i for i, e in enumerate(events) if e.startswith("progress_"))
+
+    # Progress must fire after yields start, proving it happens during consumption
+    assert first_progress_idx > first_yield_idx, (
+        f"Progress fired at {first_progress_idx} before/during first yield at {first_yield_idx}. "
+        f"Events: {events}"
+    )
+
+    # Verify we see interleaving: at least one yield before last progress
+    last_progress_idx = (
+        len(events)
+        - 1
+        - events[::-1].index(next(e for e in reversed(events) if e.startswith("progress_")))
+    )
+    last_yield_idx = (
+        len(events)
+        - 1
+        - events[::-1].index(next(e for e in reversed(events) if e.startswith("yield_")))
+    )
+
+    # Last yield should come before or around the same time as last progress
+    assert last_yield_idx <= last_progress_idx + 1, (
+        f"Generator materialization may have happened before callbacks. Events: {events}"
+    )
+
+    # Verify progress uses duration-based reporting (seconds vs total seconds)
+    # With 15s duration and segments at 5s, 10s, 15s, we expect current ≈ timestamps
+    assert any(0 < current < 15 for current, _ in progress_calls[:-1]), (
+        f"Expected intermediate progress < 15s, got {progress_calls}"
+    )
+    # Final progress should be (15, 15) or close
+    assert progress_calls[-1][0] == 15 and progress_calls[-1][1] == 15
+
+
+def test_transcriber_progress_fallback_no_duration(tmp_path: Path) -> None:
+    """When duration is unavailable, progress uses segment count with moving estimate."""
     audio = tmp_path / "lecture.mp3"
     audio.touch()
 
@@ -216,7 +292,7 @@ def test_transcriber_invokes_progress_callback(tmp_path: Path) -> None:
     ]
 
     mock_model = MagicMock()
-    mock_info = MagicMock()
+    mock_info = MagicMock(spec=[])  # Empty spec means no attributes
     mock_model.transcribe.return_value = (iter(segments), mock_info)
 
     transcriber = _make_transcriber(mock_model)
@@ -228,11 +304,17 @@ def test_transcriber_invokes_progress_callback(tmp_path: Path) -> None:
 
     result = transcriber.transcribe(audio, on_progress=on_progress)
 
-    # Should have 3 segments after filtering
     assert len(result) == 3
-    # Progress callback should have been invoked at least once during segment iteration
     assert len(progress_calls) > 0
-    # Final call should report all segments processed
+
+    # Without duration, fallback uses raw_count with moving estimate
+    # Intermediate calls should show current < total (not 100%)
+    intermediate_calls = progress_calls[:-1]
+    assert all(current < total for current, total in intermediate_calls), (
+        f"Expected all intermediate progress < 100%, got {intermediate_calls}"
+    )
+
+    # Final call should be (3, 3) since we have 3 raw segments
     assert progress_calls[-1] == (3, 3)
 
 
