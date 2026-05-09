@@ -23,8 +23,8 @@ COPY src/ src/
 RUN uv sync --extra web --extra hermes --no-dev --frozen
 
 RUN useradd --create-home --uid 1000 sophia
-RUN mkdir -p /data /app/.nicegui /home/sophia/.cache/huggingface \
-    && chown sophia:sophia /data /app/.nicegui /home/sophia/.cache/huggingface
+RUN mkdir -p /data /app/.nicegui /home/sophia/.cache \
+    && chown -R sophia:sophia /data /app/.nicegui /home/sophia/.cache
 
 EXPOSE 8080
 
