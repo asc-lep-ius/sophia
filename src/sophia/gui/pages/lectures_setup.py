@@ -107,6 +107,31 @@ def _coerce_transcription_timeout(value: object, default: float) -> float:
     return max(timeout, 1.0)
 
 
+def _resolve_review_config(config_state: dict[str, Any]) -> HermesConfig:
+    """Resolve the final setup config from current review state."""
+    override_val = config_state.get("model_override")
+    provider_val = config_state.get("provider")
+    llm_model = config_state.get("llm_model")
+    api_key_env = config_state.get("api_key_env")
+    base = recommend_config(
+        config_state.get("has_gpu", False),
+        config_state.get("vram_mb", 0),
+        provider=LLMProvider(provider_val) if provider_val else None,
+        llm_model=llm_model,
+        api_key_env=api_key_env,
+    )
+    final = base
+    if override_val:
+        final = _apply_model_override(
+            base, WhisperModel(override_val), config_state.get("has_gpu", False)
+        )
+    timeout = _coerce_transcription_timeout(
+        config_state.get("transcription_timeout_seconds"),
+        DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
+    )
+    return _apply_transcription_timeout(final, timeout)
+
+
 _PROVIDER_LABELS: dict[LLMProvider, str] = {
     LLMProvider.GITHUB: "GitHub Models",
     LLMProvider.GEMINI: "Google Gemini",
@@ -306,8 +331,14 @@ def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:
     model_input.on_value_change(_on_llm_model_change)
     api_key_input.on_value_change(_on_api_key_change)
 
+    def _review_settings() -> None:
+        refresh_review_summary = config_state.get("refresh_review_summary")
+        if callable(refresh_review_summary):
+            refresh_review_summary()
+        stepper.next()
+
     with ui.row().classes("mt-4 gap-2"):
-        ui.button("Review Settings", on_click=stepper.next)
+        ui.button("Review Settings", on_click=_review_settings)
 
 
 def _render_gpu_context_card(gpu_ctx: GpuContext) -> None:
@@ -335,30 +366,6 @@ def _render_review_step(
         ui.label("Error: no configuration generated. Go back to Step 1.").classes("text-red-600")
         ui.button("Back", on_click=stepper.previous)
         return
-
-    def _resolve_final_config() -> HermesConfig:
-        """Resolve the final config from current state at call-time."""
-        override_val = config_state.get("model_override")
-        provider_val = config_state.get("provider")
-        llm_model = config_state.get("llm_model")
-        api_key_env = config_state.get("api_key_env")
-        base = recommend_config(
-            config_state.get("has_gpu", False),
-            config_state.get("vram_mb", 0),
-            provider=LLMProvider(provider_val) if provider_val else None,
-            llm_model=llm_model,
-            api_key_env=api_key_env,
-        )
-        final = base
-        if override_val:
-            final = _apply_model_override(
-                base, WhisperModel(override_val), config_state.get("has_gpu", False)
-            )
-        timeout = _coerce_transcription_timeout(
-            config_state.get("transcription_timeout_seconds"),
-            DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
-        )
-        return _apply_transcription_timeout(final, timeout)
 
     # --- Storage estimate (merged from old storage step) ---
     model = recommended.whisper.model if recommended else WhisperModel.SMALL
@@ -433,7 +440,7 @@ def _render_review_step(
 
     # --- Config summary ---
     async def _on_save() -> None:
-        final = _resolve_final_config()
+        final = _resolve_review_config(config_state)
         api_key = config_state.get("api_key_value", "")
         keep_existing = config_state.get("keep_existing_key", False)
         if api_key and not keep_existing and final.llm.provider != LLMProvider.OLLAMA:
@@ -444,15 +451,21 @@ def _render_review_step(
             ui.notify(key_msg, type="positive")
         _complete_setup(final, container.settings.config_dir)
 
-    summary_lines = build_config_summary(recommended)
-    with ui.card().classes("w-full mb-4"):
-        ui.label("Configuration Summary").classes("text-lg font-semibold mb-2")
-        ui.separator()
-        for line in summary_lines:
-            ui.label(line).classes("text-sm font-mono mt-1")
-        ui.label(
-            "Note: saved config will reflect your Whisper model and LLM provider selections."
-        ).classes("text-xs text-gray-400 mt-2 italic")
+    @ui.refreshable
+    def _render_config_summary() -> None:
+        summary_lines = build_config_summary(_resolve_review_config(config_state))
+        with ui.card().classes("w-full mb-4"):
+            ui.label("Configuration Summary").classes("text-lg font-semibold mb-2")
+            ui.separator()
+            for line in summary_lines:
+                ui.label(line).classes("text-sm font-mono mt-1")
+            ui.label(
+                "Note: saved config will reflect your Whisper model, timeout, "
+                "and LLM provider selections."
+            ).classes("text-xs text-gray-400 mt-2 italic")
+
+    config_state["refresh_review_summary"] = _render_config_summary.refresh
+    _render_config_summary()
 
     # --- LLM provider validation ---
     provider_val = config_state.get("provider")

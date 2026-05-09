@@ -19,6 +19,7 @@ from sophia.domain.models import (
 )
 from sophia.gui.pages.lectures_setup import (
     _apply_model_override,
+    _resolve_review_config,
     build_config_summary,
     build_provider_label,
     estimate_download_mb,
@@ -145,6 +146,26 @@ class TestBuildConfigSummary:
         assert "Transcription timeout: 2400s" in lines
         assert "LLM provider: ollama (llama3.2)" in lines
         assert "Embedding model: nomic-embed-text" in lines
+
+    def test_review_summary_uses_resolved_user_selections(self) -> None:
+        config_state = {
+            "recommended": recommend_config(False, 0),
+            "has_gpu": False,
+            "vram_mb": 0,
+            "model_override": WhisperModel.TURBO.value,
+            "provider": LLMProvider.OLLAMA.value,
+            "llm_model": "llama3.2",
+            "api_key_env": "",
+            "transcription_timeout_seconds": 2700.0,
+        }
+
+        lines = build_config_summary(_resolve_review_config(config_state))
+
+        assert "Whisper model: turbo" in lines
+        assert "Device: cpu" in lines
+        assert "Compute type: float32" in lines
+        assert "Transcription timeout: 2700s" in lines
+        assert "LLM provider: ollama (llama3.2)" in lines
 
 
 class TestApplyModelOverride:
