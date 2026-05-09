@@ -20,28 +20,34 @@ class TestGetLectureModules:
     @pytest.mark.asyncio
     async def test_returns_module_info_list(self) -> None:
         cursor = AsyncMock()
-        cursor.fetchall.return_value = [(101, "s1", "Intro to CS"), (202, "s2", "Algorithms")]
+        cursor.fetchall.return_value = [(101, "s1", "Intro to CS", "185.A91-2026S")]
         db = AsyncMock()
         db.execute.return_value = cursor
 
         result = await get_lecture_modules(db)
 
         assert result == [
-            ModuleInfo(module_id=101, series_id="s1", course_name="Intro to CS"),
-            ModuleInfo(module_id=202, series_id="s2", course_name="Algorithms"),
+            ModuleInfo(
+                module_id=101,
+                series_id="s1",
+                course_name="Intro to CS",
+                course_shortname="185.A91-2026S",
+            ),
         ]
         db.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_null_course_name_defaults_to_empty(self) -> None:
         cursor = AsyncMock()
-        cursor.fetchall.return_value = [(303, "s3", "")]
+        cursor.fetchall.return_value = [(303, "s3", "", "")]
         db = AsyncMock()
         db.execute.return_value = cursor
 
         result = await get_lecture_modules(db)
 
-        assert result == [ModuleInfo(module_id=303, series_id="s3", course_name="")]
+        assert result == [
+            ModuleInfo(module_id=303, series_id="s3", course_name="", course_shortname="")
+        ]
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_no_rows(self) -> None:

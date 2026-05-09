@@ -86,6 +86,7 @@ class LectureRecord:
 
     module_id: int
     course_name: str
+    course_shortname: str
     episode: EpisodeStatus
 
 
@@ -218,14 +219,30 @@ def build_stage_warnings(
     return warnings
 
 
+def _format_course_label(course_name: str, course_shortname: str) -> str:
+    """Format course label as 'shortcode name semester' if shortname is available."""
+    if not course_shortname:
+        return course_name
+
+    parts = course_shortname.split("-", maxsplit=1)
+    if len(parts) == 2:
+        shortcode, semester = parts
+        return f"{shortcode} {course_name} {semester}"
+
+    return f"{course_shortname} {course_name}" if course_shortname else course_name
+
+
 def build_course_tree_nodes(records: list[LectureRecord]) -> list[dict[str, object]]:
     """Create `ui.tree` nodes grouped by course with lecture leaves only."""
-    courses: dict[str, list[LectureRecord]] = {}
+    courses: dict[tuple[str, str], list[LectureRecord]] = {}
     for record in records:
-        courses.setdefault(record.course_name, []).append(record)
+        key = (record.course_name, record.course_shortname)
+        courses.setdefault(key, []).append(record)
 
     nodes: list[dict[str, object]] = []
-    for idx, (course_name, course_records) in enumerate(courses.items(), start=1):
+    for idx, ((course_name, course_shortname), course_records) in enumerate(
+        courses.items(), start=1
+    ):
         children = [
             {
                 "id": _tree_episode_id(record.episode.episode_id),
@@ -233,10 +250,11 @@ def build_course_tree_nodes(records: list[LectureRecord]) -> list[dict[str, obje
             }
             for record in course_records
         ]
+        label = _format_course_label(course_name, course_shortname)
         nodes.append(
             {
                 "id": f"course:{idx}",
-                "label": f"{course_name} ({len(children)})",
+                "label": f"{label} ({len(children)})",
                 "children": children,
             }
         )
@@ -344,6 +362,10 @@ def _render_header(on_refresh: Callable[[], None]) -> None:
             on_change=lambda e: (_set_status_filter(e.value), on_refresh()),
         ).props("outlined dense").classes("w-48")
 
+        ui.button(icon="refresh", on_click=on_refresh).props("flat round").tooltip(
+            "Refresh Lectures"
+        )
+
         ui.button(icon="settings", on_click=lambda: ui.navigate.to("/lectures/setup")).props(
             "flat round"
         ).tooltip("Re-run Setup")
@@ -363,11 +385,16 @@ async def lectures_content() -> None:
     selection_state = LectureSelectionState()
     toggle_state = StageToggleState()
 
+    async def refresh_with_discovery() -> None:
+        """Discover new lectures from Moodle/Opencast before refreshing the UI."""
+        await discover_lecture_modules(container)
+        render_dashboard.refresh()
+
     @ui.refreshable
     async def render_dashboard() -> None:
         modules = await get_lecture_modules(container.db)
         if not modules:
-            _render_empty_state(render_dashboard.refresh)
+            _render_empty_state(refresh_with_discovery)
             return
 
         all_records: list[LectureRecord] = []
@@ -378,11 +405,13 @@ async def lectures_content() -> None:
         for module in modules:
             episodes = await get_module_lectures(container.db, module.module_id)
             course_name = module.course_name or f"Module {module.module_id}"
+            course_shortname = module.course_shortname or ""
             for episode in episodes:
                 all_records.append(
                     LectureRecord(
                         module_id=module.module_id,
                         course_name=course_name,
+                        course_shortname=course_shortname,
                         episode=episode,
                     )
                 )
@@ -396,6 +425,7 @@ async def lectures_content() -> None:
                     LectureRecord(
                         module_id=module.module_id,
                         course_name=course_name,
+                        course_shortname=course_shortname,
                         episode=episode,
                     )
                 )
@@ -417,7 +447,7 @@ async def lectures_content() -> None:
             selection_state=selection_state,
             toggle_state=toggle_state,
             warnings=warnings,
-            on_refresh=render_dashboard.refresh,
+            on_refresh=refresh_with_discovery,
         )
 
         if not visible_records:

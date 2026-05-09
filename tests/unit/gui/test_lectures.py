@@ -67,8 +67,14 @@ def _record(
     *,
     module_id: int = 1,
     course_name: str = "Course A",
+    course_shortname: str = "",
 ) -> LectureRecord:
-    return LectureRecord(module_id=module_id, course_name=course_name, episode=episode)
+    return LectureRecord(
+        module_id=module_id,
+        course_name=course_name,
+        course_shortname=course_shortname,
+        episode=episode,
+    )
 
 
 class TestIsHermesSetupComplete:
@@ -184,6 +190,28 @@ class TestTreeHelpers:
         assert nodes[0]["label"] == "Course A (2)"
         assert nodes[0]["children"][0]["id"] == "episode:e1"
         assert nodes[0]["children"][0]["label"] == "#1 Lecture 1"
+
+    def test_build_course_tree_nodes_includes_shortname_when_available(self) -> None:
+        """Course labels should show shortname, name, and semester.
+
+        Example: '185.A91 Intro to Programming 2026S'.
+        """
+        from sophia.gui.pages.lectures import LectureRecord as BaseRecord
+
+        ep = _ep(episode_id="e1", lecture_number=1)
+        record = BaseRecord(
+            module_id=1,
+            course_name="Einführung in die Programmierung 1",
+            course_shortname="185.A91-2026S",
+            episode=ep,
+        )
+
+        nodes = cast("list[_CourseTreeNode]", build_course_tree_nodes([record]))
+
+        assert len(nodes) == 1
+        assert "185.A91" in nodes[0]["label"]
+        assert "Einführung in die Programmierung 1" in nodes[0]["label"]
+        assert "2026S" in nodes[0]["label"]
 
 
 class TestStageRenderHelpers:

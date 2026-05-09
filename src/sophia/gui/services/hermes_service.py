@@ -33,6 +33,7 @@ class ModuleInfo:
     module_id: int
     series_id: str
     course_name: str = ""
+    course_shortname: str = ""
 
 
 @dataclass
@@ -131,12 +132,21 @@ def filter_episodes(
 async def get_lecture_modules(db: aiosqlite.Connection) -> list[ModuleInfo]:
     """Query distinct modules that have lecture downloads."""
     cursor = await db.execute(
-        "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
+        "SELECT DISTINCT ld.module_id, ld.series_id, "
+        "COALESCE(lm.course_name, ''), COALESCE(lm.course_shortname, '') "
         "FROM lecture_downloads ld "
         "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id",
     )
     rows = await cursor.fetchall()
-    return [ModuleInfo(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
+    return [
+        ModuleInfo(
+            module_id=row[0],
+            series_id=row[1],
+            course_name=row[2],
+            course_shortname=row[3],
+        )
+        for row in rows
+    ]
 
 
 @gui_error_handler(operation="get_module_lectures", fallback=[])
