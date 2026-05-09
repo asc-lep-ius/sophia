@@ -60,6 +60,7 @@ class TestPipelineState:
     def test_initial_state(self) -> None:
         state = PipelineState()
         assert state.running is False
+        assert state.starting is False
         assert state.stage is None
         assert state.current_stage is None
         assert state.current_episode is None
@@ -161,6 +162,38 @@ class TestPrerequisiteValidation:
 
 class TestSelectivePipelineRunner:
     @pytest.mark.asyncio
+    async def test_selective_run_exposes_starting_state_before_validation_finishes(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+        validation_started = asyncio.Event()
+        validation_can_finish = asyncio.Event()
+
+        async def _validate(
+            *_args: object,
+            **_kwargs: object,
+        ) -> tuple[list[object], list[object]]:
+            validation_started.set()
+            await validation_can_finish.wait()
+            return [], []
+
+        with patch("sophia.gui.services.pipeline_service.validate_stage_prerequisites", _validate):
+            task = asyncio.create_task(
+                runner.run_selective_pipeline(
+                    container,
+                    [("e1", {PipelineStage.TRANSCRIBE})],
+                )
+            )
+            await validation_started.wait()
+
+            state = runner.get_state()
+            assert state.running is True
+            assert state.starting is True
+            assert state.status_message == "Starting selective pipeline"
+
+            validation_can_finish.set()
+            assert await task is False
+
+    @pytest.mark.asyncio
     async def test_routes_only_selected_stages(self) -> None:
         runner = PipelineRunner()
         container = MagicMock()
@@ -223,6 +256,47 @@ class TestSelectivePipelineRunner:
             == "48 segments"
         )
         assert state.episode_progress["e2"].stage_states[PipelineStage.INDEX].detail == "12 chunks"
+
+    @pytest.mark.asyncio
+    async def test_forwards_transcription_timeout_to_transcribe_stage(self) -> None:
+        runner = PipelineRunner()
+        container = MagicMock()
+        container.db = MagicMock()
+        transcribe = AsyncMock(
+            return_value=[MagicMock(episode_id="e1", status="completed", segment_count=3)]
+        )
+
+        with (
+            patch(
+                "sophia.gui.services.pipeline_service.get_episode_artifacts",
+                new=AsyncMock(
+                    return_value={
+                        "e1": _artifact(
+                            "e1",
+                            10,
+                            title="Lecture 1",
+                            has_download=True,
+                            has_transcript=False,
+                        )
+                    }
+                ),
+            ),
+            patch("sophia.gui.services.pipeline_service.transcribe_lectures", new=transcribe),
+            patch(
+                "sophia.gui.services.pipeline_service.assign_lecture_numbers",
+                new=AsyncMock(),
+            ),
+        ):
+            await runner.run_selective_pipeline(
+                container,
+                [("e1", {PipelineStage.TRANSCRIBE})],
+                transcription_timeout_seconds=2400.0,
+            )
+
+        transcribe.assert_awaited_once()
+        transcribe_args = transcribe.await_args
+        assert transcribe_args is not None
+        assert transcribe_args.kwargs["transcription_timeout_seconds"] == 2400.0
 
     @pytest.mark.asyncio
     async def test_failed_stage_does_not_count_as_successful_completion(self) -> None:

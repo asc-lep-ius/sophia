@@ -6,7 +6,7 @@ from datetime import datetime  # noqa: TC003 — Pydantic needs runtime access
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -402,6 +402,9 @@ class DownloadJob:
 # --- Hermes (lecture pipeline) models ---
 
 
+DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS: float = 1800.0
+
+
 class WhisperModel(StrEnum):
     """Supported Whisper model sizes."""
 
@@ -452,6 +455,10 @@ class HermesWhisperConfig(BaseModel, frozen=True):
     compute_type: ComputeType = ComputeType.FLOAT32
     vad_filter: bool = True
     language: str = "de"
+    transcription_timeout_seconds: float = Field(
+        default=DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
+        gt=0,
+    )
 
 
 class HermesLLMConfig(BaseModel, frozen=True):

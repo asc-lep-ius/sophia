@@ -11,7 +11,7 @@ import structlog
 
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
 from sophia.domain.errors import TranscriptionError
-from sophia.domain.models import HermesConfig
+from sophia.domain.models import DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS, HermesConfig
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
@@ -23,9 +23,6 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
-
-# Generous flat ceiling — no duration metadata available at this point
-_TRANSCRIPTION_TIMEOUT_S: float = 1800.0
 
 
 @dataclass
@@ -49,6 +46,7 @@ async def transcribe_lectures(
     on_progress: Callable[[str, int, int], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    transcription_timeout_seconds: float | None = None,
 ) -> list[TranscriptionResult]:
     """Orchestrate transcription for downloaded lectures in a module.
 
@@ -63,6 +61,11 @@ async def transcribe_lectures(
     completed_ids = await _get_transcribed_ids(app.db, module_id)
     results: list[TranscriptionResult] = []
     transcriber: WhisperTranscriber | None = None
+    config = _load_hermes_config(app)
+    timeout_seconds = _resolve_transcription_timeout_seconds(
+        config,
+        transcription_timeout_seconds,
+    )
 
     for episode_id, title, file_path in downloads:
         if cancel_check and cancel_check():
@@ -82,7 +85,7 @@ async def transcribe_lectures(
             continue
 
         if transcriber is None:
-            transcriber = _create_transcriber(app)
+            transcriber = _create_transcriber(app, config)
 
         result = await _transcribe_episode(
             app.db,
@@ -94,16 +97,40 @@ async def transcribe_lectures(
             on_start=on_start,
             on_progress=on_progress,
             on_complete=on_complete,
+            transcription_timeout_seconds=timeout_seconds,
         )
         results.append(result)
 
     return results
 
 
-def _create_transcriber(app: AppContainer) -> WhisperTranscriber:
+def _load_hermes_config(app: AppContainer) -> HermesConfig:
     config = load_hermes_config(app.settings.config_dir)
     if config is None:
-        config = HermesConfig()
+        return HermesConfig()
+    return config
+
+
+def _resolve_transcription_timeout_seconds(
+    config: HermesConfig,
+    override: float | None,
+) -> float:
+    timeout = override if override is not None else config.whisper.transcription_timeout_seconds
+    if timeout <= 0:
+        return DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS
+    return float(timeout)
+
+
+def _format_timeout_seconds(timeout_seconds: float) -> str:
+    return f"{timeout_seconds:g}"
+
+
+def _create_transcriber(
+    app: AppContainer,
+    config: HermesConfig | None = None,
+) -> WhisperTranscriber:
+    if config is None:
+        config = _load_hermes_config(app)
     return WhisperTranscriber(config.whisper, model_dir=app.settings.cache_dir / "whisper")
 
 
@@ -136,6 +163,7 @@ async def _transcribe_episode(
     on_start: Callable[[str, str], None] | None = None,
     on_progress: Callable[[str, int, int], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
+    transcription_timeout_seconds: float = DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
 ) -> TranscriptionResult:
     """Transcribe a single episode: run Whisper → save SRT → persist to DB."""
     if on_start:
@@ -165,7 +193,7 @@ async def _transcribe_episode(
             asyncio.to_thread(
                 transcriber.transcribe, audio_path, on_progress=transcriber_progress_callback
             ),
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
+            timeout=transcription_timeout_seconds,
         )
 
         srt_content = segments_to_srt(segments)
@@ -195,7 +223,8 @@ async def _transcribe_episode(
         )
 
     except TimeoutError:
-        msg = f"transcription timed out after {_TRANSCRIPTION_TIMEOUT_S}s"
+        formatted_timeout = _format_timeout_seconds(transcription_timeout_seconds)
+        msg = f"transcription timed out after {formatted_timeout}s"
         await db.execute(
             "UPDATE transcriptions SET status='failed', error=? WHERE episode_id=?",
             (msg, episode_id),
@@ -205,7 +234,7 @@ async def _transcribe_episode(
         log.error(
             "transcription_timed_out",
             episode_id=episode_id,
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
+            timeout=transcription_timeout_seconds,
         )
         return TranscriptionResult(
             episode_id=episode_id,

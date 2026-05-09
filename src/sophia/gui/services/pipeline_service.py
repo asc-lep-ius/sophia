@@ -139,6 +139,7 @@ class PipelineState:
     """Tracks current selective pipeline status."""
 
     running: bool = False
+    starting: bool = False
     current_stage: PipelineStage | None = None
     stage_progress: float = 0.0
     current_episode: str | None = None
@@ -295,6 +296,20 @@ class PipelineRunner:
     def is_cancelling(self) -> bool:
         return self._cancel_event.is_set()
 
+    def begin_selective_pipeline(
+        self,
+        selections: Sequence[EpisodeStageSelection | tuple[str, Collection[PipelineStage]]],
+    ) -> bool:
+        """Expose immediate startup state before async prerequisite checks begin."""
+        if self._lock.locked() or self._state.running:
+            log.warning("pipeline_already_running")
+            return False
+
+        requested = [_coerce_selection(selection) for selection in selections]
+        self._cancel_event.clear()
+        self._set_selective_starting_state(requested)
+        return True
+
     async def validate_stage_prerequisites(
         self,
         db: aiosqlite.Connection,
@@ -431,6 +446,8 @@ class PipelineRunner:
         self,
         container: AppContainer,
         selections: Sequence[EpisodeStageSelection | tuple[str, Collection[PipelineStage]]],
+        *,
+        transcription_timeout_seconds: float | None = None,
     ) -> bool:
         """Run the requested stages for the requested lectures only."""
         if self._lock.locked():
@@ -440,11 +457,13 @@ class PipelineRunner:
         async with self._lock:
             self._cancel_event.clear()
             requested = [_coerce_selection(selection) for selection in selections]
+            self._set_selective_starting_state(requested)
             validated, warnings = await validate_stage_prerequisites(container, requested)
             self._reset_selective_state(requested, validated, warnings)
 
             if not validated:
                 self._state.running = False
+                self._state.starting = False
                 self._state.current_stage = None
                 self._state.stage_progress = 1.0 if self._state.total_episodes else 0.0
                 self._state.status_message = "No runnable stages"
@@ -479,6 +498,7 @@ class PipelineRunner:
                             module_id,
                             stage,
                             stage_episode_ids,
+                            transcription_timeout_seconds=transcription_timeout_seconds,
                         )
                         if stage is PipelineStage.DOWNLOAD:
                             await assign_lecture_numbers(container.db, module_id)
@@ -494,6 +514,7 @@ class PipelineRunner:
             except Exception as exc:
                 log.exception("pipeline_selective_failed")
                 self._state.running = False
+                self._state.starting = False
                 self._state.current_stage = None
                 self._state.current_episode = None
                 self._state.error = str(exc)
@@ -501,6 +522,7 @@ class PipelineRunner:
                 return False
 
             self._state.running = False
+            self._state.starting = False
             self._state.current_stage = None
             self._state.current_episode = None
             self._state.stage_progress = 1.0
@@ -514,6 +536,8 @@ class PipelineRunner:
         module_id: int,
         stage: PipelineStage,
         stage_episode_ids: set[str],
+        *,
+        transcription_timeout_seconds: float | None = None,
     ) -> list[object]:
         if stage is PipelineStage.DOWNLOAD:
             return await download_lectures(
@@ -532,6 +556,7 @@ class PipelineRunner:
                 on_progress=self._on_transcribe_progress,
                 on_complete=self._on_transcribe_complete,
                 cancel_check=self._cancel_event.is_set,
+                transcription_timeout_seconds=transcription_timeout_seconds,
             )
         return await index_lectures(
             container,
@@ -604,6 +629,31 @@ class PipelineRunner:
         }
         self._recalculate_episode_counts()
 
+    def _set_selective_starting_state(
+        self,
+        selections: Sequence[EpisodeStageSelection],
+    ) -> None:
+        episode_progress = {
+            selection.episode_id: EpisodeProgress(
+                episode_id=selection.episode_id,
+                module_id=0,
+                title=selection.episode_id,
+                stages_to_run=selection.stages_to_run,
+                stage_states={
+                    stage: StageProgress(current_stage=stage) for stage in selection.stages_to_run
+                },
+            )
+            for selection in selections
+        }
+        self._state = PipelineState(
+            running=True,
+            starting=True,
+            total_episodes=len(selections),
+            status_message="Starting selective pipeline",
+            episode_progress=episode_progress,
+        )
+        self._stage_episode_ids = {}
+
     def _can_run_stage(self, episode_id: str, stage: PipelineStage) -> bool:
         episode_progress = self._state.episode_progress.get(episode_id)
         if episode_progress is None:
@@ -638,6 +688,7 @@ class PipelineRunner:
 
     def _mark_cancelled(self) -> None:
         self._state.running = False
+        self._state.starting = False
         self._state.cancelled = True
         self._state.status_message = "Pipeline cancelled"
         for episode_progress in self._state.episode_progress.values():

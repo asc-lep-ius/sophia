@@ -414,17 +414,17 @@ async def test_transcription_timeout() -> None:
     db.commit = AsyncMock()
 
     transcriber = MagicMock()
-    transcriber.transcribe = lambda _path: time.sleep(10)  # type: ignore[reportUnknownLambdaType]  # blocks, but not forever
+    transcriber.transcribe = lambda _path, **_kwargs: time.sleep(10)  # type: ignore[reportUnknownLambdaType]  # blocks, but not forever
 
-    with patch("sophia.services.hermes_transcribe._TRANSCRIPTION_TIMEOUT_S", 0.05):
-        result = await _transcribe_episode(
-            db,
-            transcriber,
-            episode_id="ep-hang",
-            module_id=42,
-            title="Hanging Lecture",
-            audio_path=Path("/tmp/fake.m4a"),
-        )
+    result = await _transcribe_episode(
+        db,
+        transcriber,
+        episode_id="ep-hang",
+        module_id=42,
+        title="Hanging Lecture",
+        audio_path=Path("/tmp/fake.m4a"),
+        transcription_timeout_seconds=0.05,
+    )
 
     assert result.status == "failed"
     assert result.error is not None and "timed out" in result.error

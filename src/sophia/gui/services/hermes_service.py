@@ -13,6 +13,7 @@ from sophia.services.hermes_manage import get_pipeline_status as _get_pipeline_s
 if TYPE_CHECKING:
     import aiosqlite
 
+    from sophia.domain.models import Lecture
     from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
 
@@ -319,6 +320,10 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
         *(container.opencast.get_series_episodes(mid) for _, _, mid, _ in opencast_modules),
     )
 
+    for (_, _, module_id, _), episodes in zip(opencast_modules, episode_lists, strict=True):
+        await _persist_discovered_download_rows(container.db, module_id, episodes)
+    await container.db.commit()
+
     return [
         DiscoveredModule(
             course_shortname=shortname,
@@ -334,3 +339,18 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
         )
         if episodes
     ]
+
+
+async def _persist_discovered_download_rows(
+    db: aiosqlite.Connection,
+    module_id: int,
+    episodes: list[Lecture],
+) -> None:
+    """Create visible queued download rows for newly discovered episodes."""
+    for episode in episodes:
+        await db.execute(
+            """INSERT OR IGNORE INTO lecture_downloads
+               (episode_id, module_id, series_id, title, track_url, track_mimetype, status)
+               VALUES (?, ?, ?, ?, '', '', 'queued')""",
+            (episode.episode_id, module_id, episode.series_id, episode.title),
+        )

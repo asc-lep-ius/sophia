@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
@@ -9,7 +10,7 @@ import aiosqlite
 import pytest
 
 from sophia.domain.errors import TranscriptionError
-from sophia.domain.models import HermesConfig, TranscriptSegment
+from sophia.domain.models import HermesConfig, HermesWhisperConfig, TranscriptSegment
 from sophia.infra.persistence import run_migrations
 
 if TYPE_CHECKING:
@@ -274,3 +275,86 @@ async def test_transcribe_lectures_progress_callback_invoked(
     # Verify our orchestration-level on_progress callback was invoked
     assert len(on_progress_calls) > 0
     assert on_progress_calls[-1] == ("ep-001", 3, 3)
+
+
+@pytest.mark.asyncio
+async def test_transcribe_lectures_uses_timeout_from_config(
+    app: MagicMock, db: aiosqlite.Connection, tmp_path: Path
+) -> None:
+    from sophia.services.hermes_transcribe import transcribe_lectures
+
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"fake audio")
+    await _insert_download(db, file_path=str(audio_path))
+    mock_transcriber = MagicMock()
+    mock_transcriber.transcribe.return_value = _fake_segments()
+    captured_timeout: float | None = None
+
+    async def _capture_wait_for(awaitable: Any, *, timeout: float) -> Any:
+        nonlocal captured_timeout
+        captured_timeout = timeout
+        return await awaitable
+
+    with (
+        patch(
+            "sophia.services.hermes_transcribe.load_hermes_config",
+            return_value=HermesConfig(
+                whisper=HermesWhisperConfig(transcription_timeout_seconds=2400.0)
+            ),
+        ),
+        patch(
+            "sophia.services.hermes_transcribe.WhisperTranscriber",
+            return_value=mock_transcriber,
+        ),
+        patch(
+            "sophia.services.hermes_transcribe.asyncio.to_thread",
+            side_effect=_run_sync,
+        ),
+        patch("sophia.services.hermes_transcribe.asyncio.wait_for", _capture_wait_for),
+    ):
+        results = await transcribe_lectures(app, 42)
+
+    assert results[0].status == "completed"
+    assert captured_timeout == 2400.0
+
+
+@pytest.mark.asyncio
+async def test_transcribe_episode_timeout_message_uses_effective_timeout(
+    db: aiosqlite.Connection,
+    tmp_path: Path,
+) -> None:
+    from sophia.services.hermes_transcribe import _transcribe_episode
+
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"fake audio")
+    await _insert_download(
+        db,
+        episode_id="ep-timeout",
+        module_id=42,
+        title="Slow Lecture",
+        file_path=str(audio_path),
+    )
+    mock_transcriber = MagicMock()
+    captured_timeout: float | None = None
+
+    async def _raise_timeout(awaitable: Any, *, timeout: float) -> Any:
+        nonlocal captured_timeout
+        captured_timeout = timeout
+        if inspect.iscoroutine(awaitable):
+            awaitable.close()
+        raise TimeoutError
+
+    with patch("sophia.services.hermes_transcribe.asyncio.wait_for", _raise_timeout):
+        result = await _transcribe_episode(
+            db,
+            mock_transcriber,
+            episode_id="ep-timeout",
+            module_id=42,
+            title="Slow Lecture",
+            audio_path=audio_path,
+            transcription_timeout_seconds=12.5,
+        )
+
+    assert captured_timeout == 12.5
+    assert result.status == "failed"
+    assert result.error == "transcription timed out after 12.5s"

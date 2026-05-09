@@ -9,6 +9,7 @@ import structlog
 from nicegui import app, ui
 
 from sophia.domain.models import (
+    DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
     ComputeDevice,
     ComputeType,
     HermesConfig,
@@ -88,9 +89,22 @@ def build_config_summary(config: HermesConfig) -> list[str]:
         f"Whisper model: {config.whisper.model.value}",
         f"Device: {config.whisper.device.value}",
         f"Compute type: {config.whisper.compute_type.value}",
+        f"Transcription timeout: {_format_seconds(config.whisper.transcription_timeout_seconds)}",
         f"LLM provider: {config.llm.provider.value} ({config.llm.model})",
         f"Embedding model: {config.embeddings.model}",
     ]
+
+
+def _format_seconds(seconds: float) -> str:
+    return f"{seconds:g}s"
+
+
+def _coerce_transcription_timeout(value: object, default: float) -> float:
+    try:
+        timeout = float(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+    return max(timeout, 1.0)
 
 
 _PROVIDER_LABELS: dict[LLMProvider, str] = {
@@ -177,6 +191,27 @@ def _render_gpu_step(stepper: ui.stepper, config_state: dict[str, Any]) -> None:
         config_state["model_override"] = selected_model.value
 
     selected_model.on_value_change(_on_model_change)
+
+    initial_timeout = (
+        existing.whisper.transcription_timeout_seconds
+        if existing
+        else recommended.whisper.transcription_timeout_seconds
+    )
+    timeout_input = ui.number(
+        label="Transcription Timeout (seconds)",
+        value=initial_timeout,
+        min=1,
+        step=60,
+    ).classes("w-60 mt-3")
+    config_state["transcription_timeout_seconds"] = initial_timeout
+
+    def _on_timeout_change() -> None:
+        config_state["transcription_timeout_seconds"] = _coerce_transcription_timeout(
+            timeout_input.value,
+            initial_timeout,
+        )
+
+    timeout_input.on_value_change(_on_timeout_change)
 
     # --- LLM provider section ---
     ui.separator().classes("my-4")
@@ -314,11 +349,16 @@ def _render_review_step(
             llm_model=llm_model,
             api_key_env=api_key_env,
         )
+        final = base
         if override_val:
-            return _apply_model_override(
+            final = _apply_model_override(
                 base, WhisperModel(override_val), config_state.get("has_gpu", False)
             )
-        return base
+        timeout = _coerce_transcription_timeout(
+            config_state.get("transcription_timeout_seconds"),
+            DEFAULT_TRANSCRIPTION_TIMEOUT_SECONDS,
+        )
+        return _apply_transcription_timeout(final, timeout)
 
     # --- Storage estimate (merged from old storage step) ---
     model = recommended.whisper.model if recommended else WhisperModel.SMALL
@@ -460,6 +500,23 @@ def _apply_model_override(config: HermesConfig, model: WhisperModel, has_gpu: bo
             compute_type=compute_type,
             vad_filter=config.whisper.vad_filter,
             language=config.whisper.language,
+            transcription_timeout_seconds=config.whisper.transcription_timeout_seconds,
+        ),
+        llm=config.llm,
+        embeddings=config.embeddings,
+    )
+
+
+def _apply_transcription_timeout(config: HermesConfig, timeout_seconds: float) -> HermesConfig:
+    """Create a new config with the user's transcription timeout."""
+    return HermesConfig(
+        whisper=HermesWhisperConfig(
+            model=config.whisper.model,
+            device=config.whisper.device,
+            compute_type=config.whisper.compute_type,
+            vad_filter=config.whisper.vad_filter,
+            language=config.whisper.language,
+            transcription_timeout_seconds=timeout_seconds,
         ),
         llm=config.llm,
         embeddings=config.embeddings,

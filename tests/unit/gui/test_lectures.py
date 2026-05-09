@@ -12,6 +12,7 @@ from sophia.gui.pages.lectures import (
     StageToggleState,
     build_course_tree_nodes,
     build_pipeline_notification,
+    build_process_button_state,
     build_stage_render_states,
     build_stage_warnings,
     course_episode_ids,
@@ -289,3 +290,22 @@ class TestPipelineNotificationHelpers:
 
         assert message == "Processed 2 lecture(s)"
         assert level == "positive"
+
+
+class TestProcessButtonState:
+    def test_idle_button_allows_submit(self) -> None:
+        button = build_process_button_state(PipelineState(), selected_count=3)
+
+        assert button.label == "Process 3 Lectures"
+        assert "loading" not in button.props
+        assert "disable" not in button.props
+
+    def test_starting_button_shows_loading_and_disables_submit(self) -> None:
+        button = build_process_button_state(
+            PipelineState(running=True, starting=True),
+            selected_count=3,
+        )
+
+        assert button.label == "Starting…"
+        assert "loading" in button.props
+        assert "disable" in button.props

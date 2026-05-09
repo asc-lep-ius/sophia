@@ -2,12 +2,27 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
+import aiosqlite
 import pytest
 
 from sophia.domain.models import Course, CourseSection, Lecture, ModuleInfo
 from sophia.gui.services.hermes_service import DiscoveredModule, discover_lecture_modules
+from sophia.infra.persistence import run_migrations
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+
+@pytest.fixture
+async def db() -> AsyncIterator[aiosqlite.Connection]:
+    db_conn = await aiosqlite.connect(":memory:")
+    await db_conn.execute("PRAGMA foreign_keys=ON")
+    await run_migrations(db_conn)
+    yield db_conn
+    await db_conn.close()
 
 
 def _make_container(
@@ -108,3 +123,83 @@ class TestDiscoverLectureModules:
         assert result[0].episode_count == 1
         assert result[1].module_id == 200
         assert result[1].episode_count == 2
+
+    @pytest.mark.asyncio
+    async def test_persists_discovered_episodes_as_visible_queued_downloads(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        sections = [CourseSection(id=1, name="S1", summary="", modules=[_OC_MODULE])]
+        container = _make_container(
+            courses=[_COURSE_A],
+            sections_by_course=[sections],
+            episodes_by_module={100: [_EP1, _EP2]},
+        )
+        container.db = db
+
+        await discover_lecture_modules(container)
+
+        cursor = await db.execute(
+            """SELECT episode_id, module_id, series_id, title, track_url,
+                      track_mimetype, status, file_path
+               FROM lecture_downloads
+               ORDER BY episode_id"""
+        )
+        rows = await cursor.fetchall()
+
+        assert rows == [
+            ("e1", 100, "s1", "Lec 1", "", "", "queued", None),
+            ("e2", 100, "s1", "Lec 2", "", "", "queued", None),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_discovery_preserves_existing_completed_download_rows(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        await db.execute(
+            """INSERT INTO lecture_downloads
+               (episode_id, module_id, series_id, title, track_url, track_mimetype,
+                file_path, file_size_bytes, status)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                "e1",
+                100,
+                "existing-series",
+                "Existing Title",
+                "https://example.invalid/audio.mp3",
+                "audio/mpeg",
+                "/data/lectures/e1.mp3",
+                1234,
+                "completed",
+            ),
+        )
+        await db.commit()
+        sections = [CourseSection(id=1, name="S1", summary="", modules=[_OC_MODULE])]
+        container = _make_container(
+            courses=[_COURSE_A],
+            sections_by_course=[sections],
+            episodes_by_module={100: [_EP1, _EP2]},
+        )
+        container.db = db
+
+        await discover_lecture_modules(container)
+
+        cursor = await db.execute(
+            """SELECT episode_id, series_id, title, file_path, file_size_bytes, status
+               FROM lecture_downloads
+               ORDER BY episode_id"""
+        )
+        rows = await cursor.fetchall()
+
+        assert rows == [
+            (
+                "e1",
+                "existing-series",
+                "Existing Title",
+                "/data/lectures/e1.mp3",
+                1234,
+                "completed",
+            ),
+            ("e2", "s1", "Lec 2", None, None, "queued"),
+        ]

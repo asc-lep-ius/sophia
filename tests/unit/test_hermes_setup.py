@@ -201,6 +201,9 @@ class TestRecommendConfig:
 
 
 class TestSaveAndLoadConfig:
+    def test_default_transcription_timeout(self) -> None:
+        assert HermesConfig().whisper.transcription_timeout_seconds == 1800.0
+
     def test_round_trip(self, tmp_path: Path) -> None:
         """Save then load should produce identical config."""
         config = HermesConfig(
@@ -208,6 +211,7 @@ class TestSaveAndLoadConfig:
                 model=WhisperModel.LARGE_V3,
                 device=ComputeDevice.CUDA,
                 compute_type=ComputeType.FLOAT16,
+                transcription_timeout_seconds=2400.0,
             ),
             llm=HermesLLMConfig(
                 provider=LLMProvider.GEMINI,
@@ -222,6 +226,31 @@ class TestSaveAndLoadConfig:
         save_hermes_config(config, tmp_path)
         loaded = load_hermes_config(tmp_path)
         assert loaded == config
+
+    def test_load_old_config_without_timeout_uses_default(self, tmp_path: Path) -> None:
+        (tmp_path / "hermes.toml").write_text(
+            """[whisper]
+model = "small"
+device = "cpu"
+compute_type = "float32"
+vad_filter = true
+language = "de"
+
+[llm]
+provider = "github"
+model = "openai/gpt-4o"
+api_key_env = "GITHUB_TOKEN"
+
+[embeddings]
+provider = "local"
+model = "intfloat/multilingual-e5-large"
+"""
+        )
+
+        loaded = load_hermes_config(tmp_path)
+
+        assert loaded is not None
+        assert loaded.whisper.transcription_timeout_seconds == 1800.0
 
     def test_load_missing(self, tmp_path: Path) -> None:
         """Loading from a directory with no hermes.toml returns None."""

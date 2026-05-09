@@ -113,12 +113,13 @@ class TestBuildConfigSummary:
     def test_default_config(self) -> None:
         config = HermesConfig()
         lines = build_config_summary(config)
-        assert len(lines) == 5
+        assert len(lines) == 6
         assert lines[0] == "Whisper model: large-v3"
         assert lines[1] == "Device: cpu"
         assert lines[2] == "Compute type: float32"
-        assert lines[3] == "LLM provider: github (openai/gpt-4o)"
-        assert lines[4] == "Embedding model: intfloat/multilingual-e5-large"
+        assert lines[3] == "Transcription timeout: 1800s"
+        assert lines[4] == "LLM provider: github (openai/gpt-4o)"
+        assert lines[5] == "Embedding model: intfloat/multilingual-e5-large"
 
     def test_custom_config(self) -> None:
         config = HermesConfig(
@@ -126,6 +127,7 @@ class TestBuildConfigSummary:
                 model=WhisperModel.TURBO,
                 device=ComputeDevice.CUDA,
                 compute_type=ComputeType.FLOAT16,
+                transcription_timeout_seconds=2400.0,
             ),
             llm=HermesLLMConfig(
                 provider=LLMProvider.OLLAMA,
@@ -140,6 +142,7 @@ class TestBuildConfigSummary:
         lines = build_config_summary(config)
         assert "Whisper model: turbo" in lines
         assert "Device: cuda" in lines
+        assert "Transcription timeout: 2400s" in lines
         assert "LLM provider: ollama (llama3.2)" in lines
         assert "Embedding model: nomic-embed-text" in lines
 
@@ -166,6 +169,12 @@ class TestApplyModelOverride:
         result = _apply_model_override(base, WhisperModel.LARGE_V3, has_gpu=False)
         assert result.llm == base.llm
         assert result.embeddings == base.embeddings
+
+    def test_preserves_transcription_timeout(self) -> None:
+        base = HermesConfig(whisper=HermesWhisperConfig(transcription_timeout_seconds=2400.0))
+        result = _apply_model_override(base, WhisperModel.SMALL, has_gpu=False)
+
+        assert result.whisper.transcription_timeout_seconds == 2400.0
 
 
 class TestBuildProviderLabel:

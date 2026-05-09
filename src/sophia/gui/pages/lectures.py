@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import structlog
 from nicegui import app, background_tasks, ui
 
+from sophia.domain.models import HermesConfig
 from sophia.gui.middleware.health import get_container
 from sophia.gui.services.hermes_service import (
     STATUS_FILTER_ALL,
@@ -33,10 +34,12 @@ from sophia.gui.state.storage_map import (
     TAB_LECTURES_STATUS_FILTER,
     USER_HERMES_SETUP_COMPLETE,
 )
+from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
 
 log = structlog.get_logger()
@@ -100,6 +103,15 @@ class StageRenderState:
     status: str
     progress: float
     detail: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessButtonState:
+    """Prepared render data for the selective batch process button."""
+
+    label: str
+    props: str
+    icon: str | None = None
 
 
 def is_hermes_setup_complete() -> bool:
@@ -311,6 +323,25 @@ def build_pipeline_notification(state: PipelineState, success: bool) -> tuple[st
     return "Nothing was processed", "warning"
 
 
+def build_process_button_state(state: PipelineState, selected_count: int) -> ProcessButtonState:
+    """Prepare the batch process button label and disabled/loading props."""
+    if state.running:
+        return ProcessButtonState(
+            label="Starting…" if state.starting else "Processing…",
+            props="color=primary dense loading disable",
+            icon="hourglass_empty",
+        )
+    return ProcessButtonState(
+        label=f"Process {selected_count or 0} Lectures",
+        props="color=primary dense",
+    )
+
+
+def _get_transcription_timeout_seconds(container: AppContainer) -> float:
+    config = load_hermes_config(container.settings.config_dir) or HermesConfig()
+    return config.whisper.transcription_timeout_seconds
+
+
 def _tree_episode_id(episode_id: str) -> str:
     return f"episode:{episode_id}"
 
@@ -345,7 +376,10 @@ def _render_setup_required() -> None:
         ).props("color=primary")
 
 
-def _render_header(on_refresh: Callable[[], None]) -> None:
+def _render_header(
+    on_filter_refresh: Callable[[], None],
+    on_discovery_refresh: Callable[[], object],
+) -> None:
     with ui.row().classes("w-full items-center gap-4 mb-4"):
         ui.label("Lectures").classes("text-2xl font-bold")
         ui.space()
@@ -353,16 +387,16 @@ def _render_header(on_refresh: Callable[[], None]) -> None:
         ui.input(
             placeholder="Search lectures…",
             value=_get_search_query(),
-            on_change=lambda e: (_set_search_query(e.value), on_refresh()),
+            on_change=lambda e: (_set_search_query(e.value), on_filter_refresh()),
         ).props("outlined dense clearable").classes("w-64 hidden sm:block")
 
         ui.select(
             options=_STATUS_FILTER_OPTIONS,
             value=_get_status_filter(),
-            on_change=lambda e: (_set_status_filter(e.value), on_refresh()),
+            on_change=lambda e: (_set_status_filter(e.value), on_filter_refresh()),
         ).props("outlined dense").classes("w-48")
 
-        ui.button(icon="refresh", on_click=on_refresh).props("flat round").tooltip(
+        ui.button(icon="refresh", on_click=on_discovery_refresh).props("flat round").tooltip(
             "Refresh Lectures"
         )
 
@@ -447,7 +481,7 @@ async def lectures_content() -> None:
             selection_state=selection_state,
             toggle_state=toggle_state,
             warnings=warnings,
-            on_refresh=refresh_with_discovery,
+            on_refresh=render_dashboard.refresh,
         )
 
         if not visible_records:
@@ -465,13 +499,13 @@ async def lectures_content() -> None:
                 chosen_stages=chosen_stages,
             )
 
-    _render_header(render_dashboard.refresh)
+    _render_header(render_dashboard.refresh, refresh_with_discovery)
     await render_dashboard()
 
 
 def _render_selection_panel(
     *,
-    container: object,
+    container: AppContainer,
     all_records: list[LectureRecord],
     visible_records: list[LectureRecord],
     records_by_id: dict[str, LectureRecord],
@@ -548,6 +582,18 @@ def _render_selection_panel(
             ui.label(f"~{estimate_storage(selected_count):.1f} GB estimated").classes(
                 "text-xs text-gray-500"
             )
+            process_button = build_process_button_state(state, selected_count)
+            ui.button(
+                process_button.label,
+                icon=process_button.icon,
+                on_click=lambda: _handle_process_click(
+                    container=container,
+                    records_by_id=records_by_id,
+                    selection_state=selection_state,
+                    chosen_stages=chosen_stages,
+                    on_refresh=on_refresh,
+                ),
+            ).props(process_button.props)
             if state.running:
                 if _runner.is_cancelling():
                     ui.button("Cancelling…").props("flat color=negative dense disable")
@@ -555,20 +601,6 @@ def _render_selection_panel(
                     ui.button("Cancel", on_click=lambda: (_runner.cancel(), on_refresh())).props(
                         "flat color=negative dense"
                     )
-            else:
-                ui.button(
-                    f"Process {selected_count or 0} Lectures",
-                    on_click=lambda: background_tasks.create_lazy(
-                        _start_selected_pipeline(
-                            container=container,
-                            records_by_id=records_by_id,
-                            selection_state=selection_state,
-                            chosen_stages=chosen_stages,
-                            on_refresh=on_refresh,
-                        ),
-                        name="lectures-selective-pipeline",
-                    ),
-                ).props("color=primary dense")
 
     if warnings:
         with ui.card().classes("w-full p-3 mb-4 bg-amber-50"):
@@ -579,9 +611,9 @@ def _render_selection_panel(
                 ui.label(f"{len(warnings) - 5} more warning(s)…").classes("text-xs text-amber-700")
 
 
-async def _start_selected_pipeline(
+def _handle_process_click(
     *,
-    container: object,
+    container: AppContainer,
     records_by_id: dict[str, LectureRecord],
     selection_state: LectureSelectionState,
     chosen_stages: tuple[PipelineStage, ...],
@@ -606,8 +638,41 @@ async def _start_selected_pipeline(
         ui.notify("No selectable lectures match the current filters", type="warning")
         return
 
+    if not _runner.begin_selective_pipeline(selections):
+        ui.notify("Pipeline already running", type="warning")
+        on_refresh()
+        return
+
+    timeout_seconds = _get_transcription_timeout_seconds(container)
+    on_refresh()
+    background_tasks.create_lazy(
+        _start_selected_pipeline(
+            container=container,
+            selections=selections,
+            transcription_timeout_seconds=timeout_seconds,
+            on_refresh=on_refresh,
+        ),
+        name="lectures-selective-pipeline",
+    )
+
+
+async def _start_selected_pipeline(
+    *,
+    container: AppContainer,
+    selections: list[EpisodeStageSelection],
+    transcription_timeout_seconds: float,
+    on_refresh: Callable[[], None],
+) -> None:
+    if not selections:
+        ui.notify("No selectable lectures match the current filters", type="warning")
+        return
+
     await asyncio.sleep(0)
-    success = await _runner.run_selective_pipeline(container, selections)
+    success = await _runner.run_selective_pipeline(
+        container,
+        selections,
+        transcription_timeout_seconds=transcription_timeout_seconds,
+    )
     on_refresh()
 
     state = _runner.get_state()

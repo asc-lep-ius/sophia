@@ -180,6 +180,7 @@ def save_hermes_config(config: HermesConfig, config_dir: Path) -> Path:
         f'compute_type = "{config.whisper.compute_type.value}"',
         f"vad_filter = {str(config.whisper.vad_filter).lower()}",
         f'language = "{config.whisper.language}"',
+        f"transcription_timeout_seconds = {config.whisper.transcription_timeout_seconds:g}",
         "",
         "[llm]",
         f'provider = "{config.llm.provider.value}"',
