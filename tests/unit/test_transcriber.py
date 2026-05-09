@@ -202,3 +202,35 @@ def test_transcriber_wraps_exceptions(tmp_path: Path) -> None:
 
     with pytest.raises(TranscriptionError, match="GPU out of memory"):
         transcriber.transcribe(audio)
+
+
+def test_transcriber_invokes_progress_callback(tmp_path: Path) -> None:
+    """Verify that the real transcriber segment loop invokes the progress callback."""
+    audio = tmp_path / "lecture.mp3"
+    audio.touch()
+
+    segments = [
+        MockSegment(0.0, 5.0, "First segment."),
+        MockSegment(5.0, 10.0, "Second segment."),
+        MockSegment(10.0, 15.0, "Third segment."),
+    ]
+
+    mock_model = MagicMock()
+    mock_info = MagicMock()
+    mock_model.transcribe.return_value = (iter(segments), mock_info)
+
+    transcriber = _make_transcriber(mock_model)
+
+    progress_calls: list[tuple[int, int]] = []
+
+    def on_progress(current: int, total: int) -> None:
+        progress_calls.append((current, total))
+
+    result = transcriber.transcribe(audio, on_progress=on_progress)
+
+    # Should have 3 segments after filtering
+    assert len(result) == 3
+    # Progress callback should have been invoked at least once during segment iteration
+    assert len(progress_calls) > 0
+    # Final call should report all segments processed
+    assert progress_calls[-1] == (3, 3)

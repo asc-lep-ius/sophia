@@ -150,8 +150,21 @@ async def _transcribe_episode(
     await db.commit()
 
     try:
+        # Create a thread-safe progress callback wrapper if needed
+        transcriber_progress_callback = None
+        if on_progress:
+            loop = asyncio.get_running_loop()
+
+            def safe_progress(current: int, total: int) -> None:
+                """Thread-safe wrapper that schedules the callback on the event loop."""
+                loop.call_soon_threadsafe(on_progress, episode_id, current, total)
+
+            transcriber_progress_callback = safe_progress
+
         segments: list[TranscriptSegment] = await asyncio.wait_for(
-            asyncio.to_thread(transcriber.transcribe, audio_path),
+            asyncio.to_thread(
+                transcriber.transcribe, audio_path, on_progress=transcriber_progress_callback
+            ),
             timeout=_TRANSCRIPTION_TIMEOUT_S,
         )
 

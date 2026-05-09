@@ -120,8 +120,20 @@ class WhisperTranscriber:
         )
         return self._model  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
-    def transcribe(self, audio_path: Path) -> list[TranscriptSegment]:
-        """Transcribe an audio file, filtering hallucinations and duplicates."""
+    def transcribe(
+        self,
+        audio_path: Path,
+        *,
+        on_progress: Any = None,
+    ) -> list[TranscriptSegment]:
+        """Transcribe an audio file, filtering hallucinations and duplicates.
+
+        Args:
+            audio_path: Path to the audio file to transcribe.
+            on_progress: Optional callback invoked as segments are processed.
+                         Signature: (current: int, total: int) -> None.
+                         Total may be an estimate until all segments are known.
+        """
         model: Any = self._ensure_model()
         try:
             segments_iter, _info = model.transcribe(
@@ -151,6 +163,14 @@ class WhisperTranscriber:
                 continue
             result.append(TranscriptSegment(start=seg.start, end=seg.end, text=text))
             prev_text = text
+
+            # Report progress after each kept segment
+            if on_progress:
+                on_progress(len(result), len(result))
+
+        # Final progress report with accurate total
+        if on_progress and result:
+            on_progress(len(result), len(result))
 
         dropped = len(raw_segments) - len(result)
         log.info("transcription_filtered", path=str(audio_path), kept=len(result), dropped=dropped)

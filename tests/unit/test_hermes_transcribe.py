@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _run_sync(fn: Callable[..., Any], *args: Any) -> Any:
+def _run_sync(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
     """Stand-in for asyncio.to_thread that runs the function synchronously."""
-    return fn(*args)
+    return fn(*args, **kwargs)
 
 
 @pytest.fixture
@@ -211,3 +211,66 @@ async def test_transcribe_lectures_no_downloads(app: MagicMock, db: aiosqlite.Co
 
     results = await transcribe_lectures(app, 42)
     assert results == []
+
+
+@pytest.mark.asyncio
+async def test_transcribe_lectures_progress_callback_invoked(
+    app: MagicMock, db: aiosqlite.Connection, tmp_path: Path
+) -> None:
+    """Verify that on_progress is properly wired through to the transcriber."""
+    from sophia.services.hermes_transcribe import transcribe_lectures
+
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"fake audio")
+    await _insert_download(db, file_path=str(audio_path))
+
+    fake_segs = _fake_segments()
+    mock_transcriber = MagicMock()
+
+    # Track if transcribe was called with an on_progress callback
+    transcribe_call_kwargs = {}
+
+    def mock_transcribe(
+        audio: Path, *, on_progress: Callable[[int, int], None] | None = None
+    ) -> list[TranscriptSegment]:  # noqa: ARG001
+        transcribe_call_kwargs["on_progress"] = on_progress
+        # Simulate some progress calls
+        if on_progress:
+            on_progress(1, 3)
+            on_progress(2, 3)
+            on_progress(3, 3)
+        return fake_segs
+
+    mock_transcriber.transcribe = mock_transcribe
+
+    on_progress_calls: list[tuple[str, int, int]] = []
+
+    def on_progress_callback(episode_id: str, current: int, total: int) -> None:
+        on_progress_calls.append((episode_id, current, total))
+
+    with (
+        patch(
+            "sophia.services.hermes_transcribe.load_hermes_config",
+            return_value=HermesConfig(),
+        ),
+        patch(
+            "sophia.services.hermes_transcribe.WhisperTranscriber",
+            return_value=mock_transcriber,
+        ),
+        patch(
+            "sophia.services.hermes_transcribe.asyncio.to_thread",
+            side_effect=_run_sync,
+        ),
+    ):
+        results = await transcribe_lectures(app, 42, on_progress=on_progress_callback)
+
+    # Verify transcription succeeded
+    assert len(results) == 1
+    assert results[0].status == "completed"
+
+    # Verify the transcriber was called with an on_progress callback
+    assert transcribe_call_kwargs["on_progress"] is not None
+
+    # Verify our orchestration-level on_progress callback was invoked
+    assert len(on_progress_calls) > 0
+    assert on_progress_calls[-1] == ("ep-001", 3, 3)
