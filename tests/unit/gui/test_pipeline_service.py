@@ -468,3 +468,76 @@ class TestSelectivePipelineRunner:
             await first
 
         assert second is False
+
+    @pytest.mark.asyncio
+    async def test_transcribe_progress_callbacks_update_stage_progress(self) -> None:
+        """Verify transcribe callbacks update stage progress incrementally.
+
+        Not just at start/complete.
+        """
+        runner = PipelineRunner()
+        container = MagicMock()
+        container.db = MagicMock()
+
+        on_progress_callback: Callable[[str, int, int], None] | None = None
+        on_start_callback: Callable[[str, str], None] | None = None
+
+        async def capture_transcribe(*_args: object, **kwargs: object) -> list[MagicMock]:
+            nonlocal on_progress_callback, on_start_callback
+            on_progress_callback = cast(
+                "Callable[[str, int, int], None] | None",
+                kwargs.get("on_progress"),
+            )
+            on_start_callback = cast(
+                "Callable[[str, str], None] | None",
+                kwargs.get("on_start"),
+            )
+
+            if on_start_callback:
+                on_start_callback("e1", "Lecture 1")
+
+            if on_progress_callback:
+                on_progress_callback("e1", 50, 100)
+
+            result = MagicMock()
+            result.episode_id = "e1"
+            result.segment_count = 100
+            return [result]
+
+        with (
+            patch(
+                "sophia.gui.services.pipeline_service.get_episode_artifacts",
+                new=AsyncMock(
+                    return_value={
+                        "e1": _artifact(
+                            "e1",
+                            10,
+                            title="Lecture 1",
+                            has_download=True,
+                            has_transcript=False,
+                        )
+                    }
+                ),
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.transcribe_lectures",
+                side_effect=capture_transcribe,
+            ),
+            patch(
+                "sophia.gui.services.pipeline_service.assign_lecture_numbers",
+                new=AsyncMock(),
+            ),
+        ):
+            await runner.run_selective_pipeline(
+                container,
+                [("e1", {PipelineStage.TRANSCRIBE})],
+            )
+
+            assert on_progress_callback is not None, (
+                "on_progress callback should be passed to transcribe"
+            )
+
+            state = runner.get_state()
+            transcribe_stage = state.episode_progress["e1"].stage_states[PipelineStage.TRANSCRIBE]
+            assert transcribe_stage.status is StageStatus.COMPLETED
+            assert transcribe_stage.detail == "100 segments"

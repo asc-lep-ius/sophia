@@ -46,6 +46,7 @@ async def transcribe_lectures(
     *,
     episode_ids: set[str] | None = None,
     on_start: Callable[[str, str], None] | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> list[TranscriptionResult]:
@@ -91,6 +92,7 @@ async def transcribe_lectures(
             title,
             Path(file_path),
             on_start=on_start,
+            on_progress=on_progress,
             on_complete=on_complete,
         )
         results.append(result)
@@ -132,6 +134,7 @@ async def _transcribe_episode(
     audio_path: Path,
     *,
     on_start: Callable[[str, str], None] | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
 ) -> TranscriptionResult:
     """Transcribe a single episode: run Whisper → save SRT → persist to DB."""

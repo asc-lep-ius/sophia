@@ -529,6 +529,7 @@ class PipelineRunner:
                 module_id,
                 episode_ids=stage_episode_ids,
                 on_start=self._on_transcribe_start,
+                on_progress=self._on_transcribe_progress,
                 on_complete=self._on_transcribe_complete,
                 cancel_check=self._cancel_event.is_set,
             )
@@ -748,6 +749,21 @@ class PipelineRunner:
         stage_progress.status = StageStatus.RUNNING
         stage_progress.detail = title
         self._state.current_episode = episode_id
+        self._update_stage_progress(PipelineStage.TRANSCRIBE)
+
+    def _on_transcribe_progress(self, episode_id: str, current: int, total: int) -> None:
+        """Update transcription progress during processing."""
+        episode_progress = self._state.episode_progress.get(episode_id)
+        if episode_progress is None:
+            return
+
+        stage_progress = episode_progress.stage_states[PipelineStage.TRANSCRIBE]
+        if stage_progress.status is not StageStatus.RUNNING:
+            return
+
+        progress = current / total if total > 0 else 0.0
+        stage_progress.stage_progress = progress
+        stage_progress.detail = f"{current}/{total} segments"
         self._update_stage_progress(PipelineStage.TRANSCRIBE)
 
     def _on_transcribe_complete(self, episode_id: str, segment_count: int) -> None:
