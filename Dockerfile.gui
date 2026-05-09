@@ -33,7 +33,7 @@ COPY --from=cpu-builder /app/src /app/src
 COPY --from=cpu-builder /app/pyproject.toml /app/pyproject.toml
 COPY --from=cpu-builder /app/README.md /app/README.md
 RUN useradd --create-home --uid 1000 sophia
-RUN mkdir -p /data /app/.nicegui /home/sophia/.cache \
+RUN mkdir -p /data /app/.nicegui /home/sophia/.cache/huggingface /home/sophia/.cache/sophia \
     && chown -R sophia:sophia /data /app/.nicegui /home/sophia/.cache
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 --start-period=10s \
