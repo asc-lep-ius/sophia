@@ -41,6 +41,7 @@ _SESSKEY_RE = re.compile(r'"sesskey"\s*:\s*"([a-zA-Z0-9]+)"')
 # TU Wien SSO entry point parameters
 _SSO_IDP_ENTITY = "7bdd808f9f4da82bfe7992e779794b9a"
 _SSO_LOGIN_PATH = "/auth/saml2/login.php"
+_SSO_MFA_FIELD_NAME = "totp"
 _TISS_AUTH_PATH = "/admin/authentifizierung"
 
 
@@ -213,6 +214,7 @@ async def login_both(
     tiss_host: str,
     username: str,
     password: str,
+    mfa_code: str | None = None,
 ) -> tuple[SessionCredentials, TissSessionCredentials | None]:
     """Authenticate to both TUWEL and TISS with a single credential prompt.
 
@@ -229,7 +231,7 @@ async def login_both(
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         # --- TUWEL SAML flow ---
         idp_resp = await _initiate_sso(client, tuwel_base)
-        saml_resp = await _submit_credentials(client, idp_resp, username, password)
+        saml_resp = await _submit_credentials(client, idp_resp, username, password, mfa_code)
         dashboard_resp = await _relay_saml_response(client, saml_resp)
         tuwel_creds = _build_credentials(client, dashboard_resp, tuwel_base)
 
@@ -251,7 +253,12 @@ async def login_both(
         return tuwel_creds, tiss_creds
 
 
-async def login_with_credentials(host: str, username: str, password: str) -> SessionCredentials:
+async def login_with_credentials(
+    host: str,
+    username: str,
+    password: str,
+    mfa_code: str | None = None,
+) -> SessionCredentials:
     """Authenticate via TU Wien SSO and return session credentials.
 
     Performs the full SAML SSO dance: initiate login -> submit credentials
@@ -260,7 +267,7 @@ async def login_with_credentials(host: str, username: str, password: str) -> Ses
     base = host.rstrip("/")
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         idp_resp = await _initiate_sso(client, base)
-        saml_resp = await _submit_credentials(client, idp_resp, username, password)
+        saml_resp = await _submit_credentials(client, idp_resp, username, password, mfa_code)
         dashboard_resp = await _relay_saml_response(client, saml_resp)
         return _build_credentials(client, dashboard_resp, base)
 
@@ -297,6 +304,7 @@ async def _submit_credentials(
     idp_resp: httpx.Response,
     username: str,
     password: str,
+    mfa_code: str | None = None,
 ) -> httpx.Response:
     """Parse the IdP login form and POST credentials."""
     soup = BeautifulSoup(idp_resp.text, "lxml")
@@ -308,6 +316,8 @@ async def _submit_credentials(
     payload = _extract_hidden_inputs(form)
     payload["username"] = username
     payload["password"] = password
+    if form.find("input", {"name": _SSO_MFA_FIELD_NAME}):
+        payload[_SSO_MFA_FIELD_NAME] = mfa_code or ""
 
     log.info("sso_submit_credentials", url=action_url, user=username)
     resp = await client.post(action_url, data=payload)

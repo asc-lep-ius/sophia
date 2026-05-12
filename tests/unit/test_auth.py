@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
+from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs
 
 import httpx
 import pytest
@@ -11,8 +14,6 @@ import respx
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-from unittest.mock import patch
 
 from sophia.adapters.auth import (
     KeyringUnavailableError,
@@ -44,6 +45,7 @@ IDP_LOGIN_FORM_HTML = f"""
   <input type="hidden" name="AuthState" value="fake-auth-state" />
   <input type="text" name="username" />
   <input type="password" name="password" />
+    <input type="number" name="totp" />
   <button type="submit" name="_eventId_proceed">Login</button>
 </form>
 </body></html>
@@ -176,6 +178,33 @@ class TestLoginWithCredentials:
         assert result.sesskey == "abc123sesskey"
         assert result.host == HOST
         assert result.cookie_name == "MoodleSession"
+
+    @respx.mock
+    async def test_submits_mfa_code_when_idp_form_requests_totp(self):
+        """TU Wien IdP MFA field is submitted as the form's totp value."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+
+        def assert_login_payload(request: httpx.Request) -> httpx.Response:
+            payload = parse_qs(request.content.decode())
+            assert payload["username"] == ["testuser"]
+            assert payload["password"] == ["testpass"]
+            assert payload["totp"] == ["123456"]
+            return httpx.Response(200, text=SAML_RESPONSE_HTML)
+
+        respx.post(IDP_URL).mock(side_effect=assert_login_payload)
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+
+        result = await login_with_credentials(HOST, "testuser", "testpass", "123456")
+
+        assert result.moodle_session == "test-moodle-session"
 
     @respx.mock
     async def test_custom_cookie_name(self):
@@ -374,6 +403,38 @@ class TestLoginBoth:
 
         assert tuwel_creds.moodle_session == "test-moodle-session"
         assert tiss_creds is None
+
+
+class TestAuthLoginCommand:
+    """CLI login prompt behavior."""
+
+    async def test_prompts_for_mfa_code_and_passes_it_to_login_both(self, tmp_path: Path):
+        from sophia.cli.auth import login
+
+        tuwel_creds = SessionCredentials(
+            moodle_session="test-moodle-session",
+            sesskey="abc123sesskey",
+            host=HOST,
+            created_at="2026-03-04T12:00:00+00:00",
+        )
+        login_both_mock = AsyncMock(return_value=(tuwel_creds, None))
+        settings = SimpleNamespace(
+            tuwel_host=HOST,
+            tiss_host=TISS_HOST,
+            config_dir=tmp_path,
+        )
+
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch("rich.prompt.Prompt.ask", return_value="testuser"),
+            patch("getpass.getpass", side_effect=["testpass", "123456"]),
+            patch("sophia.config.Settings", return_value=settings),
+            patch("sophia.adapters.auth.login_both", login_both_mock),
+            patch("sophia.adapters.auth.save_session"),
+        ):
+            await login()
+
+        login_both_mock.assert_awaited_once_with(HOST, TISS_HOST, "testuser", "testpass", "123456")
 
 
 class TestKeyringCredentials:
