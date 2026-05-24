@@ -23,6 +23,8 @@ from sophia.domain.errors import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from fastapi import FastAPI, Request
 
 
@@ -65,7 +67,7 @@ async def http_exception_handler(_request: Request, exc: Exception) -> JSONRespo
     if not isinstance(exc, StarletteHTTPException):
         return _error_response(_DEFAULT_ERROR_SPEC)
     code = _HTTP_ERROR_CODES.get(exc.status_code, _DEFAULT_HTTP_ERROR_CODE)
-    return _error_response(ErrorSpec(code=code, status_code=exc.status_code))
+    return _error_response(ErrorSpec(code=code, status_code=exc.status_code), headers=exc.headers)
 
 
 async def validation_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
@@ -82,6 +84,8 @@ def _spec_for_exception(exc: Exception) -> ErrorSpec:
     return _DEFAULT_ERROR_SPEC
 
 
-def _error_response(spec: ErrorSpec) -> JSONResponse:
+def _error_response(spec: ErrorSpec, headers: Mapping[str, str] | None = None) -> JSONResponse:
     envelope = ErrorEnvelope(detail=ErrorDetail(code=spec.code))
-    return JSONResponse(status_code=spec.status_code, content=envelope.model_dump())
+    return JSONResponse(
+        status_code=spec.status_code, content=envelope.model_dump(), headers=headers
+    )

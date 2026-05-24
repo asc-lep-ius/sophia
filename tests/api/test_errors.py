@@ -59,6 +59,7 @@ def test_wrong_method_uses_stable_envelope_without_raw_message() -> None:
     response = TestClient(create_api_app()).put("/api/health")
 
     assert response.status_code == 405
+    assert response.headers["allow"] == "GET"
     assert response.json() == {"detail": {"code": "http.method_not_allowed", "params": {}}}
     assert response.json()["detail"] != "Method Not Allowed"
     assert "Method Not Allowed" not in response.text
