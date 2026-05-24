@@ -2,8 +2,10 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+const FRONTEND_ROOT_URL = new URL("..", import.meta.url);
 const API_ROOT_URL = new URL("../src/lib/api", import.meta.url);
 const CLIENT_WRAPPER = "frontend/src/lib/api/client.ts";
+const FRONTEND_SOURCE_DIR = "src";
 const OPENAPI_METHOD_PATTERN =
   /\.\s*(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s*(<[^>()]+>)?\s*\(\s*([^,\n\r)]*)/g;
 const OPENAPI_FETCH_PATTERN =
@@ -68,7 +70,20 @@ export async function readApiClientFiles(
 ) {
   /** @type {ApiClientFile[]} */
   const files = [];
-  await collectApiClientFiles(apiRoot, files);
+  await collectSourceFiles(apiRoot, files);
+  return files;
+}
+
+/**
+ * @param {string} [frontendRoot]
+ * @returns {Promise<ApiClientFile[]>}
+ */
+export async function readApiClientContractFiles(
+  frontendRoot = fileURLToPath(FRONTEND_ROOT_URL),
+) {
+  /** @type {ApiClientFile[]} */
+  const files = [];
+  await collectSourceFiles(join(frontendRoot, FRONTEND_SOURCE_DIR), files);
   return files;
 }
 
@@ -93,14 +108,18 @@ function validateApiClientFile(file) {
 
   lines.forEach((line, index) => {
     const lineNumber = index + 1;
-    if (/\bas\s+any\b/.test(line)) {
-      errors.push(`${file.path}:${lineNumber} uses forbidden \`as any\``);
-    }
-
     if (OPENAPI_FETCH_PATTERN.test(line) && !isClientWrapper(file.path)) {
       errors.push(
         `${file.path}:${lineNumber} imports openapi-fetch outside ${CLIENT_WRAPPER}`,
       );
+    }
+
+    if (!isApiClientFile(file.path)) {
+      return;
+    }
+
+    if (/\bas\s+any\b/.test(line)) {
+      errors.push(`${file.path}:${lineNumber} uses forbidden \`as any\``);
     }
 
     for (const cast of MANUAL_CASTS) {
@@ -110,7 +129,9 @@ function validateApiClientFile(file) {
     }
   });
 
-  errors.push(...validateOpenApiMethodCalls(file));
+  if (isApiClientFile(file.path)) {
+    errors.push(...validateOpenApiMethodCalls(file));
+  }
   return errors;
 }
 
@@ -176,16 +197,27 @@ function isClientWrapper(filePath) {
   );
 }
 
+/** @param {string} filePath */
+function isApiClientFile(filePath) {
+  const normalized = normalizePath(filePath);
+  return (
+    normalized.startsWith("frontend/src/lib/api/") ||
+    normalized.startsWith("src/lib/api/") ||
+    normalized.includes("/frontend/src/lib/api/") ||
+    normalized.includes("/src/lib/api/")
+  );
+}
+
 /**
  * @param {string} directory
  * @param {ApiClientFile[]} files
  * @returns {Promise<void>}
  */
-async function collectApiClientFiles(directory, files) {
+async function collectSourceFiles(directory, files) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) {
-      await collectApiClientFiles(path, files);
+      await collectSourceFiles(path, files);
       continue;
     }
 
@@ -219,7 +251,7 @@ function normalizePath(filePath) {
 
 /** @returns {Promise<void>} */
 async function main() {
-  assertApiClientContract(await readApiClientFiles());
+  assertApiClientContract(await readApiClientContractFiles());
 }
 
 if (

@@ -1,9 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { validateApiClientContract } from "../../scripts/assert-api-client-contract.mjs";
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  readApiClientContractFiles,
+  validateApiClientContract,
+} from "../../scripts/assert-api-client-contract.mjs";
 
 const wrapperPath = "frontend/src/lib/api/client.ts";
 const helperPath = "frontend/src/lib/api/lectures.ts";
+const routePath = "frontend/src/routes/dashboard/+page.server.ts";
+const tempDirs: string[] = [];
 
 const allowedWrapper = `
 import createClient, { type ClientOptions } from "openapi-fetch";
@@ -32,6 +41,13 @@ export function normalizeApiError(body: unknown) {
 `;
 
 describe("API client guard", () => {
+  afterEach(async () => {
+    await Promise.all(
+      tempDirs.map((tempDir) => rm(tempDir, { recursive: true, force: true })),
+    );
+    tempDirs.length = 0;
+  });
+
   it("allows the single openapi-fetch wrapper and boundary unknown normalizers", () => {
     expect(
       validateApiClientContract([
@@ -53,6 +69,53 @@ describe("API client guard", () => {
     ).toContain(
       "frontend/src/lib/api/lectures.ts:1 imports openapi-fetch outside frontend/src/lib/api/client.ts",
     );
+  });
+
+  it("rejects direct openapi-fetch imports from route files in the CLI source scan", async () => {
+    const frontendRoot = await mkdtemp(join(tmpdir(), "sophia-api-contract-"));
+    tempDirs.push(frontendRoot);
+
+    await mkdir(join(frontendRoot, "src/lib/api"), { recursive: true });
+    await mkdir(join(frontendRoot, "src/routes/rogue"), { recursive: true });
+    await writeFile(
+      join(frontendRoot, "src/lib/api/client.ts"),
+      allowedWrapper,
+    );
+    await writeFile(
+      join(frontendRoot, "src/routes/rogue/+page.server.ts"),
+      'import createClient from "openapi-fetch";\nexport const load = () => createClient();\n',
+    );
+
+    const files = await readApiClientContractFiles(frontendRoot);
+
+    expect(files.map((file) => file.path)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("src/routes/rogue/+page.server.ts"),
+      ]),
+    );
+    expect(validateApiClientContract(files)).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          "src/routes/rogue/+page.server.ts:1 imports openapi-fetch outside frontend/src/lib/api/client.ts",
+        ),
+      ]),
+    );
+  });
+
+  it("keeps OpenAPI path and cast checks scoped to src/lib/api", () => {
+    expect(
+      validateApiClientContract([
+        {
+          path: routePath,
+          content: [
+            'client.GET("/api/lectures/" + lectureId);',
+            'client.POST<ManualRequest>("/api/lectures");',
+            "const typedPath = route as ApiPath;",
+            "const body = payload as BodyInit;",
+          ].join("\n"),
+        },
+      ]),
+    ).toEqual([]);
   });
 
   it("rejects as any casts", () => {
