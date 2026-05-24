@@ -11,6 +11,12 @@ from typing import Any
 from sophia.api import create_api_app
 
 DEFAULT_OUTPUT = Path("frontend/src/lib/api/openapi.json")
+HTTP_METHODS = frozenset({"delete", "get", "patch", "post", "put"})
+REQUEST_ID_HEADER_NAME = "X-Request-ID"
+REQUEST_ID_HEADER_SCHEMA = {
+    "description": "Request correlation identifier.",
+    "schema": {"type": "string"},
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -40,8 +46,31 @@ def main(argv: list[str] | None = None) -> int:
 
 def render_openapi() -> bytes:
     document = create_api_app().openapi()
+    _add_response_header_contracts(document)
     sorted_document = _sort_openapi_document(document)
     return f"{json.dumps(sorted_document, sort_keys=True, indent=2)}\n".encode()
+
+
+def _add_response_header_contracts(document: dict[str, Any]) -> None:
+    paths = document.get("paths")
+    if not isinstance(paths, dict):
+        return
+
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses")
+            if not isinstance(responses, dict):
+                continue
+            for response in responses.values():
+                if not isinstance(response, dict) or "$ref" in response:
+                    continue
+                headers = response.setdefault("headers", {})
+                if isinstance(headers, dict):
+                    headers.setdefault(REQUEST_ID_HEADER_NAME, REQUEST_ID_HEADER_SCHEMA.copy())
 
 
 def _sort_openapi_document(document: dict[str, Any]) -> dict[str, Any]:

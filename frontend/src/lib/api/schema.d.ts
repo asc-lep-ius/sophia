@@ -121,7 +121,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
@@ -141,7 +142,8 @@ export interface operations {
             /** @description Successful Response */
             202: {
                 headers: {
-                    [name: string]: unknown;
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
                 };
                 content: {
                     "application/json": components["schemas"]["WebVitalsReservedResponse"];
@@ -161,7 +163,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
-                    [name: string]: unknown;
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
@@ -170,7 +173,8 @@ export interface operations {
             /** @description Service Unavailable */
             503: {
                 headers: {
-                    [name: string]: unknown;
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
