@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from sophia.api import create_api_app
+from sophia.api import create_api_app, create_standalone_api_app
 
 
 def test_api_ready_requires_database_and_sse_broker() -> None:
@@ -36,3 +36,23 @@ def test_api_ready_requires_database_and_sse_broker() -> None:
             {"name": "sse_broker", "ok": True},
         ],
     }
+
+
+def test_standalone_api_marks_ready_during_lifespan() -> None:
+    api_app = create_standalone_api_app()
+    pre_startup_response = TestClient(api_app).get("/api/ready")
+    assert pre_startup_response.status_code == 503
+
+    with TestClient(api_app) as client:
+        ready_response = client.get("/api/ready")
+
+    assert ready_response.status_code == 200
+    assert ready_response.json() == {
+        "status": "ready",
+        "checks": [
+            {"name": "database", "ok": True},
+            {"name": "sse_broker", "ok": True},
+        ],
+    }
+    assert api_app.state.db_ready is False
+    assert api_app.state.sse_broker_ready is False

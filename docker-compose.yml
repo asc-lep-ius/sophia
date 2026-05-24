@@ -130,7 +130,7 @@ services:
       dockerfile: Dockerfile
     image: sophia-api:latest
     entrypoint: ["/app/.venv/bin/uvicorn"]
-    command: ["sophia.api.app:create_api_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sophia.api.app:create_standalone_api_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
     environment:
       - SOPHIA_DATA_DIR=/data

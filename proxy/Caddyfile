@@ -42,6 +42,7 @@
 		}
 	}
 
+	redir /app /app/ 308
 	handle /app/* {
 		reverse_proxy frontend:3000 {
 			import forwarded_headers
