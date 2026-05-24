@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,6 +15,9 @@ from sophia.gui.services.pipeline_service import (
     estimate_storage,
 )
 from sophia.services.hermes_pipeline import PipelineResult
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # --- estimate_storage --------------------------------------------------------
 
@@ -320,7 +324,7 @@ class TestCancelCheckWiring:
     async def test_cancel_check_returns_true_after_cancel(self) -> None:
         runner = PipelineRunner()
         container = MagicMock()
-        captured_fn: list = []
+        captured_fn: list[object] = []
 
         async def _capture(*_a: object, **kw: object) -> PipelineResult:
             captured_fn.append(kw.get("cancel_check"))
@@ -334,10 +338,11 @@ class TestCancelCheckWiring:
 
         assert len(captured_fn) == 1
         cancel_check = captured_fn[0]
-        assert cancel_check is not None
-        assert cancel_check() is False
+        assert callable(cancel_check)
+        typed_cancel_check = cast("Callable[[], bool]", cancel_check)
+        assert typed_cancel_check() is False
         runner.cancel()
-        assert cancel_check() is True
+        assert typed_cancel_check() is True
 
     @pytest.mark.asyncio
     async def test_batch_cancelled_result_marks_state_cancelled(self) -> None:

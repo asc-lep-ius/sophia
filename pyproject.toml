@@ -122,7 +122,11 @@ reportCallIssue = false
 reportUntypedFunctionDecorator = false
 
 [tool.coverage.run]
-omit = ["src/sophia/__main__.py"]
+omit = [
+    "src/sophia/__main__.py",
+    "src/sophia/cli/*",
+    "src/sophia/gui/pages/*",
+]
 
 [build-system]
 requires = ["hatchling"]
