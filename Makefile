@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -23,6 +23,23 @@ openapi.check:                   ## Verify committed OpenAPI JSON is current
 
 blocking-audit:                  ## Audit async API routers for blocking I/O
 	uv run python scripts/blocking_audit.py --check
+
+frontend.install:                ## Install frontend dependencies
+	pnpm -C frontend install
+
+frontend.check:                  ## Run frontend code generation, type checks, lint, unit tests, and size gate
+	pnpm -C frontend run paraglide:check
+	pnpm -C frontend run check
+	pnpm -C frontend run lint
+	pnpm -C frontend run test:unit
+	pnpm -C frontend run size-limit
+
+frontend.test:                   ## Run frontend unit and E2E tests
+	pnpm -C frontend run test:unit
+	pnpm -C frontend run test:e2e
+
+frontend.a11y:                   ## Run frontend accessibility and German overflow gates
+	pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
 
 run:                             ## Run sophia CLI
 	uv run sophia
