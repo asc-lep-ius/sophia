@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@11.3.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "vite dev --host 127.0.0.1",
     "build": "vite build",
@@ -12,7 +15,8 @@
     "openapi:types": "openapi-typescript ./src/lib/api/openapi.json -o ./src/lib/api/schema.d.ts",
     "paraglide:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide",
     "paraglide:check": "pnpm run paraglide:compile && node ./scripts/assert-message-keys.mjs",
-    "check": "pnpm run paraglide:compile && pnpm run openapi:types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "pnpm run guard:package-contract && pnpm run paraglide:compile && pnpm run openapi:types && svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "guard:package-contract": "node ./scripts/assert-package-contract.mjs",
     "guard:server-fetch": "node ./scripts/assert-server-load-fetch.mjs",
     "lint": "pnpm run paraglide:compile && pnpm run guard:server-fetch && eslint . && prettier --check .",
     "test:unit": "pnpm run paraglide:compile && vitest run --config ./vitest.config.ts",
@@ -21,11 +25,12 @@
   },
   "dependencies": {
     "@inlang/paraglide-js": "2.18.1",
-    "@inlang/paraglide-sveltekit": "0.16.1",
     "@tailwindcss/vite": "4.3.0",
+    "mode-watcher": "1.1.0",
     "openapi-fetch": "0.17.0",
     "svelte": "5.55.9",
-    "tailwindcss": "4.3.0"
+    "tailwindcss": "4.3.0",
+    "web-vitals": "5.2.0"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.11.3",
@@ -33,7 +38,7 @@
     "@playwright/test": "1.60.0",
     "@size-limit/preset-small-lib": "12.1.0",
     "@sveltejs/adapter-node": "5.5.4",
-    "@sveltejs/kit": "2.61.1",
+    "@sveltejs/kit": "2.61.0",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
     "@testing-library/svelte": "5.3.1",
     "@types/node": "25.9.1",
@@ -44,6 +49,7 @@
     "openapi-typescript": "7.13.0",
     "prettier": "3.8.3",
     "prettier-plugin-svelte": "4.0.1",
+    "shadcn-svelte": "1.2.7",
     "size-limit": "12.1.0",
     "svelte-check": "4.4.8",
     "typescript": "6.0.3",

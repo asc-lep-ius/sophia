@@ -9,7 +9,8 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "sourceMap": true,
-    "strict": true
+    "strict": true,
+    "noUncheckedIndexedAccess": true
   },
   "include": [
     "ambient.d.ts",

@@ -38,7 +38,8 @@ describe("API client normalization", () => {
 
     expect(normalized.created_at).toBeInstanceOf(Date);
     expect(normalized.name).toBe("2026-05-24");
-    expect(normalized.nested[0].scheduled_at).toBeInstanceOf(Date);
+    expect(normalized.nested).toHaveLength(1);
+    expect(normalized.nested.at(0)?.scheduled_at).toBeInstanceOf(Date);
   });
 
   it("throws SophiaApiError from openapi-fetch error results", async () => {
