@@ -89,6 +89,8 @@ sophia = "sophia.__main__:main"
 target-version = "py312"
 line-length = 100
 src = ["src"]
+extend-exclude = ["Makefile"]
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]

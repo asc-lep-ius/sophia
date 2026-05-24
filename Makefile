@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -14,6 +14,15 @@ lint:                            ## Lint and format check
 
 typecheck:                       ## Type check with pyright
 	uv run pyright
+
+openapi:                         ## Export deterministic OpenAPI JSON for frontend clients
+	uv run python scripts/export_openapi.py
+
+openapi.check:                   ## Verify committed OpenAPI JSON is current
+	uv run python scripts/export_openapi.py --check
+
+blocking-audit:                  ## Audit async API routers for blocking I/O
+	uv run python scripts/blocking_audit.py --check
 
 run:                             ## Run sophia CLI
 	uv run sophia
