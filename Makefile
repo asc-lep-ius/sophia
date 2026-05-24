@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -56,6 +56,15 @@ clean-all: clean                 ## Remove everything including .venv
 docker-build:                    ## Build Docker image
 	docker compose build
 
+docker-build-api:                ## Build API Docker image
+	docker compose build api
+
+docker-build-frontend:           ## Build frontend Docker image
+	docker compose build frontend
+
+docker-build-nicegui:            ## Build transitional NiceGUI Docker image
+	docker build -f Dockerfile.nicegui -t sophia-nicegui:latest .
+
 docker-up:                       ## Start services (detached)
 	docker compose up -d
 
@@ -64,6 +73,16 @@ docker-down:                     ## Stop services
 
 docker-logs:                     ## Tail service logs
 	docker compose logs -f
+
+docker-config:                   ## Validate development Compose configuration
+	docker compose config
+
+docker-prod-config:              ## Validate production Compose configuration
+	docker compose -f docker-compose.prod.yml config
+
+docker-validate: docker-config docker-prod-config ## Validate all Compose configurations
+
+deploy-config: docker-prod-config ## Alias for deployment configuration validation
 
 docker-backup:                   ## Backup SQLite from Docker volume
 	docker compose cp sophia:/data/sophia.db ./sophia-backup-$$(date +%Y%m%d).db

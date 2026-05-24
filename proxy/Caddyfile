@@ -1,0 +1,79 @@
+{
+	admin off
+
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(forwarded_headers) {
+	header_up Host {host}
+	header_up X-Real-IP {remote_host}
+	header_up X-Forwarded-For {remote_host}
+	header_up X-Forwarded-Host {host}
+	header_up X-Forwarded-Proto {scheme}
+}
+
+{$SOPHIA_SITE_ADDRESS:http://localhost} {
+	log {
+		output stdout
+		format json
+	}
+
+	@api_uploads path /api/uploads/* /api/imports/* /api/lectures/*/upload* /api/files/*
+	request_body @api_uploads {
+		max_size 512MB
+	}
+
+	@legacy_uploads path /_nicegui/upload* /legacy/_nicegui/upload*
+	request_body @legacy_uploads {
+		max_size 512MB
+	}
+
+	@api_sse path /api/events* /api/*/events* /api/*/stream*
+	handle @api_sse {
+		reverse_proxy api:8000 {
+			import forwarded_headers
+			header_up X-Forwarded-Prefix /api
+			flush_interval -1
+			transport http {
+				compression off
+			}
+		}
+	}
+
+	handle /app/* {
+		reverse_proxy frontend:3000 {
+			import forwarded_headers
+			header_up X-Forwarded-Prefix /app
+		}
+	}
+
+	handle /api/* {
+		reverse_proxy api:8000 {
+			import forwarded_headers
+			header_up X-Forwarded-Prefix /api
+		}
+	}
+
+	redir /legacy /legacy/ 308
+	handle_path /legacy/* {
+		reverse_proxy sophia-gui:8080 {
+			import forwarded_headers
+			header_up X-Forwarded-Prefix /legacy
+		}
+	}
+
+	handle {
+		reverse_proxy sophia-gui:8080 {
+			import forwarded_headers
+			header_up X-Forwarded-Prefix /
+		}
+	}
+
+	# Reserved for /api/auth/login rate limiting. Keep this inactive until the
+	# proxy image includes a Caddy rate-limit plugin; Caddy core has no built-in
+	# directive for this policy.
+	# @auth_login path /api/auth/login
+	# rate_limit @auth_login { zone auth_login { key {remote_host} events 5 window 1m } }
+}

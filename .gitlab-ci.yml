@@ -12,6 +12,7 @@ stages:
   - rebuild-ci
   - check
   - build
+  - deploy
 
 # --- Docker build template (BuildKit + DinD) ---
 .docker-build:
@@ -88,6 +89,70 @@ typecheck:
   script:
     - uv run pyright src/
 
+api-tests:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run pytest tests/api/ -q
+
+api-contracts:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run pytest tests/api/contracts/ -q
+    - uv run python scripts/export_openapi.py --check
+
+blocking-audit:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/blocking_audit.py --check
+
+compose-config:
+  stage: check
+  image: docker:27-cli
+  tags: [privileged]
+  script:
+    - docker compose config
+    - docker compose -f docker-compose.prod.yml config
+
+.frontend-job:
+  stage: check
+  image: mcr.microsoft.com/playwright:v1.60.0-noble
+  tags: [hephaestus]
+  before_script:
+    - corepack enable
+    - corepack prepare pnpm@11.3.0 --activate
+    - pnpm -C frontend install --frozen-lockfile
+
+frontend-lint:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run lint
+
+frontend-check:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run check
+
+frontend-unit:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run test:unit
+
+frontend-size:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run size-limit
+
+frontend-a11y:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
+
 test:3.12:
   stage: check
   tags: [hephaestus]
@@ -106,6 +171,58 @@ test:3.14:
   allow_failure: true
 
 # --- Build stage ---
+docker-api-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build
+        --file Dockerfile
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/api-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/api-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/api:${CI_COMMIT_SHA}
+        --push .
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - changes:
+        - Dockerfile
+        - pyproject.toml
+        - uv.lock
+        - src/**/*
+
+docker-frontend-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build
+        --file Dockerfile.frontend
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/frontend-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/frontend-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/frontend:${CI_COMMIT_SHA}
+        --push .
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - changes:
+        - Dockerfile.frontend
+        - frontend/**/*
+
+docker-nicegui-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build
+        --file Dockerfile.nicegui
+        --cache-from type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache
+        --cache-to type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache,mode=max
+        --tag ${LOCAL_REGISTRY}/nicegui:${CI_COMMIT_SHA}
+        --push .
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+    - changes:
+        - Dockerfile.nicegui
+        - pyproject.toml
+        - uv.lock
+        - src/**/*
+
 docker-gui-build-gpu:
   stage: build
   extends: .docker-build
@@ -125,3 +242,26 @@ docker-gui-build-gpu:
         - pyproject.toml
         - uv.lock
         - src/**/*
+
+deploy:production:
+  stage: deploy
+  image: alpine:3.22
+  tags: [hephaestus]
+  needs:
+    - docker-api-build
+    - docker-frontend-build
+    - docker-nicegui-build
+  variables:
+    IMAGE_TAG: $CI_COMMIT_SHA
+  before_script:
+    - apk add --no-cache openssh-client
+  script:
+    - test -n "$DEPLOY_HOST"
+    - test -n "$DEPLOY_PATH"
+    - test -n "$CI_COMMIT_SHA"
+    - ssh "$DEPLOY_HOST" "cd '$DEPLOY_PATH' && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml pull && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+  environment:
+    name: production
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+      when: manual
