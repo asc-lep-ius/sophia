@@ -123,10 +123,13 @@ class _BlockingCallVisitor(ast.NodeVisitor):
         self.visit(node.value)
         self.await_depth -= 1
 
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # noqa: N802
+        self._visit_lambda_defaults(node)
+
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
         call_name = _normalized_call_name(node.func, self.import_aliases)
         if call_name == RUN_SYNC_CALL:
-            self.generic_visit(node)
+            self._visit_run_sync_arguments(node)
             return
 
         if call_name is not None:
@@ -146,7 +149,55 @@ class _BlockingCallVisitor(ast.NodeVisitor):
                     )
                 )
 
-        self.generic_visit(node)
+        self._visit_call_children(node)
+
+    def _visit_run_sync_arguments(self, node: ast.Call) -> None:
+        if node.args:
+            self._visit_run_sync_callable(node.args[0])
+            for argument in node.args[1:]:
+                self._visit_eager_expression(argument)
+
+        for keyword in node.keywords:
+            if keyword.arg == "func":
+                self._visit_run_sync_callable(keyword.value)
+            else:
+                self._visit_eager_expression(keyword.value)
+
+    def _visit_run_sync_callable(self, node: ast.AST) -> None:
+        if isinstance(node, ast.Call):
+            self._visit_eager_expression(node)
+            return
+
+        self._visit_callable_reference(node)
+
+    def _visit_callable_reference(self, node: ast.AST) -> None:
+        self.visit(node)
+
+    def _visit_eager_expression(self, node: ast.AST) -> None:
+        self.visit(node)
+
+    def _visit_call_children(self, node: ast.Call) -> None:
+        if isinstance(node.func, ast.Lambda):
+            self._visit_lambda_defaults(node.func)
+            for argument in node.args:
+                self._visit_eager_expression(argument)
+            for keyword in node.keywords:
+                self._visit_eager_expression(keyword.value)
+            self.visit(node.func.body)
+            return
+
+        self.visit(node.func)
+        for argument in node.args:
+            self._visit_eager_expression(argument)
+        for keyword in node.keywords:
+            self._visit_eager_expression(keyword.value)
+
+    def _visit_lambda_defaults(self, node: ast.Lambda) -> None:
+        for default in node.args.defaults:
+            self._visit_eager_expression(default)
+        for default in node.args.kw_defaults:
+            if default is not None:
+                self._visit_eager_expression(default)
 
 
 def _import_aliases(tree: ast.Module) -> dict[str, str]:

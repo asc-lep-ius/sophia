@@ -71,6 +71,33 @@ def test_blocking_audit_allows_thread_wrapped_sync_io(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_blocking_audit_allows_lambda_wrapped_thread_work(tmp_path: Path) -> None:
+    routers_dir = tmp_path / "src" / "sophia" / "api" / "routers"
+    routers_dir.mkdir(parents=True)
+    (routers_dir / "good.py").write_text(
+        textwrap.dedent(
+            """
+            from pathlib import Path
+
+            import anyio
+            from fastapi import APIRouter
+
+            router = APIRouter()
+
+
+            @router.get('/good')
+            async def good_route() -> dict[str, str]:
+                content = await anyio.to_thread.run_sync(lambda: Path('payload.txt').read_text())
+                return {'content': content}
+            """
+        )
+    )
+
+    result = _run_audit("--root", str(tmp_path), "--check")
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_blocking_audit_rejects_executed_sync_io_inside_run_sync(tmp_path: Path) -> None:
     routers_dir = tmp_path / "src" / "sophia" / "api" / "routers"
     routers_dir.mkdir(parents=True)
