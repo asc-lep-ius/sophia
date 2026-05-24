@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from typing import TYPE_CHECKING
 
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
 from sophia.api.schemas.errors import ErrorDetail, ErrorEnvelope
@@ -31,6 +33,11 @@ class ErrorSpec:
 
 
 _DEFAULT_ERROR_SPEC = ErrorSpec("sophia.failed", HTTPStatus.INTERNAL_SERVER_ERROR)
+_DEFAULT_HTTP_ERROR_CODE = "http.failed"
+_HTTP_ERROR_CODES: dict[int, str] = {
+    HTTPStatus.NOT_FOUND: "http.not_found",
+    HTTPStatus.METHOD_NOT_ALLOWED: "http.method_not_allowed",
+}
 _DOMAIN_ERROR_SPECS: tuple[tuple[type[SophiaError], ErrorSpec], ...] = (
     (AuthError, ErrorSpec("auth.failed", HTTPStatus.UNAUTHORIZED)),
     (MoodleError, ErrorSpec("moodle.failed", HTTPStatus.BAD_GATEWAY)),
@@ -45,12 +52,25 @@ _DOMAIN_ERROR_SPECS: tuple[tuple[type[SophiaError], ErrorSpec], ...] = (
 
 def register_error_handlers(api_app: FastAPI) -> None:
     api_app.add_exception_handler(SophiaError, domain_exception_handler)
+    api_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    api_app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 
 async def domain_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
     spec = _spec_for_exception(exc)
-    envelope = ErrorEnvelope(detail=ErrorDetail(code=spec.code))
-    return JSONResponse(status_code=spec.status_code, content=envelope.model_dump())
+    return _error_response(spec)
+
+
+async def http_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    if not isinstance(exc, StarletteHTTPException):
+        return _error_response(_DEFAULT_ERROR_SPEC)
+    code = _HTTP_ERROR_CODES.get(exc.status_code, _DEFAULT_HTTP_ERROR_CODE)
+    return _error_response(ErrorSpec(code=code, status_code=exc.status_code))
+
+
+async def validation_exception_handler(_request: Request, _exc: Exception) -> JSONResponse:
+    spec = ErrorSpec("request.validation_failed", HTTPStatus.UNPROCESSABLE_ENTITY)
+    return _error_response(spec)
 
 
 def _spec_for_exception(exc: Exception) -> ErrorSpec:
@@ -60,3 +80,8 @@ def _spec_for_exception(exc: Exception) -> ErrorSpec:
         if isinstance(exc, error_type):
             return spec
     return _DEFAULT_ERROR_SPEC
+
+
+def _error_response(spec: ErrorSpec) -> JSONResponse:
+    envelope = ErrorEnvelope(detail=ErrorDetail(code=spec.code))
+    return JSONResponse(status_code=spec.status_code, content=envelope.model_dump())
