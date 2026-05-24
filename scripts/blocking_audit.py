@@ -96,19 +96,21 @@ def audit_root(root: Path) -> list[Violation]:
 
 def audit_file(path: Path) -> list[Violation]:
     tree = ast.parse(path.read_text(), filename=str(path))
+    import_aliases = _import_aliases(tree)
     violations: list[Violation] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.AsyncFunctionDef):
-            visitor = _BlockingCallVisitor(path, node.name)
+            visitor = _BlockingCallVisitor(path, node.name, import_aliases)
             visitor.visit_statements(node.body)
             violations.extend(visitor.violations)
     return violations
 
 
 class _BlockingCallVisitor(ast.NodeVisitor):
-    def __init__(self, path: Path, function_name: str) -> None:
+    def __init__(self, path: Path, function_name: str, import_aliases: dict[str, str]) -> None:
         self.path = path
         self.function_name = function_name
+        self.import_aliases = import_aliases
         self.await_depth = 0
         self.violations: list[Violation] = []
 
@@ -122,8 +124,9 @@ class _BlockingCallVisitor(ast.NodeVisitor):
         self.await_depth -= 1
 
     def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
-        call_name = _call_name(node.func)
+        call_name = _normalized_call_name(node.func, self.import_aliases)
         if call_name == RUN_SYNC_CALL:
+            self.generic_visit(node)
             return
 
         if call_name is not None:
@@ -144,6 +147,42 @@ class _BlockingCallVisitor(ast.NodeVisitor):
                 )
 
         self.generic_visit(node)
+
+
+def _import_aliases(tree: ast.Module) -> dict[str, str]:
+    blocking_modules = {
+        call_name.split(".", maxsplit=1)[0]
+        for call_name in BLOCKING_EXACT_CALLS
+        if "." in call_name
+    }
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                module_root = alias.name.split(".", maxsplit=1)[0]
+                if module_root in blocking_modules:
+                    bound_name = alias.asname or module_root
+                    canonical_name = alias.name if alias.asname else module_root
+                    aliases[bound_name] = canonical_name
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None or node.level != 0:
+                continue
+            for alias in node.names:
+                imported_name = f"{node.module}.{alias.name}"
+                if imported_name in BLOCKING_EXACT_CALLS:
+                    aliases[alias.asname or alias.name] = imported_name
+    return aliases
+
+
+def _normalized_call_name(node: ast.AST, import_aliases: dict[str, str]) -> str | None:
+    call_name = _call_name(node)
+    if call_name is None:
+        return None
+
+    root, separator, remainder = call_name.partition(".")
+    if root not in import_aliases:
+        return call_name
+    return f"{import_aliases[root]}{separator}{remainder}"
 
 
 def _call_name(node: ast.AST) -> str | None:
