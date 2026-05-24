@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 import structlog
 from nicegui import app, ui
 
+from sophia.api import create_api_app
 from sophia.config import Settings
 from sophia.domain.errors import AuthError
 from sophia.gui.components.error_boundary import error_boundary
@@ -64,6 +65,7 @@ def configure(settings: Settings | None = None) -> None:
     # Health endpoints — plain FastAPI/Starlette routes
     app.add_route("/health", health)
     app.add_route("/ready", ready)
+    app.mount("/api", create_api_app(resolved_settings, route_prefix=""))
 
     # DI lifecycle
     async def _startup() -> None:

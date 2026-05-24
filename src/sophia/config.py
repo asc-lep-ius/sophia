@@ -8,6 +8,8 @@ from platformdirs import user_cache_dir, user_config_dir, user_data_dir
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_LOCAL_DEVELOPMENT_SECRET_KEY = "sophia-local-development-secret-key"
+
 
 class Settings(BaseSettings):
     """Sophia configuration — loaded from environment and .env file."""
@@ -52,6 +54,12 @@ class Settings(BaseSettings):
     gui_reload: bool = False
     auto_sync: bool = True
 
+    # API/session security
+    production: bool = False
+    secret_key: str = ""
+    secret_key_current: str = ""
+    secret_key_previous: str = ""
+
     # Session health
     session_keepalive_interval: int = 300
 
@@ -67,6 +75,30 @@ class Settings(BaseSettings):
         """Create application directories with restrictive permissions."""
         for d in (self.data_dir, self.config_dir, self.cache_dir):
             d.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    def validate_secret_key_configuration(self) -> None:
+        """Fail fast when production lacks a signing key."""
+        if self.production and not (self.secret_key_current or self.secret_key):
+            msg = "SOPHIA_SECRET_KEY_CURRENT or SOPHIA_SECRET_KEY is required in production"
+            raise ValueError(msg)
+
+    def session_signing_key(self) -> str:
+        """Return the active signing key, with a local-only development fallback."""
+        if self.secret_key_current:
+            return self.secret_key_current
+        if self.secret_key:
+            return self.secret_key
+        if self.production:
+            self.validate_secret_key_configuration()
+        return _LOCAL_DEVELOPMENT_SECRET_KEY
+
+    def session_verification_keys(self) -> tuple[str, ...]:
+        """Return unique keys accepted for session verification."""
+        keys = [self.session_signing_key()]
+        for candidate in (self.secret_key_previous, self.secret_key):
+            if candidate and candidate not in keys:
+                keys.append(candidate)
+        return tuple(keys)
 
     @property
     def db_path(self) -> Path:
