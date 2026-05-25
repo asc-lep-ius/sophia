@@ -29,7 +29,10 @@ class TestConfigure:
         self,
         mock_settings: Settings,
     ) -> None:
+        from nicegui import app
+
         from sophia.gui.app import configure
+        from sophia.gui.auth_bridge import AuthBridgeMiddleware
 
         configure(mock_settings)
         route_paths = _route_paths()
@@ -38,6 +41,8 @@ class TestConfigure:
         assert "/ready" in route_paths
         assert "/api" not in route_paths
         assert not any(path.startswith("/api/") for path in route_paths)
+        assert any(middleware.cls is AuthBridgeMiddleware for middleware in app.user_middleware)
+        assert app.state.sophia_auth_bridge_session_core is not None
 
     def test_configure_is_idempotent(self, mock_settings: Settings) -> None:
         """Calling configure twice should not raise."""

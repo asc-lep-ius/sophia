@@ -11,6 +11,7 @@ from nicegui import app, ui
 
 from sophia.config import Settings
 from sophia.domain.errors import AuthError
+from sophia.gui.auth_bridge import install_auth_bridge
 from sophia.gui.components.error_boundary import error_boundary
 from sophia.gui.layout import app_shell
 from sophia.gui.middleware.error_handler import handle_exception
@@ -64,6 +65,7 @@ def configure(settings: Settings | None = None) -> None:
     # Health endpoints — plain FastAPI/Starlette routes
     app.add_route("/health", health)
     app.add_route("/ready", ready)
+    install_auth_bridge(app, settings=resolved_settings)
 
     # DI lifecycle
     async def _startup() -> None:
