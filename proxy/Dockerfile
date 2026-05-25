@@ -16,3 +16,4 @@ FROM caddy:${CADDY_VERSION}
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 RUN /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+RUN /usr/bin/caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile --pretty > /tmp/Caddyfile.json

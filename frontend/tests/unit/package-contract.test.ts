@@ -30,7 +30,7 @@ describe("package contract", () => {
     ).toEqual([]);
   });
 
-  it("rejects the deprecated Paraglide SvelteKit adapter", () => {
+  it("rejects the retired Paraglide SvelteKit adapter package", () => {
     const packageJson = validPackageJson();
     packageJson.dependencies["@inlang/paraglide-sveltekit"] = "0.16.1";
 

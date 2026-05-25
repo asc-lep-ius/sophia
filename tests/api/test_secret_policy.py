@@ -169,6 +169,29 @@ def test_secret_policy_catches_compose_and_dockerfile_literals(tmp_path: Path) -
     assert result.stderr.index("ci/Dockerfile.ci") < result.stderr.index("docker-compose.prod.yml")
 
 
+def test_secret_policy_catches_ci_and_proxy_dockerfile_literals(tmp_path: Path) -> None:
+    proxy_dir = tmp_path / "proxy"
+    proxy_dir.mkdir()
+    (tmp_path / ".gitlab-ci.yml").write_text(
+        textwrap.dedent(
+            """
+            variables:
+              SOPHIA_SECRET_KEY_CURRENT: hard-coded-production-secret-key
+            """
+        )
+    )
+    (proxy_dir / "Dockerfile").write_text(
+        "ENV SOPHIA_SECRET_KEY_CURRENT=hard-coded-production-secret-key\n"
+    )
+
+    result = _run_policy(tmp_path)
+
+    assert result.returncode == 1
+    assert ".gitlab-ci.yml" in result.stderr
+    assert "proxy/Dockerfile" in result.stderr
+    assert "SOPHIA_SECRET_KEY_CURRENT" in result.stderr
+
+
 def test_secret_policy_allows_placeholders_and_test_fixtures(tmp_path: Path) -> None:
     (tmp_path / "docker-compose.prod.yml").write_text(
         textwrap.dedent(

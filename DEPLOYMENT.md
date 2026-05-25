@@ -142,10 +142,14 @@ The API readiness endpoint is deliberately stricter than liveness. A `503`
 means the container is reachable but one of the readiness checks has not been
 marked ready by the current phase's lifecycle wiring.
 
-## Litestream Backup Stub
+## Litestream Backups And Restore Drills
 
-The production compose file includes a litestream sidecar wired to the
-`sophia-data` volume. Configure these variables before enabling it:
+The production compose file includes a `litestream/litestream:0.5.11` sidecar
+wired to the read-only `sophia-data` volume. Backups are not considered done
+until the latest replica has been restored into an isolated volume and the
+restored database proves that Sophia's learning state is continuous.
+
+Configure these variables before enabling the sidecar:
 
 | Variable | Purpose |
 |---|---|
@@ -155,31 +159,109 @@ The production compose file includes a litestream sidecar wired to the
 | `LITESTREAM_REGION` | Object-store region, default `auto` |
 | `LITESTREAM_ENDPOINT` | Optional S3-compatible endpoint |
 
-Backup smoke check:
+### Replica Smoke Check
+
+Run this after every deploy and before starting a restore drill:
 
 ```bash
+docker compose -f docker-compose.prod.yml ps litestream
 docker compose -f docker-compose.prod.yml logs litestream
 docker compose -f docker-compose.prod.yml exec litestream litestream snapshots "$LITESTREAM_REPLICA_URL"
+curl -f https://sophia.example.com/api/metrics >/tmp/sophia-metrics.txt
+grep -E "^(http_requests|web_vitals_reports|sse_connections_open)" /tmp/sophia-metrics.txt
 ```
 
-Restore drill:
+Alert when the `litestream` container exits, restarts repeatedly, or when the
+litestream service is unhealthy for more than five minutes. Treat each of those
+states as stopped replication even if Docker restarts the container. The first
+response is to run `litestream snapshots`, inspect the sidecar logs, and verify
+that the current `LITESTREAM_REPLICA_URL` still accepts writes.
+
+### Restore Drill Cadence
+
+Run the quick `litestream snapshots` validation weekly. Run the full isolated
+restore drill monthly, after every schema migration, after changing
+`LITESTREAM_REPLICA_URL`, and before promoting a new backup mechanism. Record
+the source commit, source snapshot timestamp, restored snapshot timestamp,
+operator, and result in the deployment log.
+
+### Restore Drill
+
+Capture the production learning-state fingerprint before the drill. The same
+queries must match after restore, except for rows intentionally written after
+the selected snapshot timestamp.
 
 ```bash
-docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint python api <<'PY'
+import sqlite3
+
+queries = [
+    "PRAGMA integrity_check;",
+    "SELECT COUNT(*) AS study_sessions FROM study_sessions;",
+    "SELECT COUNT(*) AS student_flashcards FROM student_flashcards;",
+    "SELECT COUNT(*) AS self_explanations FROM self_explanations;",
+    "SELECT COUNT(*) AS review_schedule FROM review_schedule;",
+    "SELECT COUNT(*) AS deadline_cache FROM deadline_cache;",
+    "SELECT COUNT(*) AS card_review_attempts FROM card_review_attempts;",
+    "SELECT MIN(next_review_at), MAX(next_review_at) FROM review_schedule;",
+    "SELECT MIN(due_at), MAX(due_at) FROM deadline_cache;",
+    "SELECT COUNT(score_at_last_review) FROM review_schedule;",
+    "SELECT MAX(last_reviewed_at), SUM(review_count) FROM review_schedule;",
+    "SELECT MAX(reviewed_at) FROM card_review_attempts;",
+]
+with sqlite3.connect("/data/sophia.db") as db:
+    for query in queries:
+        print(query, db.execute(query).fetchall())
+PY
+```
+
+The proof points are deliberately tied to user-visible learning continuity:
+
+| Proof point | Tables and fields |
+|---|---|
+| Learning progress | `study_sessions`, `student_flashcards`, `self_explanations` |
+| Due schedule | `review_schedule.next_review_at`, `deadline_cache.due_at` |
+| Grade history | `card_review_attempts`, `review_schedule.score_at_last_review` |
+| Review-event continuity | `review_schedule.last_reviewed_at`, `review_schedule.review_count`, `card_review_attempts.reviewed_at` |
+
+Restore into a temporary volume. Do not restore over the production volume as
+part of a drill.
+
+```bash
+docker volume create sophia_restore_drill
 docker run --rm \
   -e LITESTREAM_ACCESS_KEY_ID \
   -e LITESTREAM_SECRET_ACCESS_KEY \
   -e LITESTREAM_REGION \
   -e LITESTREAM_ENDPOINT \
-  -v sophia_sophia-data:/data \
-  litestream/litestream:0.3.13 \
+  -v sophia_restore_drill:/data \
+  litestream/litestream:0.5.11 \
   restore -if-replica-exists -o /data/sophia.db "$LITESTREAM_REPLICA_URL"
-docker compose -f docker-compose.prod.yml up -d
+
+docker run --rm -v sophia_restore_drill:/data alpine:3.20 \
+  sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/sophia.db \
+    'PRAGMA integrity_check;' \
+    'SELECT COUNT(*) AS study_sessions FROM study_sessions;' \
+    'SELECT COUNT(*) AS student_flashcards FROM student_flashcards;' \
+    'SELECT COUNT(*) AS self_explanations FROM self_explanations;' \
+    'SELECT COUNT(*) AS review_schedule FROM review_schedule;' \
+    'SELECT COUNT(*) AS deadline_cache FROM deadline_cache;' \
+    'SELECT COUNT(*) AS card_review_attempts FROM card_review_attempts;' \
+    'SELECT MIN(next_review_at), MAX(next_review_at) FROM review_schedule;' \
+    'SELECT MIN(due_at), MAX(due_at) FROM deadline_cache;' \
+    'SELECT COUNT(score_at_last_review) FROM review_schedule;' \
+    'SELECT MAX(last_reviewed_at), SUM(review_count) FROM review_schedule;' \
+    'SELECT MAX(reviewed_at) FROM card_review_attempts;'"
+
+docker volume rm sophia_restore_drill
 curl -f https://sophia.example.com/api/ready
 ```
 
-Run a restore drill after first production deployment and after changing the
-replica destination.
+The `PRAGMA integrity_check` result must be `ok`. The restored counts and
+timeline extrema must match the saved fingerprint for the chosen snapshot. If a
+field is missing, the drill fails because the restored database does not yet
+prove the learning progress, due schedule, grade history, and review-event
+continuity required by Phase 4.
 
 ## Operational Notes
 

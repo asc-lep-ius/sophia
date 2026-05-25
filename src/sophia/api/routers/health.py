@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, Request, status
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, StreamingResponse
 
 from sophia.api.schemas.health import HealthResponse, ReadinessCheck, ReadinessResponse
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 router = APIRouter(tags=["health"])
 
@@ -31,6 +37,15 @@ async def ready(request: Request) -> ReadinessResponse | JSONResponse:
     )
 
 
+@router.get("/events", include_in_schema=False)
+async def events(request: Request) -> StreamingResponse:
+    return StreamingResponse(
+        _operational_event_stream(request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 def _readiness_checks(request: Request) -> list[ReadinessCheck]:
     return [
         ReadinessCheck(name="database", ok=bool(getattr(request.app.state, "db_ready", False))),
@@ -39,3 +54,10 @@ def _readiness_checks(request: Request) -> list[ReadinessCheck]:
             ok=bool(getattr(request.app.state, "sse_broker_ready", False)),
         ),
     ]
+
+
+async def _operational_event_stream(request: Request) -> AsyncIterator[str]:
+    checks = _readiness_checks(request)
+    status_value = "ready" if all(check.ok for check in checks) else "not_ready"
+    payload = json.dumps({"status": status_value}, separators=(",", ":"))
+    yield f"event: ready\ndata: {payload}\n\n"

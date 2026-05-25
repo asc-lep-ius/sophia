@@ -1,6 +1,8 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 PROD_IMAGE_TAG ?= $(shell git rev-parse --verify HEAD)
+SOPHIA_SMOKE_BASE_URL ?= http://localhost
+SOPHIA_SMOKE_SSE_PATH ?= /api/events
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -31,6 +33,9 @@ secret-policy:                   ## Reject hard-coded production-like secret lit
 
 deployment-policy:               ## Validate production Compose image and topology policy
 	uv run python scripts/deployment_policy.py --check
+
+deploy-smoke:                    ## Smoke deployed production via proxy origin
+	uv run python scripts/deploy_smoke.py --base-url "$(SOPHIA_SMOKE_BASE_URL)" --sse-path "$(SOPHIA_SMOKE_SSE_PATH)"
 
 frontend.install:                ## Install frontend dependencies
 	pnpm -C frontend install

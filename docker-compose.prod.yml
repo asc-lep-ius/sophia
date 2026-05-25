@@ -161,7 +161,11 @@ services:
     networks:
       - data
     healthcheck:
-      test: ["CMD", "litestream", "version"]
+      test:
+        [
+          "CMD-SHELL",
+          "test -n \"$$LITESTREAM_REPLICA_URL\" && litestream snapshots \"$$LITESTREAM_REPLICA_URL\" >/dev/null",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

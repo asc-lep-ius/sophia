@@ -15,6 +15,7 @@ import yaml
 PROD_COMPOSE_FILE = Path("docker-compose.prod.yml")
 PROXY_DOCKERFILE = Path("proxy/Dockerfile")
 GITLAB_CI_FILE = Path(".gitlab-ci.yml")
+DEPLOYMENT_DOC_FILE = Path("DEPLOYMENT.md")
 APPLICATION_SERVICES = frozenset({"api", "frontend", "sophia-gui"})
 DEPLOYABLE_IMAGE_SERVICES = APPLICATION_SERVICES | frozenset({"proxy"})
 REQUIRED_DEPENDENCIES = {
@@ -28,11 +29,67 @@ REQUIRED_COMMIT_TAG_PATTERN = re.compile(r"\$\{(?:IMAGE_TAG|CI_COMMIT_SHA):\?[^}
 PROXY_CADDYFILE_VALIDATION_PATTERN = re.compile(
     r"RUN\s+/usr/bin/caddy\s+validate\s+--config\s+/etc/caddy/Caddyfile\s+--adapter\s+caddyfile"
 )
+PROXY_CADDYFILE_ADAPT_PATTERN = re.compile(
+    r"RUN\s+/usr/bin/caddy\s+adapt\s+--config\s+/etc/caddy/Caddyfile\s+--adapter\s+caddyfile"
+)
 CI_PROXY_COMMIT_SHA_TAG_PATTERN = re.compile(
     r"--tag\s+\$\{LOCAL_REGISTRY\}/proxy:\$\{CI_COMMIT_SHA\}(?:\s|$)"
 )
+DEPLOY_SMOKE_PATTERN = re.compile(
+    r"python3\s+scripts/deploy_smoke\.py\s+--base-url\s+\"\$SOPHIA_PRODUCTION_URL\""
+)
+DEFAULT_BRANCH_CONDITION_PATTERN = re.compile(
+    r"\$CI_COMMIT_BRANCH\s*==\s*\$CI_DEFAULT_BRANCH|\$CI_COMMIT_BRANCH\s*==\s*['\"]master['\"]"
+)
 UNSAFE_IMAGE_TOKENS = ("phase0-local", ":latest", "${image_tag:-latest}")
 PATH_LIKE_PREFIXES = (".", "/", "~", "$", "..")
+REQUIRED_LITESTREAM_ENV_VARS = frozenset(
+    {
+        "LITESTREAM_REPLICA_URL",
+        "LITESTREAM_ACCESS_KEY_ID",
+        "LITESTREAM_SECRET_ACCESS_KEY",
+    }
+)
+REQUIRED_BACKUP_DOC_TERMS = {
+    "restore-learning-progress": (
+        "study_sessions",
+        "student_flashcards",
+        "self_explanations",
+    ),
+    "restore-due-schedule": (
+        "review_schedule",
+        "deadline_cache",
+        "next_review_at",
+        "due_at",
+    ),
+    "restore-grade-history": (
+        "card_review_attempts",
+        "score_at_last_review",
+    ),
+    "restore-review-event-continuity": (
+        "last_reviewed_at",
+        "review_count",
+        "reviewed_at",
+    ),
+    "backup-metrics": (
+        "/api/metrics",
+        "litestream snapshots",
+    ),
+    "stopped-replication-alert": (
+        "stopped replication",
+        "litestream service is unhealthy",
+    ),
+    "restore-cadence": (
+        "weekly",
+        "monthly",
+        "after every schema migration",
+    ),
+    "restore-validation": (
+        "pragma integrity_check",
+        "sqlite3",
+        "curl -f https://sophia.example.com/api/ready",
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +130,7 @@ def scan_root(root: Path) -> list[DeploymentPolicyViolation]:
     violations.extend(_scan_compose_file(root))
     violations.extend(_scan_proxy_dockerfile(root))
     violations.extend(_scan_gitlab_ci(root))
+    violations.extend(_scan_deployment_docs(root))
     return sorted(
         violations,
         key=lambda violation: (str(violation.path), violation.service, violation.check),
@@ -123,17 +181,20 @@ def _scan_proxy_dockerfile(root: Path) -> list[DeploymentPolicyViolation]:
     custom_binary_copy = "COPY --from=builder /usr/bin/caddy /usr/bin/caddy"
     caddyfile_copy = "COPY Caddyfile /etc/caddy/Caddyfile"
     validation = PROXY_CADDYFILE_VALIDATION_PATTERN.search(dockerfile)
+    adaptation = PROXY_CADDYFILE_ADAPT_PATTERN.search(dockerfile)
 
     custom_binary_index = dockerfile.find(custom_binary_copy)
     caddyfile_index = dockerfile.find(caddyfile_copy)
     validation_index = -1 if validation is None else validation.start()
-    if not (0 <= custom_binary_index < caddyfile_index < validation_index):
+    adaptation_index = -1 if adaptation is None else adaptation.start()
+    if not (0 <= custom_binary_index < caddyfile_index < validation_index < adaptation_index):
         return [
             _violation(
                 PROXY_DOCKERFILE,
                 "proxy",
                 "caddyfile-validation",
-                "proxy Dockerfile must validate /etc/caddy/Caddyfile with the custom Caddy binary",
+                "proxy Dockerfile must validate and adapt /etc/caddy/Caddyfile "
+                "with the custom Caddy binary",
             )
         ]
 
@@ -141,7 +202,7 @@ def _scan_proxy_dockerfile(root: Path) -> list[DeploymentPolicyViolation]:
 
 
 def _scan_gitlab_ci(root: Path) -> list[DeploymentPolicyViolation]:
-    """Ensure CI pushes the proxy image with the deployed commit SHA tag."""
+    """Ensure CI deploys serialized, smoke-checked production artifacts."""
     ci_path = root / GITLAB_CI_FILE
     if not ci_path.is_file():
         return [
@@ -164,6 +225,13 @@ def _scan_gitlab_ci(root: Path) -> list[DeploymentPolicyViolation]:
             )
         ]
 
+    violations: list[DeploymentPolicyViolation] = []
+    violations.extend(_scan_proxy_build_ci(ci_config))
+    violations.extend(_scan_production_deploy_ci(ci_config))
+    return violations
+
+
+def _scan_proxy_build_ci(ci_config: Mapping[str, Any]) -> list[DeploymentPolicyViolation]:
     proxy_build_job = _mapping(ci_config.get("docker-proxy-build"))
     script_lines = _script_lines(proxy_build_job.get("script"))
     if any(CI_PROXY_COMMIT_SHA_TAG_PATTERN.search(line) for line in script_lines):
@@ -177,6 +245,119 @@ def _scan_gitlab_ci(root: Path) -> list[DeploymentPolicyViolation]:
             "docker-proxy-build must push the proxy image with CI_COMMIT_SHA",
         )
     ]
+
+
+def _scan_deployment_docs(root: Path) -> list[DeploymentPolicyViolation]:
+    """Ensure restore drills prove the learning data Sophia must preserve."""
+    deployment_doc_path = root / DEPLOYMENT_DOC_FILE
+    if not deployment_doc_path.is_file():
+        return [
+            _violation(
+                DEPLOYMENT_DOC_FILE,
+                "litestream",
+                "restore-drill-docs",
+                "DEPLOYMENT.md must document Litestream restore drills",
+            )
+        ]
+
+    doc_text = deployment_doc_path.read_text(encoding="utf-8").lower()
+    violations: list[DeploymentPolicyViolation] = []
+    for check, terms in REQUIRED_BACKUP_DOC_TERMS.items():
+        missing_terms = [term for term in terms if term.lower() not in doc_text]
+        if missing_terms:
+            violations.append(
+                _violation(
+                    DEPLOYMENT_DOC_FILE,
+                    "litestream",
+                    check,
+                    "restore drill docs must include: " + ", ".join(missing_terms),
+                )
+            )
+    return violations
+
+
+def _scan_production_deploy_ci(ci_config: Mapping[str, Any]) -> list[DeploymentPolicyViolation]:
+    deploy_job = _mapping(ci_config.get("deploy:production"))
+    if not deploy_job:
+        return [
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "deploy-job",
+                "deploy:production job is required",
+            )
+        ]
+
+    violations: list[DeploymentPolicyViolation] = []
+    if deploy_job.get("resource_group") != "production":
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "resource_group",
+                "production deploys must use resource_group: production",
+            )
+        )
+
+    environment = _mapping(deploy_job.get("environment"))
+    if environment.get("name") != "production":
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "environment",
+                "deploy job must declare environment name: production",
+            )
+        )
+    if environment.get("deployment_tier") != "production":
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "environment",
+                "deploy job must declare deployment_tier: production",
+            )
+        )
+    if environment.get("url") != "$SOPHIA_PRODUCTION_URL":
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "environment",
+                "deploy job must expose SOPHIA_PRODUCTION_URL as the production environment URL",
+            )
+        )
+
+    script_lines = _script_lines(deploy_job.get("script"))
+    if not any(line == 'test -n "$SOPHIA_PRODUCTION_URL"' for line in script_lines):
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "smoke",
+                "deploy job must require SOPHIA_PRODUCTION_URL before deploying",
+            )
+        )
+    if not any(DEPLOY_SMOKE_PATTERN.search(line) for line in script_lines):
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "smoke",
+                "deploy job must run scripts/deploy_smoke.py after production deploy",
+            )
+        )
+
+    if not _has_manual_default_branch_rule(deploy_job.get("rules")):
+        violations.append(
+            _violation(
+                GITLAB_CI_FILE,
+                "deploy:production",
+                "rules",
+                "deploy job must be manual and limited to the default branch",
+            )
+        )
+    return violations
 
 
 def scan_compose(
@@ -218,6 +399,7 @@ def _scan_service(
     violations.extend(_scan_healthcheck(path, service_name, service))
     violations.extend(_scan_volumes(path, service_name, service, volumes))
     violations.extend(_scan_dependencies(path, service_name, service, services))
+    violations.extend(_scan_litestream_backup(path, service_name, service))
     return violations
 
 
@@ -381,6 +563,69 @@ def _scan_dependencies(
     return violations
 
 
+def _scan_litestream_backup(
+    path: Path,
+    service_name: str,
+    service: Mapping[str, Any],
+) -> list[DeploymentPolicyViolation]:
+    if service_name != "litestream":
+        return []
+
+    violations: list[DeploymentPolicyViolation] = []
+    command = "\n".join(_script_lines(service.get("command")))
+    required_command_parts = (
+        "litestream replicate",
+        "/data/sophia.db",
+        "$$LITESTREAM_REPLICA_URL",
+    )
+    missing_command_parts = [part for part in required_command_parts if part not in command]
+    if missing_command_parts:
+        violations.append(
+            _violation(
+                path,
+                service_name,
+                "replication-command",
+                "litestream must replicate /data/sophia.db to LITESTREAM_REPLICA_URL",
+            )
+        )
+
+    environment = _environment_mapping(service.get("environment"))
+    missing_env_vars = REQUIRED_LITESTREAM_ENV_VARS.difference(environment.keys())
+    if missing_env_vars:
+        violations.append(
+            _violation(
+                path,
+                service_name,
+                "replica-env",
+                "missing replica environment: " + ", ".join(sorted(missing_env_vars)),
+            )
+        )
+
+    healthcheck = _mapping(service.get("healthcheck"))
+    healthcheck_command = " ".join(_script_lines(healthcheck.get("test")))
+    if "litestream snapshots" not in healthcheck_command:
+        violations.append(
+            _violation(
+                path,
+                service_name,
+                "replica-healthcheck",
+                "litestream healthcheck must validate replica snapshots",
+            )
+        )
+
+    if not _has_read_only_litestream_data_volume(service.get("volumes")):
+        violations.append(
+            _violation(
+                path,
+                service_name,
+                "data-volume",
+                "litestream must mount sophia-data at /data read-only",
+            )
+        )
+
+    return violations
+
+
 def _load_yaml(path: Path) -> object:
     return cast("object", yaml.safe_load(path.read_text(encoding="utf-8")))
 
@@ -411,6 +656,61 @@ def _script_lines(value: object) -> list[str]:
     if lines is not None:
         return [line for line in lines if isinstance(line, str)]
     return []
+
+
+def _has_manual_default_branch_rule(value: object) -> bool:
+    rules = _list_or_none(value)
+    if rules is None:
+        return False
+
+    for rule_value in rules:
+        rule = _mapping(rule_value)
+        condition = rule.get("if")
+        if (
+            isinstance(condition, str)
+            and rule.get("when") == "manual"
+            and DEFAULT_BRANCH_CONDITION_PATTERN.search(condition)
+        ):
+            return True
+    return False
+
+
+def _environment_mapping(value: object) -> Mapping[str, Any]:
+    mapping = _mapping_or_none(value)
+    if mapping is not None:
+        return mapping
+
+    lines = _list_or_none(value)
+    if lines is None:
+        return {}
+
+    environment: dict[str, str] = {}
+    for line in lines:
+        if not isinstance(line, str):
+            continue
+        name, separator, setting = line.partition("=")
+        environment[name] = setting if separator else ""
+    return environment
+
+
+def _has_read_only_litestream_data_volume(value: object) -> bool:
+    service_volumes = _list_or_none(value)
+    if service_volumes is None:
+        return False
+
+    for volume in service_volumes:
+        if isinstance(volume, str) and volume == "sophia-data:/data:ro":
+            return True
+        volume_mapping = _mapping_or_none(volume)
+        if volume_mapping is None:
+            continue
+        if (
+            volume_mapping.get("source") == "sophia-data"
+            and volume_mapping.get("target") == "/data"
+            and volume_mapping.get("read_only") is True
+        ):
+            return True
+    return False
 
 
 def _volume_source(volume: object) -> str | None:

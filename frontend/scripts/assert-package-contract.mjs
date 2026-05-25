@@ -35,7 +35,7 @@ export const REQUIRED_DEV_DEPENDENCIES = Object.freeze({
   vitest: "4.1.7",
 });
 
-const FORBIDDEN_PACKAGES = ["@inlang/paraglide-sveltekit"];
+const RETIRED_ADAPTER_PACKAGES = ["@inlang/paraglide-sveltekit"];
 /** @type {DependencyBucket[]} */
 const PACKAGE_BUCKETS = [
   "dependencies",
@@ -112,7 +112,7 @@ export function validatePackageContract(packageJson, lockfileContent) {
     errors.push(`scripts.guard:package-contract must be "${GUARD_SCRIPT}"`);
   }
 
-  for (const packageName of FORBIDDEN_PACKAGES) {
+  for (const packageName of RETIRED_ADAPTER_PACKAGES) {
     for (const bucket of PACKAGE_BUCKETS) {
       if (dependencyVersion(packageJson, bucket, packageName)) {
         errors.push(`${packageName} must not appear in ${bucket}`);
@@ -135,7 +135,7 @@ export function assertPackageContract(packageJson, lockfileContent) {
   const errors = validatePackageContract(packageJson, lockfileContent);
   if (errors.length) {
     throw new Error(
-      `Package contract drift for #91:\n- ${errors.join("\n- ")}`,
+      `Frontend package contract drift:\n- ${errors.join("\n- ")}`,
     );
   }
 }

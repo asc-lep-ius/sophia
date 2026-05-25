@@ -10,8 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 SOURCE_DIR = Path("src")
-DOCKERFILE_DIRS = (Path("."), Path("ci"))
-COMPOSE_FILE_NAMES = (
+DOCKERFILE_DIRS = (Path("."), Path("ci"), Path("proxy"))
+TEXT_POLICY_FILE_NAMES = (
+    ".gitlab-ci.yml",
     "docker-compose.yml",
     "docker-compose.prod.yml",
 )
@@ -111,7 +112,7 @@ def _policy_files(root: Path) -> list[Path]:
     policy_files: set[Path] = set()
     for dockerfile_dir in DOCKERFILE_DIRS:
         policy_files.update((root / dockerfile_dir).glob("Dockerfile*"))
-    policy_files.update(root / file_name for file_name in COMPOSE_FILE_NAMES)
+    policy_files.update(root / file_name for file_name in TEXT_POLICY_FILE_NAMES)
     return sorted(path for path in policy_files if path.is_file())
 
 

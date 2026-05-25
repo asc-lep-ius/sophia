@@ -380,8 +380,9 @@ docker-proxy-build:
 
 deploy:production:
   stage: deploy
-  image: alpine:3.22
+  image: python:3.12-alpine
   tags: [hephaestus]
+  resource_group: production
   needs:
     - docker-proxy-build
     - docker-api-build
@@ -394,11 +395,15 @@ deploy:production:
   script:
     - test -n "$DEPLOY_HOST"
     - test -n "$DEPLOY_PATH"
+    - test -n "$SOPHIA_PRODUCTION_URL"
     - test -n "$CI_COMMIT_SHA"
     - ssh "$DEPLOY_HOST" "cd '$DEPLOY_PATH' && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml pull && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+    - python3 scripts/deploy_smoke.py --base-url "$SOPHIA_PRODUCTION_URL" --sse-path "${SOPHIA_SMOKE_SSE_PATH:-/api/events}"
   environment:
     name: production
+    url: $SOPHIA_PRODUCTION_URL
+    deployment_tier: production
   rules:
-    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: manual
     - when: never
