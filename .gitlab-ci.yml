@@ -177,6 +177,14 @@ compose-config:
     - corepack prepare pnpm@11.3.0 --activate
     - pnpm -C frontend install --frozen-lockfile --store-dir "$PNPM_STORE_PATH"
 
+frontend-contract-guards:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run guard:package-contract
+    - pnpm -C frontend run guard:server-fetch
+    - pnpm -C frontend run guard:openapi-types
+    - pnpm -C frontend run guard:api-client
+
 frontend-paraglide:
   extends: .frontend-job
   script:

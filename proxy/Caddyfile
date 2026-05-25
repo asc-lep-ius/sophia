@@ -31,6 +31,8 @@
 	}
 
 	@api_sse path /api/events* /api/*/events* /api/*/stream*
+	# SSE paths must be handled before generic /api/* so Caddy streams events
+	# immediately and avoids upstream response compression for event streams.
 	handle @api_sse {
 		reverse_proxy api:8000 {
 			import forwarded_headers
@@ -74,7 +76,6 @@
 
 	# Reserved for /api/auth/login rate limiting. Keep this inactive until the
 	# proxy image includes a Caddy rate-limit plugin; Caddy core has no built-in
-	# directive for this policy.
+	# rate_limit directive for this policy.
 	# @auth_login path /api/auth/login
-	# rate_limit @auth_login { zone auth_login { key {remote_host} events 5 window 1m } }
 }

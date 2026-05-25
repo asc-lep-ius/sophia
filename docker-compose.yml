@@ -84,6 +84,8 @@ services:
       - HOST=0.0.0.0
       - PORT=3000
       - ORIGIN=${SOPHIA_FRONTEND_ORIGIN:-http://localhost}
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
       - PUBLIC_API_BASE_URL=/api
     expose:
       - "3000"

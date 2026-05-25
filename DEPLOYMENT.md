@@ -14,22 +14,18 @@ NiceGUI, and litestream containers stay on internal Compose networks.
 
 ## Local Validation
 
-Run the same gates CI uses before shipping configuration changes:
+Run the same gates CI uses before shipping proxy, compose, frontend contract,
+and deployment changes:
 
 ```bash
-make test
+uv run pytest tests/api/test_proxy_config.py -q
+make blocking-audit
+make openapi.check
+make frontend.check
+make frontend.a11y
+make docker-validate
 make lint
 make typecheck
-uv run pytest tests/api/ -q
-uv run python scripts/blocking_audit.py --check
-make openapi.check
-pnpm -C frontend run lint
-pnpm -C frontend run check
-pnpm -C frontend run test:unit
-pnpm -C frontend run size-limit
-pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
-docker compose config
-docker compose -f docker-compose.prod.yml config
 ```
 
 ## Development Compose
@@ -73,20 +69,47 @@ docker compose -f docker-compose.prod.yml ps
 `proxy` is the only production service with published ports. Leave the app and
 data networks internal unless a later phase explicitly changes the topology.
 
+## Frontend Origin And Forwarded Headers
+
+The SvelteKit frontend uses `adapter-node` behind Caddy. Both Compose files set
+these environment variables on the `frontend` service:
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `ORIGIN` | `SOPHIA_FRONTEND_ORIGIN` | Public origin accepted by SvelteKit |
+| `PROTOCOL_HEADER` | `x-forwarded-proto` | Trust Caddy's external request scheme |
+| `HOST_HEADER` | `x-forwarded-host` | Trust Caddy's external request host |
+
+Caddy forwards `X-Forwarded-Proto` and `X-Forwarded-Host` in
+[proxy/Caddyfile](proxy/Caddyfile). Keep `SOPHIA_SITE_ADDRESS` and
+`SOPHIA_FRONTEND_ORIGIN` aligned to the same external origin so browser fetches,
+SSR loads, cookies, and redirects all resolve through the proxy.
+
 ## Proxy Notes
 
 [proxy/Caddyfile](proxy/Caddyfile) enables JSON access logs and configures
 Caddy servers for HTTP/1.1, HTTP/2, and HTTP/3. Publish UDP `443` and set
 `SOPHIA_SITE_ADDRESS` to an HTTPS site address for HTTP/3 clients.
 
-The SSE matcher sends event-stream paths to the API with `flush_interval -1`
-and disables upstream response compression. The site intentionally does not
-enable the Caddy `encode` directive so event streams are not buffered or
-compressed by the proxy.
+The SSE matcher handles `/api/events*`, `/api/*/events*`, and `/api/*/stream*`
+before the generic `/api/*` route. It sends event-stream paths to the API with
+`flush_interval -1` and disables upstream response compression. The site
+intentionally does not enable the Caddy `encode` directive so event streams are
+not buffered or compressed by the proxy.
 
 `/api/auth/login` has a reserved rate-limit comment only. Do not enable an
 active rate-limit directive until the Caddy image is replaced by a build that
 contains the required plugin.
+
+## CI Merge Gates
+
+GitLab CI keeps the Python gates (`lint`, `typecheck`, `test:3.12`,
+`openapi-check`, `blocking-audit`, `compose-config`) and the frontend gates
+(`frontend-check`, `frontend-lint`, `frontend-unit`, `frontend-size`,
+`frontend-a11y`) in the blocking `check` stage. The explicit
+`frontend-contract-guards` job runs the package contract, server-fetch guard,
+OpenAPI types guard, and API client guard by name so Phase 0 contract drift is
+visible in the merge gate.
 
 ## Secret-Key Rotation
 
@@ -163,132 +186,4 @@ replica destination.
 - Keep the old NiceGUI route and tests until the Phase 1 two-process auth bridge
   and migrated frontend routes replace them deliberately.
 - Use `docker compose -f docker-compose.prod.yml config` as the final local
-  syntax gate before deployment.# Sophia GUI — Deployment Guide
-
-## Quick Start
-
-```bash
-# Start the GUI service
-docker compose up -d
-
-# Check status
-docker compose ps
-
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-```
-
-The GUI is available at `http://localhost:8080` by default.
-
-To use a different port, set `SOPHIA_GUI_PORT` in your `.env` file or environment:
-
-```bash
-SOPHIA_GUI_PORT=9090 docker compose up -d
-```
-
----
-
-## Remote Access
-
-Sophia binds to `127.0.0.1` by default. To access it from another machine,
-pick **one** of the following approaches.
-
-### Tailscale / WireGuard (Recommended)
-
-Install [Tailscale](https://tailscale.com/) or WireGuard on both machines.
-The GUI is then reachable via your Tailscale IP without exposing it to the
-public internet.
-
-```bash
-# No config changes needed — just connect via Tailscale IP
-http://100.x.y.z:8080
-```
-
-### Caddy Reverse Proxy
-
-[Caddy](https://caddyserver.com/) provides automatic HTTPS.
-
-Example `Caddyfile`:
-
-```caddyfile
-sophia.example.com {
-    reverse_proxy localhost:8080
-}
-```
-
-```bash
-caddy run --config Caddyfile
-```
-
-### SSH Tunnel
-
-Forward the port over SSH for ad-hoc access:
-
-```bash
-ssh -L 8080:localhost:8080 user@remote-host
-# Then open http://localhost:8080 locally
-```
-
----
-
-## Environment Variables
-
-| Variable | Default | Description |
-|---|---|---|
-| `SOPHIA_GUI_HOST` | `127.0.0.1` | Bind address for the GUI server |
-| `SOPHIA_GUI_PORT` | `8080` | Port for the GUI server |
-| `SOPHIA_DATA_DIR` | Platform default | Directory for SQLite DB and data files |
-| `SOPHIA_LOG_FORMAT` | `console` | Log format: `console` or `json` |
-| `SOPHIA_GUI_SECRET` | `sophia-gui-storage` | NiceGUI storage secret (see known limitations) |
-
----
-
-## Security Notes
-
-- **Default binding is `127.0.0.1`** — the GUI is not accessible from the
-  network unless you explicitly bind to `0.0.0.0` or use a reverse proxy.
-- **Sophia is a single-user tool.** There is no authentication layer. Rely on
-  the network layer (VPN, SSH tunnel, firewall) to restrict access.
-- **Do not expose the GUI to the public internet** without a reverse proxy
-  that handles TLS and authentication.
-
----
-
-## Monitoring
-
-### Health Endpoints
-
-| Endpoint | Description |
-|---|---|
-| `/health` | Returns 200 when the server is running |
-| `/ready` | Returns 200 when the app is fully initialized |
-
-### Docker Healthcheck
-
-The `docker-compose.yml` includes a healthcheck that polls `/health`
-every 30 seconds. Check container health:
-
-```bash
-docker inspect --format='{{.State.Health.Status}}' sophia-sophia-gui-1
-```
-
-### Log Format
-
-Set `SOPHIA_LOG_FORMAT=json` for structured JSON logs suitable for log
-aggregation tools. The default `console` format is human-readable.
-
----
-
-## Known Limitations
-
-- **`storage_secret` is hardcoded** — NiceGUI's `storage_secret` is set to a
-  static value (`sophia-gui-storage`). This is acceptable for a single-user
-  tool but means session cookies are predictable. Set `SOPHIA_GUI_SECRET` to
-  override if needed.
-- **No authentication layer** — access control relies entirely on the network
-  layer. Use Tailscale, SSH tunnels, or a reverse proxy with auth.
-- **Single-instance only** — the SQLite backend does not support concurrent
-  writes from multiple GUI instances.
+  syntax gate before deployment.

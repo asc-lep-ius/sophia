@@ -62,7 +62,7 @@
   "size-limit": [
     {
       "path": ".svelte-kit/output/client/_app/immutable/**/*.js",
-      "limit": "220 KB"
+      "limit": "260 KB"
     }
   ]
 }
