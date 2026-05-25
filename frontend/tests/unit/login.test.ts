@@ -20,7 +20,7 @@ describe("login route", () => {
     );
   });
 
-  it("posts credentials to the generated auth login path and redirects on success", async () => {
+  it("posts trimmed username and exact submitted password to auth login", async () => {
     const loginAction = requireDefaultAction();
     const event = createActionEvent({
       fetch: vi.fn().mockResolvedValue(
@@ -30,8 +30,8 @@ describe("login route", () => {
         }),
       ),
       form: {
-        password: "correct horse battery staple",
-        username: "learner@example.test",
+        password: "  correct horse battery staple  ",
+        username: "  learner@example.test  ",
       },
     });
 
@@ -44,7 +44,7 @@ describe("login route", () => {
       "/api/auth/login",
       expect.objectContaining({
         body: JSON.stringify({
-          password: "correct horse battery staple",
+          password: "  correct horse battery staple  ",
           username: "learner@example.test",
         }),
         method: "POST",
@@ -52,6 +52,30 @@ describe("login route", () => {
     );
     expect(event.locals.apiSetCookies).toContain(
       "__Host-sophia_session=signed; Path=/",
+    );
+  });
+
+  it("preserves leading and trailing password spaces", async () => {
+    const loginAction = requireDefaultAction();
+    const event = createActionEvent({
+      fetch: vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+      form: {
+        password: "  padded password  ",
+        username: "learner@example.test",
+      },
+    });
+
+    await loginAction(event);
+
+    expect(event.fetch).toHaveBeenCalledWith(
+      "/api/auth/login",
+      expect.objectContaining({
+        body: JSON.stringify({
+          password: "  padded password  ",
+          username: "learner@example.test",
+        }),
+        method: "POST",
+      }),
     );
   });
 

@@ -43,12 +43,17 @@ export const actions: Actions = {
 async function readCredentials(event: RequestEvent) {
   const formData = await event.request.formData();
   return {
-    password: readFormString(formData, "password"),
-    username: readFormString(formData, "username"),
+    password: readRawFormString(formData, "password"),
+    username: readTrimmedFormString(formData, "username"),
   };
 }
 
-function readFormString(formData: FormData, name: string): string {
+function readRawFormString(formData: FormData, name: string): string {
+  const value = formData.get(name);
+  return typeof value === "string" ? value : "";
+}
+
+function readTrimmedFormString(formData: FormData, name: string): string {
   const value = formData.get(name);
   return typeof value === "string" ? value.trim() : "";
 }

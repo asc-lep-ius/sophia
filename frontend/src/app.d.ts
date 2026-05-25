@@ -43,7 +43,6 @@ declare global {
       tenant: SophiaTenant;
       theme: import("$lib/theme").Theme;
       authenticated: boolean;
-      csrfToken: string | null;
       settings: SophiaSessionSettings | null;
       user: SophiaUser | null;
     }

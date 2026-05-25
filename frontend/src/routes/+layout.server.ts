@@ -6,7 +6,6 @@ export const load: LayoutServerLoad = ({ cookies, locals }) => {
 
   return {
     authenticated: locals.authenticated,
-    csrfToken: locals.csrfToken,
     locale: locals.locale,
     settings: locals.sessionSettings,
     tenant: locals.tenant,
