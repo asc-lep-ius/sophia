@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from platformdirs import user_cache_dir, user_config_dir, user_data_dir
 from pydantic import Field, field_validator, model_validator
@@ -64,6 +64,14 @@ class Settings(BaseSettings):
 
     # Session health
     session_keepalive_interval: int = 300
+
+    # Observability
+    log_format: Literal["json", "console"] = "json"
+    log_debug: bool = False
+    sentry_dsn: str = ""
+    sentry_release: str = ""
+    sentry_environment: str = "development"
+    sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
 
     @field_validator("session_keepalive_interval")
     @classmethod

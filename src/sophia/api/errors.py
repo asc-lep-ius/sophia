@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import JSONResponse
 
+from sophia.api.context import get_scope_request_id
 from sophia.api.schemas.errors import ErrorDetail, ErrorEnvelope
 from sophia.domain.errors import (
     AthenaError,
@@ -56,6 +57,7 @@ def register_error_handlers(api_app: FastAPI) -> None:
     api_app.add_exception_handler(SophiaError, domain_exception_handler)
     api_app.add_exception_handler(StarletteHTTPException, http_exception_handler)
     api_app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    api_app.add_exception_handler(Exception, unhandled_exception_handler)
 
 
 async def domain_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
@@ -75,6 +77,10 @@ async def validation_exception_handler(_request: Request, _exc: Exception) -> JS
     return _error_response(spec)
 
 
+async def unhandled_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
+    return _error_response(_DEFAULT_ERROR_SPEC, headers=_request_id_headers(request))
+
+
 def _spec_for_exception(exc: Exception) -> ErrorSpec:
     if not isinstance(exc, SophiaError):
         return _DEFAULT_ERROR_SPEC
@@ -87,5 +93,14 @@ def _spec_for_exception(exc: Exception) -> ErrorSpec:
 def _error_response(spec: ErrorSpec, headers: Mapping[str, str] | None = None) -> JSONResponse:
     envelope = ErrorEnvelope(detail=ErrorDetail(code=spec.code))
     return JSONResponse(
-        status_code=spec.status_code, content=envelope.model_dump(), headers=headers
+        status_code=spec.status_code,
+        content=envelope.model_dump(),
+        headers=headers,
     )
+
+
+def _request_id_headers(request: Request) -> dict[str, str]:
+    request_id = get_scope_request_id(request.scope)
+    if request_id is None:
+        return {}
+    return {"X-Request-ID": request_id}
