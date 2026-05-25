@@ -37,10 +37,26 @@ class FakeRedis:
         self.now = 0
         self.get_calls = 0
 
-    async def set(self, name: str, value: str, ex: int | None = None) -> bool:
+    async def set(
+        self,
+        name: str,
+        value: str,
+        ex: int | None = None,
+        *,
+        xx: bool = False,
+        keepttl: bool = False,
+    ) -> bool:
         self._purge(name)
+        if xx and name not in self.values:
+            return False
+        current_expiry = self.expires_at.get(name)
         self.values[name] = value
-        if ex is None:
+        if keepttl:
+            if current_expiry is not None:
+                self.expires_at[name] = current_expiry
+            else:
+                self.expires_at.pop(name, None)
+        elif ex is None:
             self.expires_at.pop(name, None)
         else:
             self.expires_at[name] = self.now + ex
@@ -141,13 +157,41 @@ async def test_session_store_preserves_ttl_on_save_and_refreshes_explicitly() ->
         record,
         settings=SessionSettings(theme="dark", locale="de", selected_course_id="course-2"),
     )
-    await store.save(updated_record)
+    assert await store.save(updated_record) is True
 
     assert await store.ttl(record.session_id) == 563
     assert await store.read(record.session_id) == updated_record
 
     assert await store.refresh(record.session_id) is True
     assert await store.ttl(record.session_id) == 600
+
+
+async def test_session_store_save_does_not_resurrect_deleted_session() -> None:
+    redis = FakeRedis()
+    store = RedisSessionStore(redis=redis, ttl_seconds=600)
+    record = _session_record(session_id="deleted-session")
+    await store.create(record)
+    assert await store.delete(record.session_id) is True
+
+    updated_record = replace(record, settings=SessionSettings(theme="dark", locale="en"))
+
+    assert await store.save(updated_record) is False
+    assert await store.read(record.session_id) is None
+    assert redis.values == {}
+
+
+async def test_session_store_save_does_not_resurrect_expired_session() -> None:
+    redis = FakeRedis()
+    store = RedisSessionStore(redis=redis, ttl_seconds=120)
+    record = _session_record(session_id="expired-session")
+    await store.create(record)
+    redis.advance(121)
+
+    updated_record = replace(record, settings=SessionSettings(theme="dark", locale="en"))
+
+    assert await store.save(updated_record) is False
+    assert await store.read(record.session_id) is None
+    assert redis.values == {}
 
 
 async def test_fake_redis_expires_session_records_after_ttl() -> None:

@@ -8,11 +8,14 @@ from typing import TYPE_CHECKING, Any, cast
 import sentry_sdk
 from fastapi import FastAPI
 from prometheus_fastapi_instrumentator import Instrumentator
+from redis import asyncio as redis_asyncio
 
 from sophia import __version__
 from sophia.api.context import RequestContextMiddleware
 from sophia.api.errors import register_error_handlers
-from sophia.api.routers import health, metrics
+from sophia.api.routers import auth, health, metrics
+from sophia.api.routers import settings as settings_router
+from sophia.api.sessions import RedisSessionBackend, create_session_core
 from sophia.config import Settings
 from sophia.infra.logging import (
     REDACTED_VALUE,
@@ -25,12 +28,17 @@ if TYPE_CHECKING:
 
     from sentry_sdk.types import Event, Hint
 
+    from sophia.api.routers.auth import LoginAuthenticator
+    from sophia.api.sessions import SessionCore
+
 
 def create_api_app(
     settings: Settings | None = None,
     *,
     route_prefix: str = "/api",
     ready_on_startup: bool = False,
+    session_core: SessionCore | None = None,
+    login_authenticator: LoginAuthenticator | None = None,
 ) -> FastAPI:
     """Create the backend API app.
 
@@ -47,12 +55,16 @@ def create_api_app(
         lifespan=_standalone_api_lifespan if ready_on_startup else None,
     )
     api_app.state.settings = resolved_settings
+    api_app.state.session_core = session_core or _create_redis_session_core(resolved_settings)
+    api_app.state.login_authenticator = login_authenticator
     _set_runtime_readiness(api_app, ready=False)
 
     api_app.add_middleware(RequestContextMiddleware)
     register_error_handlers(api_app)
     api_app.include_router(health.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(metrics.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(auth.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(settings_router.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
 
@@ -80,6 +92,14 @@ async def _standalone_api_lifespan(api_app: FastAPI) -> AsyncIterator[None]:
 def _set_runtime_readiness(api_app: FastAPI, *, ready: bool) -> None:
     api_app.state.db_ready = ready
     api_app.state.sse_broker_ready = ready
+
+
+def _create_redis_session_core(settings: Settings) -> SessionCore:
+    redis_client = cast(
+        "RedisSessionBackend",
+        redis_asyncio.Redis.from_url(settings.redis_url),  # pyright: ignore[reportUnknownMemberType]
+    )
+    return create_session_core(settings, redis_client)
 
 
 def _setup_observability(settings: Settings) -> None:

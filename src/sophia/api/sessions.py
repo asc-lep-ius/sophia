@@ -37,7 +37,15 @@ class InvalidSessionToken(ValueError):
 class RedisSessionBackend(Protocol):
     """Minimal async Redis surface used by the session store."""
 
-    async def set(self, name: str, value: str, ex: int | None = None) -> object: ...
+    async def set(
+        self,
+        name: str,
+        value: str,
+        ex: int | None = None,
+        *,
+        xx: bool = False,
+        keepttl: bool = False,
+    ) -> object: ...
 
     async def get(self, name: str) -> bytes | str | None: ...
 
@@ -55,7 +63,7 @@ class SessionStoreBackend(Protocol):
 
     async def read(self, session_id: str) -> SessionRecord | None: ...
 
-    async def save(self, record: SessionRecord) -> None: ...
+    async def save(self, record: SessionRecord) -> bool: ...
 
     async def refresh(self, session_id: str, ttl_seconds: int | None = None) -> bool: ...
 
@@ -334,11 +342,18 @@ class RedisSessionStore:
             return None
         return loads_session_record(raw_payload)
 
-    async def save(self, record: SessionRecord) -> None:
-        """Save a session update while preserving an existing positive TTL."""
+    async def save(self, record: SessionRecord) -> bool:
+        """Save a session update only when the key still exists with a positive TTL."""
         remaining_ttl = await self.ttl(record.session_id)
-        ttl_seconds = remaining_ttl if remaining_ttl > 0 else self.ttl_seconds
-        await self._set_record(record, ttl_seconds)
+        if remaining_ttl <= 0:
+            return False
+        result = await self.redis.set(
+            self.key_for(record.session_id),
+            dumps_session_record(record),
+            xx=True,
+            keepttl=True,
+        )
+        return bool(result)
 
     async def refresh(self, session_id: str, ttl_seconds: int | None = None) -> bool:
         """Refresh a session TTL without rewriting the stored record."""
