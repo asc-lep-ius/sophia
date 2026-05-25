@@ -1,4 +1,4 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -9,7 +9,7 @@ setup-hermes:                    ## Configure Hermes for your hardware (GPU, mod
 test:                            ## Run test suite with coverage
 	uv run pytest --tb=short -q --cov=src/sophia --cov-fail-under=85
 
-lint:                            ## Lint and format check
+lint: secret-policy              ## Lint, secret policy, and format check
 	uv run ruff check . && uv run ruff format --check .
 
 typecheck:                       ## Type check with pyright
@@ -23,6 +23,9 @@ openapi.check:                   ## Verify committed OpenAPI JSON is current
 
 blocking-audit:                  ## Audit async API routers for blocking I/O
 	uv run python scripts/blocking_audit.py --check
+
+secret-policy:                   ## Reject hard-coded production-like secret literals
+	uv run python scripts/secret_policy.py --check
 
 frontend.install:                ## Install frontend dependencies
 	pnpm -C frontend install

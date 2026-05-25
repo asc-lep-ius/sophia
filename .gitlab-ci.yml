@@ -153,6 +153,13 @@ blocking-audit:
   script:
     - uv run python scripts/blocking_audit.py --check
 
+secret-policy:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/secret_policy.py --check
+
 compose-config:
   stage: check
   image: docker:27-cli

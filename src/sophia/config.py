@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Self
 
 from platformdirs import user_cache_dir, user_config_dir, user_data_dir
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOCAL_DEVELOPMENT_SECRET_KEY = "sophia-local-development-secret-key"
+_MINIMUM_PRODUCTION_SECRET_KEY_BYTES = 32
 
 
 class Settings(BaseSettings):
@@ -71,26 +73,42 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return v
 
+    @model_validator(mode="after")
+    def _validate_production_secret_key(self) -> Self:
+        self.validate_secret_key_configuration()
+        return self
+
     def ensure_dirs(self) -> None:
         """Create application directories with restrictive permissions."""
         for d in (self.data_dir, self.config_dir, self.cache_dir):
             d.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def validate_secret_key_configuration(self) -> None:
-        """Fail fast when production lacks a signing key."""
-        if self.production and not (self.secret_key_current or self.secret_key):
-            msg = "SOPHIA_SECRET_KEY_CURRENT or SOPHIA_SECRET_KEY is required in production"
+        """Fail fast when production lacks a valid current signing key."""
+        if not self.production:
+            return
+
+        if not self.secret_key_current:
+            msg = "SOPHIA_SECRET_KEY_CURRENT is required in production"
+            raise ValueError(msg)
+
+        if len(self.secret_key_current.encode()) < _MINIMUM_PRODUCTION_SECRET_KEY_BYTES:
+            msg = "SOPHIA_SECRET_KEY_CURRENT must be at least 32 bytes/characters long"
             raise ValueError(msg)
 
     def session_signing_key(self) -> str:
         """Return the active signing key, with a local-only development fallback."""
         if self.secret_key_current:
             return self.secret_key_current
-        if self.secret_key:
-            return self.secret_key
         if self.production:
             self.validate_secret_key_configuration()
+        if self.secret_key:
+            return self.secret_key
         return _LOCAL_DEVELOPMENT_SECRET_KEY
+
+    def nicegui_storage_secret(self) -> str:
+        """Return the secret used by NiceGUI browser-backed storage."""
+        return self.session_signing_key()
 
     def session_verification_keys(self) -> tuple[str, ...]:
         """Return unique keys accepted for session verification."""

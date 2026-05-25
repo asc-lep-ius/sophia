@@ -180,5 +180,5 @@ def run(settings: Settings | None = None) -> None:
         title="Sophia",
         reload=resolved.gui_reload,
         show=False,
-        storage_secret="sophia-gui-storage",
+        storage_secret=resolved.nicegui_storage_secret(),
     )
