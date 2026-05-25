@@ -1,6 +1,6 @@
 import type { Locale } from "$lib/i18n/locale";
 
-type SophiaRole = "admin" | "instructor" | "student";
+type SophiaRole = "student" | "peer_instructor" | "ta" | "instructor";
 
 type SophiaUser = {
   id: string;
