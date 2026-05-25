@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.routing import Mount, Route, WebSocketRoute
 
 import sophia.gui.app as app_mod
 from sophia.config import Settings
@@ -15,18 +16,28 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 
+def _route_paths() -> set[str]:
+    from nicegui import app
+
+    return {route.path for route in app.routes if isinstance(route, Route | Mount | WebSocketRoute)}
+
+
 class TestConfigure:
     """Test that configure() wires routes and lifecycle hooks."""
 
-    def test_health_route_registered(self, mock_settings: Settings) -> None:
-        from nicegui import app
-
+    def test_health_and_ready_routes_registered_without_api_mount(
+        self,
+        mock_settings: Settings,
+    ) -> None:
         from sophia.gui.app import configure
 
         configure(mock_settings)
-        route_paths = [r.path for r in app.routes if hasattr(r, "path")]  # type: ignore[reportUnknownMemberType]
+        route_paths = _route_paths()
+
         assert "/health" in route_paths
         assert "/ready" in route_paths
+        assert "/api" not in route_paths
+        assert not any(path.startswith("/api/") for path in route_paths)
 
     def test_configure_is_idempotent(self, mock_settings: Settings) -> None:
         """Calling configure twice should not raise."""

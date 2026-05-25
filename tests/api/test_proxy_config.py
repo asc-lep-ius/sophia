@@ -4,14 +4,44 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def read_project_file(path: str) -> str:
     return (PROJECT_ROOT / path).read_text(encoding="utf-8")
+
+
+def read_compose_file(path: str) -> dict[str, Any]:
+    compose = yaml.safe_load(read_project_file(path))
+    assert isinstance(compose, dict)
+    return compose
+
+
+def compose_services(compose_path: str) -> dict[str, Any]:
+    services = read_compose_file(compose_path)["services"]
+    assert isinstance(services, dict)
+    return services
+
+
+def compose_config_environment(service_config: dict[str, Any]) -> dict[str, str]:
+    environment = service_config.get("environment", {})
+
+    if isinstance(environment, dict):
+        return {str(key): str(value) for key, value in environment.items()}
+
+    if isinstance(environment, list):
+        parsed_environment: dict[str, str] = {}
+        for entry in environment:
+            key, _, value = str(entry).partition("=")
+            parsed_environment[key] = value
+        return parsed_environment
+
+    return {}
 
 
 def active_caddy_lines(caddyfile: str) -> list[str]:
@@ -131,6 +161,17 @@ def test_caddy_rate_limit_is_active_for_login_per_ip() -> None:
     assert "jitter 10" in rate_limit_block
 
 
+def test_caddy_rate_limit_is_scoped_to_login_posts_only() -> None:
+    caddyfile = read_project_file("proxy/Caddyfile")
+    rate_limit_block = caddy_block(caddyfile, "\trate_limit")
+
+    assert caddyfile.index("\trate_limit") < caddyfile.index("\thandle /api/*")
+    assert "path /api/auth/login /api/auth/login/" in rate_limit_block
+    assert "path /api/*" not in rate_limit_block
+    assert "method POST" in rate_limit_block
+    assert "method GET" not in rate_limit_block
+
+
 def test_proxy_dockerfile_builds_pinned_rate_limit_plugin() -> None:
     dockerfile = read_project_file("proxy/Dockerfile")
     builder_stage_start = dockerfile.index("FROM caddy:${CADDY_VERSION}-builder AS builder")
@@ -176,3 +217,18 @@ def test_compose_frontend_forwards_sveltekit_proxy_headers(compose_path: str) ->
 
     assert frontend_environment["PROTOCOL_HEADER"] == "x-forwarded-proto"
     assert frontend_environment["HOST_HEADER"] == "x-forwarded-host"
+
+
+@pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
+def test_compose_keeps_runtime_topology_split(compose_path: str) -> None:
+    services = compose_services(compose_path)
+    api_environment = compose_config_environment(services["api"])
+
+    assert {"proxy", "frontend", "api", "redis", "sophia-gui"} <= set(services)
+    assert "ports" not in services["frontend"]
+    assert "ports" not in services["api"]
+    assert "ports" not in services["redis"]
+    assert "sophia.api.app:create_standalone_api_app" in services["api"].get("command", [])
+    assert api_environment["SOPHIA_REDIS_URL"] == "redis://redis:6379/0"
+    assert services["api"]["depends_on"]["redis"]["condition"] == "service_healthy"
+    assert {"frontend", "api", "sophia-gui"} <= set(services["proxy"]["depends_on"])
