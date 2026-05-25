@@ -13,6 +13,8 @@ from sophia.config import Settings
 from sophia.gui.middleware.health import reset_state, set_container, set_container_error
 
 if TYPE_CHECKING:
+    from starlette.types import Receive, Scope, Send
+
     from sophia.infra.di import AppContainer
 
 
@@ -32,7 +34,10 @@ class TestConfigure:
         from nicegui import app
 
         from sophia.gui.app import configure
-        from sophia.gui.auth_bridge import AuthBridgeMiddleware
+        from sophia.gui.auth_bridge import (
+            AUTH_BRIDGE_STACK_WRAPPER_STATE_ATTR,
+            AuthBridgeMiddleware,
+        )
 
         configure(mock_settings)
         route_paths = _route_paths()
@@ -41,7 +46,15 @@ class TestConfigure:
         assert "/ready" in route_paths
         assert "/api" not in route_paths
         assert not any(path.startswith("/api/") for path in route_paths)
-        assert any(middleware.cls is AuthBridgeMiddleware for middleware in app.user_middleware)
+        bridge_in_user_middleware = any(
+            middleware.cls is AuthBridgeMiddleware for middleware in app.user_middleware
+        )
+        bridge_wraps_started_stack = getattr(
+            app.state,
+            AUTH_BRIDGE_STACK_WRAPPER_STATE_ATTR,
+            False,
+        )
+        assert bridge_in_user_middleware or bridge_wraps_started_stack
         assert app.state.sophia_auth_bridge_session_core is not None
 
     def test_configure_is_idempotent(self, mock_settings: Settings) -> None:
@@ -50,6 +63,37 @@ class TestConfigure:
 
         configure(mock_settings)
         configure(mock_settings)
+
+    def test_configure_is_idempotent_after_app_stack_exists(
+        self,
+        mock_settings: Settings,
+    ) -> None:
+        """Calling configure after Starlette built its stack should not raise."""
+        from nicegui import app
+
+        from sophia.gui.app import configure
+        from sophia.gui.auth_bridge import AuthBridgeMiddleware
+
+        previous_stack = app.middleware_stack
+        previous_user_middleware = list(app.user_middleware)
+
+        async def started_stack(_scope: Scope, _receive: Receive, _send: Send) -> None:
+            return None
+
+        try:
+            app.user_middleware = [
+                middleware
+                for middleware in app.user_middleware
+                if middleware.cls is not AuthBridgeMiddleware
+            ]
+            app.middleware_stack = started_stack
+
+            configure(mock_settings)
+
+            assert app.state.sophia_auth_bridge_session_core is not None
+        finally:
+            app.user_middleware = previous_user_middleware
+            app.middleware_stack = previous_stack
 
 
 class TestGUISettings:

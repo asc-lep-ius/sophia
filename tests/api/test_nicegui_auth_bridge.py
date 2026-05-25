@@ -21,7 +21,11 @@ from sophia.api.sessions import (
     SessionUser,
 )
 from sophia.config import Settings
-from sophia.gui.auth_bridge import AuthBridgeMiddleware, get_auth_bridge_state
+from sophia.gui.auth_bridge import (
+    AuthBridgeMiddleware,
+    get_auth_bridge_state,
+    install_auth_bridge,
+)
 
 from ._session_helpers import VALID_SESSION_KEY, FakeRedis
 
@@ -161,6 +165,30 @@ async def test_bridge_exposes_credential_payloads_without_refreshing_ttl() -> No
     assert harness.redis.set_calls == 0
     assert harness.redis.expire_calls == 0
     assert harness.redis.delete_calls == 0
+
+
+async def test_bridge_installs_after_app_stack_started() -> None:
+    settings = Settings(session_ttl_seconds=600)
+    redis = RecordingRedis()
+    store = RedisSessionStore(redis=redis, ttl_seconds=settings.session_ttl_seconds)
+    core = SessionCore(
+        store=store,
+        signer=SecretKeySessionManager(current_key=VALID_SESSION_KEY),
+    )
+    starlette_app = Starlette(routes=[Route("/legacy", _bridge_payload)])
+
+    with TestClient(starlette_app, base_url="https://testserver") as client:
+        assert starlette_app.middleware_stack is not None
+
+        install_auth_bridge(starlette_app, settings=settings, session_core=core)
+        cookie = await core.create(_session_record(session_id="late-bridge-session"))
+        client.cookies.set(settings.session_cookie_name, cookie)
+
+        response = client.get("/legacy")
+
+    assert response.status_code == 200
+    assert response.json()["authenticated"] is True
+    assert response.json()["session_id"] == "late-bridge-session"
 
 
 def _build_harness() -> BridgeHarness:

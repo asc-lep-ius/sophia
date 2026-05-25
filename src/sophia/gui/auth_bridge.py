@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from redis import asyncio as redis_asyncio
-from starlette.middleware import Middleware
 from starlette.requests import Request
 
 from sophia.api.sessions import (
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
 AUTH_BRIDGE_STATE_ATTR = "sophia_auth_bridge"
 AUTH_BRIDGE_SESSION_CORE_STATE_ATTR = "sophia_auth_bridge_session_core"
 AUTH_BRIDGE_SETTINGS_STATE_ATTR = "sophia_auth_bridge_settings"
+AUTH_BRIDGE_STACK_WRAPPER_STATE_ATTR = "sophia_auth_bridge_stack_wrapper_installed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,23 +99,51 @@ class AuthBridgeMiddleware:
         self,
         app: ASGIApp,
         *,
-        settings: Settings,
-        session_core: SessionCore,
+        settings: Settings | None = None,
+        session_core: SessionCore | None = None,
+        starlette_app: Starlette | None = None,
     ) -> None:
+        if starlette_app is None and (settings is None or session_core is None):
+            msg = "AuthBridgeMiddleware requires settings/session_core or starlette_app"
+            raise ValueError(msg)
         self.app = app
         self.settings = settings
         self.session_core = session_core
+        self.starlette_app = starlette_app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
-            request = Request(scope, receive=receive)
-            bridge_state = await resolve_auth_bridge_state(
-                request,
-                settings=self.settings,
-                session_core=self.session_core,
-            )
+            bridge_state = ANONYMOUS_AUTH_BRIDGE_STATE
+            dependencies = self._dependencies()
+            if dependencies is not None:
+                settings, session_core = dependencies
+                request = Request(scope, receive=receive)
+                bridge_state = await resolve_auth_bridge_state(
+                    request,
+                    settings=settings,
+                    session_core=session_core,
+                )
             _set_scope_auth_bridge_state(scope, bridge_state)
         await self.app(scope, receive, send)
+
+    def _dependencies(self) -> tuple[Settings, SessionCore] | None:
+        if self.starlette_app is not None:
+            settings = getattr(
+                self.starlette_app.state,
+                AUTH_BRIDGE_SETTINGS_STATE_ATTR,
+                None,
+            )
+            session_core = getattr(
+                self.starlette_app.state,
+                AUTH_BRIDGE_SESSION_CORE_STATE_ATTR,
+                None,
+            )
+            if settings is not None and session_core is not None:
+                return cast("Settings", settings), cast("SessionCore", session_core)
+
+        if self.settings is not None and self.session_core is not None:
+            return self.settings, self.session_core
+        return None
 
 
 def install_auth_bridge(
@@ -129,24 +157,37 @@ def install_auth_bridge(
     setattr(starlette_app.state, AUTH_BRIDGE_SESSION_CORE_STATE_ATTR, resolved_session_core)
     setattr(starlette_app.state, AUTH_BRIDGE_SETTINGS_STATE_ATTR, settings)
 
-    bridge_middleware = Middleware(
-        AuthBridgeMiddleware,
-        settings=settings,
-        session_core=resolved_session_core,
-    )
-    for index, middleware in enumerate(starlette_app.user_middleware):
-        if middleware.cls is AuthBridgeMiddleware:
-            starlette_app.user_middleware[index] = bridge_middleware
-            starlette_app.middleware_stack = None
-            break
-    else:
-        starlette_app.add_middleware(
-            AuthBridgeMiddleware,
-            settings=settings,
-            session_core=resolved_session_core,
-        )
+    if _has_auth_bridge_user_middleware(starlette_app):
+        return resolved_session_core
+
+    if starlette_app.middleware_stack is None:
+        starlette_app.add_middleware(AuthBridgeMiddleware, starlette_app=starlette_app)
+        return resolved_session_core
+
+    _install_auth_bridge_stack_wrapper(starlette_app)
 
     return resolved_session_core
+
+
+def _has_auth_bridge_user_middleware(starlette_app: Starlette) -> bool:
+    return any(
+        middleware.cls is AuthBridgeMiddleware for middleware in starlette_app.user_middleware
+    )
+
+
+def _install_auth_bridge_stack_wrapper(starlette_app: Starlette) -> None:
+    if getattr(starlette_app.state, AUTH_BRIDGE_STACK_WRAPPER_STATE_ATTR, False):
+        return
+
+    middleware_stack = starlette_app.middleware_stack
+    if middleware_stack is None:
+        return
+
+    starlette_app.middleware_stack = AuthBridgeMiddleware(
+        middleware_stack,
+        starlette_app=starlette_app,
+    )
+    setattr(starlette_app.state, AUTH_BRIDGE_STACK_WRAPPER_STATE_ATTR, True)
 
 
 def create_auth_bridge_session_core(settings: Settings) -> SessionCore:
