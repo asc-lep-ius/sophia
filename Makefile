@@ -1,4 +1,6 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+
+PROD_IMAGE_TAG ?= $(shell git rev-parse --verify HEAD)
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -26,6 +28,9 @@ blocking-audit:                  ## Audit async API routers for blocking I/O
 
 secret-policy:                   ## Reject hard-coded production-like secret literals
 	uv run python scripts/secret_policy.py --check
+
+deployment-policy:               ## Validate production Compose image and topology policy
+	uv run python scripts/deployment_policy.py --check
 
 frontend.install:                ## Install frontend dependencies
 	pnpm -C frontend install
@@ -81,9 +86,9 @@ docker-config:                   ## Validate development Compose configuration
 	docker compose config
 
 docker-prod-config:              ## Validate production Compose configuration
-	docker compose -f docker-compose.prod.yml config
+	IMAGE_TAG=$(PROD_IMAGE_TAG) docker compose -f docker-compose.prod.yml config
 
-docker-validate: docker-config docker-prod-config ## Validate all Compose configurations
+docker-validate: docker-config docker-prod-config deployment-policy ## Validate all Compose configurations and deployment policy
 
 deploy-config: docker-prod-config ## Alias for deployment configuration validation
 

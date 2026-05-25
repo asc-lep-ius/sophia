@@ -160,13 +160,20 @@ secret-policy:
   script:
     - uv run python scripts/secret_policy.py --check
 
+deployment-policy:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/deployment_policy.py --check
+
 compose-config:
   stage: check
   image: docker:27-cli
   tags: [privileged]
   script:
     - docker compose config
-    - docker compose -f docker-compose.prod.yml config
+    - IMAGE_TAG="$CI_COMMIT_SHA" docker compose -f docker-compose.prod.yml config
 
 .frontend-job:
   stage: check
@@ -352,11 +359,31 @@ docker-gui-build-gpu:
       allow_failure: true
     - when: never
 
+docker-proxy-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build --file proxy/Dockerfile --cache-from type=registry,ref=${LOCAL_REGISTRY}/proxy-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/proxy-cache,mode=max --tag ${LOCAL_REGISTRY}/proxy:${CI_COMMIT_SHA} --push proxy
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - proxy/**/*
+        - docker-compose.yml
+        - docker-compose.prod.yml
+      when: manual
+      allow_failure: true
+    - when: never
+
 deploy:production:
   stage: deploy
   image: alpine:3.22
   tags: [hephaestus]
   needs:
+    - docker-proxy-build
     - docker-api-build
     - docker-frontend-build
     - docker-nicegui-build

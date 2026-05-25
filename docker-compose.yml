@@ -46,7 +46,10 @@ x-gui-common: &gui-common
 
 services:
   proxy:
-    image: caddy:2.10-alpine
+    build:
+      context: ./proxy
+      dockerfile: Dockerfile
+    image: sophia-proxy:caddy-2.11.3-ratelimit-16aecbbcb8ca
     restart: unless-stopped
     ports:
       - "${SOPHIA_PROXY_HTTP_PORT:-80}:80/tcp"
@@ -104,7 +107,7 @@ services:
         max-file: "3"
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.6.3-alpine
     restart: unless-stopped
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     volumes:

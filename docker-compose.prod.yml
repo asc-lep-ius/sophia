@@ -1,6 +1,9 @@
+# Production app and proxy images are pinned through IMAGE_TAG. Use
+# `make docker-prod-config` for local validation; that target supplies the
+# current git commit SHA.
 services:
   proxy:
-    image: caddy:2.10-alpine
+    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/proxy:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
     restart: unless-stopped
     ports:
       - "${SOPHIA_PROXY_HTTP_PORT:-80}:80/tcp"
@@ -9,16 +12,15 @@ services:
     environment:
       SOPHIA_SITE_ADDRESS: ${SOPHIA_SITE_ADDRESS:-https://sophia.example.com}
     volumes:
-      - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
       frontend:
-        condition: service_started
+        condition: service_healthy
       api:
-        condition: service_started
+        condition: service_healthy
       sophia-gui:
-        condition: service_started
+        condition: service_healthy
     networks:
       - public
       - app
@@ -27,9 +29,15 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   frontend:
-    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/frontend:${IMAGE_TAG:-${CI_COMMIT_SHA:-phase0-local}}"
+    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/frontend:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
     restart: unless-stopped
     environment:
       HOST: 0.0.0.0
@@ -50,7 +58,7 @@ services:
       start_period: 10s
 
   api:
-    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/api:${IMAGE_TAG:-${CI_COMMIT_SHA:-phase0-local}}"
+    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/api:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
     restart: unless-stopped
     entrypoint: ["/app/.venv/bin/uvicorn"]
     command: ["sophia.api.app:create_standalone_api_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
@@ -82,7 +90,7 @@ services:
       start_period: 15s
 
   sophia-gui:
-    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/nicegui:${IMAGE_TAG:-${CI_COMMIT_SHA:-phase0-local}}"
+    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/nicegui:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
     restart: unless-stopped
     environment:
       SOPHIA_PRODUCTION: "true"
@@ -112,7 +120,7 @@ services:
       start_period: 20s
 
   redis:
-    image: redis:7.4-alpine
+    image: redis:8.6.3-alpine
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
@@ -129,7 +137,7 @@ services:
       start_period: 5s
 
   litestream:
-    image: litestream/litestream:0.3.13
+    image: litestream/litestream:0.5.11
     restart: unless-stopped
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -149,9 +157,15 @@ services:
       - litestream-state:/var/lib/litestream
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     networks:
       - data
+    healthcheck:
+      test: ["CMD", "litestream", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
   sophia-data:

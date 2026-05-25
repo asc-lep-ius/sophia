@@ -108,17 +108,65 @@ def test_caddy_sse_streams_are_not_buffered_or_compressed() -> None:
     active_lines = active_caddy_lines(caddyfile)
 
     assert "flush_interval -1" in sse_block
+    assert "stream_close_delay 5m" in sse_block
     assert "transport http" in sse_block
     assert "compression off" in sse_block
     assert not any(line == "encode" or line.startswith("encode ") for line in active_lines)
+    assert sse_block.index("flush_interval -1") < sse_block.index("stream_close_delay 5m")
+    assert sse_block.index("stream_close_delay 5m") < sse_block.index("transport http")
 
 
-def test_caddy_rate_limit_is_only_a_documented_placeholder() -> None:
+def test_caddy_rate_limit_is_active_for_login_per_ip() -> None:
     caddyfile = read_project_file("proxy/Caddyfile")
-    active_lines = active_caddy_lines(caddyfile)
+    rate_limit_block = caddy_block(caddyfile, "\trate_limit")
 
-    assert "Caddy core has no built-in" in caddyfile
-    assert not any(line == "rate_limit" or line.startswith("rate_limit ") for line in active_lines)
+    assert "order rate_limit before reverse_proxy" in caddyfile
+    assert "zone login_per_ip" in rate_limit_block
+    assert "method POST" in rate_limit_block
+    assert "path /api/auth/login /api/auth/login/" in rate_limit_block
+    assert "key {remote_host}" in rate_limit_block
+    assert "events 5" in rate_limit_block
+    assert "window 1m" in rate_limit_block
+    assert "ipv6_prefix 64" in rate_limit_block
+    assert "jitter 10" in rate_limit_block
+
+
+def test_proxy_dockerfile_builds_pinned_rate_limit_plugin() -> None:
+    dockerfile = read_project_file("proxy/Dockerfile")
+    builder_stage_start = dockerfile.index("FROM caddy:${CADDY_VERSION}-builder AS builder")
+    runtime_stage_start = dockerfile.index("FROM caddy:${CADDY_VERSION}", builder_stage_start + 1)
+    builder_stage = dockerfile[builder_stage_start:runtime_stage_start]
+    custom_binary_copy = "COPY --from=builder /usr/bin/caddy /usr/bin/caddy"
+    caddyfile_copy = "COPY Caddyfile /etc/caddy/Caddyfile"
+    caddyfile_validation = (
+        "RUN /usr/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile"
+    )
+    caddyfile_adapt = (
+        "RUN /usr/bin/caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile "
+        "--pretty > /tmp/Caddyfile.json"
+    )
+
+    assert "ARG CADDY_VERSION=2.11.3" in dockerfile
+    assert "ARG XCADDY_VERSION=v0.4.5" in dockerfile
+    assert re.search(r"ARG RATELIMIT_VERSION=[0-9a-f]{40}", dockerfile) is not None
+    assert "FROM caddy:${CADDY_VERSION}-builder AS builder" in dockerfile
+    assert "ARG CADDY_VERSION" in builder_stage
+    assert "ARG XCADDY_VERSION" in builder_stage
+    assert "ARG RATELIMIT_VERSION" in builder_stage
+    assert "github.com/caddyserver/xcaddy/cmd/xcaddy@${XCADDY_VERSION}" in builder_stage
+    assert 'caddy_version="${CADDY_VERSION#v}"' in builder_stage
+    assert '/go/bin/xcaddy build "v${caddy_version}"' in builder_stage
+    assert "--with github.com/mholt/caddy-ratelimit@${RATELIMIT_VERSION}" in builder_stage
+    assert custom_binary_copy in dockerfile
+    assert caddyfile_copy in dockerfile
+    assert caddyfile_validation in dockerfile
+    assert caddyfile_adapt in dockerfile
+    assert dockerfile.index(custom_binary_copy) < dockerfile.index(caddyfile_copy)
+    assert dockerfile.index(caddyfile_copy) < dockerfile.index(caddyfile_validation)
+    assert dockerfile.index(caddyfile_validation) < dockerfile.index(caddyfile_adapt)
+    assert "xcaddy build vv" not in dockerfile
+    assert "xcaddy build v${CADDY_VERSION}" not in dockerfile
+    assert "@latest" not in dockerfile
 
 
 @pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])

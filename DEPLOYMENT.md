@@ -97,9 +97,12 @@ before the generic `/api/*` route. It sends event-stream paths to the API with
 intentionally does not enable the Caddy `encode` directive so event streams are
 not buffered or compressed by the proxy.
 
-`/api/auth/login` has a reserved rate-limit comment only. Do not enable an
-active rate-limit directive until the Caddy image is replaced by a build that
-contains the required plugin.
+`/api/auth/login` is actively rate limited at the Caddy edge by the
+`caddy-ratelimit` plugin. The current policy allows five POST attempts per
+minute per remote IP, groups IPv6 clients by /64 prefix, and applies jitter to
+avoid synchronized retries. Keep the proxy image built from
+[proxy/Dockerfile](proxy/Dockerfile) so the custom Caddy binary includes the
+plugin before deploying Caddyfile changes.
 
 ## CI Merge Gates
 

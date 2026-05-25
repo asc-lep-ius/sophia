@@ -1,4 +1,5 @@
 {
+	order rate_limit before reverse_proxy
 	admin off
 
 	servers {
@@ -20,6 +21,20 @@
 		format json
 	}
 
+	rate_limit {
+		zone login_per_ip {
+			match {
+				method POST
+				path /api/auth/login /api/auth/login/
+			}
+			key {remote_host}
+			events 5
+			window 1m
+			ipv6_prefix 64
+		}
+		jitter 10
+	}
+
 	@api_uploads path /api/uploads/* /api/imports/* /api/lectures/*/upload* /api/files/*
 	request_body @api_uploads {
 		max_size 512MB
@@ -38,6 +53,7 @@
 			import forwarded_headers
 			header_up X-Forwarded-Prefix /api
 			flush_interval -1
+			stream_close_delay 5m
 			transport http {
 				compression off
 			}
@@ -73,9 +89,4 @@
 			header_up X-Forwarded-Prefix /
 		}
 	}
-
-	# Reserved for /api/auth/login rate limiting. Keep this inactive until the
-	# proxy image includes a Caddy rate-limit plugin; Caddy core has no built-in
-	# rate_limit directive for this policy.
-	# @auth_login path /api/auth/login
 }
