@@ -15,7 +15,7 @@ from sophia.api.deps import (
 )
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.settings import SettingsPatchRequest, SettingsResponse
-from sophia.api.sessions import SessionSettings
+from sophia.api.sessions import SessionRecord, SessionSettings
 from sophia.domain.errors import AuthError
 
 router = APIRouter(tags=["settings"])
@@ -38,17 +38,28 @@ async def patch_settings(
 ) -> SettingsResponse:
     session = await require_csrf(request)
     updated_settings = _patched_settings(session.settings, payload)
-    updated_record = replace(
-        session,
-        settings=updated_settings,
-        updated_at=datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-    )
+    updated_record = _updated_session_record(session, updated_settings)
     saved = await get_session_core(request).store.save(updated_record)
     if not saved:
         cache_session_record(request, None)
         raise AuthError("Authentication required")
     cache_session_record(request, updated_record)
     return _settings_response(updated_settings)
+
+
+def _updated_session_record(
+    session: SessionRecord,
+    updated_settings: SessionSettings,
+) -> SessionRecord:
+    return replace(
+        session,
+        settings=updated_settings,
+        updated_at=_utc_now_iso(),
+    )
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _patched_settings(
