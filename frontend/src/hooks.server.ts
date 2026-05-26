@@ -25,6 +25,8 @@ const DEFAULT_ORG_ID = "local";
 const DEFAULT_COURSE_ID = "default-course";
 const DEFAULT_ROLE = "student";
 const CSRF_COOKIE = "__Host-sophia_csrf";
+const E2E_AUTH_COOKIE = "sophia-e2e-auth";
+const E2E_AUTH_ENABLED = process.env.SOPHIA_E2E_AUTH === "1";
 const SAFE_API_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 const SOPHIA_ROLES = new Set<SophiaRole>([
   "student",
@@ -59,6 +61,7 @@ const contextHandle: Handle = async ({ event, resolve }) => {
   event.locals.apiSetCookies = [];
 
   await hydrateAuthSessionLocals(event);
+  applyE2eAuthLocals(event);
 
   const response = await resolve(event);
   response.headers.set("x-request-id", requestId);
@@ -142,6 +145,26 @@ export async function hydrateAuthSessionLocals(
   } catch {
     return;
   }
+}
+
+function applyE2eAuthLocals(event: RequestEvent): void {
+  if (!E2E_AUTH_ENABLED || event.cookies.get(E2E_AUTH_COOKIE) !== "1") {
+    return;
+  }
+
+  event.locals.authenticated = true;
+  event.locals.csrfToken = event.locals.csrfToken ?? "e2e-csrf-token";
+  event.locals.user = {
+    displayName: "E2E Learner",
+    email: "e2e@example.test",
+    id: "e2e-learner",
+    name: "E2E Learner",
+  };
+  event.locals.sessionSettings = {
+    locale: event.locals.locale,
+    selected_course_id: event.locals.course_id,
+    theme: "light",
+  };
 }
 
 function applyAuthSessionLocals(

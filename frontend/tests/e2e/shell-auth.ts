@@ -1,0 +1,19 @@
+import type { Page } from "@playwright/test";
+
+const PREVIEW_ORIGIN = "http://127.0.0.1:4173";
+
+export async function authenticateShell(page: Page): Promise<void> {
+  await page.context().addCookies([
+    { name: "sophia-e2e-auth", value: "1", url: PREVIEW_ORIGIN },
+    { name: "sophia-org-id", value: "local", url: PREVIEW_ORIGIN },
+    { name: "sophia-course-id", value: "default-course", url: PREVIEW_ORIGIN },
+  ]);
+}
+
+export async function openCommandPaletteFromKeyboard(
+  page: Page,
+  triggerName: RegExp | string = /Search/,
+): Promise<void> {
+  await page.getByRole("button", { name: triggerName }).focus();
+  await page.keyboard.press("Control+K");
+}

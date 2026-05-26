@@ -12,6 +12,13 @@
   });
 </script>
 
-<AppShell activePath={page.url.pathname} locale={data.locale} tenant={data.tenant} theme={data.theme}>
+<AppShell
+  activePath={page.url.pathname}
+  authenticated={data.authenticated}
+  locale={data.locale}
+  tenant={data.tenant}
+  theme={data.theme}
+  user={data.user}
+>
   {@render children()}
 </AppShell>
