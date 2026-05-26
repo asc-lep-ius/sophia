@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from nicegui import ui
+from nicegui import app, ui
 from nicegui.testing import user_simulation
 
 from sophia.gui.layout import NAV_ITEMS, app_shell
@@ -69,6 +69,7 @@ class TestAppShell:
                     await app_shell(lambda: ui.label("test"))
 
                 await user.open("/")
+                await user.should_see("test")
                 mock_register.assert_called_once()
 
     async def test_shell_renders_all_nav_labels(self) -> None:
@@ -103,7 +104,24 @@ class TestAppShell:
                 await app_shell(lambda: ui.label("test"))
 
             await user.open("/")
+            await user.should_see("test")
             self._mock_selector.assert_awaited_once()
+
+
+async def test_shell_waits_for_client_before_rendering_sidebar_tab_storage() -> None:
+    async def _selector_with_tab_storage() -> None:
+        app.storage.tab["selector_ready"] = True
+        ui.label("Selector Ready")
+
+    with patch("sophia.gui.layout.render_course_selector", new=_selector_with_tab_storage):
+        async with user_simulation() as user:
+
+            @ui.page("/")
+            async def index() -> None:
+                await app_shell(lambda: ui.label("Main Content"))
+
+            await user.open("/")
+            await user.should_see("Selector Ready")
 
 
 class TestStorageMapSessionIds:
