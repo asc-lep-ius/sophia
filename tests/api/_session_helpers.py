@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
     from sophia.api.routers.auth import LoginAuthenticator
     from sophia.api.schemas.auth import AuthLoginRequest
+    from sophia.infra.di import AppContainer
 
 VALID_SESSION_KEY = "api-test-session-signing-key-32-bytes"
 
@@ -120,6 +121,7 @@ def build_harness(
     *,
     store: SessionStoreBackend | None = None,
     redis: FakeRedis | None = None,
+    app_container: AppContainer | None = None,
 ) -> ApiHarness:
     settings = Settings(session_ttl_seconds=600)
     redis = redis or FakeRedis()
@@ -131,6 +133,7 @@ def build_harness(
         settings=settings,
         session_core=core,
         login_authenticator=login_authenticator or successful_login,
+        app_container=app_container,
     )
     client = TestClient(app, base_url="https://testserver")
     return ApiHarness(app=app, client=client, redis=redis, core=core, settings=settings)

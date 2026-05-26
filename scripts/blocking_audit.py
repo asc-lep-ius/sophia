@@ -87,7 +87,7 @@ def audit_root(root: Path) -> list[Violation]:
         return []
 
     violations: list[Violation] = []
-    for router_file in sorted(routers_dir.glob("*.py")):
+    for router_file in sorted(routers_dir.rglob("*.py")):
         if router_file.name == "__init__.py":
             continue
         violations.extend(audit_file(router_file))

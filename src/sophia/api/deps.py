@@ -14,6 +14,7 @@ from sophia.domain.errors import AuthError
 
 if TYPE_CHECKING:
     from sophia.config import Settings
+    from sophia.infra.di import AppContainer
 
 _SESSION_RECORD_STATE_ATTR = "sophia_session_record"
 _SESSION_LOADED_STATE_ATTR = "sophia_session_loaded"
@@ -34,6 +35,14 @@ def get_session_core(request: Request) -> SessionCore:
         msg = "session core is not configured"
         raise RuntimeError(msg)
     return cast("SessionCore", session_core)
+
+
+def get_app_container(request: Request) -> AppContainer:
+    app_container = getattr(request.app.state, "app_container", None)
+    if app_container is None:
+        msg = "app container is not configured"
+        raise RuntimeError(msg)
+    return cast("AppContainer", app_container)
 
 
 async def optional_session_record(request: Request) -> SessionRecord | None:

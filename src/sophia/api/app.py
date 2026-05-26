@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from sophia.api.routers.auth import LoginAuthenticator
     from sophia.api.sessions import SessionCore
+    from sophia.infra.di import AppContainer
 
 
 def create_api_app(
@@ -39,6 +40,7 @@ def create_api_app(
     ready_on_startup: bool = False,
     session_core: SessionCore | None = None,
     login_authenticator: LoginAuthenticator | None = None,
+    app_container: AppContainer | None = None,
 ) -> FastAPI:
     """Create the backend API app.
 
@@ -57,6 +59,8 @@ def create_api_app(
     api_app.state.settings = resolved_settings
     api_app.state.session_core = session_core or _create_redis_session_core(resolved_settings)
     api_app.state.login_authenticator = login_authenticator
+    if app_container is not None:
+        api_app.state.app_container = app_container
     _set_runtime_readiness(api_app, ready=False)
 
     api_app.add_middleware(RequestContextMiddleware)
