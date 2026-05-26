@@ -8,6 +8,11 @@ downloads/
 .pytest_cache/
 .ruff_cache/
 dist/
+frontend/.svelte-kit/
+frontend/build/
+frontend/node_modules/
+frontend/playwright-report/
+frontend/test-results/
 tests/
 docs/
 *.egg-info/
