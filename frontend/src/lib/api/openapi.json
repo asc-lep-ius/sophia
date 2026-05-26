@@ -87,6 +87,39 @@
         "title": "AuthSessionResponse",
         "type": "object"
       },
+      "DiscoveredLectureModuleResponse": {
+        "properties": {
+          "course_fullname": {
+            "title": "Course Fullname",
+            "type": "string"
+          },
+          "course_shortname": {
+            "title": "Course Shortname",
+            "type": "string"
+          },
+          "episode_count": {
+            "title": "Episode Count",
+            "type": "integer"
+          },
+          "module_id": {
+            "title": "Module Id",
+            "type": "integer"
+          },
+          "module_name": {
+            "title": "Module Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_shortname",
+          "course_fullname",
+          "module_id",
+          "module_name",
+          "episode_count"
+        ],
+        "title": "DiscoveredLectureModuleResponse",
+        "type": "object"
+      },
       "ErrorDetail": {
         "properties": {
           "code": {
@@ -117,6 +150,19 @@
           "detail"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "HealthResponse": {
@@ -151,6 +197,325 @@
             "type": "null"
           }
         ]
+      },
+      "LectureDiscoveryResponse": {
+        "properties": {
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredLectureModuleResponse"
+            },
+            "title": "Modules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "modules"
+        ],
+        "title": "LectureDiscoveryResponse",
+        "type": "object"
+      },
+      "LectureEpisodeResponse": {
+        "properties": {
+          "download_status": {
+            "title": "Download Status",
+            "type": "string"
+          },
+          "episode_id": {
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Status"
+          },
+          "lecture_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lecture Number"
+          },
+          "missed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed At"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Status"
+          }
+        },
+        "required": [
+          "episode_id",
+          "title",
+          "download_status",
+          "skip_reason",
+          "transcription_status",
+          "index_status",
+          "lecture_number",
+          "missed_at"
+        ],
+        "title": "LectureEpisodeResponse",
+        "type": "object"
+      },
+      "LectureEpisodesResponse": {
+        "properties": {
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/LectureEpisodeResponse"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "module_id": {
+            "title": "Module Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module_id",
+          "episodes"
+        ],
+        "title": "LectureEpisodesResponse",
+        "type": "object"
+      },
+      "LectureModuleResponse": {
+        "properties": {
+          "course_name": {
+            "title": "Course Name",
+            "type": "string"
+          },
+          "module_id": {
+            "title": "Module Id",
+            "type": "integer"
+          },
+          "series_id": {
+            "title": "Series Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "module_id",
+          "series_id",
+          "course_name"
+        ],
+        "title": "LectureModuleResponse",
+        "type": "object"
+      },
+      "LectureModulesResponse": {
+        "properties": {
+          "modules": {
+            "items": {
+              "$ref": "#/components/schemas/LectureModuleResponse"
+            },
+            "title": "Modules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "modules"
+        ],
+        "title": "LectureModulesResponse",
+        "type": "object"
+      },
+      "LecturePipelineStatusResponse": {
+        "properties": {
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/LectureEpisodeResponse"
+            },
+            "title": "Episodes",
+            "type": "array"
+          },
+          "module_id": {
+            "title": "Module Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module_id",
+          "episodes"
+        ],
+        "title": "LecturePipelineStatusResponse",
+        "type": "object"
+      },
+      "LectureSearchRequest": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "missed_only": {
+            "default": false,
+            "title": "Missed Only",
+            "type": "boolean"
+          },
+          "module_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Module Id",
+            "type": "integer"
+          },
+          "n_results": {
+            "default": 5,
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "N Results",
+            "type": "integer"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "source_filter": {
+            "anyOf": [
+              {
+                "enum": [
+                  "all",
+                  "lecture",
+                  "pdf"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Filter"
+          }
+        },
+        "required": [
+          "module_id",
+          "query"
+        ],
+        "title": "LectureSearchRequest",
+        "type": "object"
+      },
+      "LectureSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LectureSearchResultResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "LectureSearchResponse",
+        "type": "object"
+      },
+      "LectureSearchResultResponse": {
+        "properties": {
+          "chunk_text": {
+            "title": "Chunk Text",
+            "type": "string"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "number"
+          },
+          "episode_id": {
+            "title": "Episode Id",
+            "type": "string"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "episode_id",
+          "title",
+          "chunk_text",
+          "start_time",
+          "end_time",
+          "score",
+          "source"
+        ],
+        "title": "LectureSearchResultResponse",
+        "type": "object"
+      },
+      "ManualTopicRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic"
+        ],
+        "title": "ManualTopicRequest",
+        "type": "object"
       },
       "ReadinessCheck": {
         "properties": {
@@ -327,6 +692,264 @@
         "title": "SettingsResponse",
         "type": "object"
       },
+      "TopicConfidenceListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/TopicConfidenceRatingResponse"
+            },
+            "title": "Ratings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "ratings"
+        ],
+        "title": "TopicConfidenceListResponse",
+        "type": "object"
+      },
+      "TopicConfidenceRatingResponse": {
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "calibration_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Error"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "is_blind_spot": {
+            "title": "Is Blind Spot",
+            "type": "boolean"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "rated_at": {
+            "title": "Rated At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "course_id",
+          "predicted",
+          "actual",
+          "rated_at",
+          "calibration_error",
+          "is_blind_spot"
+        ],
+        "title": "TopicConfidenceRatingResponse",
+        "type": "object"
+      },
+      "TopicConfidenceRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "rating"
+        ],
+        "title": "TopicConfidenceRequest",
+        "type": "object"
+      },
+      "TopicConfidenceResponse": {
+        "properties": {
+          "rating": {
+            "$ref": "#/components/schemas/TopicConfidenceRatingResponse"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "TopicConfidenceResponse",
+        "type": "object"
+      },
+      "TopicExtractionRequest": {
+        "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
+          "module_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Module Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "module_id"
+        ],
+        "title": "TopicExtractionRequest",
+        "type": "object"
+      },
+      "TopicExtractionResponse": {
+        "properties": {
+          "module_id": {
+            "title": "Module Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicMappingResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "module_id",
+          "topics"
+        ],
+        "title": "TopicExtractionResponse",
+        "type": "object"
+      },
+      "TopicListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicMappingResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "topics"
+        ],
+        "title": "TopicListResponse",
+        "type": "object"
+      },
+      "TopicMappingResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "frequency": {
+            "title": "Frequency",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "course_id",
+          "source",
+          "frequency"
+        ],
+        "title": "TopicMappingResponse",
+        "type": "object"
+      },
+      "TopicResponse": {
+        "properties": {
+          "topic": {
+            "$ref": "#/components/schemas/TopicMappingResponse"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "title": "TopicResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
       "WebVitalsReservedResponse": {
         "properties": {
           "code": {
@@ -492,6 +1115,218 @@
         ]
       }
     },
+    "/api/lectures/discover": {
+      "post": {
+        "operationId": "discoverLectureModules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LectureDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Discover Modules",
+        "tags": [
+          "lectures"
+        ]
+      }
+    },
+    "/api/lectures/modules": {
+      "get": {
+        "operationId": "listLectureModules",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LectureModulesResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Lecture Modules",
+        "tags": [
+          "lectures"
+        ]
+      }
+    },
+    "/api/lectures/modules/{module_id}/episodes": {
+      "get": {
+        "operationId": "listLectureModuleEpisodes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Module Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LectureEpisodesResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Lecture Module Episodes",
+        "tags": [
+          "lectures"
+        ]
+      }
+    },
+    "/api/lectures/modules/{module_id}/pipeline-status": {
+      "get": {
+        "operationId": "readLecturePipelineStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Module Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LecturePipelineStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Lecture Pipeline Status",
+        "tags": [
+          "lectures"
+        ]
+      }
+    },
     "/api/metrics/web-vitals": {
       "post": {
         "operationId": "reserve_web_vitals_api_metrics_web_vitals_post",
@@ -565,6 +1400,63 @@
         "summary": "Ready",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/search/lectures": {
+      "post": {
+        "operationId": "searchLectureContent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LectureSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LectureSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search Lecture Content",
+        "tags": [
+          "search"
         ]
       }
     },
@@ -649,6 +1541,346 @@
         "summary": "Patch Settings",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/topics": {
+      "get": {
+        "operationId": "listTopics",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topics",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/topics/confidence": {
+      "get": {
+        "operationId": "listTopicConfidenceRatings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topic Confidence Ratings",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "saveTopicConfidenceRating",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Topic Confidence Rating",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/topics/extract": {
+      "post": {
+        "operationId": "extractTopics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicExtractionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Extract Topics",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/topics/manual": {
+      "post": {
+        "operationId": "saveManualTopic",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualTopicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Manual Topic",
+        "tags": [
+          "topics"
         ]
       }
     }

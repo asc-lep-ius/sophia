@@ -13,7 +13,14 @@ from redis import asyncio as redis_asyncio
 from sophia import __version__
 from sophia.api.context import RequestContextMiddleware
 from sophia.api.errors import register_error_handlers
-from sophia.api.routers import auth, health, metrics
+from sophia.api.routers import (
+    auth,
+    health,
+    lectures,
+    metrics,
+    search,
+    topics,
+)
 from sophia.api.routers import settings as settings_router
 from sophia.api.sessions import RedisSessionBackend, create_session_core
 from sophia.config import Settings
@@ -69,6 +76,9 @@ def create_api_app(
     api_app.include_router(metrics.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(auth.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(settings_router.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(lectures.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(search.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(topics.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
 
