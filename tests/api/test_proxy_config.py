@@ -10,6 +10,8 @@ import pytest
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+INTERNAL_API_BASE_URL = "http://api:8000"
+REDIS_URL = "redis://redis:6379/0"
 
 
 def read_project_file(path: str) -> str:
@@ -42,6 +44,13 @@ def compose_config_environment(service_config: dict[str, Any]) -> dict[str, str]
         return parsed_environment
 
     return {}
+
+
+def compose_network_names(service_config: dict[str, Any]) -> set[str]:
+    networks = service_config.get("networks", [])
+    if isinstance(networks, dict):
+        return {str(name) for name in networks}
+    return {str(name) for name in networks}
 
 
 def active_caddy_lines(caddyfile: str) -> list[str]:
@@ -220,6 +229,41 @@ def test_compose_frontend_forwards_sveltekit_proxy_headers(compose_path: str) ->
 
 
 @pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
+def test_compose_frontend_keeps_public_api_path_and_private_ssr_origin(
+    compose_path: str,
+) -> None:
+    services = compose_services(compose_path)
+    frontend_environment = compose_config_environment(services["frontend"])
+
+    assert frontend_environment["PUBLIC_API_BASE_URL"] == "/api"
+    assert frontend_environment["SOPHIA_API_BASE_URL"] == INTERNAL_API_BASE_URL
+    assert compose_network_names(services["frontend"]) & compose_network_names(
+        services["api"],
+    )
+
+
+@pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
+def test_compose_gui_receives_api_redis_url_and_can_reach_redis(
+    compose_path: str,
+) -> None:
+    services = compose_services(compose_path)
+    api_environment = compose_config_environment(services["api"])
+    gui_service_names = [
+        service_name
+        for service_name in ("sophia-gui", "sophia-gui-gpu")
+        if service_name in services
+    ]
+
+    assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
+    for service_name in gui_service_names:
+        gui_environment = compose_config_environment(services[service_name])
+        assert gui_environment["SOPHIA_REDIS_URL"] == api_environment["SOPHIA_REDIS_URL"]
+        assert compose_network_names(services[service_name]) & compose_network_names(
+            services["redis"],
+        )
+
+
+@pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
 def test_compose_keeps_runtime_topology_split(compose_path: str) -> None:
     services = compose_services(compose_path)
     api_environment = compose_config_environment(services["api"])
@@ -229,6 +273,6 @@ def test_compose_keeps_runtime_topology_split(compose_path: str) -> None:
     assert "ports" not in services["api"]
     assert "ports" not in services["redis"]
     assert "sophia.api.app:create_standalone_api_app" in services["api"].get("command", [])
-    assert api_environment["SOPHIA_REDIS_URL"] == "redis://redis:6379/0"
+    assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
     assert services["api"]["depends_on"]["redis"]["condition"] == "service_healthy"
     assert {"frontend", "api", "sophia-gui"} <= set(services["proxy"]["depends_on"])

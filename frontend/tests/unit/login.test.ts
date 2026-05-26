@@ -1,11 +1,26 @@
 import { render, screen } from "@testing-library/svelte";
 import type { RequestEvent } from "@sveltejs/kit";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import LoginPage from "../../src/routes/login/+page.svelte";
 import { actions } from "../../src/routes/login/+page.server";
 
+const ORIGINAL_API_BASE_URL = process.env.SOPHIA_API_BASE_URL;
+
 describe("login route", () => {
+  beforeEach(() => {
+    delete process.env.SOPHIA_API_BASE_URL;
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_API_BASE_URL === undefined) {
+      delete process.env.SOPHIA_API_BASE_URL;
+      return;
+    }
+
+    process.env.SOPHIA_API_BASE_URL = ORIGINAL_API_BASE_URL;
+  });
+
   it("renders an accessible localized credential form", () => {
     render(LoginPage);
 
@@ -21,6 +36,7 @@ describe("login route", () => {
   });
 
   it("posts trimmed username and exact submitted password to auth login", async () => {
+    process.env.SOPHIA_API_BASE_URL = "http://api:8000";
     const loginAction = requireDefaultAction();
     const event = createActionEvent({
       fetch: vi.fn().mockResolvedValue(
@@ -41,7 +57,7 @@ describe("login route", () => {
     });
 
     expect(event.fetch).toHaveBeenCalledWith(
-      "/api/auth/login",
+      "http://api:8000/api/auth/login",
       expect.objectContaining({
         body: JSON.stringify({
           password: "  correct horse battery staple  ",

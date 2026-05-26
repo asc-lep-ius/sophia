@@ -28,6 +28,7 @@ x-gui-common: &gui-common
     - SOPHIA_LOG_FORMAT=json
     - SOPHIA_DOCKER=1
     - HF_HOME=/home/sophia/.cache/huggingface
+    - SOPHIA_REDIS_URL=redis://redis:6379/0
   restart: unless-stopped
   networks:
     - backend
@@ -90,10 +91,12 @@ services:
       - PROTOCOL_HEADER=x-forwarded-proto
       - HOST_HEADER=x-forwarded-host
       - PUBLIC_API_BASE_URL=/api
+      - SOPHIA_API_BASE_URL=http://api:8000
     expose:
       - "3000"
     networks:
       - frontend
+      - backend
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/app/').then((r) => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
       interval: 30s

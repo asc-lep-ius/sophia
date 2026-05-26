@@ -46,6 +46,7 @@ services:
       PROTOCOL_HEADER: x-forwarded-proto
       HOST_HEADER: x-forwarded-host
       PUBLIC_API_BASE_URL: /api
+      SOPHIA_API_BASE_URL: http://api:8000
     expose:
       - "3000"
     networks:
@@ -102,6 +103,7 @@ services:
       SOPHIA_GUI_HOST: 0.0.0.0
       SOPHIA_GUI_PORT: "8080"
       SOPHIA_DOCKER: "1"
+      SOPHIA_REDIS_URL: redis://redis:6379/0
       HF_HOME: /home/sophia/.cache/huggingface
     volumes:
       - sophia-data:/data

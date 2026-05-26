@@ -94,12 +94,21 @@ export async function apiFetch(
   init: ApiFetchInit = {},
 ): Promise<Response> {
   const headers = buildForwardedApiHeaders(event, init.headers, init.method);
-  const response = await event.fetch(path, {
+  const response = await event.fetch(resolveServerApiUrl(path), {
     ...init,
     headers,
   });
   queueSetCookieReemission(event, response.headers);
   return response;
+}
+
+function resolveServerApiUrl(path: ApiPath): string {
+  const baseUrl = process.env.SOPHIA_API_BASE_URL?.trim();
+  if (!baseUrl) {
+    return path;
+  }
+
+  return new URL(path, baseUrl).toString();
 }
 
 export function buildForwardedApiHeaders(

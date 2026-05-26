@@ -1,14 +1,29 @@
 import type { RequestEvent } from "@sveltejs/kit";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  apiFetch,
   buildForwardedApiHeaders,
   hydrateAuthSessionLocals,
 } from "../../src/hooks.server";
 
 const CSRF_COOKIE = "__Host-sophia_csrf";
+const ORIGINAL_API_BASE_URL = process.env.SOPHIA_API_BASE_URL;
 
 describe("server hook API helpers", () => {
+  beforeEach(() => {
+    delete process.env.SOPHIA_API_BASE_URL;
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_API_BASE_URL === undefined) {
+      delete process.env.SOPHIA_API_BASE_URL;
+      return;
+    }
+
+    process.env.SOPHIA_API_BASE_URL = ORIGINAL_API_BASE_URL;
+  });
+
   it("forwards cookies and request ids to backend API calls", () => {
     const event = createEvent({ cookieHeader: "sid=abc" });
 
@@ -53,6 +68,32 @@ describe("server hook API helpers", () => {
 
     expect(headers.get("x-requested-with")).toBe("xmlhttprequest");
     expect(headers.get("x-csrf-token")).toBe("csrf-explicit");
+  });
+
+  it("uses the private API origin for server-side API fetches when configured", async () => {
+    process.env.SOPHIA_API_BASE_URL = "http://api:8000";
+    const fetch = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const event = createEvent({ cookieHeader: "sid=abc", fetch });
+
+    await apiFetch(event, "/api/settings", {
+      headers: { "content-type": "application/json" },
+      method: "PATCH",
+    });
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://api:8000/api/settings",
+      expect.objectContaining({
+        headers: expect.any(Headers),
+        method: "PATCH",
+      }),
+    );
+    const headers = new Headers(fetch.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("cookie")).toBe("sid=abc");
+    expect(headers.get("x-request-id")).toBe("req-123");
+    expect(headers.get("x-requested-with")).toBe("fetch");
+    expect(headers.get("x-csrf-token")).toBe("csrf-local");
   });
 
   it("hydrates authenticated session locals and re-emits API cookies", async () => {
