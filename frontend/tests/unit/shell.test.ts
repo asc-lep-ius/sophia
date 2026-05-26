@@ -104,6 +104,8 @@ describe("app shell", () => {
     expect(palette).toBeTruthy();
     const search = screen.getByLabelText("Search commands");
     await waitFor(() => expect(document.activeElement).toBe(search));
+    expect(search.getAttribute("role")).toBeNull();
+    expect(screen.queryByRole("combobox")).toBeNull();
 
     await fireEvent.input(search, { target: { value: "set" } });
 

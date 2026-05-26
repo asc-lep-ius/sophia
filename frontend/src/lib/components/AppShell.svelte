@@ -49,12 +49,16 @@
     { path: "/settings", label: m.nav_settings },
     { path: "/login", label: m.nav_login },
   ] satisfies { path: RouteId; label: () => string }[];
+  const focusableDialogSelector =
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
   let drawerOpen = $state(false);
   let commandPaletteOpen = $state(false);
   let commandSearch = $state("");
+  let drawerDialog = $state<HTMLDialogElement | null>(null);
   let drawerTrigger = $state<HTMLButtonElement | null>(null);
   let drawerCloseButton = $state<HTMLButtonElement | null>(null);
+  let commandDialog = $state<HTMLDialogElement | null>(null);
   let commandTrigger = $state<HTMLButtonElement | null>(null);
   let commandInput = $state<HTMLInputElement | null>(null);
   let previousCommandFocus = $state<HTMLElement | null>(null);
@@ -78,11 +82,13 @@
   async function openDrawer() {
     drawerOpen = true;
     await tick();
+    openModalDialog(drawerDialog);
     drawerCloseButton?.focus();
   }
 
   async function closeDrawer(restoreFocus = true) {
     drawerOpen = false;
+    closeModalDialog(drawerDialog);
     await tick();
     if (restoreFocus) {
       drawerTrigger?.focus();
@@ -97,15 +103,92 @@
     commandSearch = "";
     commandPaletteOpen = true;
     await tick();
+    openModalDialog(commandDialog);
     commandInput?.focus();
   }
 
   async function closeCommandPalette(restoreFocus = true) {
     commandPaletteOpen = false;
     commandSearch = "";
+    closeModalDialog(commandDialog);
     await tick();
     if (restoreFocus) {
       (previousCommandFocus ?? commandTrigger)?.focus();
+    }
+  }
+
+  function openModalDialog(dialog: HTMLDialogElement | null) {
+    if (!dialog || dialog.open) {
+      return;
+    }
+
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      return;
+    }
+
+    dialog.setAttribute("open", "");
+  }
+
+  function closeModalDialog(dialog: HTMLDialogElement | null) {
+    if (!dialog?.open) {
+      return;
+    }
+
+    if (typeof dialog.close === "function") {
+      dialog.close();
+      return;
+    }
+
+    dialog.removeAttribute("open");
+  }
+
+  function handleDrawerCancel(event: Event) {
+    event.preventDefault();
+    void closeDrawer();
+  }
+
+  function handleCommandPaletteCancel(event: Event) {
+    event.preventDefault();
+    void closeCommandPalette();
+  }
+
+  function handleModalTabKeydown(
+    event: KeyboardEvent,
+    dialog: HTMLDialogElement | null,
+  ) {
+    if (event.key !== "Tab" || !dialog) {
+      return;
+    }
+
+    const focusableElements = Array.from(
+      dialog.querySelectorAll<HTMLElement>(focusableDialogSelector),
+    ).filter((element) => element.tabIndex >= 0);
+    const firstElement = focusableElements.at(0);
+    const lastElement = focusableElements.at(-1);
+
+    if (!firstElement || !lastElement) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const activeElement = document.activeElement;
+    if (
+      event.shiftKey &&
+      (activeElement === firstElement || !dialog.contains(activeElement))
+    ) {
+      event.preventDefault();
+      lastElement.focus();
+      return;
+    }
+
+    if (
+      !event.shiftKey &&
+      (activeElement === lastElement || !dialog.contains(activeElement))
+    ) {
+      event.preventDefault();
+      firstElement.focus();
     }
   }
 
@@ -269,11 +352,12 @@
 
 {#if drawerOpen}
   <dialog
+    bind:this={drawerDialog}
     id="mobile-navigation-drawer"
     class="drawer"
-    open
-    aria-modal="true"
     aria-labelledby="drawer-title"
+    oncancel={handleDrawerCancel}
+    onkeydown={(event) => handleModalTabKeydown(event, drawerDialog)}
   >
     <div class="drawer-header">
       <h2 id="drawer-title">{m.nav_mobile_title()}</h2>
@@ -313,11 +397,12 @@
 
 {#if commandPaletteOpen}
   <dialog
+    bind:this={commandDialog}
     id="command-palette"
     class="command-palette"
-    open
-    aria-modal="true"
     aria-labelledby="command-title"
+    oncancel={handleCommandPaletteCancel}
+    onkeydown={(event) => handleModalTabKeydown(event, commandDialog)}
   >
     <div class="command-header">
       <h2 id="command-title">{m.command_palette_title()}</h2>
@@ -335,9 +420,6 @@
       id="command-search"
       type="search"
       autocomplete="off"
-      role="combobox"
-      aria-controls="command-list"
-      aria-expanded="true"
       onkeydown={handleCommandSearchKeydown}
       placeholder={m.command_palette_search()}
     />
@@ -570,10 +652,16 @@
     position: fixed;
     z-index: 25;
     display: grid;
+    margin: 0;
     min-width: 0;
     border: 1px solid var(--border-strong);
     background: var(--surface);
     box-shadow: 0 1rem 2.5rem rgb(15 23 42 / 18%);
+  }
+
+  .drawer::backdrop,
+  .command-palette::backdrop {
+    background: rgb(15 23 42 / 35%);
   }
 
   .drawer {
