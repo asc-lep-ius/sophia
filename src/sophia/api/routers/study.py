@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
-from sophia.api.deps import current_session_record, get_app_container, require_csrf
+from sophia.api.deps import (
+    ensure_course_scope,
+    get_app_container,
+    require_course_scope,
+    require_csrf,
+    require_csrf_course_scope,
+)
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.study import (
     StudyFlashcardItemResponse,
@@ -27,6 +33,8 @@ from sophia.services.athena_session import (
 )
 
 if TYPE_CHECKING:
+    import aiosqlite
+
     from sophia.domain.models import StudentFlashcard, StudySession
 
 router = APIRouter(tags=["study"])
@@ -60,7 +68,7 @@ async def list_study_sessions(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> StudySessionListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     sessions = await get_study_sessions(get_app_container(request).db, course_id, topic)
     if topic is not None and not sessions:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -80,7 +88,7 @@ async def create_study_session(
     payload: StudySessionStartRequest,
     request: Request,
 ) -> StudySessionResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     session = await start_study_session(
         get_app_container(request).db,
         payload.course_id,
@@ -100,9 +108,14 @@ async def mark_study_session_complete(
     payload: StudySessionCompleteRequest,
     request: Request,
 ) -> StudySessionCompletionResponse:
-    await require_csrf(request)
+    session = await require_csrf(request)
+    app_container = get_app_container(request)
+    course_id = await _study_session_course_id(app_container.db, session_id)
+    if course_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    ensure_course_scope(session, course_id)
     await complete_study_session(
-        get_app_container(request).db,
+        app_container.db,
         session_id,
         payload.pre_test_score,
         payload.post_test_score,
@@ -120,16 +133,33 @@ async def create_study_flashcard(
     payload: StudyFlashcardRequest,
     request: Request,
 ) -> StudyFlashcardResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     flashcard = await save_flashcard(
         get_app_container(request).db,
         payload.course_id,
         payload.topic,
         payload.front,
         payload.back,
-        payload.source,
+        payload.source.value,
     )
     return StudyFlashcardResponse(flashcard=_flashcard_response(flashcard))
+
+
+async def _study_session_course_id(
+    db: aiosqlite.Connection,
+    session_id: int,
+) -> int | None:
+    cursor = await db.execute("SELECT course_id FROM study_sessions WHERE id = ?", (session_id,))
+    row = cast("tuple[object, ...] | None", await cursor.fetchone())
+    if row is None:
+        return None
+    course_id = row[0]
+    if isinstance(course_id, int):
+        return course_id
+    if isinstance(course_id, str):
+        return int(course_id)
+    msg = "study session course_id must be an integer"
+    raise TypeError(msg)
 
 
 def _study_session_response(session: StudySession) -> StudySessionItemResponse:

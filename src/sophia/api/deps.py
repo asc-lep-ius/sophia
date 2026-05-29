@@ -89,6 +89,23 @@ async def require_csrf(request: Request) -> SessionRecord:
     return session
 
 
+async def require_course_scope(request: Request, course_id: int | str) -> SessionRecord:
+    session = await current_session_record(request)
+    ensure_course_scope(session, course_id)
+    return session
+
+
+async def require_csrf_course_scope(request: Request, course_id: int | str) -> SessionRecord:
+    session = await require_csrf(request)
+    ensure_course_scope(session, course_id)
+    return session
+
+
+def ensure_course_scope(session: SessionRecord, course_id: int | str) -> None:
+    if session.tenant.course_id != str(course_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+
+
 async def current_org(request: Request) -> OrgScope:
     session = await optional_session_record(request)
     if session is not None:

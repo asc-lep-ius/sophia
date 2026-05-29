@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import calibration as calibration_router
+from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ConfidenceRating
 
 from ._session_helpers import build_harness, csrf_headers, login
@@ -19,6 +20,15 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class FakeAppContainer:
     db: object
+
+
+def course_tenant(course_id: int = 12) -> SessionTenant:
+    return SessionTenant(
+        org_id="tu-wien",
+        course_id=str(course_id),
+        cohort_id="cohort-a",
+        role="student",
+    )
 
 
 def test_calibration_routes_require_authentication() -> None:
@@ -45,7 +55,10 @@ def test_calibration_routes_require_authentication() -> None:
 
 def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
     rating = ConfidenceRating(
         topic="Graphs",
@@ -90,7 +103,10 @@ def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.Monk
 def test_calibration_ratings_return_404_for_missing_topic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=course_tenant(),
+    )
     login(harness)
 
     async def fake_get_confidence_ratings(_db: object, _course_id: int) -> list[ConfidenceRating]:
@@ -119,7 +135,10 @@ def test_rate_confidence_requires_csrf() -> None:
 
 def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
 
     async def fake_rate_confidence(
@@ -180,7 +199,10 @@ def test_update_actual_score_returns_update_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
     calls: list[tuple[object, str, int, float]] = []
 
@@ -227,6 +249,32 @@ def test_calibration_request_validation_returns_422() -> None:
     assert ratings_response.json() == {
         "detail": {"code": "request.validation_failed", "params": {}}
     }
+
+
+def test_calibration_routes_reject_out_of_scope_course_ids() -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=course_tenant(12),
+    )
+    login(harness)
+
+    ratings_response = harness.client.get("/api/calibration/ratings?course_id=99")
+    blind_spots_response = harness.client.get("/api/calibration/blind-spots?course_id=99")
+    rate_response = harness.client.post(
+        "/api/calibration/ratings",
+        json={"course_id": 99, "topic": "Graphs", "rating": 4},
+        headers=csrf_headers(harness),
+    )
+    actual_response = harness.client.patch(
+        "/api/calibration/actual-score",
+        json={"course_id": 99, "topic": "Graphs", "actual": 0.5},
+        headers=csrf_headers(harness),
+    )
+
+    assert ratings_response.status_code == 403
+    assert blind_spots_response.status_code == 403
+    assert rate_response.status_code == 403
+    assert actual_response.status_code == 403
 
 
 def test_calibration_openapi_contract_is_visible() -> None:

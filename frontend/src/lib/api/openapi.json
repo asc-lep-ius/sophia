@@ -350,6 +350,16 @@
         "title": "ErrorEnvelope",
         "type": "object"
       },
+      "FlashcardSource": {
+        "description": "Origin of a flashcard.",
+        "enum": [
+          "study",
+          "lecture",
+          "manual"
+        ],
+        "title": "FlashcardSource",
+        "type": "string"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1108,10 +1118,8 @@
             "type": "string"
           },
           "source": {
-            "default": "study",
-            "minLength": 1,
-            "title": "Source",
-            "type": "string"
+            "$ref": "#/components/schemas/FlashcardSource",
+            "default": "study"
           },
           "topic": {
             "minLength": 1,

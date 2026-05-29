@@ -27,6 +27,7 @@ from sophia.api.routers import (
 from sophia.api.routers import settings as settings_router
 from sophia.api.sessions import RedisSessionBackend, create_session_core
 from sophia.config import Settings
+from sophia.infra.di import create_app as create_app_container
 from sophia.infra.logging import (
     REDACTED_VALUE,
     is_sensitive_observability_key,
@@ -89,9 +90,13 @@ def create_api_app(
     return api_app
 
 
-def create_standalone_api_app(settings: Settings | None = None) -> FastAPI:
+def create_standalone_api_app(
+    settings: Settings | None = None,
+    *,
+    app_container: AppContainer | None = None,
+) -> FastAPI:
     """Create the Uvicorn-served API app used by standalone API containers."""
-    return create_api_app(settings, ready_on_startup=True)
+    return create_api_app(settings, ready_on_startup=True, app_container=app_container)
 
 
 def _normalize_route_prefix(route_prefix: str) -> str:
@@ -102,11 +107,23 @@ def _normalize_route_prefix(route_prefix: str) -> str:
 
 @asynccontextmanager
 async def _standalone_api_lifespan(api_app: FastAPI) -> AsyncIterator[None]:
-    _set_runtime_readiness(api_app, ready=True)
-    try:
-        yield
-    finally:
-        _set_runtime_readiness(api_app, ready=False)
+    if getattr(api_app.state, "app_container", None) is not None:
+        _set_runtime_readiness(api_app, ready=True)
+        try:
+            yield
+        finally:
+            _set_runtime_readiness(api_app, ready=False)
+        return
+
+    settings = cast("Settings", api_app.state.settings)
+    async with create_app_container(settings) as app_container:
+        api_app.state.app_container = app_container
+        _set_runtime_readiness(api_app, ready=True)
+        try:
+            yield
+        finally:
+            _set_runtime_readiness(api_app, ready=False)
+            api_app.state.app_container = None
 
 
 def _set_runtime_readiness(api_app: FastAPI, *, ready: bool) -> None:

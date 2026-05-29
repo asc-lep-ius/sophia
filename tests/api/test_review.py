@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import review as review_router
+from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ReviewSchedule
 
 from ._session_helpers import build_harness, csrf_headers, login
@@ -19,6 +20,15 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class FakeAppContainer:
     db: object
+
+
+def course_tenant(course_id: int = 12) -> SessionTenant:
+    return SessionTenant(
+        org_id="tu-wien",
+        course_id=str(course_id),
+        cohort_id="cohort-a",
+        role="student",
+    )
 
 
 def test_review_routes_require_authentication() -> None:
@@ -45,7 +55,10 @@ def test_review_routes_require_authentication() -> None:
 
 def test_review_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
     schedule = ReviewSchedule(
         topic="Graphs",
@@ -117,7 +130,10 @@ def test_review_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPat
 def test_review_schedules_return_404_for_missing_topic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=course_tenant(),
+    )
     login(harness)
 
     async def fake_get_all_schedules(_db: object, _course_id: int) -> list[ReviewSchedule]:
@@ -146,7 +162,10 @@ def test_schedule_review_requires_csrf() -> None:
 
 def test_schedule_review_returns_created_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
 
     async def fake_schedule_review(db: object, topic: str, course_id: int) -> ReviewSchedule:
@@ -183,7 +202,10 @@ def test_complete_review_requires_csrf() -> None:
 
 def test_complete_review_returns_updated_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
-    harness = build_harness(app_container=cast("AppContainer", fake_app))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
     login(harness)
 
     async def fake_complete_review(
@@ -232,6 +254,34 @@ def test_review_request_validation_returns_422() -> None:
     assert upcoming_response.status_code == 422
     assert complete_response.status_code == 422
     assert due_response.json() == {"detail": {"code": "request.validation_failed", "params": {}}}
+
+
+def test_review_routes_reject_out_of_scope_course_ids() -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=course_tenant(12),
+    )
+    login(harness)
+
+    due_response = harness.client.get("/api/review/due?course_id=99")
+    upcoming_response = harness.client.get("/api/review/upcoming?course_id=99")
+    schedules_response = harness.client.get("/api/review/schedules?course_id=99")
+    schedule_response = harness.client.post(
+        "/api/review/schedules",
+        json={"course_id": 99, "topic": "Graphs"},
+        headers=csrf_headers(harness),
+    )
+    complete_response = harness.client.post(
+        "/api/review/complete",
+        json={"course_id": 99, "topic": "Graphs", "score": 0.75},
+        headers=csrf_headers(harness),
+    )
+
+    assert due_response.status_code == 403
+    assert upcoming_response.status_code == 403
+    assert schedules_response.status_code == 403
+    assert schedule_response.status_code == 403
+    assert complete_response.status_code == 403
 
 
 def test_review_openapi_contract_is_visible() -> None:

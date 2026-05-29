@@ -122,6 +122,7 @@ def build_harness(
     store: SessionStoreBackend | None = None,
     redis: FakeRedis | None = None,
     app_container: AppContainer | None = None,
+    tenant: SessionTenant | None = None,
 ) -> ApiHarness:
     settings = Settings(session_ttl_seconds=600)
     redis = redis or FakeRedis()
@@ -132,7 +133,7 @@ def build_harness(
     app = create_api_app(
         settings=settings,
         session_core=core,
-        login_authenticator=login_authenticator or successful_login,
+        login_authenticator=login_authenticator or _successful_login_for_tenant(tenant),
         app_container=app_container,
     )
     client = TestClient(app, base_url="https://testserver")
@@ -140,19 +141,35 @@ def build_harness(
 
 
 async def successful_login(payload: AuthLoginRequest, _settings: Settings) -> LoginIdentity:
+    return _login_identity(payload, tenant=None)
+
+
+def _successful_login_for_tenant(tenant: SessionTenant | None) -> LoginAuthenticator:
+    async def authenticate(payload: AuthLoginRequest, _settings: Settings) -> LoginIdentity:
+        return _login_identity(payload, tenant=tenant)
+
+    return authenticate
+
+
+def _login_identity(payload: AuthLoginRequest, tenant: SessionTenant | None) -> LoginIdentity:
+    session_tenant = tenant or SessionTenant(
+        org_id="tu-wien",
+        course_id="course-1",
+        cohort_id="cohort-a",
+        role="student",
+    )
     return LoginIdentity(
         user=SessionUser(
             id=payload.username,
             display_name="Learner One",
             email=f"{payload.username}@example.test",
         ),
-        tenant=SessionTenant(
-            org_id="tu-wien",
-            course_id="course-1",
-            cohort_id="cohort-a",
-            role="student",
+        tenant=session_tenant,
+        settings=SessionSettings(
+            theme="system",
+            locale="en",
+            selected_course_id=session_tenant.course_id,
         ),
-        settings=SessionSettings(theme="system", locale="en", selected_course_id="course-1"),
         tuwel_credentials=SessionCredential(
             reference="tuwel:test-session",
             payload={"username": payload.username},

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from sophia.api.deps import current_session_record, get_app_container, require_csrf
+from sophia.api.deps import get_app_container, require_course_scope, require_csrf_course_scope
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.review import (
     DueReviewListResponse,
@@ -44,7 +44,7 @@ async def list_due_reviews(
     course_id: CourseIdQuery,
     request: Request,
 ) -> DueReviewListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     reviews = await get_due_reviews(get_app_container(request).db, course_id)
     return DueReviewListResponse(
         course_id=course_id,
@@ -62,7 +62,7 @@ async def list_upcoming_reviews(
     request: Request,
     days_ahead: DaysAheadQuery = 3,
 ) -> UpcomingReviewListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     reviews = await get_upcoming_reviews(
         get_app_container(request).db,
         course_id,
@@ -86,7 +86,7 @@ async def list_review_schedules(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> ReviewScheduleListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     schedules = await get_all_schedules(get_app_container(request).db, course_id)
     if topic is not None:
         schedules = [schedule for schedule in schedules if schedule.topic == topic]
@@ -108,7 +108,7 @@ async def create_review_schedule(
     payload: ReviewScheduleRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     schedule = await schedule_review(
         get_app_container(request).db,
         payload.topic,
@@ -127,7 +127,7 @@ async def complete_review_schedule(
     payload: ReviewCompletionRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     schedule = await complete_review(
         get_app_container(request).db,
         payload.topic,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from sophia.api.schemas.common import ApiModel
+from sophia.domain.models import FlashcardSource
 
 
 class StudySessionStartRequest(ApiModel):
@@ -22,4 +23,4 @@ class StudyFlashcardRequest(ApiModel):
     topic: str = Field(min_length=1)
     front: str = Field(min_length=1)
     back: str = Field(min_length=1)
-    source: str = Field(default="study", min_length=1)
+    source: FlashcardSource = FlashcardSource.STUDY

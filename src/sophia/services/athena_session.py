@@ -107,14 +107,15 @@ async def save_flashcard(
     topic: str,
     front: str,
     back: str,
-    source: str = "study",
+    source: FlashcardSource | str = FlashcardSource.STUDY,
 ) -> StudentFlashcard:
     """Save a student-authored flashcard."""
+    flashcard_source = FlashcardSource(source)
     now = datetime.now(UTC).isoformat()
     cursor = await db.execute(
         "INSERT INTO student_flashcards (course_id, topic, front, back, source, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
-        (course_id, topic, front, back, source, now),
+        (course_id, topic, front, back, flashcard_source.value, now),
     )
     await db.commit()
     return StudentFlashcard(
@@ -123,7 +124,7 @@ async def save_flashcard(
         topic=topic,
         front=front,
         back=back,
-        source=FlashcardSource(source),
+        source=flashcard_source,
         created_at=now,
     )
 
