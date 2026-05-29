@@ -264,6 +264,948 @@
         "title": "CalibrationRatingSavedResponse",
         "type": "object"
       },
+      "ChronosCalibrationMetricResponse": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "mean_absolute_error": {
+            "title": "Mean Absolute Error",
+            "type": "number"
+          },
+          "mean_error": {
+            "title": "Mean Error",
+            "type": "number"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "trend": {
+            "title": "Trend",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "sample_count",
+          "mean_error",
+          "mean_absolute_error",
+          "trend"
+        ],
+        "title": "ChronosCalibrationMetricResponse",
+        "type": "object"
+      },
+      "ChronosCompletionRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id"
+        ],
+        "title": "ChronosCompletionRequest",
+        "type": "object"
+      },
+      "ChronosCompletionResponse": {
+        "properties": {
+          "actual_hours": {
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "feedback": {
+            "title": "Feedback",
+            "type": "string"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "predicted_hours",
+          "actual_hours",
+          "feedback",
+          "completed"
+        ],
+        "title": "ChronosCompletionResponse",
+        "type": "object"
+      },
+      "ChronosDeadlineListResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosDeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id",
+          "horizon_days",
+          "deadlines"
+        ],
+        "title": "ChronosDeadlineListResponse",
+        "type": "object"
+      },
+      "ChronosDeadlineResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "course_name": {
+            "title": "Course Name",
+            "type": "string"
+          },
+          "deadline_type": {
+            "title": "Deadline Type",
+            "type": "string"
+          },
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "extra": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonPrimitive"
+            },
+            "title": "Extra",
+            "type": "object"
+          },
+          "grade_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade Weight"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "submission_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Status"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "course_id",
+          "course_name",
+          "deadline_type",
+          "due_at",
+          "grade_weight",
+          "submission_status",
+          "url"
+        ],
+        "title": "ChronosDeadlineResponse",
+        "type": "object"
+      },
+      "ChronosEffortEstimateResponse": {
+        "properties": {
+          "breakdown": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakdown"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "estimated_at": {
+            "title": "Estimated At",
+            "type": "string"
+          },
+          "implementation_intention": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementation Intention"
+          },
+          "predicted_hours": {
+            "title": "Predicted Hours",
+            "type": "number"
+          },
+          "scaffold_level": {
+            "title": "Scaffold Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "course_id",
+          "predicted_hours",
+          "breakdown",
+          "implementation_intention",
+          "scaffold_level",
+          "estimated_at"
+        ],
+        "title": "ChronosEffortEstimateResponse",
+        "type": "object"
+      },
+      "ChronosEstimateRequest": {
+        "properties": {
+          "breakdown": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakdown"
+          },
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "intention": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intention"
+          },
+          "predicted_hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Predicted Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "course_id",
+          "deadline_id",
+          "predicted_hours"
+        ],
+        "title": "ChronosEstimateRequest",
+        "type": "object"
+      },
+      "ChronosEstimateResponse": {
+        "properties": {
+          "estimate": {
+            "$ref": "#/components/schemas/ChronosEffortEstimateResponse"
+          }
+        },
+        "required": [
+          "estimate"
+        ],
+        "title": "ChronosEstimateResponse",
+        "type": "object"
+      },
+      "ChronosHistoryCalibrationResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosCalibrationMetricResponse"
+            },
+            "title": "Metrics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "metrics"
+        ],
+        "title": "ChronosHistoryCalibrationResponse",
+        "type": "object"
+      },
+      "ChronosHistoryDeadlineListResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosDeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id",
+          "limit",
+          "deadlines"
+        ],
+        "title": "ChronosHistoryDeadlineListResponse",
+        "type": "object"
+      },
+      "ChronosHistoryEffortDayResponse": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "deadline_efforts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Deadline Efforts",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "unestimated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unestimated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "deadline_efforts",
+          "unestimated",
+          "total"
+        ],
+        "title": "ChronosHistoryEffortDayResponse",
+        "type": "object"
+      },
+      "ChronosHistoryEffortDistributionResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosHistoryEffortDayResponse"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id",
+          "horizon_days",
+          "days"
+        ],
+        "title": "ChronosHistoryEffortDistributionResponse",
+        "type": "object"
+      },
+      "ChronosHistoryReflectionItemResponse": {
+        "properties": {
+          "actual_hours": {
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          },
+          "reflected_at": {
+            "title": "Reflected At",
+            "type": "string"
+          },
+          "reflection_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reflection Text"
+          }
+        },
+        "required": [
+          "predicted_hours",
+          "actual_hours",
+          "reflection_text",
+          "reflected_at"
+        ],
+        "title": "ChronosHistoryReflectionItemResponse",
+        "type": "object"
+      },
+      "ChronosHistoryReflectionResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "reflection": {
+            "$ref": "#/components/schemas/ChronosHistoryReflectionItemResponse"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "reflection"
+        ],
+        "title": "ChronosHistoryReflectionResponse",
+        "type": "object"
+      },
+      "ChronosHistoryTimeEntryListResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosHistoryTimeEntryResponse"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "entries"
+        ],
+        "title": "ChronosHistoryTimeEntryListResponse",
+        "type": "object"
+      },
+      "ChronosHistoryTimeEntryResponse": {
+        "properties": {
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hours",
+          "source",
+          "note",
+          "recorded_at"
+        ],
+        "title": "ChronosHistoryTimeEntryResponse",
+        "type": "object"
+      },
+      "ChronosIcsExportResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "ics": {
+            "title": "Ics",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "horizon_days",
+          "ics"
+        ],
+        "title": "ChronosIcsExportResponse",
+        "type": "object"
+      },
+      "ChronosReflectionRequest": {
+        "properties": {
+          "actual_hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          },
+          "reflection_text": {
+            "minLength": 1,
+            "title": "Reflection Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "deadline_id",
+          "actual_hours",
+          "reflection_text"
+        ],
+        "title": "ChronosReflectionRequest",
+        "type": "object"
+      },
+      "ChronosReflectionResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "recorded"
+        ],
+        "title": "ChronosReflectionResponse",
+        "type": "object"
+      },
+      "ChronosSyncResponse": {
+        "properties": {
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosDeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "synced_count": {
+            "title": "Synced Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "synced_count",
+          "deadlines"
+        ],
+        "title": "ChronosSyncResponse",
+        "type": "object"
+      },
+      "ChronosTimeEntryRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Hours",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          }
+        },
+        "required": [
+          "course_id",
+          "deadline_id",
+          "hours"
+        ],
+        "title": "ChronosTimeEntryRequest",
+        "type": "object"
+      },
+      "ChronosTimeEntryResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "recorded"
+        ],
+        "title": "ChronosTimeEntryResponse",
+        "type": "object"
+      },
+      "ChronosTimerStartResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "started": {
+            "title": "Started",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "started"
+        ],
+        "title": "ChronosTimerStartResponse",
+        "type": "object"
+      },
+      "ChronosTimerStopResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "elapsed_hours": {
+            "title": "Elapsed Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "elapsed_hours"
+        ],
+        "title": "ChronosTimerStopResponse",
+        "type": "object"
+      },
+      "ChronosTrackedTimeResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "total_hours": {
+            "title": "Total Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "total_hours"
+        ],
+        "title": "ChronosTrackedTimeResponse",
+        "type": "object"
+      },
+      "ChronosUpcomingExamListResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "exams": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosDeadlineResponse"
+            },
+            "title": "Exams",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id",
+          "horizon_days",
+          "exams"
+        ],
+        "title": "ChronosUpcomingExamListResponse",
+        "type": "object"
+      },
+      "ChronosWorkloadDayResponse": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosWorkloadItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "items"
+        ],
+        "title": "ChronosWorkloadDayResponse",
+        "type": "object"
+      },
+      "ChronosWorkloadItemResponse": {
+        "properties": {
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "hours"
+        ],
+        "title": "ChronosWorkloadItemResponse",
+        "type": "object"
+      },
+      "ChronosWorkloadResponse": {
+        "properties": {
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "deadline_count": {
+            "title": "Deadline Count",
+            "type": "integer"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "per_day": {
+            "items": {
+              "$ref": "#/components/schemas/ChronosWorkloadDayResponse"
+            },
+            "title": "Per Day",
+            "type": "array"
+          },
+          "remaining_hours": {
+            "title": "Remaining Hours",
+            "type": "number"
+          },
+          "total_estimated_hours": {
+            "title": "Total Estimated Hours",
+            "type": "number"
+          },
+          "total_tracked_hours": {
+            "title": "Total Tracked Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "course_id",
+          "horizon_days",
+          "total_estimated_hours",
+          "total_tracked_hours",
+          "remaining_hours",
+          "deadline_count",
+          "per_day"
+        ],
+        "title": "ChronosWorkloadResponse",
+        "type": "object"
+      },
+      "DeadlineType": {
+        "description": "Source type of a deadline.",
+        "enum": [
+          "assignment",
+          "quiz",
+          "checkmark",
+          "exam",
+          "exam_registration"
+        ],
+        "title": "DeadlineType",
+        "type": "string"
+      },
       "DiscoveredLectureModuleResponse": {
         "properties": {
           "course_fullname": {
@@ -723,6 +1665,234 @@
           "topic"
         ],
         "title": "ManualTopicRequest",
+        "type": "object"
+      },
+      "QuickstartConfidenceRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "additionalProperties": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "minProperties": 1,
+            "title": "Ratings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "course_id",
+          "ratings"
+        ],
+        "title": "QuickstartConfidenceRequest",
+        "type": "object"
+      },
+      "QuickstartConfidenceResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "saved_count": {
+            "title": "Saved Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "course_id",
+          "saved_count"
+        ],
+        "title": "QuickstartConfidenceResponse",
+        "type": "object"
+      },
+      "QuickstartCourseResponse": {
+        "properties": {
+          "fullname": {
+            "title": "Fullname",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "shortname": {
+            "title": "Shortname",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "fullname",
+          "shortname",
+          "url"
+        ],
+        "title": "QuickstartCourseResponse",
+        "type": "object"
+      },
+      "QuickstartManualTopicsRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "topics"
+        ],
+        "title": "QuickstartManualTopicsRequest",
+        "type": "object"
+      },
+      "QuickstartManualTopicsResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartTopicResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "topics"
+        ],
+        "title": "QuickstartManualTopicsResponse",
+        "type": "object"
+      },
+      "QuickstartOverviewResponse": {
+        "properties": {
+          "completed_session_count": {
+            "title": "Completed Session Count",
+            "type": "integer"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          },
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartCourseResponse"
+            },
+            "title": "Courses",
+            "type": "array"
+          },
+          "nearest_deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChronosDeadlineResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartTopicResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "courses",
+          "topics",
+          "nearest_deadline",
+          "completed_session_count"
+        ],
+        "title": "QuickstartOverviewResponse",
+        "type": "object"
+      },
+      "QuickstartSessionCountResponse": {
+        "properties": {
+          "completed_session_count": {
+            "title": "Completed Session Count",
+            "type": "integer"
+          },
+          "course_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Course Id"
+          }
+        },
+        "required": [
+          "course_id",
+          "completed_session_count"
+        ],
+        "title": "QuickstartSessionCountResponse",
+        "type": "object"
+      },
+      "QuickstartTopicResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "frequency": {
+            "title": "Frequency",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "course_id",
+          "source",
+          "frequency"
+        ],
+        "title": "QuickstartTopicResponse",
         "type": "object"
       },
       "ReadinessCheck": {
@@ -2002,6 +3172,1282 @@
         ]
       }
     },
+    "/api/chronos-history/calibration": {
+      "get": {
+        "operationId": "getChronosHistoryCalibration",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosHistoryCalibrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Chronos History Calibration",
+        "tags": [
+          "chronos-history"
+        ]
+      }
+    },
+    "/api/chronos-history/deadlines": {
+      "get": {
+        "operationId": "listChronosHistoryDeadlines",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosHistoryDeadlineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Chronos History Deadlines",
+        "tags": [
+          "chronos-history"
+        ]
+      }
+    },
+    "/api/chronos-history/deadlines/{deadline_id}/reflection": {
+      "get": {
+        "operationId": "getChronosHistoryReflection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosHistoryReflectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Chronos History Reflection",
+        "tags": [
+          "chronos-history"
+        ]
+      }
+    },
+    "/api/chronos-history/deadlines/{deadline_id}/time-entries": {
+      "get": {
+        "operationId": "listChronosHistoryTimeEntries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosHistoryTimeEntryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Chronos History Time Entries",
+        "tags": [
+          "chronos-history"
+        ]
+      }
+    },
+    "/api/chronos-history/effort-distribution": {
+      "get": {
+        "operationId": "getChronosHistoryEffortDistribution",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosHistoryEffortDistributionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Chronos History Effort Distribution",
+        "tags": [
+          "chronos-history"
+        ]
+      }
+    },
+    "/api/chronos/deadlines": {
+      "get": {
+        "operationId": "listChronosDeadlines",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deadline_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DeadlineType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deadline Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosDeadlineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Chronos Deadlines",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/deadlines/{deadline_id}/complete": {
+      "post": {
+        "operationId": "completeChronosDeadline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChronosCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosCompletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Complete Chronos Deadline",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/deadlines/{deadline_id}/tracked-time": {
+      "get": {
+        "operationId": "getChronosTrackedTime",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosTrackedTimeResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Chronos Tracked Time",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/estimates": {
+      "post": {
+        "operationId": "recordChronosEstimate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChronosEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosEstimateResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Chronos Estimate",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/ics": {
+      "get": {
+        "operationId": "exportChronosIcs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosIcsExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Export Chronos Ics",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/reflections": {
+      "post": {
+        "operationId": "recordChronosReflection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChronosReflectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosReflectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Chronos Reflection",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/sync": {
+      "post": {
+        "operationId": "syncChronosDeadlines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Sync Chronos Deadlines",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/time-entries": {
+      "post": {
+        "operationId": "recordChronosTimeEntry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChronosTimeEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosTimeEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Chronos Time Entry",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/timers/{deadline_id}/start": {
+      "post": {
+        "operationId": "startChronosTimer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosTimerStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Chronos Timer",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/timers/{deadline_id}/stop": {
+      "post": {
+        "operationId": "stopChronosTimer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosTimerStopResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stop Chronos Timer",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/upcoming-exams": {
+      "get": {
+        "operationId": "listChronosUpcomingExams",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosUpcomingExamListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Chronos Upcoming Exams",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
+    "/api/chronos/workload": {
+      "get": {
+        "operationId": "getChronosWorkload",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChronosWorkloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Chronos Workload",
+        "tags": [
+          "chronos"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -2269,6 +4715,270 @@
         "summary": "Reserve Web Vitals",
         "tags": [
           "metrics"
+        ]
+      }
+    },
+    "/api/quickstart/confidence": {
+      "post": {
+        "operationId": "saveQuickstartConfidence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickstartConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Quickstart Confidence",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/manual-topics": {
+      "post": {
+        "operationId": "saveQuickstartManualTopics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickstartManualTopicsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartManualTopicsResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Quickstart Manual Topics",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/overview": {
+      "get": {
+        "operationId": "getQuickstartOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Quickstart Overview Route",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/session-count": {
+      "get": {
+        "operationId": "getQuickstartSessionCount",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartSessionCountResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Quickstart Session Count",
+        "tags": [
+          "quickstart"
         ]
       }
     },

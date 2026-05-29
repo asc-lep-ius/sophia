@@ -688,21 +688,28 @@ def compute_priority_score(
 
 async def get_workload_forecast(
     db: aiosqlite.Connection,
+    *,
+    course_id: int | None = None,
     horizon_days: int = 7,
 ) -> dict[str, object]:
     """Compute workload summary for the horizon window."""
     now = datetime.now(UTC)
     horizon_end = now + timedelta(days=horizon_days)
 
-    cursor = await db.execute(
+    query = (
         "SELECT dc.id, dc.name, dc.due_at, "
         "  (SELECT e.predicted_hours FROM effort_estimates e "
         "   WHERE e.deadline_id = dc.id ORDER BY e.estimated_at DESC LIMIT 1) AS est_hours "
         "FROM deadline_cache dc "
         "WHERE dc.due_at > ? AND dc.due_at < ? "
-        "ORDER BY dc.due_at ASC",
-        (now.isoformat(), horizon_end.isoformat()),
     )
+    params: list[str | int] = [now.isoformat(), horizon_end.isoformat()]
+    if course_id is not None:
+        query += "AND dc.course_id = ? "
+        params.append(course_id)
+    query += "ORDER BY dc.due_at ASC"
+
+    cursor = await db.execute(query, params)
     rows = list(await cursor.fetchall())
 
     total_estimated = 0.0
