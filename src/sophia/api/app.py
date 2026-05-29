@@ -15,10 +15,13 @@ from sophia.api.context import RequestContextMiddleware
 from sophia.api.errors import register_error_handlers
 from sophia.api.routers import (
     auth,
+    calibration,
     health,
     lectures,
     metrics,
+    review,
     search,
+    study,
     topics,
 )
 from sophia.api.routers import settings as settings_router
@@ -79,6 +82,9 @@ def create_api_app(
     api_app.include_router(lectures.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(search.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(topics.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(study.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(review.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(calibration.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
 

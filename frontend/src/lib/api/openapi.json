@@ -1,6 +1,61 @@
 {
   "components": {
     "schemas": {
+      "ActualScoreUpdateRequest": {
+        "properties": {
+          "actual": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Actual",
+            "type": "number"
+          },
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "actual"
+        ],
+        "title": "ActualScoreUpdateRequest",
+        "type": "object"
+      },
+      "ActualScoreUpdateResponse": {
+        "properties": {
+          "actual": {
+            "title": "Actual",
+            "type": "number"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "actual",
+          "updated"
+        ],
+        "title": "ActualScoreUpdateResponse",
+        "type": "object"
+      },
       "AuthLoginRequest": {
         "properties": {
           "mfa_code": {
@@ -87,6 +142,128 @@
         "title": "AuthSessionResponse",
         "type": "object"
       },
+      "CalibrationRatingListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationRatingResponse"
+            },
+            "title": "Ratings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "ratings"
+        ],
+        "title": "CalibrationRatingListResponse",
+        "type": "object"
+      },
+      "CalibrationRatingRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "rating"
+        ],
+        "title": "CalibrationRatingRequest",
+        "type": "object"
+      },
+      "CalibrationRatingResponse": {
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "calibration_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Error"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "difficulty_level": {
+            "title": "Difficulty Level",
+            "type": "string"
+          },
+          "is_blind_spot": {
+            "title": "Is Blind Spot",
+            "type": "boolean"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "rated_at": {
+            "title": "Rated At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "course_id",
+          "predicted",
+          "actual",
+          "rated_at",
+          "calibration_error",
+          "is_blind_spot",
+          "difficulty_level"
+        ],
+        "title": "CalibrationRatingResponse",
+        "type": "object"
+      },
+      "CalibrationRatingSavedResponse": {
+        "properties": {
+          "rating": {
+            "$ref": "#/components/schemas/CalibrationRatingResponse"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "CalibrationRatingSavedResponse",
+        "type": "object"
+      },
       "DiscoveredLectureModuleResponse": {
         "properties": {
           "course_fullname": {
@@ -118,6 +295,27 @@
           "episode_count"
         ],
         "title": "DiscoveredLectureModuleResponse",
+        "type": "object"
+      },
+      "DueReviewListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "reviews"
+        ],
+        "title": "DueReviewListResponse",
         "type": "object"
       },
       "ErrorDetail": {
@@ -564,6 +762,163 @@
         "title": "ReadinessResponse",
         "type": "object"
       },
+      "ReviewCompletionRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "score"
+        ],
+        "title": "ReviewCompletionRequest",
+        "type": "object"
+      },
+      "ReviewScheduleItemResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "difficulty": {
+            "title": "Difficulty",
+            "type": "number"
+          },
+          "interval_days": {
+            "title": "Interval Days",
+            "type": "integer"
+          },
+          "interval_index": {
+            "title": "Interval Index",
+            "type": "integer"
+          },
+          "is_due": {
+            "title": "Is Due",
+            "type": "boolean"
+          },
+          "last_reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reviewed At"
+          },
+          "next_review_at": {
+            "title": "Next Review At",
+            "type": "string"
+          },
+          "review_count": {
+            "title": "Review Count",
+            "type": "integer"
+          },
+          "score_at_last_review": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score At Last Review"
+          },
+          "stability": {
+            "title": "Stability",
+            "type": "number"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "course_id",
+          "interval_index",
+          "interval_days",
+          "last_reviewed_at",
+          "next_review_at",
+          "score_at_last_review",
+          "difficulty",
+          "stability",
+          "review_count",
+          "is_due"
+        ],
+        "title": "ReviewScheduleItemResponse",
+        "type": "object"
+      },
+      "ReviewScheduleListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Schedules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "schedules"
+        ],
+        "title": "ReviewScheduleListResponse",
+        "type": "object"
+      },
+      "ReviewScheduleRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic"
+        ],
+        "title": "ReviewScheduleRequest",
+        "type": "object"
+      },
+      "ReviewScheduleResponse": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "title": "ReviewScheduleResponse",
+        "type": "object"
+      },
       "SessionTenantResponse": {
         "properties": {
           "cohort_id": {
@@ -690,6 +1045,268 @@
           "locale"
         ],
         "title": "SettingsResponse",
+        "type": "object"
+      },
+      "StudyFlashcardItemResponse": {
+        "properties": {
+          "back": {
+            "title": "Back",
+            "type": "string"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "front": {
+            "title": "Front",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "course_id",
+          "topic",
+          "front",
+          "back",
+          "source",
+          "created_at"
+        ],
+        "title": "StudyFlashcardItemResponse",
+        "type": "object"
+      },
+      "StudyFlashcardRequest": {
+        "properties": {
+          "back": {
+            "minLength": 1,
+            "title": "Back",
+            "type": "string"
+          },
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "front": {
+            "minLength": 1,
+            "title": "Front",
+            "type": "string"
+          },
+          "source": {
+            "default": "study",
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic",
+          "front",
+          "back"
+        ],
+        "title": "StudyFlashcardRequest",
+        "type": "object"
+      },
+      "StudyFlashcardResponse": {
+        "properties": {
+          "flashcard": {
+            "$ref": "#/components/schemas/StudyFlashcardItemResponse"
+          }
+        },
+        "required": [
+          "flashcard"
+        ],
+        "title": "StudyFlashcardResponse",
+        "type": "object"
+      },
+      "StudySessionCompleteRequest": {
+        "properties": {
+          "post_test_score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Post Test Score",
+            "type": "number"
+          },
+          "pre_test_score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Pre Test Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pre_test_score",
+          "post_test_score"
+        ],
+        "title": "StudySessionCompleteRequest",
+        "type": "object"
+      },
+      "StudySessionCompletionResponse": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "completed"
+        ],
+        "title": "StudySessionCompletionResponse",
+        "type": "object"
+      },
+      "StudySessionItemResponse": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "improvement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvement"
+          },
+          "post_test_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Test Score"
+          },
+          "pre_test_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Test Score"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "course_id",
+          "topic",
+          "pre_test_score",
+          "post_test_score",
+          "started_at",
+          "completed_at",
+          "improvement"
+        ],
+        "title": "StudySessionItemResponse",
+        "type": "object"
+      },
+      "StudySessionListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/StudySessionItemResponse"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "sessions"
+        ],
+        "title": "StudySessionListResponse",
+        "type": "object"
+      },
+      "StudySessionResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/StudySessionItemResponse"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "StudySessionResponse",
+        "type": "object"
+      },
+      "StudySessionStartRequest": {
+        "properties": {
+          "course_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_id",
+          "topic"
+        ],
+        "title": "StudySessionStartRequest",
         "type": "object"
       },
       "TopicConfidenceListResponse": {
@@ -910,6 +1527,32 @@
         "title": "TopicResponse",
         "type": "object"
       },
+      "UpcomingReviewListResponse": {
+        "properties": {
+          "course_id": {
+            "title": "Course Id",
+            "type": "integer"
+          },
+          "days_ahead": {
+            "title": "Days Ahead",
+            "type": "integer"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_id",
+          "days_ahead",
+          "reviews"
+        ],
+        "title": "UpcomingReviewListResponse",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -1083,6 +1726,271 @@
         "summary": "Read Session",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/calibration/actual-score": {
+      "patch": {
+        "operationId": "updateCalibrationActualScore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualScoreUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActualScoreUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Patch Actual Score",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/calibration/blind-spots": {
+      "get": {
+        "operationId": "listCalibrationBlindSpots",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Calibration Blind Spots",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/calibration/ratings": {
+      "get": {
+        "operationId": "listCalibrationRatings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Calibration Ratings",
+        "tags": [
+          "calibration"
+        ]
+      },
+      "post": {
+        "operationId": "saveCalibrationConfidenceRating",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationRatingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingSavedResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Calibration Rating",
+        "tags": [
+          "calibration"
         ]
       }
     },
@@ -1403,6 +2311,342 @@
         ]
       }
     },
+    "/api/review/complete": {
+      "post": {
+        "operationId": "completeReview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Complete Review Schedule",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/due": {
+      "get": {
+        "operationId": "listDueReviews",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DueReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Due Reviews",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/schedules": {
+      "get": {
+        "operationId": "listReviewSchedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Review Schedules",
+        "tags": [
+          "review"
+        ]
+      },
+      "post": {
+        "operationId": "scheduleReview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Review Schedule",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/upcoming": {
+      "get": {
+        "operationId": "listUpcomingReviews",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days_ahead",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days Ahead",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpcomingReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Upcoming Reviews",
+        "tags": [
+          "review"
+        ]
+      }
+    },
     "/api/search/lectures": {
       "post": {
         "operationId": "searchLectureContent",
@@ -1541,6 +2785,281 @@
         "summary": "Patch Settings",
         "tags": [
           "settings"
+        ]
+      }
+    },
+    "/api/study/flashcards": {
+      "post": {
+        "operationId": "saveStudyFlashcard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyFlashcardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyFlashcardResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Study Flashcard",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions": {
+      "get": {
+        "operationId": "listStudySessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "course_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Course Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Study Sessions",
+        "tags": [
+          "study"
+        ]
+      },
+      "post": {
+        "operationId": "startStudySession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySessionStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Study Session",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions/{session_id}/complete": {
+      "post": {
+        "operationId": "completeStudySession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySessionCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionCompletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Mark Study Session Complete",
+        "tags": [
+          "study"
         ]
       }
     },
