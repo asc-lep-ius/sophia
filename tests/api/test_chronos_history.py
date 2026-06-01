@@ -241,6 +241,73 @@ def test_chronos_history_routes_return_response_shapes(
     }
 
 
+def test_chronos_history_optional_course_routes_use_session_course(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
+    login(harness)
+    course_ids: list[int | None] = []
+
+    async def fake_get_past_deadlines(
+        db: object,
+        *,
+        course_id: int | None = None,
+        limit: int = 50,
+    ) -> list[Deadline]:
+        assert db is fake_app.db
+        assert limit == 50
+        course_ids.append(course_id)
+        return [sample_deadline()]
+
+    async def fake_get_effort_distribution(
+        db: object,
+        *,
+        course_id: int | None = None,
+        horizon_days: int = 14,
+    ) -> list[DayEffort]:
+        assert db is fake_app.db
+        assert horizon_days == 14
+        course_ids.append(course_id)
+        return []
+
+    async def fake_get_calibration_metrics(
+        db: object,
+        *,
+        course_id: int | None = None,
+    ) -> list[CalibrationMetrics]:
+        assert db is fake_app.db
+        course_ids.append(course_id)
+        return []
+
+    monkeypatch.setattr(chronos_history_router, "get_past_deadlines", fake_get_past_deadlines)
+    monkeypatch.setattr(
+        chronos_history_router,
+        "get_effort_distribution",
+        fake_get_effort_distribution,
+    )
+    monkeypatch.setattr(
+        chronos_history_router,
+        "get_calibration_metrics",
+        fake_get_calibration_metrics,
+    )
+
+    deadlines_response = harness.client.get("/api/chronos-history/deadlines")
+    effort_response = harness.client.get("/api/chronos-history/effort-distribution")
+    calibration_response = harness.client.get("/api/chronos-history/calibration")
+
+    assert deadlines_response.status_code == 200
+    assert effort_response.status_code == 200
+    assert calibration_response.status_code == 200
+    assert deadlines_response.json()["course_id"] == 12
+    assert effort_response.json()["course_id"] == 12
+    assert calibration_response.json()["course_id"] == 12
+    assert course_ids == [12, 12, 12]
+
+
 def test_chronos_history_reflection_missing_returns_404(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

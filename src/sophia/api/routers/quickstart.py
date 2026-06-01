@@ -7,10 +7,9 @@ from typing import Annotated, cast
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
-    current_session_record,
     get_app_container,
-    require_course_scope,
     require_csrf_course_scope,
+    require_effective_course_id,
 )
 from sophia.api.schemas.chronos import ChronosDeadlineResponse
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
@@ -49,11 +48,14 @@ async def get_quickstart_overview_route(
     request: Request,
     course_id: CourseIdQuery = None,
 ) -> QuickstartOverviewResponse:
-    await _require_optional_course_scope(request, course_id)
-    overview = await get_quickstart_overview(get_app_container(request), course_id=course_id)
-    if course_id is not None and not overview.courses:
+    effective_course_id = await require_effective_course_id(request, course_id)
+    overview = await get_quickstart_overview(
+        get_app_container(request),
+        course_id=effective_course_id,
+    )
+    if not overview.courses:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return _overview_response(overview, course_id=course_id)
+    return _overview_response(overview, course_id=effective_course_id)
 
 
 @router.post(
@@ -106,22 +108,15 @@ async def get_quickstart_session_count(
     request: Request,
     course_id: CourseIdQuery = None,
 ) -> QuickstartSessionCountResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     completed_session_count = await get_completed_session_count(
         get_app_container(request),
-        course_id=course_id,
+        course_id=effective_course_id,
     )
     return QuickstartSessionCountResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         completed_session_count=completed_session_count,
     )
-
-
-async def _require_optional_course_scope(request: Request, course_id: int | None) -> None:
-    if course_id is None:
-        await current_session_record(request)
-        return
-    await require_course_scope(request, course_id)
 
 
 def _overview_response(

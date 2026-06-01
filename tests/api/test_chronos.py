@@ -324,8 +324,94 @@ def test_chronos_current_state_routes_return_response_shapes(
     ]
 
 
+def test_chronos_current_state_uses_session_course_when_query_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=FakeDeadlineDb({}))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
+    login(harness)
+    calls: list[str] = []
+
+    async def fake_get_deadlines(
+        db: object,
+        *,
+        course_id: int | None = None,
+        horizon_days: int = 14,
+    ) -> list[Deadline]:
+        assert db is fake_app.db
+        assert course_id == 12
+        assert horizon_days == 14
+        calls.append("deadlines")
+        return [sample_deadline()]
+
+    async def fake_get_workload_forecast(
+        db: object,
+        *,
+        course_id: int | None = None,
+        horizon_days: int = 14,
+    ) -> dict[str, object]:
+        assert db is fake_app.db
+        assert course_id == 12
+        assert horizon_days == 14
+        calls.append("workload")
+        return {
+            "total_estimated_hours": 0.0,
+            "total_tracked_hours": 0.0,
+            "remaining_hours": 0.0,
+            "deadline_count": 0,
+            "per_day": {},
+        }
+
+    async def fake_get_upcoming_exams(
+        db: object,
+        *,
+        course_id: int | None = None,
+        horizon_days: int = 30,
+    ) -> list[Deadline]:
+        assert db is fake_app.db
+        assert course_id == 12
+        assert horizon_days == 30
+        calls.append("exams")
+        return []
+
+    async def fake_export_deadlines_ics(
+        db: object,
+        *,
+        course_id: int | None = None,
+        horizon_days: int = 30,
+    ) -> str:
+        assert db is fake_app.db
+        assert course_id == 12
+        assert horizon_days == 30
+        calls.append("ics")
+        return "BEGIN:VCALENDAR\nEND:VCALENDAR"
+
+    monkeypatch.setattr(chronos_router, "get_deadlines", fake_get_deadlines)
+    monkeypatch.setattr(chronos_router, "get_workload_forecast", fake_get_workload_forecast)
+    monkeypatch.setattr(chronos_router, "get_upcoming_exams", fake_get_upcoming_exams)
+    monkeypatch.setattr(chronos_router, "export_deadlines_ics", fake_export_deadlines_ics)
+
+    deadlines_response = harness.client.get("/api/chronos/deadlines")
+    workload_response = harness.client.get("/api/chronos/workload")
+    exams_response = harness.client.get("/api/chronos/upcoming-exams")
+    ics_response = harness.client.get("/api/chronos/ics")
+
+    assert deadlines_response.status_code == 200
+    assert deadlines_response.json()["course_id"] == 12
+    assert workload_response.status_code == 200
+    assert workload_response.json()["course_id"] == 12
+    assert exams_response.status_code == 200
+    assert exams_response.json()["course_id"] == 12
+    assert ics_response.status_code == 200
+    assert ics_response.json()["course_id"] == 12
+    assert calls == ["deadlines", "workload", "exams", "ics"]
+
+
 def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_app = FakeAppContainer(db=object())
+    fake_app = FakeAppContainer(db=FakeDeadlineDb({"assign:1": 12}))
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
         tenant=course_tenant(),
@@ -383,6 +469,93 @@ def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch)
             "estimated_at": "2026-05-29T10:00:00Z",
         },
     }
+
+
+def test_record_estimate_rejects_cross_course_deadline_before_service_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=FakeDeadlineDb({"assign:1": 99}))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(12),
+    )
+    login(harness)
+    calls: list[str] = []
+
+    async def fake_record_estimate(
+        _app: AppContainer,
+        *,
+        deadline_id: str,
+        course_id: int,
+        predicted_hours: float,
+        breakdown: dict[str, float] | None = None,
+        intention: str | None = None,
+    ) -> EffortEstimate:
+        calls.append(deadline_id)
+        return EffortEstimate(
+            deadline_id=deadline_id,
+            course_id=course_id,
+            predicted_hours=predicted_hours,
+            breakdown=breakdown,
+            implementation_intention=intention,
+            scaffold_level=EstimationScaffold.FULL,
+            estimated_at="2026-05-29T10:00:00Z",
+        )
+
+    monkeypatch.setattr(chronos_router, "record_estimate", fake_record_estimate)
+
+    response = harness.client.post(
+        "/api/chronos/estimates",
+        json={"course_id": 12, "deadline_id": "assign:1", "predicted_hours": 3.5},
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 403
+    assert calls == []
+
+
+def test_record_estimate_missing_deadline_returns_404_before_service_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=FakeDeadlineDb({}))
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(12),
+    )
+    login(harness)
+    calls: list[str] = []
+
+    async def fake_record_estimate(
+        _app: AppContainer,
+        *,
+        deadline_id: str,
+        course_id: int,
+        predicted_hours: float,
+        breakdown: dict[str, float] | None = None,
+        intention: str | None = None,
+    ) -> EffortEstimate:
+        calls.append(deadline_id)
+        return EffortEstimate(
+            deadline_id=deadline_id,
+            course_id=course_id,
+            predicted_hours=predicted_hours,
+            breakdown=breakdown,
+            implementation_intention=intention,
+            scaffold_level=EstimationScaffold.FULL,
+            estimated_at="2026-05-29T10:00:00Z",
+        )
+
+    monkeypatch.setattr(chronos_router, "record_estimate", fake_record_estimate)
+
+    response = harness.client.post(
+        "/api/chronos/estimates",
+        json={"course_id": 12, "deadline_id": "assign:404", "predicted_hours": 3.5},
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
+    assert calls == []
 
 
 def test_chronos_filtered_deadline_lookup_returns_404(

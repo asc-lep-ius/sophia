@@ -11,9 +11,9 @@ from sophia.api.deps import (
     current_session_record,
     ensure_course_scope,
     get_app_container,
-    require_course_scope,
     require_csrf,
     require_csrf_course_scope,
+    require_effective_course_id,
 )
 from sophia.api.schemas.chronos import (
     ChronosCompletionRequest,
@@ -81,10 +81,10 @@ async def list_chronos_deadlines(
     horizon_days: HorizonDaysQuery = 14,
     deadline_type: DeadlineTypeQuery = None,
 ) -> ChronosDeadlineListResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     deadlines = await get_deadlines(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
     )
     if deadline_type is not None:
@@ -92,7 +92,7 @@ async def list_chronos_deadlines(
         if not deadlines:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return ChronosDeadlineListResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
         deadlines=[_deadline_response(deadline) for deadline in deadlines],
     )
@@ -122,9 +122,13 @@ async def record_chronos_estimate(
     payload: ChronosEstimateRequest,
     request: Request,
 ) -> ChronosEstimateResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    app_container = await _require_csrf_payload_deadline_scope(
+        request,
+        payload.course_id,
+        payload.deadline_id,
+    )
     estimate = await record_estimate(
-        get_app_container(request),
+        app_container,
         deadline_id=payload.deadline_id,
         course_id=payload.course_id,
         predicted_hours=payload.predicted_hours,
@@ -265,13 +269,13 @@ async def get_chronos_workload(
     course_id: CourseIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
 ) -> ChronosWorkloadResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     forecast = await get_workload_forecast(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
     )
-    return _workload_response(forecast, course_id=course_id, horizon_days=horizon_days)
+    return _workload_response(forecast, course_id=effective_course_id, horizon_days=horizon_days)
 
 
 @router.get(
@@ -284,14 +288,14 @@ async def list_chronos_upcoming_exams(
     course_id: CourseIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
 ) -> ChronosUpcomingExamListResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     exams = await get_upcoming_exams(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
     )
     return ChronosUpcomingExamListResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
         exams=[_deadline_response(exam) for exam in exams],
     )
@@ -307,20 +311,15 @@ async def export_chronos_ics(
     course_id: CourseIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
 ) -> ChronosIcsExportResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     ics = await export_deadlines_ics(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
     )
-    return ChronosIcsExportResponse(course_id=course_id, horizon_days=horizon_days, ics=ics)
-
-
-async def _require_optional_course_scope(request: Request, course_id: int | None) -> None:
-    if course_id is None:
-        await current_session_record(request)
-        return
-    await require_course_scope(request, course_id)
+    return ChronosIcsExportResponse(
+        course_id=effective_course_id, horizon_days=horizon_days, ics=ics
+    )
 
 
 async def _require_deadline_scope(

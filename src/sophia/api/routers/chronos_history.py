@@ -10,7 +10,7 @@ from sophia.api.deps import (
     current_session_record,
     ensure_course_scope,
     get_app_container,
-    require_course_scope,
+    require_effective_course_id,
 )
 from sophia.api.schemas.chronos import ChronosCalibrationMetricResponse, ChronosDeadlineResponse
 from sophia.api.schemas.chronos_history import (
@@ -63,14 +63,14 @@ async def list_chronos_history_deadlines(
     course_id: CourseIdQuery = None,
     limit: LimitQuery = 50,
 ) -> ChronosHistoryDeadlineListResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     deadlines = await get_past_deadlines(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         limit=limit,
     )
     return ChronosHistoryDeadlineListResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         limit=limit,
         deadlines=[_deadline_response(deadline) for deadline in deadlines],
     )
@@ -124,14 +124,14 @@ async def get_chronos_history_effort_distribution(
     course_id: CourseIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
 ) -> ChronosHistoryEffortDistributionResponse:
-    await _require_optional_course_scope(request, course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
     days = await get_effort_distribution(
         get_app_container(request).db,
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
     )
     return ChronosHistoryEffortDistributionResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         horizon_days=horizon_days,
         days=[_effort_day_response(day) for day in days],
     )
@@ -146,19 +146,15 @@ async def get_chronos_history_calibration(
     request: Request,
     course_id: CourseIdQuery = None,
 ) -> ChronosHistoryCalibrationResponse:
-    await _require_optional_course_scope(request, course_id)
-    metrics = await get_calibration_metrics(get_app_container(request).db, course_id=course_id)
+    effective_course_id = await require_effective_course_id(request, course_id)
+    metrics = await get_calibration_metrics(
+        get_app_container(request).db,
+        course_id=effective_course_id,
+    )
     return ChronosHistoryCalibrationResponse(
-        course_id=course_id,
+        course_id=effective_course_id,
         metrics=[_calibration_metric_response(metric) for metric in metrics],
     )
-
-
-async def _require_optional_course_scope(request: Request, course_id: int | None) -> None:
-    if course_id is None:
-        await current_session_record(request)
-        return
-    await require_course_scope(request, course_id)
 
 
 async def _require_deadline_scope(

@@ -446,8 +446,8 @@ async def record_estimate(
     domain = f"effort:{deadline_type.value}"
     await db.execute(
         "INSERT OR REPLACE INTO metacognition_log "
-        "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
-        (domain, deadline_id, predicted_hours, now),
+        "(domain, item_id, predicted, predicted_at, course_id) VALUES (?, ?, ?, ?, ?)",
+        (domain, deadline_id, predicted_hours, now, course_id),
     )
 
     await db.commit()
@@ -582,10 +582,11 @@ async def complete_deadline(
 
     # Look up deadline_type for metacognition domain
     cursor = await db.execute(
-        "SELECT deadline_type FROM deadline_cache WHERE id = ?", (deadline_id,)
+        "SELECT deadline_type, course_id FROM deadline_cache WHERE id = ?", (deadline_id,)
     )
     row = await cursor.fetchone()
     deadline_type = DeadlineType(row[0]) if row else DeadlineType.ASSIGNMENT
+    course_id = int(row[1]) if row and row[1] is not None else None
 
     # Get predicted from effort_estimates
     cursor = await db.execute(
@@ -598,10 +599,19 @@ async def complete_deadline(
 
     # Update metacognition_log with actual
     domain = f"effort:{deadline_type.value}"
-    await db.execute(
-        "UPDATE metacognition_log SET actual = ?, actual_at = ? WHERE domain = ? AND item_id = ?",
-        (actual_hours, datetime.now(UTC).isoformat(), domain, deadline_id),
-    )
+    actual_at = datetime.now(UTC).isoformat()
+    if course_id is None:
+        await db.execute(
+            "UPDATE metacognition_log SET actual = ?, actual_at = ? "
+            "WHERE domain = ? AND item_id = ?",
+            (actual_hours, actual_at, domain, deadline_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE metacognition_log SET actual = ?, actual_at = ?, course_id = ? "
+            "WHERE domain = ? AND item_id = ?",
+            (actual_hours, actual_at, course_id, domain, deadline_id),
+        )
     await db.commit()
 
     feedback = format_estimation_feedback(predicted_hours, actual_hours)

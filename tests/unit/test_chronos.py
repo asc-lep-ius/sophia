@@ -33,6 +33,9 @@ async def db():
     await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/017_chronos.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/018_chronos_time.sql").read_text())
+    await conn.execute(
+        "ALTER TABLE metacognition_log ADD COLUMN course_id TEXT NOT NULL DEFAULT 'default'"
+    )
     await conn.commit()
     yield conn
     await conn.close()
@@ -663,6 +666,23 @@ class TestRecordEstimate:
         assert row[0] == "effort:assignment"
         assert row[1] == "assign:1"
         assert row[2] == pytest.approx(3.0)  # pyright: ignore[reportUnknownMemberType]
+
+    async def test_writes_metacognition_course_scope(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import record_estimate
+
+        await _insert_deadline(app_container.db)
+
+        await record_estimate(
+            app_container, deadline_id="assign:1", course_id=42, predicted_hours=3.0
+        )
+
+        cursor = await app_container.db.execute(
+            "SELECT course_id FROM metacognition_log WHERE domain = ? AND item_id = ?",
+            ("effort:assignment", "assign:1"),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "42"
 
     async def test_stores_breakdown(self, app_container: MagicMock) -> None:
         from sophia.services.chronos import record_estimate
@@ -1496,6 +1516,46 @@ async def _insert_deadline_cache(
 
 
 class TestCalibrationMetrics:
+    async def test_course_metrics_include_chronos_effort_flow(
+        self,
+        app_container: MagicMock,
+    ) -> None:
+        from sophia.services.chronos import (
+            complete_deadline,
+            get_calibration_metrics,
+            record_estimate,
+            record_time,
+        )
+
+        for index in range(3):
+            deadline_id = f"assign:{index}"
+            await _insert_deadline(app_container.db, id=deadline_id, course_id=42)
+            await record_estimate(
+                app_container,
+                deadline_id=deadline_id,
+                course_id=42,
+                predicted_hours=2.0,
+            )
+            await record_time(app_container.db, deadline_id, 3.0)
+            await complete_deadline(app_container, deadline_id)
+
+        await _insert_deadline(app_container.db, id="assign:other", course_id=99)
+        await record_estimate(
+            app_container,
+            deadline_id="assign:other",
+            course_id=99,
+            predicted_hours=1.0,
+        )
+        await record_time(app_container.db, "assign:other", 9.0)
+        await complete_deadline(app_container, "assign:other")
+
+        metrics = await get_calibration_metrics(app_container.db, course_id=42)
+
+        assert len(metrics) == 1
+        assert metrics[0].domain == "effort:assignment"
+        assert metrics[0].sample_count == 3
+        assert metrics[0].mean_error == pytest.approx(1.0)
+
     async def test_returns_metrics_for_completed_domains(self, db: aiosqlite.Connection) -> None:
         """Insert 3+ completed effort entries → metrics returned."""
         from sophia.services.chronos import get_calibration_metrics

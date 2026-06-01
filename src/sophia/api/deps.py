@@ -95,6 +95,17 @@ async def require_course_scope(request: Request, course_id: int | str) -> Sessio
     return session
 
 
+async def require_effective_course_id(request: Request, course_id: int | None) -> int:
+    if course_id is not None:
+        await require_course_scope(request, course_id)
+        return course_id
+    session = await current_session_record(request)
+    try:
+        return int(session.tenant.course_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN) from exc
+
+
 async def require_csrf_course_scope(request: Request, course_id: int | str) -> SessionRecord:
     session = await require_csrf(request)
     ensure_course_scope(session, course_id)

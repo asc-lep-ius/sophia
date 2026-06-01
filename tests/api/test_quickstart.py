@@ -200,6 +200,77 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
     assert saved_confidence == [(12, {"Graphs": 4, "Flows": 3})]
 
 
+def test_quickstart_optional_course_routes_use_session_course(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(),
+    )
+    login(harness)
+    course_ids: list[int | None] = []
+
+    async def fake_get_quickstart_overview(
+        app: AppContainer,
+        *,
+        course_id: int | None = None,
+    ) -> QuickstartOverview:
+        assert app is fake_app
+        course_ids.append(course_id)
+        if course_id is None:
+            return QuickstartOverview(
+                courses=[sample_course(99)],
+                topics=[TopicMapping(topic="Databases", course_id=99, source=TopicSource.MANUAL)],
+                nearest_deadline=None,
+                completed_session_count=99,
+            )
+        return QuickstartOverview(
+            courses=[sample_course(course_id)],
+            topics=[TopicMapping(topic="Graphs", course_id=course_id, source=TopicSource.MANUAL)],
+            nearest_deadline=sample_deadline(),
+            completed_session_count=2,
+        )
+
+    async def fake_get_completed_session_count(
+        app: AppContainer,
+        *,
+        course_id: int | None = None,
+    ) -> int:
+        assert app is fake_app
+        course_ids.append(course_id)
+        return 99 if course_id is None else 2
+
+    monkeypatch.setattr(
+        quickstart_router,
+        "get_quickstart_overview",
+        fake_get_quickstart_overview,
+    )
+    monkeypatch.setattr(
+        quickstart_router,
+        "get_completed_session_count",
+        fake_get_completed_session_count,
+    )
+
+    overview_response = harness.client.get("/api/quickstart/overview")
+    count_response = harness.client.get("/api/quickstart/session-count")
+
+    assert overview_response.status_code == 200
+    assert count_response.status_code == 200
+    assert overview_response.json()["course_id"] == 12
+    assert overview_response.json()["courses"] == [
+        {
+            "id": 12,
+            "fullname": "Algorithms",
+            "shortname": "186.813",
+            "url": "https://tu.test/course/12",
+        },
+    ]
+    assert overview_response.json()["completed_session_count"] == 2
+    assert count_response.json() == {"course_id": 12, "completed_session_count": 2}
+    assert course_ids == [12, 12]
+
+
 def test_quickstart_overview_missing_filtered_course_returns_404(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
