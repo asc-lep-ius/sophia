@@ -772,8 +772,8 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 5.0, 2.0),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 5.0, 2.0, "42"),
             )
         await db.commit()
 
@@ -787,8 +787,8 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, 3.1),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 3.0, 3.1, "42"),
             )
         await db.commit()
 
@@ -802,13 +802,48 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, 3.5),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 3.0, 3.5, "42"),
             )
         await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.MINIMAL
+
+    async def test_scaffold_level_filters_calibration_rows_by_course(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        from sophia.services.chronos import get_scaffold_level
+
+        for index in range(5):
+            await db.execute(
+                "INSERT OR REPLACE INTO metacognition_log "
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{index}", 3.0, 3.05, "99"),
+            )
+        await db.commit()
+
+        level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert level == EstimationScaffold.FULL
+
+    async def test_scaffold_level_filters_count_fallback_by_course(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        from sophia.services.chronos import get_scaffold_level
+
+        for index in range(30):
+            await db.execute(
+                "INSERT INTO effort_estimates "
+                "(deadline_id, course_id, predicted_hours, scaffold_level) "
+                "VALUES (?, ?, ?, ?)",
+                (f"assign:{index}", 99, 2.0, "full"),
+            )
+        await db.commit()
+
+        level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert level == EstimationScaffold.FULL
 
 
 # ---------------------------------------------------------------------------
@@ -854,21 +889,22 @@ class TestFormatReferenceClassHint:
         assert "hour" in hint.lower()
 
     async def test_hint_filters_by_course(self, db: aiosqlite.Connection) -> None:
-        """When course_id is given but no entries match, return None."""
+        """When course_id is given, only matching course entries build the hint."""
         from sophia.services.chronos import format_reference_class_hint
 
-        # Insert entries for a different course (item_id encodes course)
-        for i in range(5):
+        for index in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{index}", 3.0, float(2 + index), "99"),
             )
         await db.commit()
 
-        # With no course filter, should have a hint
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
+        scoped_hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT, course_id=42)
+
         assert hint is not None
+        assert scoped_hint is None
 
 
 # ---------------------------------------------------------------------------
@@ -896,6 +932,24 @@ class TestGetReferenceClass:
 
         refs = await get_reference_class(db, DeadlineType.QUIZ)
         assert refs == []
+
+    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_reference_class
+
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+            ("effort:assignment", "assign:target", 3.0, 4.0, "42"),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+            ("effort:assignment", "assign:other", 8.0, 9.0, "99"),
+        )
+        await db.commit()
+
+        refs = await get_reference_class(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert refs == [(3.0, 4.0)]
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from sophia.api.deps import current_session_record, get_app_container, require_csrf
+from sophia.api.deps import get_app_container, require_course_scope, require_csrf_course_scope
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.topics import (
     ManualTopicRequest,
@@ -45,7 +45,7 @@ async def list_topics(
     course_id: CourseIdQuery,
     request: Request,
 ) -> TopicListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     topics = await get_course_topics(get_app_container(request), course_id)
     return TopicListResponse(
         course_id=course_id, topics=[_topic_response(topic) for topic in topics]
@@ -62,7 +62,7 @@ async def extract_topics(
     payload: TopicExtractionRequest,
     request: Request,
 ) -> TopicExtractionResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.module_id)
     topics = await extract_topics_from_lectures(
         get_app_container(request),
         payload.module_id,
@@ -87,7 +87,7 @@ async def create_manual_topic(
     payload: ManualTopicRequest,
     request: Request,
 ) -> TopicResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     topic = await save_manual_topic(get_app_container(request), payload.topic, payload.course_id)
     if topic is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -105,7 +105,7 @@ async def list_topic_confidence_ratings(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> TopicConfidenceListResponse:
-    await current_session_record(request)
+    await require_course_scope(request, course_id)
     ratings = await get_confidence_ratings(get_app_container(request).db, course_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
@@ -127,7 +127,7 @@ async def save_topic_confidence_rating(
     payload: TopicConfidenceRequest,
     request: Request,
 ) -> TopicConfidenceResponse:
-    await require_csrf(request)
+    await require_csrf_course_scope(request, payload.course_id)
     rating = await rate_confidence(
         get_app_container(request),
         payload.topic,

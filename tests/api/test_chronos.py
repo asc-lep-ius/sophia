@@ -410,6 +410,35 @@ def test_chronos_current_state_uses_session_course_when_query_omitted(
     assert calls == ["deadlines", "workload", "exams", "ics"]
 
 
+def test_chronos_sync_filters_response_to_session_course(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=course_tenant(12),
+    )
+    login(harness)
+    calls: list[str] = []
+
+    async def fake_sync_deadlines(app: AppContainer) -> list[Deadline]:
+        assert app is fake_app
+        calls.append("sync")
+        return [
+            sample_deadline("assign:1", course_id=12),
+            sample_deadline("assign:2", course_id=99),
+        ]
+
+    monkeypatch.setattr(chronos_router, "sync_deadlines", fake_sync_deadlines)
+
+    response = harness.client.post("/api/chronos/sync", headers=csrf_headers(harness))
+
+    assert response.status_code == 200
+    assert response.json()["synced_count"] == 1
+    assert [deadline["course_id"] for deadline in response.json()["deadlines"]] == [12]
+    assert calls == ["sync"]
+
+
 def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=FakeDeadlineDb({"assign:1": 12}))
     harness = build_harness(

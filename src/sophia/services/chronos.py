@@ -325,11 +325,15 @@ async def get_scaffold_level(
     """Determine scaffold level based on calibration accuracy or count fallback."""
     domain = f"effort:{deadline_type.value}"
 
-    # Check metacognition_log for calibration data
-    cursor = await db.execute(
-        "SELECT predicted, actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL",
-        (domain,),
+    metacognition_query = (
+        "SELECT predicted, actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
     )
+    metacognition_params: list[str] = [domain]
+    if course_id is not None:
+        metacognition_query += " AND course_id = ?"
+        metacognition_params.append(str(course_id))
+
+    cursor = await db.execute(metacognition_query, metacognition_params)
     cal_rows = list(await cursor.fetchall())
 
     if len(cal_rows) >= CALIBRATION_THRESHOLD_ENTRIES:
@@ -344,9 +348,13 @@ async def get_scaffold_level(
         return EstimationScaffold.OPEN
 
     # Count-based fallback: how many estimates exist
-    count_cursor = await db.execute(
-        "SELECT COUNT(*) FROM effort_estimates",
-    )
+    count_query = "SELECT COUNT(*) FROM effort_estimates"
+    count_params: list[int] = []
+    if course_id is not None:
+        count_query += " WHERE course_id = ?"
+        count_params.append(course_id)
+
+    count_cursor = await db.execute(count_query, count_params)
     count_row = await count_cursor.fetchone()
     count = count_row[0] if count_row else 0
 
@@ -368,10 +376,13 @@ async def get_reference_class(
     Returns list of (predicted, actual) tuples.
     """
     domain = f"effort:{deadline_type.value}"
-    cursor = await db.execute(
-        "SELECT predicted, actual FROM metacognition_log WHERE domain = ?",
-        (domain,),
-    )
+    query = "SELECT predicted, actual FROM metacognition_log WHERE domain = ?"
+    params: list[str] = [domain]
+    if course_id is not None:
+        query += " AND course_id = ?"
+        params.append(str(course_id))
+
+    cursor = await db.execute(query, params)
     return list(await cursor.fetchall())  # type: ignore[return-value]
 
 
@@ -383,10 +394,13 @@ async def format_reference_class_hint(
 ) -> str | None:
     """Format past actual times for display. None if <3 historical entries."""
     domain = f"effort:{deadline_type.value}"
-    cursor = await db.execute(
-        "SELECT actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL",
-        (domain,),
-    )
+    query = "SELECT actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
+    params: list[str] = [domain]
+    if course_id is not None:
+        query += " AND course_id = ?"
+        params.append(str(course_id))
+
+    cursor = await db.execute(query, params)
     rows = list(await cursor.fetchall())
 
     if len(rows) < REFERENCE_CLASS_MIN_ENTRIES:

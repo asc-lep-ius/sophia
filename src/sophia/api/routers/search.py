@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 
-from sophia.api.deps import current_session_record, get_app_container
+from sophia.api.deps import get_app_container, require_effective_course_id
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.search import (
     LectureSearchRequest,
@@ -31,14 +31,16 @@ async def search_lecture_content(
     payload: LectureSearchRequest,
     request: Request,
 ) -> LectureSearchResponse:
-    await current_session_record(request)
+    effective_course_id = await require_effective_course_id(request, payload.course_id)
+    if payload.module_id != effective_course_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     results = await search_lectures(
         get_app_container(request),
         payload.module_id,
         payload.query,
         n_results=payload.n_results,
         source_filter=payload.source_filter,
-        course_id=payload.course_id,
+        course_id=effective_course_id,
         missed_only=payload.missed_only,
     )
     return LectureSearchResponse(results=[_search_result_response(result) for result in results])

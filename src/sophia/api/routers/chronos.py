@@ -105,10 +105,14 @@ async def list_chronos_deadlines(
 )
 async def sync_chronos_deadlines(request: Request) -> ChronosSyncResponse:
     await require_csrf(request)
+    effective_course_id = await require_effective_course_id(request, None)
     deadlines = await sync_deadlines(get_app_container(request))
+    scoped_deadlines = [
+        deadline for deadline in deadlines if deadline.course_id == effective_course_id
+    ]
     return ChronosSyncResponse(
-        synced_count=len(deadlines),
-        deadlines=[_deadline_response(deadline) for deadline in deadlines],
+        synced_count=len(scoped_deadlines),
+        deadlines=[_deadline_response(deadline) for deadline in scoped_deadlines],
     )
 
 
