@@ -55,6 +55,347 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calibration/actual-score": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Actual Score */
+        patch: operations["updateCalibrationActualScore"];
+        trace?: never;
+    };
+    "/api/calibration/blind-spots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Calibration Blind Spots */
+        get: operations["listCalibrationBlindSpots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/calibration/ratings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Calibration Ratings */
+        get: operations["listCalibrationRatings"];
+        put?: never;
+        /** Save Calibration Rating */
+        post: operations["saveCalibrationConfidenceRating"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos-history/calibration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronos History Calibration */
+        get: operations["getChronosHistoryCalibration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos-history/deadlines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chronos History Deadlines */
+        get: operations["listChronosHistoryDeadlines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos-history/deadlines/{deadline_id}/reflection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronos History Reflection */
+        get: operations["getChronosHistoryReflection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos-history/deadlines/{deadline_id}/time-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chronos History Time Entries */
+        get: operations["listChronosHistoryTimeEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos-history/effort-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronos History Effort Distribution */
+        get: operations["getChronosHistoryEffortDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/deadlines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chronos Deadlines */
+        get: operations["listChronosDeadlines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/deadlines/{deadline_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Chronos Deadline */
+        post: operations["completeChronosDeadline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/deadlines/{deadline_id}/tracked-time": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronos Tracked Time */
+        get: operations["getChronosTrackedTime"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Chronos Estimate */
+        post: operations["recordChronosEstimate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Chronos Ics */
+        get: operations["exportChronosIcs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/reflections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Chronos Reflection */
+        post: operations["recordChronosReflection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Chronos Deadlines */
+        post: operations["syncChronosDeadlines"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/time-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Chronos Time Entry */
+        post: operations["recordChronosTimeEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/timers/{deadline_id}/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Chronos Timer */
+        post: operations["startChronosTimer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/timers/{deadline_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Chronos Timer */
+        post: operations["stopChronosTimer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/upcoming-exams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chronos Upcoming Exams */
+        get: operations["listChronosUpcomingExams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chronos/workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chronos Workload */
+        get: operations["getChronosWorkload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -64,6 +405,74 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lectures/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Discover Modules */
+        post: operations["discoverLectureModules"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lectures/modules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lecture Modules */
+        get: operations["listLectureModules"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lectures/modules/{module_id}/episodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Lecture Module Episodes */
+        get: operations["listLectureModuleEpisodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lectures/modules/{module_id}/pipeline-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Lecture Pipeline Status */
+        get: operations["readLecturePipelineStatus"];
         put?: never;
         post?: never;
         delete?: never;
@@ -89,6 +498,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/quickstart/confidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Quickstart Confidence */
+        post: operations["saveQuickstartConfidence"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quickstart/manual-topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Save Quickstart Manual Topics */
+        post: operations["saveQuickstartManualTopics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quickstart/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quickstart Overview Route */
+        get: operations["getQuickstartOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/quickstart/session-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Quickstart Session Count */
+        get: operations["getQuickstartSessionCount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ready": {
         parameters: {
             query?: never;
@@ -100,6 +577,92 @@ export interface paths {
         get: operations["ready_api_ready_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Review Schedule */
+        post: operations["completeReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/due": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Due Reviews */
+        get: operations["listDueReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Review Schedules */
+        get: operations["listReviewSchedules"];
+        put?: never;
+        /** Create Review Schedule */
+        post: operations["scheduleReview"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/review/upcoming": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Upcoming Reviews */
+        get: operations["listUpcomingReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/search/lectures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Search Lecture Content */
+        post: operations["searchLectureContent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -124,10 +687,151 @@ export interface paths {
         patch: operations["patch_settings_api_settings_patch"];
         trace?: never;
     };
+    "/api/study/flashcards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Study Flashcard */
+        post: operations["saveStudyFlashcard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Study Sessions */
+        get: operations["listStudySessions"];
+        put?: never;
+        /** Create Study Session */
+        post: operations["startStudySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/sessions/{session_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark Study Session Complete */
+        post: operations["completeStudySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Topics */
+        get: operations["listTopics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/topics/confidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Topic Confidence Ratings */
+        get: operations["listTopicConfidenceRatings"];
+        put?: never;
+        /** Save Topic Confidence Rating */
+        post: operations["saveTopicConfidenceRating"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/topics/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract Topics */
+        post: operations["extractTopics"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/topics/manual": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Manual Topic */
+        post: operations["saveManualTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActualScoreUpdateRequest */
+        ActualScoreUpdateRequest: {
+            /** Actual */
+            actual: number;
+            /** Course Id */
+            course_id: number;
+            /** Topic */
+            topic: string;
+        };
+        /** ActualScoreUpdateResponse */
+        ActualScoreUpdateResponse: {
+            /** Actual */
+            actual: number;
+            /** Course Id */
+            course_id: number;
+            /** Topic */
+            topic: string;
+            /** Updated */
+            updated: boolean;
+        };
         /** AuthLoginRequest */
         AuthLoginRequest: {
             /** Mfa Code */
@@ -147,6 +851,367 @@ export interface components {
             tenant?: components["schemas"]["SessionTenantResponse"] | null;
             user?: components["schemas"]["SessionUserResponse"] | null;
         };
+        /** CalibrationRatingListResponse */
+        CalibrationRatingListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Ratings */
+            ratings: components["schemas"]["CalibrationRatingResponse"][];
+        };
+        /** CalibrationRatingRequest */
+        CalibrationRatingRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Rating */
+            rating: number;
+            /** Topic */
+            topic: string;
+        };
+        /** CalibrationRatingResponse */
+        CalibrationRatingResponse: {
+            /** Actual */
+            actual: number | null;
+            /** Calibration Error */
+            calibration_error: number | null;
+            /** Course Id */
+            course_id: number;
+            /** Difficulty Level */
+            difficulty_level: string;
+            /** Is Blind Spot */
+            is_blind_spot: boolean;
+            /** Predicted */
+            predicted: number;
+            /** Rated At */
+            rated_at: string;
+            /** Topic */
+            topic: string;
+        };
+        /** CalibrationRatingSavedResponse */
+        CalibrationRatingSavedResponse: {
+            rating: components["schemas"]["CalibrationRatingResponse"];
+        };
+        /** ChronosCalibrationMetricResponse */
+        ChronosCalibrationMetricResponse: {
+            /** Domain */
+            domain: string;
+            /** Mean Absolute Error */
+            mean_absolute_error: number;
+            /** Mean Error */
+            mean_error: number;
+            /** Sample Count */
+            sample_count: number;
+            /** Trend */
+            trend: string;
+        };
+        /** ChronosCompletionRequest */
+        ChronosCompletionRequest: {
+            /** Course Id */
+            course_id: number;
+        };
+        /** ChronosCompletionResponse */
+        ChronosCompletionResponse: {
+            /** Actual Hours */
+            actual_hours: number;
+            /** Completed */
+            completed: boolean;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Feedback */
+            feedback: string;
+            /** Predicted Hours */
+            predicted_hours: number | null;
+        };
+        /** ChronosDeadlineListResponse */
+        ChronosDeadlineListResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Deadlines */
+            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
+            /** Horizon Days */
+            horizon_days: number;
+        };
+        /** ChronosDeadlineResponse */
+        ChronosDeadlineResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Course Name */
+            course_name: string;
+            /** Deadline Type */
+            deadline_type: string;
+            /**
+             * Due At
+             * Format: date-time
+             */
+            due_at: string;
+            /** Extra */
+            extra?: {
+                [key: string]: components["schemas"]["JsonPrimitive"];
+            };
+            /** Grade Weight */
+            grade_weight: number | null;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Submission Status */
+            submission_status: string | null;
+            /** Url */
+            url: string | null;
+        };
+        /** ChronosEffortEstimateResponse */
+        ChronosEffortEstimateResponse: {
+            /** Breakdown */
+            breakdown: {
+                [key: string]: number;
+            } | null;
+            /** Course Id */
+            course_id: number;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Estimated At */
+            estimated_at: string;
+            /** Implementation Intention */
+            implementation_intention: string | null;
+            /** Predicted Hours */
+            predicted_hours: number;
+            /** Scaffold Level */
+            scaffold_level: string;
+        };
+        /** ChronosEstimateRequest */
+        ChronosEstimateRequest: {
+            /** Breakdown */
+            breakdown?: {
+                [key: string]: number;
+            } | null;
+            /** Course Id */
+            course_id: number;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Intention */
+            intention?: string | null;
+            /** Predicted Hours */
+            predicted_hours: number;
+        };
+        /** ChronosEstimateResponse */
+        ChronosEstimateResponse: {
+            estimate: components["schemas"]["ChronosEffortEstimateResponse"];
+        };
+        /** ChronosHistoryCalibrationResponse */
+        ChronosHistoryCalibrationResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Metrics */
+            metrics: components["schemas"]["ChronosCalibrationMetricResponse"][];
+        };
+        /** ChronosHistoryDeadlineListResponse */
+        ChronosHistoryDeadlineListResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Deadlines */
+            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
+            /** Limit */
+            limit: number;
+        };
+        /** ChronosHistoryEffortDayResponse */
+        ChronosHistoryEffortDayResponse: {
+            /** Date */
+            date: string;
+            /** Deadline Efforts */
+            deadline_efforts: {
+                [key: string]: number;
+            };
+            /** Total */
+            total: number;
+            /** Unestimated */
+            unestimated: string[];
+        };
+        /** ChronosHistoryEffortDistributionResponse */
+        ChronosHistoryEffortDistributionResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Days */
+            days: components["schemas"]["ChronosHistoryEffortDayResponse"][];
+            /** Horizon Days */
+            horizon_days: number;
+        };
+        /** ChronosHistoryReflectionItemResponse */
+        ChronosHistoryReflectionItemResponse: {
+            /** Actual Hours */
+            actual_hours: number;
+            /** Predicted Hours */
+            predicted_hours: number | null;
+            /** Reflected At */
+            reflected_at: string;
+            /** Reflection Text */
+            reflection_text: string | null;
+        };
+        /** ChronosHistoryReflectionResponse */
+        ChronosHistoryReflectionResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            reflection: components["schemas"]["ChronosHistoryReflectionItemResponse"];
+        };
+        /** ChronosHistoryTimeEntryListResponse */
+        ChronosHistoryTimeEntryListResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Entries */
+            entries: components["schemas"]["ChronosHistoryTimeEntryResponse"][];
+        };
+        /** ChronosHistoryTimeEntryResponse */
+        ChronosHistoryTimeEntryResponse: {
+            /** Hours */
+            hours: number;
+            /** Note */
+            note: string | null;
+            /** Recorded At */
+            recorded_at: string;
+            /** Source */
+            source: string;
+        };
+        /** ChronosIcsExportResponse */
+        ChronosIcsExportResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Horizon Days */
+            horizon_days: number;
+            /** Ics */
+            ics: string;
+        };
+        /** ChronosReflectionRequest */
+        ChronosReflectionRequest: {
+            /** Actual Hours */
+            actual_hours: number;
+            /** Course Id */
+            course_id: number;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Predicted Hours */
+            predicted_hours?: number | null;
+            /** Reflection Text */
+            reflection_text: string;
+        };
+        /** ChronosReflectionResponse */
+        ChronosReflectionResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Recorded */
+            recorded: boolean;
+        };
+        /** ChronosSyncResponse */
+        ChronosSyncResponse: {
+            /** Deadlines */
+            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
+            /** Synced Count */
+            synced_count: number;
+        };
+        /** ChronosTimeEntryRequest */
+        ChronosTimeEntryRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Hours */
+            hours: number;
+            /** Note */
+            note?: string | null;
+            /** Recorded At */
+            recorded_at?: string | null;
+        };
+        /** ChronosTimeEntryResponse */
+        ChronosTimeEntryResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Recorded */
+            recorded: boolean;
+        };
+        /** ChronosTimerStartResponse */
+        ChronosTimerStartResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Started */
+            started: boolean;
+        };
+        /** ChronosTimerStopResponse */
+        ChronosTimerStopResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Elapsed Hours */
+            elapsed_hours: number;
+        };
+        /** ChronosTrackedTimeResponse */
+        ChronosTrackedTimeResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Total Hours */
+            total_hours: number;
+        };
+        /** ChronosUpcomingExamListResponse */
+        ChronosUpcomingExamListResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Exams */
+            exams: components["schemas"]["ChronosDeadlineResponse"][];
+            /** Horizon Days */
+            horizon_days: number;
+        };
+        /** ChronosWorkloadDayResponse */
+        ChronosWorkloadDayResponse: {
+            /** Date */
+            date: string;
+            /** Items */
+            items: components["schemas"]["ChronosWorkloadItemResponse"][];
+        };
+        /** ChronosWorkloadItemResponse */
+        ChronosWorkloadItemResponse: {
+            /** Hours */
+            hours: number;
+            /** Name */
+            name: string;
+        };
+        /** ChronosWorkloadResponse */
+        ChronosWorkloadResponse: {
+            /** Course Id */
+            course_id: number | null;
+            /** Deadline Count */
+            deadline_count: number;
+            /** Horizon Days */
+            horizon_days: number;
+            /** Per Day */
+            per_day: components["schemas"]["ChronosWorkloadDayResponse"][];
+            /** Remaining Hours */
+            remaining_hours: number;
+            /** Total Estimated Hours */
+            total_estimated_hours: number;
+            /** Total Tracked Hours */
+            total_tracked_hours: number;
+        };
+        /**
+         * DeadlineType
+         * @description Source type of a deadline.
+         * @enum {string}
+         */
+        DeadlineType: "assignment" | "quiz" | "checkmark" | "exam" | "exam_registration";
+        /** DiscoveredLectureModuleResponse */
+        DiscoveredLectureModuleResponse: {
+            /** Course Fullname */
+            course_fullname: string;
+            /** Course Shortname */
+            course_shortname: string;
+            /** Episode Count */
+            episode_count: number;
+            /** Module Id */
+            module_id: number;
+            /** Module Name */
+            module_name: string;
+        };
+        /** DueReviewListResponse */
+        DueReviewListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Reviews */
+            reviews: components["schemas"]["ReviewScheduleItemResponse"][];
+        };
         /** ErrorDetail */
         ErrorDetail: {
             /** Code */
@@ -160,6 +1225,17 @@ export interface components {
         ErrorEnvelope: {
             detail: components["schemas"]["ErrorDetail"];
         };
+        /**
+         * FlashcardSource
+         * @description Origin of a flashcard.
+         * @enum {string}
+         */
+        FlashcardSource: "study" | "lecture" | "manual";
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
         /** HealthResponse */
         HealthResponse: {
             /**
@@ -169,6 +1245,179 @@ export interface components {
             status: "ok";
         };
         JsonPrimitive: string | number | boolean | null;
+        /** LectureDiscoveryResponse */
+        LectureDiscoveryResponse: {
+            /** Modules */
+            modules: components["schemas"]["DiscoveredLectureModuleResponse"][];
+        };
+        /** LectureEpisodeResponse */
+        LectureEpisodeResponse: {
+            /** Download Status */
+            download_status: string;
+            /** Episode Id */
+            episode_id: string;
+            /** Index Status */
+            index_status: string | null;
+            /** Lecture Number */
+            lecture_number: number | null;
+            /** Missed At */
+            missed_at: string | null;
+            /** Skip Reason */
+            skip_reason: string | null;
+            /** Title */
+            title: string;
+            /** Transcription Status */
+            transcription_status: string | null;
+        };
+        /** LectureEpisodesResponse */
+        LectureEpisodesResponse: {
+            /** Episodes */
+            episodes: components["schemas"]["LectureEpisodeResponse"][];
+            /** Module Id */
+            module_id: number;
+        };
+        /** LectureModuleResponse */
+        LectureModuleResponse: {
+            /** Course Name */
+            course_name: string;
+            /** Module Id */
+            module_id: number;
+            /** Series Id */
+            series_id: string;
+        };
+        /** LectureModulesResponse */
+        LectureModulesResponse: {
+            /** Modules */
+            modules: components["schemas"]["LectureModuleResponse"][];
+        };
+        /** LecturePipelineStatusResponse */
+        LecturePipelineStatusResponse: {
+            /** Episodes */
+            episodes: components["schemas"]["LectureEpisodeResponse"][];
+            /** Module Id */
+            module_id: number;
+        };
+        /** LectureSearchRequest */
+        LectureSearchRequest: {
+            /** Course Id */
+            course_id?: number | null;
+            /**
+             * Missed Only
+             * @default false
+             */
+            missed_only: boolean;
+            /** Module Id */
+            module_id: number;
+            /**
+             * N Results
+             * @default 5
+             */
+            n_results: number;
+            /** Query */
+            query: string;
+            /** Source Filter */
+            source_filter?: ("all" | "lecture" | "pdf") | null;
+        };
+        /** LectureSearchResponse */
+        LectureSearchResponse: {
+            /** Results */
+            results: components["schemas"]["LectureSearchResultResponse"][];
+        };
+        /** LectureSearchResultResponse */
+        LectureSearchResultResponse: {
+            /** Chunk Text */
+            chunk_text: string;
+            /** End Time */
+            end_time: number;
+            /** Episode Id */
+            episode_id: string;
+            /** Score */
+            score: number;
+            /** Source */
+            source: string;
+            /** Start Time */
+            start_time: number;
+            /** Title */
+            title: string;
+        };
+        /** ManualTopicRequest */
+        ManualTopicRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Topic */
+            topic: string;
+        };
+        /** QuickstartConfidenceRequest */
+        QuickstartConfidenceRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Ratings */
+            ratings: {
+                [key: string]: number;
+            };
+        };
+        /** QuickstartConfidenceResponse */
+        QuickstartConfidenceResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Saved Count */
+            saved_count: number;
+        };
+        /** QuickstartCourseResponse */
+        QuickstartCourseResponse: {
+            /** Fullname */
+            fullname: string;
+            /** Id */
+            id: number;
+            /** Shortname */
+            shortname: string;
+            /** Url */
+            url: string | null;
+        };
+        /** QuickstartManualTopicsRequest */
+        QuickstartManualTopicsRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Topics */
+            topics: string[];
+        };
+        /** QuickstartManualTopicsResponse */
+        QuickstartManualTopicsResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Topics */
+            topics: components["schemas"]["QuickstartTopicResponse"][];
+        };
+        /** QuickstartOverviewResponse */
+        QuickstartOverviewResponse: {
+            /** Completed Session Count */
+            completed_session_count: number;
+            /** Course Id */
+            course_id: number | null;
+            /** Courses */
+            courses: components["schemas"]["QuickstartCourseResponse"][];
+            nearest_deadline: components["schemas"]["ChronosDeadlineResponse"] | null;
+            /** Topics */
+            topics: components["schemas"]["QuickstartTopicResponse"][];
+        };
+        /** QuickstartSessionCountResponse */
+        QuickstartSessionCountResponse: {
+            /** Completed Session Count */
+            completed_session_count: number;
+            /** Course Id */
+            course_id: number | null;
+        };
+        /** QuickstartTopicResponse */
+        QuickstartTopicResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Frequency */
+            frequency: number;
+            /** Source */
+            source: string;
+            /** Topic */
+            topic: string;
+        };
         /** ReadinessCheck */
         ReadinessCheck: {
             /**
@@ -188,6 +1437,58 @@ export interface components {
              * @enum {string}
              */
             status: "ready" | "not_ready";
+        };
+        /** ReviewCompletionRequest */
+        ReviewCompletionRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Score */
+            score: number;
+            /** Topic */
+            topic: string;
+        };
+        /** ReviewScheduleItemResponse */
+        ReviewScheduleItemResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Difficulty */
+            difficulty: number;
+            /** Interval Days */
+            interval_days: number;
+            /** Interval Index */
+            interval_index: number;
+            /** Is Due */
+            is_due: boolean;
+            /** Last Reviewed At */
+            last_reviewed_at: string | null;
+            /** Next Review At */
+            next_review_at: string;
+            /** Review Count */
+            review_count: number;
+            /** Score At Last Review */
+            score_at_last_review: number | null;
+            /** Stability */
+            stability: number;
+            /** Topic */
+            topic: string;
+        };
+        /** ReviewScheduleListResponse */
+        ReviewScheduleListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Schedules */
+            schedules: components["schemas"]["ReviewScheduleItemResponse"][];
+        };
+        /** ReviewScheduleRequest */
+        ReviewScheduleRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Topic */
+            topic: string;
+        };
+        /** ReviewScheduleResponse */
+        ReviewScheduleResponse: {
+            schedule: components["schemas"]["ReviewScheduleItemResponse"];
         };
         /** SessionTenantResponse */
         SessionTenantResponse: {
@@ -226,6 +1527,189 @@ export interface components {
             selected_course_id?: string | null;
             /** Theme */
             theme: string;
+        };
+        /** StudyFlashcardItemResponse */
+        StudyFlashcardItemResponse: {
+            /** Back */
+            back: string;
+            /** Course Id */
+            course_id: number;
+            /** Created At */
+            created_at: string;
+            /** Front */
+            front: string;
+            /** Id */
+            id: number;
+            /** Source */
+            source: string;
+            /** Topic */
+            topic: string;
+        };
+        /** StudyFlashcardRequest */
+        StudyFlashcardRequest: {
+            /** Back */
+            back: string;
+            /** Course Id */
+            course_id: number;
+            /** Front */
+            front: string;
+            /** @default study */
+            source: components["schemas"]["FlashcardSource"];
+            /** Topic */
+            topic: string;
+        };
+        /** StudyFlashcardResponse */
+        StudyFlashcardResponse: {
+            flashcard: components["schemas"]["StudyFlashcardItemResponse"];
+        };
+        /** StudySessionCompleteRequest */
+        StudySessionCompleteRequest: {
+            /** Post Test Score */
+            post_test_score: number;
+            /** Pre Test Score */
+            pre_test_score: number;
+        };
+        /** StudySessionCompletionResponse */
+        StudySessionCompletionResponse: {
+            /** Completed */
+            completed: boolean;
+            /** Session Id */
+            session_id: number;
+        };
+        /** StudySessionItemResponse */
+        StudySessionItemResponse: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Course Id */
+            course_id: number;
+            /** Id */
+            id: number;
+            /** Improvement */
+            improvement: number | null;
+            /** Post Test Score */
+            post_test_score: number | null;
+            /** Pre Test Score */
+            pre_test_score: number | null;
+            /** Started At */
+            started_at: string;
+            /** Topic */
+            topic: string;
+        };
+        /** StudySessionListResponse */
+        StudySessionListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Sessions */
+            sessions: components["schemas"]["StudySessionItemResponse"][];
+        };
+        /** StudySessionResponse */
+        StudySessionResponse: {
+            session: components["schemas"]["StudySessionItemResponse"];
+        };
+        /** StudySessionStartRequest */
+        StudySessionStartRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Topic */
+            topic: string;
+        };
+        /** TopicConfidenceListResponse */
+        TopicConfidenceListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Ratings */
+            ratings: components["schemas"]["TopicConfidenceRatingResponse"][];
+        };
+        /** TopicConfidenceRatingResponse */
+        TopicConfidenceRatingResponse: {
+            /** Actual */
+            actual: number | null;
+            /** Calibration Error */
+            calibration_error: number | null;
+            /** Course Id */
+            course_id: number;
+            /** Is Blind Spot */
+            is_blind_spot: boolean;
+            /** Predicted */
+            predicted: number;
+            /** Rated At */
+            rated_at: string;
+            /** Topic */
+            topic: string;
+        };
+        /** TopicConfidenceRequest */
+        TopicConfidenceRequest: {
+            /** Course Id */
+            course_id: number;
+            /** Rating */
+            rating: number;
+            /** Topic */
+            topic: string;
+        };
+        /** TopicConfidenceResponse */
+        TopicConfidenceResponse: {
+            rating: components["schemas"]["TopicConfidenceRatingResponse"];
+        };
+        /** TopicExtractionRequest */
+        TopicExtractionRequest: {
+            /**
+             * Force
+             * @default false
+             */
+            force: boolean;
+            /** Module Id */
+            module_id: number;
+        };
+        /** TopicExtractionResponse */
+        TopicExtractionResponse: {
+            /** Module Id */
+            module_id: number;
+            /** Topics */
+            topics: components["schemas"]["TopicMappingResponse"][];
+        };
+        /** TopicListResponse */
+        TopicListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Topics */
+            topics: components["schemas"]["TopicMappingResponse"][];
+        };
+        /** TopicMappingResponse */
+        TopicMappingResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Frequency */
+            frequency: number;
+            /** Source */
+            source: string;
+            /** Topic */
+            topic: string;
+        };
+        /** TopicResponse */
+        TopicResponse: {
+            topic: components["schemas"]["TopicMappingResponse"];
+        };
+        /** UpcomingReviewListResponse */
+        UpcomingReviewListResponse: {
+            /** Course Id */
+            course_id: number;
+            /** Days Ahead */
+            days_ahead: number;
+            /** Reviews */
+            reviews: components["schemas"]["ReviewScheduleItemResponse"][];
+        };
+        /** ValidationError */
+        ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: never;
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
         };
         /** WebVitalsReservedResponse */
         WebVitalsReservedResponse: {
@@ -324,6 +1808,809 @@ export interface operations {
             };
         };
     };
+    updateCalibrationActualScore: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ActualScoreUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActualScoreUpdateResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listCalibrationBlindSpots: {
+        parameters: {
+            query: {
+                course_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRatingListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listCalibrationRatings: {
+        parameters: {
+            query: {
+                course_id: number;
+                topic?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRatingListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saveCalibrationConfidenceRating: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalibrationRatingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalibrationRatingSavedResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getChronosHistoryCalibration: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosHistoryCalibrationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listChronosHistoryDeadlines: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosHistoryDeadlineListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getChronosHistoryReflection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosHistoryReflectionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listChronosHistoryTimeEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosHistoryTimeEntryListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getChronosHistoryEffortDistribution: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosHistoryEffortDistributionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listChronosDeadlines: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                horizon_days?: number;
+                deadline_type?: components["schemas"]["DeadlineType"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosDeadlineListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    completeChronosDeadline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChronosCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosCompletionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getChronosTrackedTime: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosTrackedTimeResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recordChronosEstimate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChronosEstimateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosEstimateResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    exportChronosIcs: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosIcsExportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    recordChronosReflection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChronosReflectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosReflectionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    syncChronosDeadlines: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosSyncResponse"];
+                };
+            };
+        };
+    };
+    recordChronosTimeEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChronosTimeEntryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosTimeEntryResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    startChronosTimer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosTimerStartResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stopChronosTimer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosTimerStopResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listChronosUpcomingExams: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosUpcomingExamListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getChronosWorkload: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChronosWorkloadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -345,6 +2632,134 @@ export interface operations {
             };
         };
     };
+    discoverLectureModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LectureDiscoveryResponse"];
+                };
+            };
+        };
+    };
+    listLectureModules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LectureModulesResponse"];
+                };
+            };
+        };
+    };
+    listLectureModuleEpisodes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LectureEpisodesResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    readLecturePipelineStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                module_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LecturePipelineStatusResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     reserve_web_vitals_api_metrics_web_vitals_post: {
         parameters: {
             query?: never;
@@ -362,6 +2777,152 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebVitalsReservedResponse"];
+                };
+            };
+        };
+    };
+    saveQuickstartConfidence: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickstartConfidenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuickstartConfidenceResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveQuickstartManualTopics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuickstartManualTopicsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuickstartManualTopicsResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getQuickstartOverview: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuickstartOverviewResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getQuickstartSessionCount: {
+        parameters: {
+            query?: {
+                course_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuickstartSessionCountResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -393,6 +2954,222 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+        };
+    };
+    completeReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewScheduleResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listDueReviews: {
+        parameters: {
+            query: {
+                course_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["DueReviewListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listReviewSchedules: {
+        parameters: {
+            query: {
+                course_id: number;
+                topic?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewScheduleListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    scheduleReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewScheduleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewScheduleResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listUpcomingReviews: {
+        parameters: {
+            query: {
+                course_id: number;
+                days_ahead?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpcomingReviewListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    searchLectureContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LectureSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LectureSearchResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -439,6 +3216,349 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettingsResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveStudyFlashcard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyFlashcardRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyFlashcardResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listStudySessions: {
+        parameters: {
+            query: {
+                course_id: number;
+                topic?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySessionListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    startStudySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudySessionStartRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySessionResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    completeStudySession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudySessionCompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySessionCompletionResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTopics: {
+        parameters: {
+            query: {
+                course_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listTopicConfidenceRatings: {
+        parameters: {
+            query: {
+                course_id: number;
+                topic?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicConfidenceListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saveTopicConfidenceRating: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TopicConfidenceRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicConfidenceResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    extractTopics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TopicExtractionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicExtractionResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveManualTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualTopicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Unprocessable Content */

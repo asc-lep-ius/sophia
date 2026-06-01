@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 const SCHEMA_URL = new URL("../src/lib/api/schema.d.ts", import.meta.url);
 const HEADER_START_PATTERN = /^(\s*)headers: \{$/;
 const UNKNOWN_HEADER_INDEX_PATTERN = /^\s*\[name: string\]: unknown;$/;
+const VALIDATION_ERROR_START_PATTERN = /^(\s*)ValidationError: \{$/;
+const VALIDATION_ERROR_INPUT_PATTERN = /^(\s*)input\?: unknown;$/;
 
 /**
  * @typedef NormalizedOpenApiTypes
@@ -58,9 +60,44 @@ export function normalizeOpenApiTypesContent(content) {
     }
 
     index = endIndex;
+    continue;
   }
 
-  return { content: normalizedLines.join("\n"), removedIndexes };
+  /** @type {string[]} */
+  const validationNormalizedLines = [];
+
+  for (let index = 0; index < normalizedLines.length; index += 1) {
+    const line = normalizedLines[index] ?? "";
+    const match = VALIDATION_ERROR_START_PATTERN.exec(line);
+    if (!match) {
+      validationNormalizedLines.push(line);
+      continue;
+    }
+
+    const schemaIndent = match[1] ?? "";
+    validationNormalizedLines.push(line);
+    let endIndex = index + 1;
+
+    for (; endIndex < normalizedLines.length; endIndex += 1) {
+      const bodyLine = normalizedLines[endIndex] ?? "";
+      const inputMatch = VALIDATION_ERROR_INPUT_PATTERN.exec(bodyLine);
+      validationNormalizedLines.push(
+        inputMatch ? `${inputMatch[1] ?? ""}input?: never;` : bodyLine,
+      );
+
+      if (bodyLine === `${schemaIndent}};`) {
+        break;
+      }
+    }
+
+    if (endIndex >= normalizedLines.length) {
+      break;
+    }
+
+    index = endIndex;
+  }
+
+  return { content: validationNormalizedLines.join("\n"), removedIndexes };
 }
 
 /**

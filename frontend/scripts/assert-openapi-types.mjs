@@ -13,15 +13,13 @@ const STRING_DELIMITERS = new Set(["'", '"', "`"]);
 export function validateOpenApiTypes(content, sourcePath = "schema.d.ts") {
   const scannerState = { blockComment: false, stringDelimiter: null };
 
-  return content
-    .split(/\r?\n/)
-    .flatMap((line, index) => {
-      const typeLine = stripTypeScriptTrivia(line, scannerState);
-      return forbiddenTypeTokens(typeLine).map(
-        (typeToken) =>
-          `${sourcePath}:${index + 1} contains forbidden generated OpenAPI type \`${typeToken}\``,
-      );
-    });
+  return content.split(/\r?\n/).flatMap((line, index) => {
+    const typeLine = stripTypeScriptTrivia(line, scannerState);
+    return forbiddenTypeTokens(typeLine).map(
+      (typeToken) =>
+        `${sourcePath}:${index + 1} contains forbidden generated OpenAPI type \`${typeToken}\``,
+    );
+  });
 }
 
 /**
@@ -35,8 +33,8 @@ function stripTypeScriptTrivia(line, state) {
   let index = 0;
 
   while (index < line.length) {
-    const character = line[index];
-    const nextCharacter = line[index + 1];
+    const character = line[index] ?? "";
+    const nextCharacter = line[index + 1] ?? "";
 
     if (state.blockComment) {
       if (character === "*" && nextCharacter === "/") {
@@ -86,12 +84,16 @@ function stripTypeScriptTrivia(line, state) {
  * @returns {string[]}
  */
 function forbiddenTypeTokens(line) {
+  /** @type {string[]} */
   const tokens = [];
 
   for (const match of line.matchAll(FORBIDDEN_TYPE_PATTERN)) {
     const matchIndex = match.index ?? 0;
     const typeToken = match[0];
-    if (isTypePosition(line, matchIndex, typeToken.length) && !tokens.includes(typeToken)) {
+    if (
+      isTypePosition(line, matchIndex, typeToken.length) &&
+      !tokens.includes(typeToken)
+    ) {
       tokens.push(typeToken);
     }
   }
@@ -111,7 +113,9 @@ function isTypePosition(line, tokenStart, tokenLength) {
   const previousCharacter = previousIndex === -1 ? "" : line[previousIndex];
   const nextCharacter = nextIndex === -1 ? "" : line[nextIndex];
 
-  return previousCharacter !== "." && nextCharacter !== ":" && nextCharacter !== "?";
+  return (
+    previousCharacter !== "." && nextCharacter !== ":" && nextCharacter !== "?"
+  );
 }
 
 /**
@@ -121,7 +125,8 @@ function isTypePosition(line, tokenStart, tokenLength) {
  */
 function previousNonWhitespaceIndex(line, startIndex) {
   for (let index = startIndex; index >= 0; index -= 1) {
-    if (!/\s/.test(line[index])) {
+    const character = line[index];
+    if (character !== undefined && !/\s/.test(character)) {
       return index;
     }
   }
@@ -135,7 +140,8 @@ function previousNonWhitespaceIndex(line, startIndex) {
  */
 function nextNonWhitespaceIndex(line, startIndex) {
   for (let index = startIndex; index < line.length; index += 1) {
-    if (!/\s/.test(line[index])) {
+    const character = line[index];
+    if (character !== undefined && !/\s/.test(character)) {
       return index;
     }
   }
