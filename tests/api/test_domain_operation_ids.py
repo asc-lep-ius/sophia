@@ -179,6 +179,26 @@ DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
         "saveQuickstartManualTopics",
         "#/components/schemas/QuickstartManualTopicsResponse",
     ),
+    ("get", "/api/integrations/tiss/registration/favorites"): (
+        "listTissFavorites",
+        "#/components/schemas/TissFavoriteListResponse",
+    ),
+    ("get", "/api/integrations/tiss/registration/targets/{course_number}"): (
+        "getTissRegistrationTarget",
+        "#/components/schemas/TissRegistrationStatusResponse",
+    ),
+    ("get", "/api/integrations/tiss/registration/targets/{course_number}/groups"): (
+        "listTissRegistrationGroups",
+        "#/components/schemas/TissRegistrationGroupListResponse",
+    ),
+    ("get", "/api/integrations/tiss/registration/targets/{course_number}/exam-dates"): (
+        "listTissExamDates",
+        "#/components/schemas/TissExamDateListResponse",
+    ),
+    ("post", "/api/integrations/tiss/registration/attempts"): (
+        "createTissRegistrationAttempt",
+        "#/components/schemas/TissRegistrationAttemptResponse",
+    ),
     ("get", "/api/quickstart/session-count"): (
         "getQuickstartSessionCount",
         "#/components/schemas/QuickstartSessionCountResponse",

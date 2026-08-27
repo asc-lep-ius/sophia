@@ -68,6 +68,15 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
             "/api/calibration/actual-score",
         }
     ),
+    "registration": frozenset(
+        {
+            "/api/integrations/tiss/registration/favorites",
+            "/api/integrations/tiss/registration/attempts",
+            "/api/integrations/tiss/registration/targets/{course_number}",
+            "/api/integrations/tiss/registration/targets/{course_number}/groups",
+            "/api/integrations/tiss/registration/targets/{course_number}/exam-dates",
+        }
+    ),
     "quickstart": frozenset(
         {
             "/api/quickstart/overview",
