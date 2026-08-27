@@ -12,6 +12,7 @@ from sophia.api.schemas.topics.responses import (
     TopicExtractionResponse,
     TopicListResponse,
     TopicMappingResponse,
+    TopicOrigin,
     TopicResponse,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "TopicExtractionResponse",
     "TopicListResponse",
     "TopicMappingResponse",
+    "TopicOrigin",
     "TopicResponse",
 ]

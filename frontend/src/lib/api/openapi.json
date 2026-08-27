@@ -1653,11 +1653,6 @@
       },
       "ManualTopicRequest": {
         "properties": {
-          "course_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Course Id",
-            "type": "integer"
-          },
           "topic": {
             "minLength": 1,
             "title": "Topic",
@@ -1665,7 +1660,6 @@
           }
         },
         "required": [
-          "course_id",
           "topic"
         ],
         "title": "ManualTopicRequest",
@@ -2493,8 +2487,8 @@
       },
       "TopicConfidenceListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "ratings": {
@@ -2506,7 +2500,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "ratings"
         ],
         "title": "TopicConfidenceListResponse",
@@ -2536,13 +2530,13 @@
             ],
             "title": "Calibration Error"
           },
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "is_blind_spot": {
             "title": "Is Blind Spot",
             "type": "boolean"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
           },
           "predicted": {
             "title": "Predicted",
@@ -2559,7 +2553,7 @@
         },
         "required": [
           "topic",
-          "course_id",
+          "learning_path_id",
           "predicted",
           "actual",
           "rated_at",
@@ -2571,11 +2565,6 @@
       },
       "TopicConfidenceRequest": {
         "properties": {
-          "course_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Course Id",
-            "type": "integer"
-          },
           "rating": {
             "maximum": 5.0,
             "minimum": 1.0,
@@ -2589,7 +2578,6 @@
           }
         },
         "required": [
-          "course_id",
           "topic",
           "rating"
         ],
@@ -2610,27 +2598,27 @@
       },
       "TopicExtractionRequest": {
         "properties": {
+          "content_source_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Content Source Id",
+            "type": "integer"
+          },
           "force": {
             "default": false,
             "title": "Force",
             "type": "boolean"
-          },
-          "module_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Module Id",
-            "type": "integer"
           }
         },
         "required": [
-          "module_id"
+          "content_source_id"
         ],
         "title": "TopicExtractionRequest",
         "type": "object"
       },
       "TopicExtractionResponse": {
         "properties": {
-          "module_id": {
-            "title": "Module Id",
+          "content_source_id": {
+            "title": "Content Source Id",
             "type": "integer"
           },
           "topics": {
@@ -2642,7 +2630,7 @@
           }
         },
         "required": [
-          "module_id",
+          "content_source_id",
           "topics"
         ],
         "title": "TopicExtractionResponse",
@@ -2650,8 +2638,8 @@
       },
       "TopicListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topics": {
@@ -2663,7 +2651,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topics"
         ],
         "title": "TopicListResponse",
@@ -2671,17 +2659,16 @@
       },
       "TopicMappingResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "frequency": {
             "title": "Frequency",
             "type": "integer"
           },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
           "source": {
-            "title": "Source",
-            "type": "string"
+            "$ref": "#/components/schemas/TopicOrigin"
           },
           "topic": {
             "title": "Topic",
@@ -2690,12 +2677,22 @@
         },
         "required": [
           "topic",
-          "course_id",
+          "learning_path_id",
           "source",
           "frequency"
         ],
         "title": "TopicMappingResponse",
         "type": "object"
+      },
+      "TopicOrigin": {
+        "description": "Where a topic mapping came from, in source-agnostic terms.",
+        "enum": [
+          "transcript",
+          "quiz",
+          "manual"
+        ],
+        "title": "TopicOrigin",
+        "type": "string"
       },
       "TopicResponse": {
         "properties": {
@@ -4693,6 +4690,380 @@
         ]
       }
     },
+    "/api/learning-paths/{learning_path_id}/topics": {
+      "get": {
+        "operationId": "listTopics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topics",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "saveManualTopic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualTopicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Manual Topic",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/topics/confidence": {
+      "get": {
+        "operationId": "listTopicConfidenceRatings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topic Confidence Ratings",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "saveTopicConfidenceRating",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Topic Confidence Rating",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/topics/extract": {
+      "post": {
+        "operationId": "extractTopics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicExtractionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Extract Topics",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
     "/api/metrics/web-vitals": {
       "post": {
         "operationId": "reserve_web_vitals_api_metrics_web_vitals_post",
@@ -5782,346 +6153,6 @@
         "summary": "Mark Study Session Complete",
         "tags": [
           "study"
-        ]
-      }
-    },
-    "/api/topics": {
-      "get": {
-        "operationId": "listTopics",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "course_id",
-            "required": true,
-            "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Course Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TopicListResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "List Topics",
-        "tags": [
-          "topics"
-        ]
-      }
-    },
-    "/api/topics/confidence": {
-      "get": {
-        "operationId": "listTopicConfidenceRatings",
-        "parameters": [
-          {
-            "in": "query",
-            "name": "course_id",
-            "required": true,
-            "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Course Id",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "topic",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Topic"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TopicConfidenceListResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "List Topic Confidence Ratings",
-        "tags": [
-          "topics"
-        ]
-      },
-      "post": {
-        "operationId": "saveTopicConfidenceRating",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TopicConfidenceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TopicConfidenceResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Save Topic Confidence Rating",
-        "tags": [
-          "topics"
-        ]
-      }
-    },
-    "/api/topics/extract": {
-      "post": {
-        "operationId": "extractTopics",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/TopicExtractionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TopicExtractionResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Extract Topics",
-        "tags": [
-          "topics"
-        ]
-      }
-    },
-    "/api/topics/manual": {
-      "post": {
-        "operationId": "saveManualTopic",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ManualTopicRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TopicResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Unprocessable Content",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Create Manual Topic",
-        "tags": [
-          "topics"
         ]
       }
     }

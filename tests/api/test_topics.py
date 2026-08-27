@@ -22,10 +22,10 @@ class FakeAppContainer:
     db: object
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
@@ -34,13 +34,13 @@ def course_tenant(course_id: int = 12) -> SessionTenant:
 def test_topic_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    topics_response = harness.client.get("/api/topics?course_id=12")
+    topics_response = harness.client.get("/api/learning-paths/12/topics")
     extract_response = harness.client.post(
-        "/api/topics/extract",
-        json={"module_id": 12},
+        "/api/learning-paths/12/topics/extract",
+        json={"content_source_id": 12},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
-    confidence_response = harness.client.get("/api/topics/confidence?course_id=12")
+    confidence_response = harness.client.get("/api/learning-paths/12/topics/confidence")
 
     assert topics_response.status_code == 401
     assert extract_response.status_code == 401
@@ -51,7 +51,7 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -69,16 +69,16 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr(topics_router, "get_course_topics", fake_get_course_topics)
 
-    response = harness.client.get("/api/topics?course_id=12")
+    response = harness.client.get("/api/learning-paths/12/topics")
 
     assert response.status_code == 200
     assert response.json() == {
-        "course_id": 12,
+        "learning_path_id": 12,
         "topics": [
             {
                 "topic": "Dynamic programming",
-                "course_id": 12,
-                "source": "lecture",
+                "learning_path_id": 12,
+                "source": "transcript",
                 "frequency": 3,
             },
         ],
@@ -89,7 +89,9 @@ def test_extract_topics_requires_csrf() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    response = harness.client.post("/api/topics/extract", json={"module_id": 12})
+    response = harness.client.post(
+        "/api/learning-paths/12/topics/extract", json={"content_source_id": 12}
+    )
 
     assert response.status_code == 403
     assert response.json() == {"detail": {"code": "http.failed", "params": {}}}
@@ -99,7 +101,7 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -121,16 +123,21 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
     )
 
     response = harness.client.post(
-        "/api/topics/extract",
-        json={"module_id": 12, "force": True},
+        "/api/learning-paths/12/topics/extract",
+        json={"content_source_id": 12, "force": True},
         headers=csrf_headers(harness),
     )
 
     assert response.status_code == 200
     assert response.json() == {
-        "module_id": 12,
+        "content_source_id": 12,
         "topics": [
-            {"topic": "Graphs", "course_id": 12, "source": "lecture", "frequency": 1},
+            {
+                "topic": "Graphs",
+                "learning_path_id": 12,
+                "source": "transcript",
+                "frequency": 1,
+            },
         ],
     }
 
@@ -140,8 +147,8 @@ def test_save_manual_topic_requires_csrf() -> None:
     login(harness)
 
     response = harness.client.post(
-        "/api/topics/manual",
-        json={"course_id": 12, "topic": "Amortized analysis"},
+        "/api/learning-paths/12/topics",
+        json={"topic": "Amortized analysis"},
     )
 
     assert response.status_code == 403
@@ -152,7 +159,7 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -169,8 +176,8 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(topics_router, "save_manual_topic", fake_save_manual_topic)
 
     response = harness.client.post(
-        "/api/topics/manual",
-        json={"course_id": 12, "topic": "Amortized analysis"},
+        "/api/learning-paths/12/topics",
+        json={"topic": "Amortized analysis"},
         headers=csrf_headers(harness),
     )
 
@@ -178,7 +185,7 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
     assert response.json() == {
         "topic": {
             "topic": "Amortized analysis",
-            "course_id": 12,
+            "learning_path_id": 12,
             "source": "manual",
             "frequency": 1,
         },
@@ -189,7 +196,7 @@ def test_confidence_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -230,20 +237,20 @@ def test_confidence_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(topics_router, "get_confidence_ratings", fake_get_confidence_ratings)
     monkeypatch.setattr(topics_router, "rate_confidence", fake_rate_confidence)
 
-    list_response = harness.client.get("/api/topics/confidence?course_id=12")
+    list_response = harness.client.get("/api/learning-paths/12/topics/confidence")
     save_response = harness.client.post(
-        "/api/topics/confidence",
-        json={"course_id": 12, "topic": "Graphs", "rating": 4},
+        "/api/learning-paths/12/topics/confidence",
+        json={"topic": "Graphs", "rating": 4},
         headers=csrf_headers(harness),
     )
 
     assert list_response.status_code == 200
     assert list_response.json() == {
-        "course_id": 12,
+        "learning_path_id": 12,
         "ratings": [
             {
                 "topic": "Graphs",
-                "course_id": 12,
+                "learning_path_id": 12,
                 "predicted": 0.75,
                 "actual": None,
                 "rated_at": "2026-05-26T12:00:00Z",
@@ -256,7 +263,7 @@ def test_confidence_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
     assert save_response.json() == {
         "rating": {
             "topic": "Graphs",
-            "course_id": 12,
+            "learning_path_id": 12,
             "predicted": 0.75,
             "actual": None,
             "rated_at": "2026-05-26T12:00:00Z",
@@ -271,7 +278,7 @@ def test_topic_confidence_lookup_returns_404_for_missing_topic(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -283,19 +290,19 @@ def test_topic_confidence_lookup_returns_404_for_missing_topic(
 
     monkeypatch.setattr(topics_router, "get_confidence_ratings", fake_get_confidence_ratings)
 
-    response = harness.client.get("/api/topics/confidence?course_id=12&topic=Missing")
+    response = harness.client.get("/api/learning-paths/12/topics/confidence?topic=Missing")
 
     assert response.status_code == 404
     assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
 
 
-def test_topic_routes_reject_out_of_scope_course_ids_before_service_call(
+def test_topic_routes_reject_out_of_scope_learning_paths_before_service_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[str] = []
@@ -342,16 +349,16 @@ def test_topic_routes_reject_out_of_scope_course_ids_before_service_call(
     monkeypatch.setattr(topics_router, "get_confidence_ratings", fake_get_confidence_ratings)
     monkeypatch.setattr(topics_router, "rate_confidence", fake_rate_confidence)
 
-    list_response = harness.client.get("/api/topics?course_id=99")
+    list_response = harness.client.get("/api/learning-paths/99/topics")
     manual_response = harness.client.post(
-        "/api/topics/manual",
-        json={"course_id": 99, "topic": "Amortized analysis"},
+        "/api/learning-paths/99/topics",
+        json={"topic": "Amortized analysis"},
         headers=csrf_headers(harness),
     )
-    confidence_list_response = harness.client.get("/api/topics/confidence?course_id=99")
+    confidence_list_response = harness.client.get("/api/learning-paths/99/topics/confidence")
     confidence_save_response = harness.client.post(
-        "/api/topics/confidence",
-        json={"course_id": 99, "topic": "Graphs", "rating": 4},
+        "/api/learning-paths/99/topics/confidence",
+        json={"topic": "Graphs", "rating": 4},
         headers=csrf_headers(harness),
     )
 
@@ -362,13 +369,13 @@ def test_topic_routes_reject_out_of_scope_course_ids_before_service_call(
     assert calls == []
 
 
-def test_extract_topics_rejects_cross_course_module_before_service_call(
+def test_extract_topics_rejects_cross_scope_content_source_before_service_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[int] = []
@@ -389,8 +396,8 @@ def test_extract_topics_rejects_cross_course_module_before_service_call(
     )
 
     response = harness.client.post(
-        "/api/topics/extract",
-        json={"module_id": 99},
+        "/api/learning-paths/12/topics/extract",
+        json={"content_source_id": 99},
         headers=csrf_headers(harness),
     )
 
@@ -402,15 +409,15 @@ def test_topic_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    list_response = harness.client.get("/api/topics?course_id=0")
+    list_response = harness.client.get("/api/learning-paths/0/topics")
     extract_response = harness.client.post(
-        "/api/topics/extract",
-        json={"module_id": 0},
+        "/api/learning-paths/12/topics/extract",
+        json={"content_source_id": 0},
         headers=csrf_headers(harness),
     )
     confidence_response = harness.client.post(
-        "/api/topics/confidence",
-        json={"course_id": 12, "topic": "Graphs", "rating": 6},
+        "/api/learning-paths/12/topics/confidence",
+        json={"topic": "Graphs", "rating": 6},
         headers=csrf_headers(harness),
     )
 
@@ -424,16 +431,12 @@ def test_topics_openapi_contract_is_visible() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
     openapi = harness.app.openapi()
+    topics_path = "/api/learning-paths/{learning_path_id}/topics"
+    confidence_path = f"{topics_path}/confidence"
 
-    assert openapi["paths"]["/api/topics"]["get"]["tags"] == ["topics"]
-    assert openapi["paths"]["/api/topics"]["get"]["operationId"] == "listTopics"
-    assert openapi["paths"]["/api/topics/extract"]["post"]["operationId"] == "extractTopics"
-    assert openapi["paths"]["/api/topics/manual"]["post"]["operationId"] == "saveManualTopic"
-    assert (
-        openapi["paths"]["/api/topics/confidence"]["get"]["operationId"]
-        == "listTopicConfidenceRatings"
-    )
-    assert (
-        openapi["paths"]["/api/topics/confidence"]["post"]["operationId"]
-        == "saveTopicConfidenceRating"
-    )
+    assert openapi["paths"][topics_path]["get"]["tags"] == ["topics"]
+    assert openapi["paths"][topics_path]["get"]["operationId"] == "listTopics"
+    assert openapi["paths"][topics_path]["post"]["operationId"] == "saveManualTopic"
+    assert openapi["paths"][f"{topics_path}/extract"]["post"]["operationId"] == "extractTopics"
+    assert openapi["paths"][confidence_path]["get"]["operationId"] == "listTopicConfidenceRatings"
+    assert openapi["paths"][confidence_path]["post"]["operationId"] == "saveTopicConfidenceRating"

@@ -23,17 +23,23 @@ DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
         "readContentSourceIngestionStatus",
         "#/components/schemas/ContentSourceIngestionStatusResponse",
     ),
-    ("get", "/api/topics"): ("listTopics", "#/components/schemas/TopicListResponse"),
-    ("post", "/api/topics/extract"): (
+    ("get", "/api/learning-paths/{learning_path_id}/topics"): (
+        "listTopics",
+        "#/components/schemas/TopicListResponse",
+    ),
+    ("post", "/api/learning-paths/{learning_path_id}/topics"): (
+        "saveManualTopic",
+        "#/components/schemas/TopicResponse",
+    ),
+    ("post", "/api/learning-paths/{learning_path_id}/topics/extract"): (
         "extractTopics",
         "#/components/schemas/TopicExtractionResponse",
     ),
-    ("post", "/api/topics/manual"): ("saveManualTopic", "#/components/schemas/TopicResponse"),
-    ("get", "/api/topics/confidence"): (
+    ("get", "/api/learning-paths/{learning_path_id}/topics/confidence"): (
         "listTopicConfidenceRatings",
         "#/components/schemas/TopicConfidenceListResponse",
     ),
-    ("post", "/api/topics/confidence"): (
+    ("post", "/api/learning-paths/{learning_path_id}/topics/confidence"): (
         "saveTopicConfidenceRating",
         "#/components/schemas/TopicConfidenceResponse",
     ),

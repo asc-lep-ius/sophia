@@ -15,10 +15,9 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
     ),
     "topics": frozenset(
         {
-            "/api/topics",
-            "/api/topics/extract",
-            "/api/topics/manual",
-            "/api/topics/confidence",
+            "/api/learning-paths/{learning_path_id}/topics",
+            "/api/learning-paths/{learning_path_id}/topics/extract",
+            "/api/learning-paths/{learning_path_id}/topics/confidence",
         }
     ),
     "study": frozenset(
