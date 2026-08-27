@@ -1194,6 +1194,309 @@
         "title": "ChronosWorkloadResponse",
         "type": "object"
       },
+      "ContentItemListResponse": {
+        "properties": {
+          "content_source_id": {
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_source_id",
+          "items"
+        ],
+        "title": "ContentItemListResponse",
+        "type": "object"
+      },
+      "ContentItemResponse": {
+        "properties": {
+          "download_status": {
+            "title": "Download Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Status"
+          },
+          "missed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed At"
+          },
+          "sequence_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Number"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Status"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "download_status",
+          "skip_reason",
+          "transcription_status",
+          "index_status",
+          "sequence_number",
+          "missed_at"
+        ],
+        "title": "ContentItemResponse",
+        "type": "object"
+      },
+      "ContentSearchRequest": {
+        "properties": {
+          "content_source_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "missed_only": {
+            "default": false,
+            "title": "Missed Only",
+            "type": "boolean"
+          },
+          "n_results": {
+            "default": 5,
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "N Results",
+            "type": "integer"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "source_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentSearchSourceFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "content_source_id",
+          "query"
+        ],
+        "title": "ContentSearchRequest",
+        "type": "object"
+      },
+      "ContentSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSearchResultResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "ContentSearchResponse",
+        "type": "object"
+      },
+      "ContentSearchResultResponse": {
+        "properties": {
+          "chunk_text": {
+            "title": "Chunk Text",
+            "type": "string"
+          },
+          "content_item_id": {
+            "title": "Content Item Id",
+            "type": "string"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_item_id",
+          "title",
+          "chunk_text",
+          "start_time",
+          "end_time",
+          "score",
+          "source"
+        ],
+        "title": "ContentSearchResultResponse",
+        "type": "object"
+      },
+      "ContentSearchSourceFilter": {
+        "description": "Kind of indexed content a search request is restricted to.",
+        "enum": [
+          "all",
+          "transcript",
+          "document"
+        ],
+        "title": "ContentSearchSourceFilter",
+        "type": "string"
+      },
+      "ContentSourceDiscoveryResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredContentSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "title": "ContentSourceDiscoveryResponse",
+        "type": "object"
+      },
+      "ContentSourceIngestionStatusResponse": {
+        "properties": {
+          "content_source_id": {
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_source_id",
+          "items"
+        ],
+        "title": "ContentSourceIngestionStatusResponse",
+        "type": "object"
+      },
+      "ContentSourceListResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "title": "ContentSourceListResponse",
+        "type": "object"
+      },
+      "ContentSourceResponse": {
+        "properties": {
+          "external_ref": {
+            "title": "External Ref",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "external_ref",
+          "title"
+        ],
+        "title": "ContentSourceResponse",
+        "type": "object"
+      },
       "DeadlineType": {
         "description": "Source type of a deadline.",
         "enum": [
@@ -1206,37 +1509,37 @@
         "title": "DeadlineType",
         "type": "string"
       },
-      "DiscoveredLectureModuleResponse": {
+      "DiscoveredContentSourceResponse": {
         "properties": {
-          "course_fullname": {
-            "title": "Course Fullname",
-            "type": "string"
-          },
-          "course_shortname": {
-            "title": "Course Shortname",
-            "type": "string"
-          },
-          "episode_count": {
-            "title": "Episode Count",
+          "content_item_count": {
+            "title": "Content Item Count",
             "type": "integer"
           },
-          "module_id": {
-            "title": "Module Id",
+          "id": {
+            "title": "Id",
             "type": "integer"
           },
-          "module_name": {
-            "title": "Module Name",
+          "learning_path_short_title": {
+            "title": "Learning Path Short Title",
+            "type": "string"
+          },
+          "learning_path_title": {
+            "title": "Learning Path Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
             "type": "string"
           }
         },
         "required": [
-          "course_shortname",
-          "course_fullname",
-          "module_id",
-          "module_name",
-          "episode_count"
+          "id",
+          "title",
+          "learning_path_title",
+          "learning_path_short_title",
+          "content_item_count"
         ],
-        "title": "DiscoveredLectureModuleResponse",
+        "title": "DiscoveredContentSourceResponse",
         "type": "object"
       },
       "DueReviewListResponse": {
@@ -1347,305 +1650,6 @@
             "type": "null"
           }
         ]
-      },
-      "LectureDiscoveryResponse": {
-        "properties": {
-          "modules": {
-            "items": {
-              "$ref": "#/components/schemas/DiscoveredLectureModuleResponse"
-            },
-            "title": "Modules",
-            "type": "array"
-          }
-        },
-        "required": [
-          "modules"
-        ],
-        "title": "LectureDiscoveryResponse",
-        "type": "object"
-      },
-      "LectureEpisodeResponse": {
-        "properties": {
-          "download_status": {
-            "title": "Download Status",
-            "type": "string"
-          },
-          "episode_id": {
-            "title": "Episode Id",
-            "type": "string"
-          },
-          "index_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Index Status"
-          },
-          "lecture_number": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Lecture Number"
-          },
-          "missed_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Missed At"
-          },
-          "skip_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Skip Reason"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          },
-          "transcription_status": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Transcription Status"
-          }
-        },
-        "required": [
-          "episode_id",
-          "title",
-          "download_status",
-          "skip_reason",
-          "transcription_status",
-          "index_status",
-          "lecture_number",
-          "missed_at"
-        ],
-        "title": "LectureEpisodeResponse",
-        "type": "object"
-      },
-      "LectureEpisodesResponse": {
-        "properties": {
-          "episodes": {
-            "items": {
-              "$ref": "#/components/schemas/LectureEpisodeResponse"
-            },
-            "title": "Episodes",
-            "type": "array"
-          },
-          "module_id": {
-            "title": "Module Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "module_id",
-          "episodes"
-        ],
-        "title": "LectureEpisodesResponse",
-        "type": "object"
-      },
-      "LectureModuleResponse": {
-        "properties": {
-          "course_name": {
-            "title": "Course Name",
-            "type": "string"
-          },
-          "module_id": {
-            "title": "Module Id",
-            "type": "integer"
-          },
-          "series_id": {
-            "title": "Series Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "module_id",
-          "series_id",
-          "course_name"
-        ],
-        "title": "LectureModuleResponse",
-        "type": "object"
-      },
-      "LectureModulesResponse": {
-        "properties": {
-          "modules": {
-            "items": {
-              "$ref": "#/components/schemas/LectureModuleResponse"
-            },
-            "title": "Modules",
-            "type": "array"
-          }
-        },
-        "required": [
-          "modules"
-        ],
-        "title": "LectureModulesResponse",
-        "type": "object"
-      },
-      "LecturePipelineStatusResponse": {
-        "properties": {
-          "episodes": {
-            "items": {
-              "$ref": "#/components/schemas/LectureEpisodeResponse"
-            },
-            "title": "Episodes",
-            "type": "array"
-          },
-          "module_id": {
-            "title": "Module Id",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "module_id",
-          "episodes"
-        ],
-        "title": "LecturePipelineStatusResponse",
-        "type": "object"
-      },
-      "LectureSearchRequest": {
-        "properties": {
-          "course_id": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Course Id"
-          },
-          "missed_only": {
-            "default": false,
-            "title": "Missed Only",
-            "type": "boolean"
-          },
-          "module_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Module Id",
-            "type": "integer"
-          },
-          "n_results": {
-            "default": 5,
-            "maximum": 25.0,
-            "minimum": 1.0,
-            "title": "N Results",
-            "type": "integer"
-          },
-          "query": {
-            "minLength": 1,
-            "title": "Query",
-            "type": "string"
-          },
-          "source_filter": {
-            "anyOf": [
-              {
-                "enum": [
-                  "all",
-                  "lecture",
-                  "pdf"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Filter"
-          }
-        },
-        "required": [
-          "module_id",
-          "query"
-        ],
-        "title": "LectureSearchRequest",
-        "type": "object"
-      },
-      "LectureSearchResponse": {
-        "properties": {
-          "results": {
-            "items": {
-              "$ref": "#/components/schemas/LectureSearchResultResponse"
-            },
-            "title": "Results",
-            "type": "array"
-          }
-        },
-        "required": [
-          "results"
-        ],
-        "title": "LectureSearchResponse",
-        "type": "object"
-      },
-      "LectureSearchResultResponse": {
-        "properties": {
-          "chunk_text": {
-            "title": "Chunk Text",
-            "type": "string"
-          },
-          "end_time": {
-            "title": "End Time",
-            "type": "number"
-          },
-          "episode_id": {
-            "title": "Episode Id",
-            "type": "string"
-          },
-          "score": {
-            "title": "Score",
-            "type": "number"
-          },
-          "source": {
-            "title": "Source",
-            "type": "string"
-          },
-          "start_time": {
-            "title": "Start Time",
-            "type": "number"
-          },
-          "title": {
-            "title": "Title",
-            "type": "string"
-          }
-        },
-        "required": [
-          "episode_id",
-          "title",
-          "chunk_text",
-          "start_time",
-          "end_time",
-          "score",
-          "source"
-        ],
-        "title": "LectureSearchResultResponse",
-        "type": "object"
       },
       "ManualTopicRequest": {
         "properties": {
@@ -4448,6 +4452,218 @@
         ]
       }
     },
+    "/api/content-sources": {
+      "get": {
+        "operationId": "listContentSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Content Sources",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/discover": {
+      "post": {
+        "operationId": "discoverContentSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Discover Content Sources",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/{content_source_id}/content-items": {
+      "get": {
+        "operationId": "listContentItems",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_source_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Content Source Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Content Items",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/{content_source_id}/ingestion-status": {
+      "get": {
+        "operationId": "readContentSourceIngestionStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_source_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Content Source Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceIngestionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Content Source Ingestion Status",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -4474,218 +4690,6 @@
         "summary": "Health",
         "tags": [
           "health"
-        ]
-      }
-    },
-    "/api/lectures/discover": {
-      "post": {
-        "operationId": "discoverLectureModules",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LectureDiscoveryResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Discover Modules",
-        "tags": [
-          "lectures"
-        ]
-      }
-    },
-    "/api/lectures/modules": {
-      "get": {
-        "operationId": "listLectureModules",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LectureModulesResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "List Lecture Modules",
-        "tags": [
-          "lectures"
-        ]
-      }
-    },
-    "/api/lectures/modules/{module_id}/episodes": {
-      "get": {
-        "operationId": "listLectureModuleEpisodes",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "module_id",
-            "required": true,
-            "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Module Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LectureEpisodesResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "List Lecture Module Episodes",
-        "tags": [
-          "lectures"
-        ]
-      }
-    },
-    "/api/lectures/modules/{module_id}/pipeline-status": {
-      "get": {
-        "operationId": "readLecturePipelineStatus",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "module_id",
-            "required": true,
-            "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Module Id",
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LecturePipelineStatusResponse"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorEnvelope"
-                }
-              }
-            },
-            "description": "Not Found",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error",
-            "headers": {
-              "X-Request-ID": {
-                "description": "Request correlation identifier.",
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Read Lecture Pipeline Status",
-        "tags": [
-          "lectures"
         ]
       }
     },
@@ -5365,14 +5369,14 @@
         ]
       }
     },
-    "/api/search/lectures": {
+    "/api/search": {
       "post": {
-        "operationId": "searchLectureContent",
+        "operationId": "searchContent",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/LectureSearchRequest"
+                "$ref": "#/components/schemas/ContentSearchRequest"
               }
             }
           },
@@ -5383,7 +5387,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/LectureSearchResponse"
+                  "$ref": "#/components/schemas/ContentSearchResponse"
                 }
               }
             },
@@ -5416,7 +5420,7 @@
             }
           }
         },
-        "summary": "Search Lecture Content",
+        "summary": "Search Content",
         "tags": [
           "search"
         ]

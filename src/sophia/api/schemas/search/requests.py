@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from enum import StrEnum
 
 from pydantic import Field
 
 from sophia.api.schemas.common import ApiModel
 
 
-class LectureSearchRequest(ApiModel):
-    module_id: int = Field(gt=0)
+class ContentSearchSourceFilter(StrEnum):
+    """Kind of indexed content a search request is restricted to."""
+
+    ALL = "all"
+    TRANSCRIPT = "transcript"
+    DOCUMENT = "document"
+
+
+class ContentSearchRequest(ApiModel):
+    content_source_id: int = Field(gt=0)
     query: str = Field(min_length=1)
     n_results: int = Field(default=5, ge=1, le=25)
-    source_filter: Literal["all", "lecture", "pdf"] | None = None
-    course_id: int | None = Field(default=None, gt=0)
+    source_filter: ContentSearchSourceFilter | None = None
+    learning_path_id: int | None = Field(default=None, gt=0)
     missed_only: bool = False

@@ -5,12 +5,12 @@ from __future__ import annotations
 from ._session_helpers import build_harness
 
 EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
-    "lectures": frozenset(
+    "content_sources": frozenset(
         {
-            "/api/lectures/modules",
-            "/api/lectures/modules/{module_id}/episodes",
-            "/api/lectures/modules/{module_id}/pipeline-status",
-            "/api/lectures/discover",
+            "/api/content-sources",
+            "/api/content-sources/discover",
+            "/api/content-sources/{content_source_id}/content-items",
+            "/api/content-sources/{content_source_id}/ingestion-status",
         }
     ),
     "topics": frozenset(
@@ -61,7 +61,7 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
             "/api/chronos-history/calibration",
         }
     ),
-    "search": frozenset({"/api/search/lectures"}),
+    "search": frozenset({"/api/search"}),
     "calibration": frozenset(
         {
             "/api/calibration/ratings",

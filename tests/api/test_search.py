@@ -1,4 +1,4 @@
-"""Lecture search API route tests."""
+"""Content search API route tests."""
 
 from __future__ import annotations
 
@@ -22,32 +22,32 @@ class FakeAppContainer:
     db: object
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
 
 
-def test_search_lectures_requires_authentication() -> None:
+def test_search_content_requires_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
     response = harness.client.post(
-        "/api/search/lectures",
-        json={"module_id": 12, "query": "dynamic programming"},
+        "/api/search",
+        json={"content_source_id": 12, "query": "dynamic programming"},
     )
 
     assert response.status_code == 401
     assert response.json() == {"detail": {"code": "auth.failed", "params": {}}}
 
 
-def test_search_lectures_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_search_content_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -83,13 +83,13 @@ def test_search_lectures_returns_response_shape(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
 
     response = harness.client.post(
-        "/api/search/lectures",
+        "/api/search",
         json={
-            "module_id": 12,
+            "content_source_id": 12,
             "query": "dynamic programming",
             "n_results": 3,
-            "source_filter": "lecture",
-            "course_id": 12,
+            "source_filter": "transcript",
+            "learning_path_id": 12,
             "missed_only": True,
         },
     )
@@ -98,25 +98,25 @@ def test_search_lectures_returns_response_shape(monkeypatch: pytest.MonkeyPatch)
     assert response.json() == {
         "results": [
             {
-                "episode_id": "episode-1",
+                "content_item_id": "episode-1",
                 "title": "Lecture 1",
                 "chunk_text": "Optimal substructure and overlapping subproblems.",
                 "start_time": 12.5,
                 "end_time": 24.0,
                 "score": 0.89,
-                "source": "lecture",
+                "source": "transcript",
             },
         ],
     }
 
 
-def test_search_lectures_uses_session_course_when_course_id_omitted(
+def test_search_content_uses_session_scope_when_learning_path_id_omitted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[tuple[int, int | None]] = []
@@ -140,8 +140,8 @@ def test_search_lectures_uses_session_course_when_course_id_omitted(
     monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
 
     response = harness.client.post(
-        "/api/search/lectures",
-        json={"module_id": 12, "query": "dynamic programming"},
+        "/api/search",
+        json={"content_source_id": 12, "query": "dynamic programming"},
     )
 
     assert response.status_code == 200
@@ -149,13 +149,13 @@ def test_search_lectures_uses_session_course_when_course_id_omitted(
     assert calls == [(12, 12)]
 
 
-def test_search_lectures_rejects_out_of_scope_course_before_service_call(
+def test_search_content_rejects_out_of_scope_learning_path_before_service_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[str] = []
@@ -176,21 +176,21 @@ def test_search_lectures_rejects_out_of_scope_course_before_service_call(
     monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
 
     response = harness.client.post(
-        "/api/search/lectures",
-        json={"module_id": 12, "query": "dynamic programming", "course_id": 99},
+        "/api/search",
+        json={"content_source_id": 12, "query": "dynamic programming", "learning_path_id": 99},
     )
 
     assert response.status_code == 403
     assert calls == []
 
 
-def test_search_lectures_rejects_cross_course_module_before_service_call(
+def test_search_content_rejects_cross_scope_content_source_before_service_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[int] = []
@@ -211,21 +211,21 @@ def test_search_lectures_rejects_cross_course_module_before_service_call(
     monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
 
     response = harness.client.post(
-        "/api/search/lectures",
-        json={"module_id": 99, "query": "dynamic programming"},
+        "/api/search",
+        json={"content_source_id": 99, "query": "dynamic programming"},
     )
 
     assert response.status_code == 403
     assert calls == []
 
 
-def test_search_lectures_request_validation_returns_422() -> None:
+def test_search_content_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
     response = harness.client.post(
-        "/api/search/lectures",
-        json={"module_id": 0, "query": ""},
+        "/api/search",
+        json={"content_source_id": 0, "query": ""},
     )
 
     assert response.status_code == 422
@@ -235,8 +235,72 @@ def test_search_lectures_request_validation_returns_422() -> None:
 def test_search_openapi_contract_is_visible() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    operation = harness.app.openapi()["paths"]["/api/search/lectures"]["post"]
+    operation = harness.app.openapi()["paths"]["/api/search"]["post"]
 
     assert operation["tags"] == ["search"]
-    assert operation["operationId"] == "searchLectureContent"
+    assert operation["operationId"] == "searchContent"
     assert "requestBody" in operation
+
+
+def test_search_content_maps_document_filter_to_index_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=learning_path_tenant(12),
+    )
+    login(harness)
+
+    async def fake_search_lectures(
+        _app: AppContainer,
+        _module_id: int,
+        _query: str,
+        *,
+        n_results: int = 5,
+        source_filter: str | None = None,
+        course_id: int | None = None,
+        missed_only: bool = False,
+    ) -> list[LectureSearchResult]:
+        assert source_filter == "pdf"
+        return [
+            LectureSearchResult(
+                episode_id="mat-7",
+                title="Skriptum",
+                chunk_text="Amortized analysis.",
+                start_time=0.0,
+                end_time=0.0,
+                score=0.42,
+                source="pdf",
+            ),
+        ]
+
+    monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
+
+    response = harness.client.post(
+        "/api/search",
+        json={
+            "content_source_id": 12,
+            "query": "amortized analysis",
+            "source_filter": "document",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["results"][0]["source"] == "document"
+
+
+def test_search_content_rejects_unknown_source_filter() -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(12),
+    )
+    login(harness)
+
+    response = harness.client.post(
+        "/api/search",
+        json={"content_source_id": 12, "query": "greedy", "source_filter": "lecture"},
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "request.validation_failed", "params": {}}}

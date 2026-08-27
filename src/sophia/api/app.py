@@ -18,8 +18,8 @@ from sophia.api.routers import (
     calibration,
     chronos,
     chronos_history,
+    content_sources,
     health,
-    lectures,
     metrics,
     quickstart,
     review,
@@ -83,7 +83,7 @@ def create_api_app(
     api_app.include_router(metrics.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(auth.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(settings_router.router, prefix=_normalize_route_prefix(route_prefix))
-    api_app.include_router(lectures.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(content_sources.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(search.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(topics.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(study.router, prefix=_normalize_route_prefix(route_prefix))

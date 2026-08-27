@@ -7,21 +7,21 @@ from typing import cast
 from ._session_helpers import build_harness
 
 DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
-    ("get", "/api/lectures/modules"): (
-        "listLectureModules",
-        "#/components/schemas/LectureModulesResponse",
+    ("get", "/api/content-sources"): (
+        "listContentSources",
+        "#/components/schemas/ContentSourceListResponse",
     ),
-    ("get", "/api/lectures/modules/{module_id}/episodes"): (
-        "listLectureModuleEpisodes",
-        "#/components/schemas/LectureEpisodesResponse",
+    ("post", "/api/content-sources/discover"): (
+        "discoverContentSources",
+        "#/components/schemas/ContentSourceDiscoveryResponse",
     ),
-    ("get", "/api/lectures/modules/{module_id}/pipeline-status"): (
-        "readLecturePipelineStatus",
-        "#/components/schemas/LecturePipelineStatusResponse",
+    ("get", "/api/content-sources/{content_source_id}/content-items"): (
+        "listContentItems",
+        "#/components/schemas/ContentItemListResponse",
     ),
-    ("post", "/api/lectures/discover"): (
-        "discoverLectureModules",
-        "#/components/schemas/LectureDiscoveryResponse",
+    ("get", "/api/content-sources/{content_source_id}/ingestion-status"): (
+        "readContentSourceIngestionStatus",
+        "#/components/schemas/ContentSourceIngestionStatusResponse",
     ),
     ("get", "/api/topics"): ("listTopics", "#/components/schemas/TopicListResponse"),
     ("post", "/api/topics/extract"): (
@@ -141,9 +141,9 @@ DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
         "getChronosHistoryCalibration",
         "#/components/schemas/ChronosHistoryCalibrationResponse",
     ),
-    ("post", "/api/search/lectures"): (
-        "searchLectureContent",
-        "#/components/schemas/LectureSearchResponse",
+    ("post", "/api/search"): (
+        "searchContent",
+        "#/components/schemas/ContentSearchResponse",
     ),
     ("get", "/api/calibration/ratings"): (
         "listCalibrationRatings",

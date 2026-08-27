@@ -5,8 +5,8 @@ from __future__ import annotations
 from sophia.api.schemas.common import ApiModel
 
 
-class LectureSearchResultResponse(ApiModel):
-    episode_id: str
+class ContentSearchResultResponse(ApiModel):
+    content_item_id: str
     title: str
     chunk_text: str
     start_time: float
@@ -15,5 +15,5 @@ class LectureSearchResultResponse(ApiModel):
     source: str
 
 
-class LectureSearchResponse(ApiModel):
-    results: list[LectureSearchResultResponse]
+class ContentSearchResponse(ApiModel):
+    results: list[ContentSearchResultResponse]
