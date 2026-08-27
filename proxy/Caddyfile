@@ -35,7 +35,7 @@
 		jitter 10
 	}
 
-	@api_uploads path /api/uploads/* /api/imports/* /api/lectures/*/upload* /api/files/*
+	@api_uploads path /api/uploads/* /api/imports/* /api/content-sources/*/upload* /api/files/*
 	request_body @api_uploads {
 		max_size 512MB
 	}
