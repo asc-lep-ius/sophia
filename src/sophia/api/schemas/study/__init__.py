@@ -2,6 +2,7 @@
 
 from sophia.api.schemas.study.requests import (
     StudyFlashcardRequest,
+    StudyFlashcardSource,
     StudySessionCompleteRequest,
     StudySessionStartRequest,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "StudyFlashcardItemResponse",
     "StudyFlashcardRequest",
     "StudyFlashcardResponse",
+    "StudyFlashcardSource",
     "StudySessionCompleteRequest",
     "StudySessionCompletionResponse",
     "StudySessionItemResponse",

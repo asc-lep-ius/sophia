@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from sophia.api.schemas.common import ApiModel
+from sophia.api.schemas.study.requests import StudyFlashcardSource  # noqa: TC001
 
 
 class StudySessionItemResponse(ApiModel):
     id: int
-    course_id: int
+    learning_path_id: int
     topic: str
     pre_test_score: float | None
     post_test_score: float | None
@@ -17,7 +18,7 @@ class StudySessionItemResponse(ApiModel):
 
 
 class StudySessionListResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     sessions: list[StudySessionItemResponse]
 
 
@@ -32,11 +33,11 @@ class StudySessionCompletionResponse(ApiModel):
 
 class StudyFlashcardItemResponse(ApiModel):
     id: int
-    course_id: int
+    learning_path_id: int
     topic: str
     front: str
     back: str
-    source: str
+    source: StudyFlashcardSource
     created_at: str
 
 

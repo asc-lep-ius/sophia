@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 router = APIRouter(tags=["review"])
 
-CourseIdQuery = Annotated[int, Query(gt=0)]
+LearningPathIdQuery = Annotated[int, Query(gt=0)]
 DaysAheadQuery = Annotated[int, Query(ge=1, le=365)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
 
@@ -41,13 +41,13 @@ TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
     operation_id="listDueReviews",
 )
 async def list_due_reviews(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
 ) -> DueReviewListResponse:
-    await require_course_scope(request, course_id)
-    reviews = await get_due_reviews(get_app_container(request).db, course_id)
+    await require_course_scope(request, learning_path_id)
+    reviews = await get_due_reviews(get_app_container(request).db, learning_path_id)
     return DueReviewListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         reviews=[_review_schedule_response(review) for review in reviews],
     )
 
@@ -58,18 +58,18 @@ async def list_due_reviews(
     operation_id="listUpcomingReviews",
 )
 async def list_upcoming_reviews(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
     days_ahead: DaysAheadQuery = 3,
 ) -> UpcomingReviewListResponse:
-    await require_course_scope(request, course_id)
+    await require_course_scope(request, learning_path_id)
     reviews = await get_upcoming_reviews(
         get_app_container(request).db,
-        course_id,
+        learning_path_id,
         days_ahead=days_ahead,
     )
     return UpcomingReviewListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         days_ahead=days_ahead,
         reviews=[_review_schedule_response(review) for review in reviews],
     )
@@ -82,18 +82,18 @@ async def list_upcoming_reviews(
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
 async def list_review_schedules(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> ReviewScheduleListResponse:
-    await require_course_scope(request, course_id)
-    schedules = await get_all_schedules(get_app_container(request).db, course_id)
+    await require_course_scope(request, learning_path_id)
+    schedules = await get_all_schedules(get_app_container(request).db, learning_path_id)
     if topic is not None:
         schedules = [schedule for schedule in schedules if schedule.topic == topic]
         if not schedules:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return ReviewScheduleListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         schedules=[_review_schedule_response(schedule) for schedule in schedules],
     )
 
@@ -108,11 +108,11 @@ async def create_review_schedule(
     payload: ReviewScheduleRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     schedule = await schedule_review(
         get_app_container(request).db,
         payload.topic,
-        payload.course_id,
+        payload.learning_path_id,
     )
     return ReviewScheduleResponse(schedule=_review_schedule_response(schedule))
 
@@ -127,11 +127,11 @@ async def complete_review_schedule(
     payload: ReviewCompletionRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     schedule = await complete_review(
         get_app_container(request).db,
         payload.topic,
-        payload.course_id,
+        payload.learning_path_id,
         payload.score,
     )
     return ReviewScheduleResponse(schedule=_review_schedule_response(schedule))
@@ -140,7 +140,7 @@ async def complete_review_schedule(
 def _review_schedule_response(schedule: ReviewSchedule) -> ReviewScheduleItemResponse:
     return ReviewScheduleItemResponse(
         topic=schedule.topic,
-        course_id=schedule.course_id,
+        learning_path_id=schedule.course_id,
         interval_index=schedule.interval_index,
         interval_days=schedule.interval_days,
         last_reviewed_at=schedule.last_reviewed_at,

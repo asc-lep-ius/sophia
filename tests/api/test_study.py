@@ -39,10 +39,10 @@ class FakeStudySessionDb:
         return FakeStudySessionCursor(None if course_id is None else (course_id,))
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
@@ -51,10 +51,10 @@ def course_tenant(course_id: int = 12) -> SessionTenant:
 def test_study_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    list_response = harness.client.get("/api/study/sessions?course_id=12")
+    list_response = harness.client.get("/api/study/sessions?learning_path_id=12")
     start_response = harness.client.post(
         "/api/study/sessions",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
     complete_response = harness.client.post(
@@ -64,7 +64,7 @@ def test_study_routes_require_authentication() -> None:
     )
     flashcard_response = harness.client.post(
         "/api/study/flashcards",
-        json={"course_id": 12, "topic": "Graphs", "front": "Q", "back": "A"},
+        json={"learning_path_id": 12, "topic": "Graphs", "front": "Q", "back": "A"},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
 
@@ -78,7 +78,7 @@ def test_list_study_sessions_returns_response_shape(monkeypatch: pytest.MonkeyPa
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -104,15 +104,15 @@ def test_list_study_sessions_returns_response_shape(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(study_router, "get_study_sessions", fake_get_study_sessions)
 
-    response = harness.client.get("/api/study/sessions?course_id=12&topic=Graphs")
+    response = harness.client.get("/api/study/sessions?learning_path_id=12&topic=Graphs")
 
     assert response.status_code == 200
     assert response.json() == {
-        "course_id": 12,
+        "learning_path_id": 12,
         "sessions": [
             {
                 "id": 7,
-                "course_id": 12,
+                "learning_path_id": 12,
                 "topic": "Graphs",
                 "pre_test_score": 0.25,
                 "post_test_score": 0.75,
@@ -129,7 +129,7 @@ def test_list_study_sessions_returns_404_for_missing_topic(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -142,7 +142,7 @@ def test_list_study_sessions_returns_404_for_missing_topic(
 
     monkeypatch.setattr(study_router, "get_study_sessions", fake_get_study_sessions)
 
-    response = harness.client.get("/api/study/sessions?course_id=12&topic=Missing")
+    response = harness.client.get("/api/study/sessions?learning_path_id=12&topic=Missing")
 
     assert response.status_code == 404
     assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
@@ -154,7 +154,7 @@ def test_start_study_session_requires_csrf() -> None:
 
     response = harness.client.post(
         "/api/study/sessions",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
     )
 
     assert response.status_code == 403
@@ -165,7 +165,7 @@ def test_start_study_session_returns_created_session(monkeypatch: pytest.MonkeyP
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -188,7 +188,7 @@ def test_start_study_session_returns_created_session(monkeypatch: pytest.MonkeyP
 
     response = harness.client.post(
         "/api/study/sessions",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
         headers=csrf_headers(harness),
     )
 
@@ -196,7 +196,7 @@ def test_start_study_session_returns_created_session(monkeypatch: pytest.MonkeyP
     assert response.json() == {
         "session": {
             "id": 8,
-            "course_id": 12,
+            "learning_path_id": 12,
             "topic": "Graphs",
             "pre_test_score": None,
             "post_test_score": None,
@@ -224,7 +224,7 @@ def test_complete_study_session_returns_completion(monkeypatch: pytest.MonkeyPat
     fake_app = FakeAppContainer(db=FakeStudySessionDb({8: 12}))
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     calls: list[tuple[object, int, float, float]] = []
@@ -256,7 +256,7 @@ def test_save_flashcard_requires_csrf() -> None:
 
     response = harness.client.post(
         "/api/study/flashcards",
-        json={"course_id": 12, "topic": "Graphs", "front": "Q", "back": "A"},
+        json={"learning_path_id": 12, "topic": "Graphs", "front": "Q", "back": "A"},
     )
 
     assert response.status_code == 403
@@ -267,7 +267,7 @@ def test_save_flashcard_returns_saved_flashcard(monkeypatch: pytest.MonkeyPatch)
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -300,7 +300,7 @@ def test_save_flashcard_returns_saved_flashcard(monkeypatch: pytest.MonkeyPatch)
     response = harness.client.post(
         "/api/study/flashcards",
         json={
-            "course_id": 12,
+            "learning_path_id": 12,
             "topic": "Graphs",
             "front": "What is a cut?",
             "back": "A partition of graph vertices.",
@@ -313,7 +313,7 @@ def test_save_flashcard_returns_saved_flashcard(monkeypatch: pytest.MonkeyPatch)
     assert response.json() == {
         "flashcard": {
             "id": 9,
-            "course_id": 12,
+            "learning_path_id": 12,
             "topic": "Graphs",
             "front": "What is a cut?",
             "back": "A partition of graph vertices.",
@@ -327,10 +327,10 @@ def test_study_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    list_response = harness.client.get("/api/study/sessions?course_id=0")
+    list_response = harness.client.get("/api/study/sessions?learning_path_id=0")
     start_response = harness.client.post(
         "/api/study/sessions",
-        json={"course_id": 12, "topic": ""},
+        json={"learning_path_id": 12, "topic": ""},
         headers=csrf_headers(harness),
     )
     complete_response = harness.client.post(
@@ -348,19 +348,19 @@ def test_study_request_validation_returns_422() -> None:
 def test_study_routes_reject_out_of_scope_course_ids() -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
 
-    list_response = harness.client.get("/api/study/sessions?course_id=99")
+    list_response = harness.client.get("/api/study/sessions?learning_path_id=99")
     start_response = harness.client.post(
         "/api/study/sessions",
-        json={"course_id": 99, "topic": "Graphs"},
+        json={"learning_path_id": 99, "topic": "Graphs"},
         headers=csrf_headers(harness),
     )
     flashcard_response = harness.client.post(
         "/api/study/flashcards",
-        json={"course_id": 99, "topic": "Graphs", "front": "Q", "back": "A"},
+        json={"learning_path_id": 99, "topic": "Graphs", "front": "Q", "back": "A"},
         headers=csrf_headers(harness),
     )
 
@@ -375,7 +375,7 @@ def test_complete_study_session_rejects_cross_course_session(
     fake_app = FakeAppContainer(db=FakeStudySessionDb({8: 99}))
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[int] = []
@@ -406,7 +406,7 @@ def test_invalid_flashcard_source_returns_422_without_writing(
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     calls: list[str] = []
@@ -435,7 +435,7 @@ def test_invalid_flashcard_source_returns_422_without_writing(
     response = harness.client.post(
         "/api/study/flashcards",
         json={
-            "course_id": 12,
+            "learning_path_id": 12,
             "topic": "Graphs",
             "front": "Q",
             "back": "A",
@@ -460,3 +460,50 @@ def test_study_openapi_contract_is_visible() -> None:
         == "completeStudySession"
     )
     assert openapi["paths"]["/api/study/flashcards"]["post"]["operationId"] == "saveStudyFlashcard"
+
+
+def test_flashcard_transcript_source_maps_to_domain_lecture_source(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=learning_path_tenant(12),
+    )
+    login(harness)
+
+    async def fake_save_flashcard(
+        _db: object,
+        course_id: int,
+        topic: str,
+        front: str,
+        back: str,
+        source: str = "study",
+    ) -> StudentFlashcard:
+        assert source == "lecture"
+        return StudentFlashcard(
+            id=7,
+            course_id=course_id,
+            topic=topic,
+            front=front,
+            back=back,
+            source=FlashcardSource.LECTURE,
+            created_at="2026-05-29T10:00:00Z",
+        )
+
+    monkeypatch.setattr(study_router, "save_flashcard", fake_save_flashcard)
+
+    response = harness.client.post(
+        "/api/study/flashcards",
+        json={
+            "learning_path_id": 12,
+            "topic": "Graphs",
+            "front": "Q",
+            "back": "A",
+            "source": "transcript",
+        },
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["flashcard"]["source"] == "transcript"

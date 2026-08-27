@@ -22,10 +22,10 @@ class FakeAppContainer:
     db: object
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
@@ -34,16 +34,16 @@ def course_tenant(course_id: int = 12) -> SessionTenant:
 def test_review_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    due_response = harness.client.get("/api/review/due?course_id=12")
-    upcoming_response = harness.client.get("/api/review/upcoming?course_id=12")
+    due_response = harness.client.get("/api/review/due?learning_path_id=12")
+    upcoming_response = harness.client.get("/api/review/upcoming?learning_path_id=12")
     schedule_response = harness.client.post(
         "/api/review/schedules",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
     complete_response = harness.client.post(
         "/api/review/complete",
-        json={"course_id": 12, "topic": "Graphs", "score": 0.75},
+        json={"learning_path_id": 12, "topic": "Graphs", "score": 0.75},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
 
@@ -57,7 +57,7 @@ def test_review_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPat
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     schedule = ReviewSchedule(
@@ -98,13 +98,13 @@ def test_review_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(review_router, "get_upcoming_reviews", fake_get_upcoming_reviews)
     monkeypatch.setattr(review_router, "get_all_schedules", fake_get_all_schedules)
 
-    due_response = harness.client.get("/api/review/due?course_id=12")
-    upcoming_response = harness.client.get("/api/review/upcoming?course_id=12&days_ahead=5")
-    schedules_response = harness.client.get("/api/review/schedules?course_id=12")
+    due_response = harness.client.get("/api/review/due?learning_path_id=12")
+    upcoming_response = harness.client.get("/api/review/upcoming?learning_path_id=12&days_ahead=5")
+    schedules_response = harness.client.get("/api/review/schedules?learning_path_id=12")
 
     expected_schedule = {
         "topic": "Graphs",
-        "course_id": 12,
+        "learning_path_id": 12,
         "interval_index": 1,
         "interval_days": 3,
         "last_reviewed_at": "2026-05-25T12:00:00Z",
@@ -116,15 +116,15 @@ def test_review_read_routes_return_response_shapes(monkeypatch: pytest.MonkeyPat
         "is_due": True,
     }
     assert due_response.status_code == 200
-    assert due_response.json() == {"course_id": 12, "reviews": [expected_schedule]}
+    assert due_response.json() == {"learning_path_id": 12, "reviews": [expected_schedule]}
     assert upcoming_response.status_code == 200
     assert upcoming_response.json() == {
-        "course_id": 12,
+        "learning_path_id": 12,
         "days_ahead": 5,
         "reviews": [expected_schedule],
     }
     assert schedules_response.status_code == 200
-    assert schedules_response.json() == {"course_id": 12, "schedules": [expected_schedule]}
+    assert schedules_response.json() == {"learning_path_id": 12, "schedules": [expected_schedule]}
 
 
 def test_review_schedules_return_404_for_missing_topic(
@@ -132,7 +132,7 @@ def test_review_schedules_return_404_for_missing_topic(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -141,7 +141,7 @@ def test_review_schedules_return_404_for_missing_topic(
 
     monkeypatch.setattr(review_router, "get_all_schedules", fake_get_all_schedules)
 
-    response = harness.client.get("/api/review/schedules?course_id=12&topic=Missing")
+    response = harness.client.get("/api/review/schedules?learning_path_id=12&topic=Missing")
 
     assert response.status_code == 404
     assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
@@ -153,7 +153,7 @@ def test_schedule_review_requires_csrf() -> None:
 
     response = harness.client.post(
         "/api/review/schedules",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
     )
 
     assert response.status_code == 403
@@ -164,7 +164,7 @@ def test_schedule_review_returns_created_schedule(monkeypatch: pytest.MonkeyPatc
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -178,7 +178,7 @@ def test_schedule_review_returns_created_schedule(monkeypatch: pytest.MonkeyPatc
 
     response = harness.client.post(
         "/api/review/schedules",
-        json={"course_id": 12, "topic": "Graphs"},
+        json={"learning_path_id": 12, "topic": "Graphs"},
         headers=csrf_headers(harness),
     )
 
@@ -193,7 +193,7 @@ def test_complete_review_requires_csrf() -> None:
 
     response = harness.client.post(
         "/api/review/complete",
-        json={"course_id": 12, "topic": "Graphs", "score": 0.75},
+        json={"learning_path_id": 12, "topic": "Graphs", "score": 0.75},
     )
 
     assert response.status_code == 403
@@ -204,7 +204,7 @@ def test_complete_review_returns_updated_schedule(monkeypatch: pytest.MonkeyPatc
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -229,7 +229,7 @@ def test_complete_review_returns_updated_schedule(monkeypatch: pytest.MonkeyPatc
 
     response = harness.client.post(
         "/api/review/complete",
-        json={"course_id": 12, "topic": "Graphs", "score": 0.75},
+        json={"learning_path_id": 12, "topic": "Graphs", "score": 0.75},
         headers=csrf_headers(harness),
     )
 
@@ -242,11 +242,11 @@ def test_review_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    due_response = harness.client.get("/api/review/due?course_id=0")
-    upcoming_response = harness.client.get("/api/review/upcoming?course_id=12&days_ahead=0")
+    due_response = harness.client.get("/api/review/due?learning_path_id=0")
+    upcoming_response = harness.client.get("/api/review/upcoming?learning_path_id=12&days_ahead=0")
     complete_response = harness.client.post(
         "/api/review/complete",
-        json={"course_id": 12, "topic": "Graphs", "score": 1.5},
+        json={"learning_path_id": 12, "topic": "Graphs", "score": 1.5},
         headers=csrf_headers(harness),
     )
 
@@ -259,21 +259,21 @@ def test_review_request_validation_returns_422() -> None:
 def test_review_routes_reject_out_of_scope_course_ids() -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
 
-    due_response = harness.client.get("/api/review/due?course_id=99")
-    upcoming_response = harness.client.get("/api/review/upcoming?course_id=99")
-    schedules_response = harness.client.get("/api/review/schedules?course_id=99")
+    due_response = harness.client.get("/api/review/due?learning_path_id=99")
+    upcoming_response = harness.client.get("/api/review/upcoming?learning_path_id=99")
+    schedules_response = harness.client.get("/api/review/schedules?learning_path_id=99")
     schedule_response = harness.client.post(
         "/api/review/schedules",
-        json={"course_id": 99, "topic": "Graphs"},
+        json={"learning_path_id": 99, "topic": "Graphs"},
         headers=csrf_headers(harness),
     )
     complete_response = harness.client.post(
         "/api/review/complete",
-        json={"course_id": 99, "topic": "Graphs", "score": 0.75},
+        json={"learning_path_id": 99, "topic": "Graphs", "score": 0.75},
         headers=csrf_headers(harness),
     )
 

@@ -24,10 +24,10 @@ class FakeAppContainer:
     db: object
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
@@ -56,18 +56,18 @@ def sample_deadline() -> Deadline:
 def test_quickstart_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    overview_response = harness.client.get("/api/quickstart/overview?course_id=12")
+    overview_response = harness.client.get("/api/quickstart/overview?learning_path_id=12")
     confidence_response = harness.client.post(
         "/api/quickstart/confidence",
-        json={"course_id": 12, "ratings": {"Graphs": 4}},
+        json={"learning_path_id": 12, "ratings": {"Graphs": 4}},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
     topics_response = harness.client.post(
         "/api/quickstart/manual-topics",
-        json={"course_id": 12, "topics": ["Graphs"]},
+        json={"learning_path_id": 12, "topics": ["Graphs"]},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
-    count_response = harness.client.get("/api/quickstart/session-count?course_id=12")
+    count_response = harness.client.get("/api/quickstart/session-count?learning_path_id=12")
 
     assert overview_response.status_code == 401
     assert confidence_response.status_code == 401
@@ -79,7 +79,7 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     saved_confidence: list[tuple[int, dict[str, int]]] = []
@@ -147,32 +147,32 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         fake_get_completed_session_count,
     )
 
-    overview_response = harness.client.get("/api/quickstart/overview?course_id=12")
+    overview_response = harness.client.get("/api/quickstart/overview?learning_path_id=12")
     confidence_response = harness.client.post(
         "/api/quickstart/confidence",
-        json={"course_id": 12, "ratings": {"Graphs": 4, "Flows": 3}},
+        json={"learning_path_id": 12, "ratings": {"Graphs": 4, "Flows": 3}},
         headers=csrf_headers(harness),
     )
     topics_response = harness.client.post(
         "/api/quickstart/manual-topics",
-        json={"course_id": 12, "topics": ["Graphs", "Flows"]},
+        json={"learning_path_id": 12, "topics": ["Graphs", "Flows"]},
         headers=csrf_headers(harness),
     )
-    count_response = harness.client.get("/api/quickstart/session-count?course_id=12")
+    count_response = harness.client.get("/api/quickstart/session-count?learning_path_id=12")
 
     assert overview_response.status_code == 200
     assert overview_response.json() == {
-        "course_id": 12,
-        "courses": [
+        "learning_path_id": 12,
+        "learning_paths": [
             {
                 "id": 12,
-                "fullname": "Algorithms",
-                "shortname": "186.813",
+                "title": "Algorithms",
+                "short_title": "186.813",
                 "url": "https://tu.test/course/12",
             },
         ],
         "topics": [
-            {"topic": "Graphs", "course_id": 12, "source": "lecture", "frequency": 1},
+            {"topic": "Graphs", "learning_path_id": 12, "source": "transcript", "frequency": 1},
         ],
         "nearest_deadline": {
             "id": "assign:1",
@@ -188,25 +188,25 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         },
         "completed_session_count": 2,
     }
-    assert confidence_response.json() == {"course_id": 12, "saved_count": 2}
+    assert confidence_response.json() == {"learning_path_id": 12, "saved_count": 2}
     assert topics_response.json() == {
-        "course_id": 12,
+        "learning_path_id": 12,
         "topics": [
-            {"topic": "Graphs", "course_id": 12, "source": "manual", "frequency": 1},
-            {"topic": "Flows", "course_id": 12, "source": "manual", "frequency": 1},
+            {"topic": "Graphs", "learning_path_id": 12, "source": "manual", "frequency": 1},
+            {"topic": "Flows", "learning_path_id": 12, "source": "manual", "frequency": 1},
         ],
     }
-    assert count_response.json() == {"course_id": 12, "completed_session_count": 2}
+    assert count_response.json() == {"learning_path_id": 12, "completed_session_count": 2}
     assert saved_confidence == [(12, {"Graphs": 4, "Flows": 3})]
 
 
-def test_quickstart_optional_course_routes_use_session_course(
+def test_quickstart_optional_routes_use_session_learning_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     course_ids: list[int | None] = []
@@ -257,17 +257,17 @@ def test_quickstart_optional_course_routes_use_session_course(
 
     assert overview_response.status_code == 200
     assert count_response.status_code == 200
-    assert overview_response.json()["course_id"] == 12
-    assert overview_response.json()["courses"] == [
+    assert overview_response.json()["learning_path_id"] == 12
+    assert overview_response.json()["learning_paths"] == [
         {
             "id": 12,
-            "fullname": "Algorithms",
-            "shortname": "186.813",
+            "title": "Algorithms",
+            "short_title": "186.813",
             "url": "https://tu.test/course/12",
         },
     ]
     assert overview_response.json()["completed_session_count"] == 2
-    assert count_response.json() == {"course_id": 12, "completed_session_count": 2}
+    assert count_response.json() == {"learning_path_id": 12, "completed_session_count": 2}
     assert course_ids == [12, 12]
 
 
@@ -276,7 +276,7 @@ def test_quickstart_overview_missing_filtered_course_returns_404(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -298,7 +298,7 @@ def test_quickstart_overview_missing_filtered_course_returns_404(
         fake_get_quickstart_overview,
     )
 
-    response = harness.client.get("/api/quickstart/overview?course_id=12")
+    response = harness.client.get("/api/quickstart/overview?learning_path_id=12")
 
     assert response.status_code == 404
     assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
@@ -310,11 +310,11 @@ def test_quickstart_mutating_routes_require_csrf() -> None:
 
     confidence_response = harness.client.post(
         "/api/quickstart/confidence",
-        json={"course_id": 12, "ratings": {"Graphs": 4}},
+        json={"learning_path_id": 12, "ratings": {"Graphs": 4}},
     )
     topics_response = harness.client.post(
         "/api/quickstart/manual-topics",
-        json={"course_id": 12, "topics": ["Graphs"]},
+        json={"learning_path_id": 12, "topics": ["Graphs"]},
     )
 
     assert confidence_response.status_code == 403
@@ -325,15 +325,15 @@ def test_quickstart_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    overview_response = harness.client.get("/api/quickstart/overview?course_id=0")
+    overview_response = harness.client.get("/api/quickstart/overview?learning_path_id=0")
     confidence_response = harness.client.post(
         "/api/quickstart/confidence",
-        json={"course_id": 12, "ratings": {"Graphs": 0}},
+        json={"learning_path_id": 12, "ratings": {"Graphs": 0}},
         headers=csrf_headers(harness),
     )
     topics_response = harness.client.post(
         "/api/quickstart/manual-topics",
-        json={"course_id": 12, "topics": []},
+        json={"learning_path_id": 12, "topics": []},
         headers=csrf_headers(harness),
     )
 
@@ -350,7 +350,7 @@ def test_quickstart_routes_reject_out_of_scope_course_ids(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[str] = []
@@ -374,18 +374,18 @@ def test_quickstart_routes_reject_out_of_scope_course_ids(
         fake_get_quickstart_overview,
     )
 
-    overview_response = harness.client.get("/api/quickstart/overview?course_id=99")
+    overview_response = harness.client.get("/api/quickstart/overview?learning_path_id=99")
     confidence_response = harness.client.post(
         "/api/quickstart/confidence",
-        json={"course_id": 99, "ratings": {"Graphs": 4}},
+        json={"learning_path_id": 99, "ratings": {"Graphs": 4}},
         headers=csrf_headers(harness),
     )
     topics_response = harness.client.post(
         "/api/quickstart/manual-topics",
-        json={"course_id": 99, "topics": ["Graphs"]},
+        json={"learning_path_id": 99, "topics": ["Graphs"]},
         headers=csrf_headers(harness),
     )
-    count_response = harness.client.get("/api/quickstart/session-count?course_id=99")
+    count_response = harness.client.get("/api/quickstart/session-count?learning_path_id=99")
 
     assert overview_response.status_code == 403
     assert confidence_response.status_code == 403

@@ -9,9 +9,9 @@
             "title": "Actual",
             "type": "number"
           },
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topic": {
@@ -21,7 +21,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic",
           "actual"
         ],
@@ -34,8 +34,8 @@
             "title": "Actual",
             "type": "number"
           },
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topic": {
@@ -48,7 +48,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic",
           "actual",
           "updated"
@@ -144,8 +144,8 @@
       },
       "CalibrationRatingListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "ratings": {
@@ -157,7 +157,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "ratings"
         ],
         "title": "CalibrationRatingListResponse",
@@ -165,9 +165,9 @@
       },
       "CalibrationRatingRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "rating": {
@@ -183,7 +183,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic",
           "rating"
         ],
@@ -214,10 +214,6 @@
             ],
             "title": "Calibration Error"
           },
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "difficulty_level": {
             "title": "Difficulty Level",
             "type": "string"
@@ -225,6 +221,10 @@
           "is_blind_spot": {
             "title": "Is Blind Spot",
             "type": "boolean"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
           },
           "predicted": {
             "title": "Predicted",
@@ -241,7 +241,7 @@
         },
         "required": [
           "topic",
-          "course_id",
+          "learning_path_id",
           "predicted",
           "actual",
           "rated_at",
@@ -1544,8 +1544,8 @@
       },
       "DueReviewListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "reviews": {
@@ -1557,7 +1557,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "reviews"
         ],
         "title": "DueReviewListResponse",
@@ -1594,16 +1594,6 @@
         ],
         "title": "ErrorEnvelope",
         "type": "object"
-      },
-      "FlashcardSource": {
-        "description": "Origin of a flashcard.",
-        "enum": [
-          "study",
-          "lecture",
-          "manual"
-        ],
-        "title": "FlashcardSource",
-        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -1667,9 +1657,9 @@
       },
       "QuickstartConfidenceRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "ratings": {
@@ -1684,7 +1674,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "ratings"
         ],
         "title": "QuickstartConfidenceRequest",
@@ -1692,8 +1682,8 @@
       },
       "QuickstartConfidenceResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "saved_count": {
@@ -1702,24 +1692,24 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "saved_count"
         ],
         "title": "QuickstartConfidenceResponse",
         "type": "object"
       },
-      "QuickstartCourseResponse": {
+      "QuickstartLearningPathResponse": {
         "properties": {
-          "fullname": {
-            "title": "Fullname",
-            "type": "string"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
           },
-          "shortname": {
-            "title": "Shortname",
+          "short_title": {
+            "title": "Short Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
             "type": "string"
           },
           "url": {
@@ -1736,18 +1726,18 @@
         },
         "required": [
           "id",
-          "fullname",
-          "shortname",
+          "title",
+          "short_title",
           "url"
         ],
-        "title": "QuickstartCourseResponse",
+        "title": "QuickstartLearningPathResponse",
         "type": "object"
       },
       "QuickstartManualTopicsRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topics": {
@@ -1761,7 +1751,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topics"
         ],
         "title": "QuickstartManualTopicsRequest",
@@ -1769,8 +1759,8 @@
       },
       "QuickstartManualTopicsResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topics": {
@@ -1782,7 +1772,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topics"
         ],
         "title": "QuickstartManualTopicsResponse",
@@ -1794,7 +1784,7 @@
             "title": "Completed Session Count",
             "type": "integer"
           },
-          "course_id": {
+          "learning_path_id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -1803,13 +1793,13 @@
                 "type": "null"
               }
             ],
-            "title": "Course Id"
+            "title": "Learning Path Id"
           },
-          "courses": {
+          "learning_paths": {
             "items": {
-              "$ref": "#/components/schemas/QuickstartCourseResponse"
+              "$ref": "#/components/schemas/QuickstartLearningPathResponse"
             },
-            "title": "Courses",
+            "title": "Learning Paths",
             "type": "array"
           },
           "nearest_deadline": {
@@ -1831,8 +1821,8 @@
           }
         },
         "required": [
-          "course_id",
-          "courses",
+          "learning_path_id",
+          "learning_paths",
           "topics",
           "nearest_deadline",
           "completed_session_count"
@@ -1846,7 +1836,7 @@
             "title": "Completed Session Count",
             "type": "integer"
           },
-          "course_id": {
+          "learning_path_id": {
             "anyOf": [
               {
                 "type": "integer"
@@ -1855,11 +1845,11 @@
                 "type": "null"
               }
             ],
-            "title": "Course Id"
+            "title": "Learning Path Id"
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "completed_session_count"
         ],
         "title": "QuickstartSessionCountResponse",
@@ -1867,17 +1857,16 @@
       },
       "QuickstartTopicResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "frequency": {
             "title": "Frequency",
             "type": "integer"
           },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
           "source": {
-            "title": "Source",
-            "type": "string"
+            "$ref": "#/components/schemas/TopicOrigin"
           },
           "topic": {
             "title": "Topic",
@@ -1886,7 +1875,7 @@
         },
         "required": [
           "topic",
-          "course_id",
+          "learning_path_id",
           "source",
           "frequency"
         ],
@@ -1942,9 +1931,9 @@
       },
       "ReviewCompletionRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "score": {
@@ -1960,7 +1949,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic",
           "score"
         ],
@@ -1969,10 +1958,6 @@
       },
       "ReviewScheduleItemResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "difficulty": {
             "title": "Difficulty",
             "type": "number"
@@ -1999,6 +1984,10 @@
               }
             ],
             "title": "Last Reviewed At"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
           },
           "next_review_at": {
             "title": "Next Review At",
@@ -2030,7 +2019,7 @@
         },
         "required": [
           "topic",
-          "course_id",
+          "learning_path_id",
           "interval_index",
           "interval_days",
           "last_reviewed_at",
@@ -2046,8 +2035,8 @@
       },
       "ReviewScheduleListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "schedules": {
@@ -2059,7 +2048,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "schedules"
         ],
         "title": "ReviewScheduleListResponse",
@@ -2067,9 +2056,9 @@
       },
       "ReviewScheduleRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topic": {
@@ -2079,7 +2068,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic"
         ],
         "title": "ReviewScheduleRequest",
@@ -2231,10 +2220,6 @@
             "title": "Back",
             "type": "string"
           },
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -2247,9 +2232,12 @@
             "title": "Id",
             "type": "integer"
           },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
           "source": {
-            "title": "Source",
-            "type": "string"
+            "$ref": "#/components/schemas/StudyFlashcardSource"
           },
           "topic": {
             "title": "Topic",
@@ -2258,7 +2246,7 @@
         },
         "required": [
           "id",
-          "course_id",
+          "learning_path_id",
           "topic",
           "front",
           "back",
@@ -2275,18 +2263,18 @@
             "title": "Back",
             "type": "string"
           },
-          "course_id": {
-            "exclusiveMinimum": 0.0,
-            "title": "Course Id",
-            "type": "integer"
-          },
           "front": {
             "minLength": 1,
             "title": "Front",
             "type": "string"
           },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
           "source": {
-            "$ref": "#/components/schemas/FlashcardSource",
+            "$ref": "#/components/schemas/StudyFlashcardSource",
             "default": "study"
           },
           "topic": {
@@ -2296,7 +2284,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic",
           "front",
           "back"
@@ -2315,6 +2303,16 @@
         ],
         "title": "StudyFlashcardResponse",
         "type": "object"
+      },
+      "StudyFlashcardSource": {
+        "description": "Where a flashcard came from, in source-agnostic terms.",
+        "enum": [
+          "study",
+          "transcript",
+          "manual"
+        ],
+        "title": "StudyFlashcardSource",
+        "type": "string"
       },
       "StudySessionCompleteRequest": {
         "properties": {
@@ -2369,10 +2367,6 @@
             ],
             "title": "Completed At"
           },
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "id": {
             "title": "Id",
             "type": "integer"
@@ -2387,6 +2381,10 @@
               }
             ],
             "title": "Improvement"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
           },
           "post_test_score": {
             "anyOf": [
@@ -2421,7 +2419,7 @@
         },
         "required": [
           "id",
-          "course_id",
+          "learning_path_id",
           "topic",
           "pre_test_score",
           "post_test_score",
@@ -2434,8 +2432,8 @@
       },
       "StudySessionListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "sessions": {
@@ -2447,7 +2445,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "sessions"
         ],
         "title": "StudySessionListResponse",
@@ -2467,9 +2465,9 @@
       },
       "StudySessionStartRequest": {
         "properties": {
-          "course_id": {
+          "learning_path_id": {
             "exclusiveMinimum": 0.0,
-            "title": "Course Id",
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "topic": {
@@ -2479,7 +2477,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "topic"
         ],
         "title": "StudySessionStartRequest",
@@ -2708,12 +2706,12 @@
       },
       "UpcomingReviewListResponse": {
         "properties": {
-          "course_id": {
-            "title": "Course Id",
-            "type": "integer"
-          },
           "days_ahead": {
             "title": "Days Ahead",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "integer"
           },
           "reviews": {
@@ -2725,7 +2723,7 @@
           }
         },
         "required": [
-          "course_id",
+          "learning_path_id",
           "days_ahead",
           "reviews"
         ],
@@ -2971,11 +2969,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           }
@@ -3030,11 +3028,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           },
@@ -5213,7 +5211,7 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -5225,7 +5223,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Course Id"
+              "title": "Learning Path Id"
             }
           }
         ],
@@ -5297,7 +5295,7 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": false,
             "schema": {
               "anyOf": [
@@ -5309,7 +5307,7 @@
                   "type": "null"
                 }
               ],
-              "title": "Course Id"
+              "title": "Learning Path Id"
             }
           }
         ],
@@ -5467,11 +5465,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           }
@@ -5526,11 +5524,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           },
@@ -5675,11 +5673,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           },
@@ -5944,11 +5942,11 @@
         "parameters": [
           {
             "in": "query",
-            "name": "course_id",
+            "name": "learning_path_id",
             "required": true,
             "schema": {
               "exclusiveMinimum": 0,
-              "title": "Course Id",
+              "title": "Learning Path Id",
               "type": "integer"
             }
           },

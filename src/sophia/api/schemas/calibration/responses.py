@@ -7,7 +7,7 @@ from sophia.api.schemas.common import ApiModel
 
 class CalibrationRatingResponse(ApiModel):
     topic: str
-    course_id: int
+    learning_path_id: int
     predicted: float
     actual: float | None
     rated_at: str
@@ -17,7 +17,7 @@ class CalibrationRatingResponse(ApiModel):
 
 
 class CalibrationRatingListResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     ratings: list[CalibrationRatingResponse]
 
 
@@ -26,7 +26,7 @@ class CalibrationRatingSavedResponse(ApiModel):
 
 
 class ActualScoreUpdateResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     topic: str
     actual: float
     updated: bool

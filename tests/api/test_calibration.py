@@ -22,10 +22,10 @@ class FakeAppContainer:
     db: object
 
 
-def course_tenant(course_id: int = 12) -> SessionTenant:
+def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(course_id),
+        course_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )
@@ -34,16 +34,16 @@ def course_tenant(course_id: int = 12) -> SessionTenant:
 def test_calibration_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
-    ratings_response = harness.client.get("/api/calibration/ratings?course_id=12")
-    blind_spots_response = harness.client.get("/api/calibration/blind-spots?course_id=12")
+    ratings_response = harness.client.get("/api/calibration/ratings?learning_path_id=12")
+    blind_spots_response = harness.client.get("/api/calibration/blind-spots?learning_path_id=12")
     rate_response = harness.client.post(
         "/api/calibration/ratings",
-        json={"course_id": 12, "topic": "Graphs", "rating": 4},
+        json={"learning_path_id": 12, "topic": "Graphs", "rating": 4},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
     actual_response = harness.client.patch(
         "/api/calibration/actual-score",
-        json={"course_id": 12, "topic": "Graphs", "actual": 0.5},
+        json={"learning_path_id": 12, "topic": "Graphs", "actual": 0.5},
         headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
     )
 
@@ -57,7 +57,7 @@ def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.Monk
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     rating = ConfidenceRating(
@@ -81,12 +81,12 @@ def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.Monk
     monkeypatch.setattr(calibration_router, "get_confidence_ratings", fake_get_confidence_ratings)
     monkeypatch.setattr(calibration_router, "get_blind_spots", fake_get_blind_spots)
 
-    ratings_response = harness.client.get("/api/calibration/ratings?course_id=12")
-    blind_spots_response = harness.client.get("/api/calibration/blind-spots?course_id=12")
+    ratings_response = harness.client.get("/api/calibration/ratings?learning_path_id=12")
+    blind_spots_response = harness.client.get("/api/calibration/blind-spots?learning_path_id=12")
 
     expected_rating = {
         "topic": "Graphs",
-        "course_id": 12,
+        "learning_path_id": 12,
         "predicted": 0.75,
         "actual": 0.5,
         "rated_at": "2026-05-26T12:00:00Z",
@@ -95,9 +95,9 @@ def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.Monk
         "difficulty_level": "transfer",
     }
     assert ratings_response.status_code == 200
-    assert ratings_response.json() == {"course_id": 12, "ratings": [expected_rating]}
+    assert ratings_response.json() == {"learning_path_id": 12, "ratings": [expected_rating]}
     assert blind_spots_response.status_code == 200
-    assert blind_spots_response.json() == {"course_id": 12, "ratings": [expected_rating]}
+    assert blind_spots_response.json() == {"learning_path_id": 12, "ratings": [expected_rating]}
 
 
 def test_calibration_ratings_return_404_for_missing_topic(
@@ -105,7 +105,7 @@ def test_calibration_ratings_return_404_for_missing_topic(
 ) -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -114,7 +114,7 @@ def test_calibration_ratings_return_404_for_missing_topic(
 
     monkeypatch.setattr(calibration_router, "get_confidence_ratings", fake_get_confidence_ratings)
 
-    response = harness.client.get("/api/calibration/ratings?course_id=12&topic=Missing")
+    response = harness.client.get("/api/calibration/ratings?learning_path_id=12&topic=Missing")
 
     assert response.status_code == 404
     assert response.json() == {"detail": {"code": "http.not_found", "params": {}}}
@@ -126,7 +126,7 @@ def test_rate_confidence_requires_csrf() -> None:
 
     response = harness.client.post(
         "/api/calibration/ratings",
-        json={"course_id": 12, "topic": "Graphs", "rating": 4},
+        json={"learning_path_id": 12, "topic": "Graphs", "rating": 4},
     )
 
     assert response.status_code == 403
@@ -137,7 +137,7 @@ def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
 
@@ -163,7 +163,7 @@ def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -
 
     response = harness.client.post(
         "/api/calibration/ratings",
-        json={"course_id": 12, "topic": "Graphs", "rating": 4},
+        json={"learning_path_id": 12, "topic": "Graphs", "rating": 4},
         headers=csrf_headers(harness),
     )
 
@@ -171,7 +171,7 @@ def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -
     assert response.json() == {
         "rating": {
             "topic": "Graphs",
-            "course_id": 12,
+            "learning_path_id": 12,
             "predicted": 0.75,
             "actual": None,
             "rated_at": "2026-05-26T13:00:00Z",
@@ -188,7 +188,7 @@ def test_update_actual_score_requires_csrf() -> None:
 
     response = harness.client.patch(
         "/api/calibration/actual-score",
-        json={"course_id": 12, "topic": "Graphs", "actual": 0.5},
+        json={"learning_path_id": 12, "topic": "Graphs", "actual": 0.5},
     )
 
     assert response.status_code == 403
@@ -201,7 +201,7 @@ def test_update_actual_score_returns_update_confirmation(
     fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
-        tenant=course_tenant(),
+        tenant=learning_path_tenant(),
     )
     login(harness)
     calls: list[tuple[object, str, int, float]] = []
@@ -218,12 +218,17 @@ def test_update_actual_score_returns_update_confirmation(
 
     response = harness.client.patch(
         "/api/calibration/actual-score",
-        json={"course_id": 12, "topic": "Graphs", "actual": 0.5},
+        json={"learning_path_id": 12, "topic": "Graphs", "actual": 0.5},
         headers=csrf_headers(harness),
     )
 
     assert response.status_code == 200
-    assert response.json() == {"course_id": 12, "topic": "Graphs", "actual": 0.5, "updated": True}
+    assert response.json() == {
+        "learning_path_id": 12,
+        "topic": "Graphs",
+        "actual": 0.5,
+        "updated": True,
+    }
     assert calls == [(fake_app.db, "Graphs", 12, 0.5)]
 
 
@@ -231,15 +236,15 @@ def test_calibration_request_validation_returns_422() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    ratings_response = harness.client.get("/api/calibration/ratings?course_id=0")
+    ratings_response = harness.client.get("/api/calibration/ratings?learning_path_id=0")
     rate_response = harness.client.post(
         "/api/calibration/ratings",
-        json={"course_id": 12, "topic": "Graphs", "rating": 0},
+        json={"learning_path_id": 12, "topic": "Graphs", "rating": 0},
         headers=csrf_headers(harness),
     )
     actual_response = harness.client.patch(
         "/api/calibration/actual-score",
-        json={"course_id": 12, "topic": "Graphs", "actual": 1.5},
+        json={"learning_path_id": 12, "topic": "Graphs", "actual": 1.5},
         headers=csrf_headers(harness),
     )
 
@@ -254,20 +259,20 @@ def test_calibration_request_validation_returns_422() -> None:
 def test_calibration_routes_reject_out_of_scope_course_ids() -> None:
     harness = build_harness(
         app_container=cast("AppContainer", FakeAppContainer(db=object())),
-        tenant=course_tenant(12),
+        tenant=learning_path_tenant(12),
     )
     login(harness)
 
-    ratings_response = harness.client.get("/api/calibration/ratings?course_id=99")
-    blind_spots_response = harness.client.get("/api/calibration/blind-spots?course_id=99")
+    ratings_response = harness.client.get("/api/calibration/ratings?learning_path_id=99")
+    blind_spots_response = harness.client.get("/api/calibration/blind-spots?learning_path_id=99")
     rate_response = harness.client.post(
         "/api/calibration/ratings",
-        json={"course_id": 99, "topic": "Graphs", "rating": 4},
+        json={"learning_path_id": 99, "topic": "Graphs", "rating": 4},
         headers=csrf_headers(harness),
     )
     actual_response = harness.client.patch(
         "/api/calibration/actual-score",
-        json={"course_id": 99, "topic": "Graphs", "actual": 0.5},
+        json={"learning_path_id": 99, "topic": "Graphs", "actual": 0.5},
         headers=csrf_headers(harness),
     )
 

@@ -51,7 +51,7 @@ ATHENA_CONFIDENCE_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     "update_actual_score": {"operation_id": "updateCalibrationActualScore"},
 }
 
-CourseIdQuery = Annotated[int, Query(gt=0)]
+LearningPathIdQuery = Annotated[int, Query(gt=0)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
 
 
@@ -62,18 +62,18 @@ TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
 async def list_calibration_ratings(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> CalibrationRatingListResponse:
-    await require_course_scope(request, course_id)
-    ratings = await get_confidence_ratings(get_app_container(request).db, course_id)
+    await require_course_scope(request, learning_path_id)
+    ratings = await get_confidence_ratings(get_app_container(request).db, learning_path_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
         if not ratings:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return CalibrationRatingListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         ratings=[_calibration_rating_response(rating) for rating in ratings],
     )
 
@@ -84,13 +84,13 @@ async def list_calibration_ratings(
     operation_id="listCalibrationBlindSpots",
 )
 async def list_calibration_blind_spots(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
 ) -> CalibrationRatingListResponse:
-    await require_course_scope(request, course_id)
-    ratings = await get_blind_spots(get_app_container(request).db, course_id)
+    await require_course_scope(request, learning_path_id)
+    ratings = await get_blind_spots(get_app_container(request).db, learning_path_id)
     return CalibrationRatingListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         ratings=[_calibration_rating_response(rating) for rating in ratings],
     )
 
@@ -105,11 +105,11 @@ async def save_calibration_rating(
     payload: CalibrationRatingRequest,
     request: Request,
 ) -> CalibrationRatingSavedResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     rating = await rate_confidence(
         get_app_container(request),
         payload.topic,
-        payload.course_id,
+        payload.learning_path_id,
         payload.rating,
     )
     return CalibrationRatingSavedResponse(rating=_calibration_rating_response(rating))
@@ -125,15 +125,15 @@ async def patch_actual_score(
     payload: ActualScoreUpdateRequest,
     request: Request,
 ) -> ActualScoreUpdateResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     await update_actual_score(
         get_app_container(request).db,
         payload.topic,
-        payload.course_id,
+        payload.learning_path_id,
         payload.actual,
     )
     return ActualScoreUpdateResponse(
-        course_id=payload.course_id,
+        learning_path_id=payload.learning_path_id,
         topic=payload.topic,
         actual=payload.actual,
         updated=True,
@@ -144,7 +144,7 @@ def _calibration_rating_response(rating: ConfidenceRating) -> CalibrationRatingR
     difficulty = get_topic_difficulty_level(rating.predicted)
     return CalibrationRatingResponse(
         topic=rating.topic,
-        course_id=rating.course_id,
+        learning_path_id=rating.course_id,
         predicted=rating.predicted,
         actual=rating.actual,
         rated_at=rating.rated_at,

@@ -18,6 +18,7 @@ from sophia.api.schemas.study import (
     StudyFlashcardItemResponse,
     StudyFlashcardRequest,
     StudyFlashcardResponse,
+    StudyFlashcardSource,
     StudySessionCompleteRequest,
     StudySessionCompletionResponse,
     StudySessionItemResponse,
@@ -25,6 +26,7 @@ from sophia.api.schemas.study import (
     StudySessionResponse,
     StudySessionStartRequest,
 )
+from sophia.domain.models import FlashcardSource
 from sophia.services.athena_session import (
     complete_study_session,
     get_study_sessions,
@@ -52,7 +54,16 @@ ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     "start_study_session": {"operation_id": "startStudySession"},
 }
 
-CourseIdQuery = Annotated[int, Query(gt=0)]
+_DOMAIN_FLASHCARD_SOURCE = {
+    StudyFlashcardSource.STUDY: FlashcardSource.STUDY,
+    StudyFlashcardSource.TRANSCRIPT: FlashcardSource.LECTURE,
+    StudyFlashcardSource.MANUAL: FlashcardSource.MANUAL,
+}
+_API_FLASHCARD_SOURCE = {
+    domain_source: api_source for api_source, domain_source in _DOMAIN_FLASHCARD_SOURCE.items()
+}
+
+LearningPathIdQuery = Annotated[int, Query(gt=0)]
 SessionIdPath = Annotated[int, Path(gt=0)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
 
@@ -64,16 +75,16 @@ TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
 async def list_study_sessions(
-    course_id: CourseIdQuery,
+    learning_path_id: LearningPathIdQuery,
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> StudySessionListResponse:
-    await require_course_scope(request, course_id)
-    sessions = await get_study_sessions(get_app_container(request).db, course_id, topic)
+    await require_course_scope(request, learning_path_id)
+    sessions = await get_study_sessions(get_app_container(request).db, learning_path_id, topic)
     if topic is not None and not sessions:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return StudySessionListResponse(
-        course_id=course_id,
+        learning_path_id=learning_path_id,
         sessions=[_study_session_response(session) for session in sessions],
     )
 
@@ -88,10 +99,10 @@ async def create_study_session(
     payload: StudySessionStartRequest,
     request: Request,
 ) -> StudySessionResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     session = await start_study_session(
         get_app_container(request).db,
-        payload.course_id,
+        payload.learning_path_id,
         payload.topic,
     )
     return StudySessionResponse(session=_study_session_response(session))
@@ -110,10 +121,10 @@ async def mark_study_session_complete(
 ) -> StudySessionCompletionResponse:
     session = await require_csrf(request)
     app_container = get_app_container(request)
-    course_id = await _study_session_course_id(app_container.db, session_id)
-    if course_id is None:
+    learning_path_id = await _study_session_learning_path_id(app_container.db, session_id)
+    if learning_path_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, course_id)
+    ensure_course_scope(session, learning_path_id)
     await complete_study_session(
         app_container.db,
         session_id,
@@ -133,19 +144,19 @@ async def create_study_flashcard(
     payload: StudyFlashcardRequest,
     request: Request,
 ) -> StudyFlashcardResponse:
-    await require_csrf_course_scope(request, payload.course_id)
+    await require_csrf_course_scope(request, payload.learning_path_id)
     flashcard = await save_flashcard(
         get_app_container(request).db,
-        payload.course_id,
+        payload.learning_path_id,
         payload.topic,
         payload.front,
         payload.back,
-        payload.source.value,
+        _DOMAIN_FLASHCARD_SOURCE[payload.source].value,
     )
     return StudyFlashcardResponse(flashcard=_flashcard_response(flashcard))
 
 
-async def _study_session_course_id(
+async def _study_session_learning_path_id(
     db: aiosqlite.Connection,
     session_id: int,
 ) -> int | None:
@@ -165,7 +176,7 @@ async def _study_session_course_id(
 def _study_session_response(session: StudySession) -> StudySessionItemResponse:
     return StudySessionItemResponse(
         id=session.id,
-        course_id=session.course_id,
+        learning_path_id=session.course_id,
         topic=session.topic,
         pre_test_score=session.pre_test_score,
         post_test_score=session.post_test_score,
@@ -178,10 +189,10 @@ def _study_session_response(session: StudySession) -> StudySessionItemResponse:
 def _flashcard_response(flashcard: StudentFlashcard) -> StudyFlashcardItemResponse:
     return StudyFlashcardItemResponse(
         id=flashcard.id,
-        course_id=flashcard.course_id,
+        learning_path_id=flashcard.course_id,
         topic=flashcard.topic,
         front=flashcard.front,
         back=flashcard.back,
-        source=flashcard.source.value,
+        source=_API_FLASHCARD_SOURCE[flashcard.source],
         created_at=flashcard.created_at,
     )

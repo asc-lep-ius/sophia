@@ -4,40 +4,41 @@ from __future__ import annotations
 
 from sophia.api.schemas.chronos import ChronosDeadlineResponse  # noqa: TC001
 from sophia.api.schemas.common import ApiModel
+from sophia.api.schemas.topics import TopicOrigin  # noqa: TC001
 
 
-class QuickstartCourseResponse(ApiModel):
+class QuickstartLearningPathResponse(ApiModel):
     id: int
-    fullname: str
-    shortname: str
+    title: str
+    short_title: str
     url: str | None
 
 
 class QuickstartTopicResponse(ApiModel):
     topic: str
-    course_id: int
-    source: str
+    learning_path_id: int
+    source: TopicOrigin
     frequency: int
 
 
 class QuickstartOverviewResponse(ApiModel):
-    course_id: int | None
-    courses: list[QuickstartCourseResponse]
+    learning_path_id: int | None
+    learning_paths: list[QuickstartLearningPathResponse]
     topics: list[QuickstartTopicResponse]
     nearest_deadline: ChronosDeadlineResponse | None
     completed_session_count: int
 
 
 class QuickstartConfidenceResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     saved_count: int
 
 
 class QuickstartManualTopicsResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     topics: list[QuickstartTopicResponse]
 
 
 class QuickstartSessionCountResponse(ApiModel):
-    course_id: int | None
+    learning_path_id: int | None
     completed_session_count: int

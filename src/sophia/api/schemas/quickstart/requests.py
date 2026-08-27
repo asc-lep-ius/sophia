@@ -13,10 +13,10 @@ ManualTopic = Annotated[str, Field(min_length=1)]
 
 
 class QuickstartConfidenceRequest(ApiModel):
-    course_id: int = Field(gt=0)
+    learning_path_id: int = Field(gt=0)
     ratings: dict[str, ConfidenceRatingValue] = Field(min_length=1)
 
 
 class QuickstartManualTopicsRequest(ApiModel):
-    course_id: int = Field(gt=0)
+    learning_path_id: int = Field(gt=0)
     topics: list[ManualTopic] = Field(min_length=1)

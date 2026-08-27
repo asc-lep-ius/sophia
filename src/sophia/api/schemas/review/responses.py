@@ -7,7 +7,7 @@ from sophia.api.schemas.common import ApiModel
 
 class ReviewScheduleItemResponse(ApiModel):
     topic: str
-    course_id: int
+    learning_path_id: int
     interval_index: int
     interval_days: int
     last_reviewed_at: str | None
@@ -20,18 +20,18 @@ class ReviewScheduleItemResponse(ApiModel):
 
 
 class DueReviewListResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     reviews: list[ReviewScheduleItemResponse]
 
 
 class UpcomingReviewListResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     days_ahead: int
     reviews: list[ReviewScheduleItemResponse]
 
 
 class ReviewScheduleListResponse(ApiModel):
-    course_id: int
+    learning_path_id: int
     schedules: list[ReviewScheduleItemResponse]
 
 

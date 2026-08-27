@@ -6,7 +6,7 @@ from sophia.api.schemas.quickstart.requests import (
 )
 from sophia.api.schemas.quickstart.responses import (
     QuickstartConfidenceResponse,
-    QuickstartCourseResponse,
+    QuickstartLearningPathResponse,
     QuickstartManualTopicsResponse,
     QuickstartOverviewResponse,
     QuickstartSessionCountResponse,
@@ -16,7 +16,7 @@ from sophia.api.schemas.quickstart.responses import (
 __all__ = [
     "QuickstartConfidenceRequest",
     "QuickstartConfidenceResponse",
-    "QuickstartCourseResponse",
+    "QuickstartLearningPathResponse",
     "QuickstartManualTopicsRequest",
     "QuickstartManualTopicsResponse",
     "QuickstartOverviewResponse",
