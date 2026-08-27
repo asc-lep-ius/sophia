@@ -11,8 +11,8 @@ from sophia.api.deps import (
     require_csrf_course_scope,
     require_effective_course_id,
 )
-from sophia.api.schemas.chronos import ChronosDeadlineResponse
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
+from sophia.api.schemas.deadlines import DeadlineResponse
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.quickstart import (
     QuickstartConfidenceRequest,
@@ -165,12 +165,12 @@ def _topic_response(topic: TopicMapping) -> QuickstartTopicResponse:
     )
 
 
-def _deadline_response(deadline: Deadline) -> ChronosDeadlineResponse:
-    return ChronosDeadlineResponse(
+def _deadline_response(deadline: Deadline) -> DeadlineResponse:
+    return DeadlineResponse(
         id=deadline.id,
         name=deadline.name,
-        course_id=deadline.course_id,
-        course_name=deadline.course_name,
+        learning_path_id=deadline.course_id,
+        learning_path_name=deadline.course_name,
         deadline_type=deadline.deadline_type.value,
         due_at=deadline.due_at,
         grade_weight=deadline.grade_weight,

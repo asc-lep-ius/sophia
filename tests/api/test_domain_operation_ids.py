@@ -79,73 +79,73 @@ DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
         "completeReview",
         "#/components/schemas/ReviewScheduleResponse",
     ),
-    ("get", "/api/chronos/deadlines"): (
-        "listChronosDeadlines",
-        "#/components/schemas/ChronosDeadlineListResponse",
+    ("get", "/api/deadlines"): (
+        "listDeadlines",
+        "#/components/schemas/DeadlineListResponse",
     ),
-    ("post", "/api/chronos/sync"): (
-        "syncChronosDeadlines",
-        "#/components/schemas/ChronosSyncResponse",
+    ("post", "/api/deadlines/sync"): (
+        "syncDeadlines",
+        "#/components/schemas/DeadlineSyncResponse",
     ),
-    ("post", "/api/chronos/estimates"): (
-        "recordChronosEstimate",
-        "#/components/schemas/ChronosEstimateResponse",
+    ("post", "/api/deadlines/estimates"): (
+        "recordDeadlineEstimate",
+        "#/components/schemas/EffortEstimateSavedResponse",
     ),
-    ("post", "/api/chronos/timers/{deadline_id}/start"): (
-        "startChronosTimer",
-        "#/components/schemas/ChronosTimerStartResponse",
+    ("post", "/api/deadlines/{deadline_id}/timer/start"): (
+        "startDeadlineTimer",
+        "#/components/schemas/DeadlineTimerStartResponse",
     ),
-    ("post", "/api/chronos/timers/{deadline_id}/stop"): (
-        "stopChronosTimer",
-        "#/components/schemas/ChronosTimerStopResponse",
+    ("post", "/api/deadlines/{deadline_id}/timer/stop"): (
+        "stopDeadlineTimer",
+        "#/components/schemas/DeadlineTimerStopResponse",
     ),
-    ("get", "/api/chronos/deadlines/{deadline_id}/tracked-time"): (
-        "getChronosTrackedTime",
-        "#/components/schemas/ChronosTrackedTimeResponse",
+    ("get", "/api/deadlines/{deadline_id}/tracked-time"): (
+        "getDeadlineTrackedTime",
+        "#/components/schemas/DeadlineTrackedTimeResponse",
     ),
-    ("post", "/api/chronos/time-entries"): (
-        "recordChronosTimeEntry",
-        "#/components/schemas/ChronosTimeEntryResponse",
+    ("post", "/api/deadlines/time-entries"): (
+        "recordDeadlineTimeEntry",
+        "#/components/schemas/DeadlineTimeEntryResponse",
     ),
-    ("post", "/api/chronos/reflections"): (
-        "recordChronosReflection",
-        "#/components/schemas/ChronosReflectionResponse",
+    ("post", "/api/deadlines/reflections"): (
+        "recordDeadlineReflection",
+        "#/components/schemas/DeadlineReflectionResponse",
     ),
-    ("post", "/api/chronos/deadlines/{deadline_id}/complete"): (
-        "completeChronosDeadline",
-        "#/components/schemas/ChronosCompletionResponse",
+    ("post", "/api/deadlines/{deadline_id}/complete"): (
+        "completeDeadline",
+        "#/components/schemas/DeadlineCompletionResponse",
     ),
-    ("get", "/api/chronos/workload"): (
-        "getChronosWorkload",
-        "#/components/schemas/ChronosWorkloadResponse",
+    ("get", "/api/deadlines/workload"): (
+        "getDeadlineWorkload",
+        "#/components/schemas/WorkloadResponse",
     ),
-    ("get", "/api/chronos/upcoming-exams"): (
-        "listChronosUpcomingExams",
-        "#/components/schemas/ChronosUpcomingExamListResponse",
+    ("get", "/api/deadlines/upcoming-exams"): (
+        "listUpcomingExams",
+        "#/components/schemas/UpcomingExamListResponse",
     ),
-    ("get", "/api/chronos/ics"): (
-        "exportChronosIcs",
-        "#/components/schemas/ChronosIcsExportResponse",
+    ("get", "/api/deadlines/ics"): (
+        "exportDeadlinesIcs",
+        "#/components/schemas/DeadlineIcsExportResponse",
     ),
-    ("get", "/api/chronos-history/deadlines"): (
-        "listChronosHistoryDeadlines",
-        "#/components/schemas/ChronosHistoryDeadlineListResponse",
+    ("get", "/api/deadline-history"): (
+        "listPastDeadlines",
+        "#/components/schemas/PastDeadlineListResponse",
     ),
-    ("get", "/api/chronos-history/deadlines/{deadline_id}/reflection"): (
-        "getChronosHistoryReflection",
-        "#/components/schemas/ChronosHistoryReflectionResponse",
+    ("get", "/api/deadline-history/{deadline_id}/reflection"): (
+        "getDeadlineReflection",
+        "#/components/schemas/DeadlineReflectionDetailResponse",
     ),
-    ("get", "/api/chronos-history/deadlines/{deadline_id}/time-entries"): (
-        "listChronosHistoryTimeEntries",
-        "#/components/schemas/ChronosHistoryTimeEntryListResponse",
+    ("get", "/api/deadline-history/{deadline_id}/time-entries"): (
+        "listDeadlineTimeEntries",
+        "#/components/schemas/DeadlineTimeEntryListResponse",
     ),
-    ("get", "/api/chronos-history/effort-distribution"): (
-        "getChronosHistoryEffortDistribution",
-        "#/components/schemas/ChronosHistoryEffortDistributionResponse",
+    ("get", "/api/deadline-history/effort-distribution"): (
+        "getEffortDistribution",
+        "#/components/schemas/EffortDistributionResponse",
     ),
-    ("get", "/api/chronos-history/calibration"): (
-        "getChronosHistoryCalibration",
-        "#/components/schemas/ChronosHistoryCalibrationResponse",
+    ("get", "/api/deadline-history/calibration"): (
+        "getEffortCalibration",
+        "#/components/schemas/EffortCalibrationResponse",
     ),
     ("post", "/api/search"): (
         "searchContent",

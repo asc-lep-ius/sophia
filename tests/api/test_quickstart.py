@@ -177,8 +177,8 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         "nearest_deadline": {
             "id": "assign:1",
             "name": "Homework 1",
-            "course_id": 12,
-            "course_name": "Algorithms",
+            "learning_path_id": 12,
+            "learning_path_name": "Algorithms",
             "deadline_type": "assignment",
             "due_at": "2026-06-01T10:00:00Z",
             "grade_weight": None,
@@ -345,7 +345,7 @@ def test_quickstart_request_validation_returns_422() -> None:
     }
 
 
-def test_quickstart_routes_reject_out_of_scope_course_ids(
+def test_quickstart_routes_reject_out_of_scope_learning_path_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     harness = build_harness(

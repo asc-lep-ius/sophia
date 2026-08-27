@@ -10,7 +10,6 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sophia.domain.models import CalibrationMetrics, Deadline, DeadlineType
-from sophia.services.chronos import get_deadlines
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -24,6 +23,10 @@ async def export_deadlines_ics(
 ) -> str:
     """Export upcoming deadlines as an ICS calendar string."""
     from icalendar import Calendar, Event  # type: ignore[import-untyped]
+
+    # Imported here because chronos re-exports this module for the CLI, and a
+    # module-level import would make that cycle depend on import order.
+    from sophia.services.chronos import get_deadlines
 
     deadlines = await get_deadlines(db, course_id=course_id, horizon_days=horizon_days)
 

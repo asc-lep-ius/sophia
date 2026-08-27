@@ -1,4 +1,4 @@
-"""Authenticated Chronos current-state routes."""
+"""Authenticated deadline current-state routes."""
 
 from __future__ import annotations
 
@@ -15,29 +15,29 @@ from sophia.api.deps import (
     require_csrf_course_scope,
     require_effective_course_id,
 )
-from sophia.api.schemas.chronos import (
-    ChronosCompletionRequest,
-    ChronosCompletionResponse,
-    ChronosDeadlineListResponse,
-    ChronosDeadlineResponse,
-    ChronosEffortEstimateResponse,
-    ChronosEstimateRequest,
-    ChronosEstimateResponse,
-    ChronosIcsExportResponse,
-    ChronosReflectionRequest,
-    ChronosReflectionResponse,
-    ChronosSyncResponse,
-    ChronosTimeEntryRequest,
-    ChronosTimeEntryResponse,
-    ChronosTimerStartResponse,
-    ChronosTimerStopResponse,
-    ChronosTrackedTimeResponse,
-    ChronosUpcomingExamListResponse,
-    ChronosWorkloadDayResponse,
-    ChronosWorkloadItemResponse,
-    ChronosWorkloadResponse,
-)
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
+from sophia.api.schemas.deadlines import (
+    DeadlineCompletionRequest,
+    DeadlineCompletionResponse,
+    DeadlineIcsExportResponse,
+    DeadlineListResponse,
+    DeadlineReflectionRequest,
+    DeadlineReflectionResponse,
+    DeadlineResponse,
+    DeadlineSyncResponse,
+    DeadlineTimeEntryRequest,
+    DeadlineTimeEntryResponse,
+    DeadlineTimerStartResponse,
+    DeadlineTimerStopResponse,
+    DeadlineTrackedTimeResponse,
+    EffortEstimateRequest,
+    EffortEstimateResponse,
+    EffortEstimateSavedResponse,
+    UpcomingExamListResponse,
+    WorkloadDayResponse,
+    WorkloadItemResponse,
+    WorkloadResponse,
+)
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.domain.models import Deadline, DeadlineType, EffortEstimate
 from sophia.services.chronos import (
@@ -59,9 +59,9 @@ if TYPE_CHECKING:
 
     from sophia.infra.di import AppContainer
 
-router = APIRouter(tags=["chronos"])
+router = APIRouter(tags=["deadlines"])
 
-CourseIdQuery = Annotated[int | None, Query(gt=0)]
+LearningPathIdQuery = Annotated[int | None, Query(gt=0)]
 DeadlineIdPath = Annotated[str, Path(min_length=1)]
 DeadlineTypeQuery = Annotated[DeadlineType | None, Query()]
 HorizonDaysQuery = Annotated[int, Query(ge=1, le=365)]
@@ -70,136 +70,136 @@ DbRow = tuple[object, ...]
 
 
 @router.get(
-    "/chronos/deadlines",
-    response_model=ChronosDeadlineListResponse,
-    operation_id="listChronosDeadlines",
+    "/deadlines",
+    response_model=DeadlineListResponse,
+    operation_id="listDeadlines",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def list_chronos_deadlines(
+async def list_deadlines(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
     deadline_type: DeadlineTypeQuery = None,
-) -> ChronosDeadlineListResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> DeadlineListResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     deadlines = await get_deadlines(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
     if deadline_type is not None:
         deadlines = [deadline for deadline in deadlines if deadline.deadline_type == deadline_type]
         if not deadlines:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return ChronosDeadlineListResponse(
-        course_id=effective_course_id,
+    return DeadlineListResponse(
+        learning_path_id=effective_learning_path_id,
         horizon_days=horizon_days,
         deadlines=[_deadline_response(deadline) for deadline in deadlines],
     )
 
 
 @router.post(
-    "/chronos/sync",
-    response_model=ChronosSyncResponse,
-    operation_id="syncChronosDeadlines",
+    "/deadlines/sync",
+    response_model=DeadlineSyncResponse,
+    operation_id="syncDeadlines",
 )
-async def sync_chronos_deadlines(request: Request) -> ChronosSyncResponse:
+async def sync_deadline_cache(request: Request) -> DeadlineSyncResponse:
     await require_csrf(request)
-    effective_course_id = await require_effective_course_id(request, None)
+    effective_learning_path_id = await require_effective_course_id(request, None)
     deadlines = await sync_deadlines(get_app_container(request))
     scoped_deadlines = [
-        deadline for deadline in deadlines if deadline.course_id == effective_course_id
+        deadline for deadline in deadlines if deadline.course_id == effective_learning_path_id
     ]
-    return ChronosSyncResponse(
+    return DeadlineSyncResponse(
         synced_count=len(scoped_deadlines),
         deadlines=[_deadline_response(deadline) for deadline in scoped_deadlines],
     )
 
 
 @router.post(
-    "/chronos/estimates",
-    response_model=ChronosEstimateResponse,
-    operation_id="recordChronosEstimate",
+    "/deadlines/estimates",
+    response_model=EffortEstimateSavedResponse,
+    operation_id="recordDeadlineEstimate",
     responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope}},
 )
-async def record_chronos_estimate(
-    payload: ChronosEstimateRequest,
+async def record_deadline_estimate(
+    payload: EffortEstimateRequest,
     request: Request,
-) -> ChronosEstimateResponse:
+) -> EffortEstimateSavedResponse:
     app_container = await _require_csrf_payload_deadline_scope(
         request,
-        payload.course_id,
+        payload.learning_path_id,
         payload.deadline_id,
     )
     estimate = await record_estimate(
         app_container,
         deadline_id=payload.deadline_id,
-        course_id=payload.course_id,
+        course_id=payload.learning_path_id,
         predicted_hours=payload.predicted_hours,
         breakdown=payload.breakdown,
         intention=payload.intention,
     )
-    return ChronosEstimateResponse(estimate=_estimate_response(estimate))
+    return EffortEstimateSavedResponse(estimate=_estimate_response(estimate))
 
 
 @router.post(
-    "/chronos/timers/{deadline_id}/start",
-    response_model=ChronosTimerStartResponse,
-    operation_id="startChronosTimer",
+    "/deadlines/{deadline_id}/timer/start",
+    response_model=DeadlineTimerStartResponse,
+    operation_id="startDeadlineTimer",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def start_chronos_timer(
+async def start_deadline_timer(
     deadline_id: DeadlineIdPath,
     request: Request,
-) -> ChronosTimerStartResponse:
+) -> DeadlineTimerStartResponse:
     app_container, _course_id = await _require_csrf_deadline_scope(request, deadline_id)
     await start_timer(app_container.db, deadline_id)
-    return ChronosTimerStartResponse(deadline_id=deadline_id, started=True)
+    return DeadlineTimerStartResponse(deadline_id=deadline_id, started=True)
 
 
 @router.post(
-    "/chronos/timers/{deadline_id}/stop",
-    response_model=ChronosTimerStopResponse,
-    operation_id="stopChronosTimer",
+    "/deadlines/{deadline_id}/timer/stop",
+    response_model=DeadlineTimerStopResponse,
+    operation_id="stopDeadlineTimer",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def stop_chronos_timer(
+async def stop_deadline_timer(
     deadline_id: DeadlineIdPath,
     request: Request,
-) -> ChronosTimerStopResponse:
+) -> DeadlineTimerStopResponse:
     app_container, _course_id = await _require_csrf_deadline_scope(request, deadline_id)
     elapsed_hours = await stop_timer(app_container.db, deadline_id)
-    return ChronosTimerStopResponse(deadline_id=deadline_id, elapsed_hours=elapsed_hours)
+    return DeadlineTimerStopResponse(deadline_id=deadline_id, elapsed_hours=elapsed_hours)
 
 
 @router.get(
-    "/chronos/deadlines/{deadline_id}/tracked-time",
-    response_model=ChronosTrackedTimeResponse,
-    operation_id="getChronosTrackedTime",
+    "/deadlines/{deadline_id}/tracked-time",
+    response_model=DeadlineTrackedTimeResponse,
+    operation_id="getDeadlineTrackedTime",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def get_chronos_tracked_time(
+async def get_deadline_tracked_time(
     deadline_id: DeadlineIdPath,
     request: Request,
-) -> ChronosTrackedTimeResponse:
+) -> DeadlineTrackedTimeResponse:
     app_container, _course_id = await _require_deadline_scope(request, deadline_id)
     total_hours = await get_tracked_time(app_container.db, deadline_id)
-    return ChronosTrackedTimeResponse(deadline_id=deadline_id, total_hours=total_hours)
+    return DeadlineTrackedTimeResponse(deadline_id=deadline_id, total_hours=total_hours)
 
 
 @router.post(
-    "/chronos/time-entries",
-    response_model=ChronosTimeEntryResponse,
-    operation_id="recordChronosTimeEntry",
+    "/deadlines/time-entries",
+    response_model=DeadlineTimeEntryResponse,
+    operation_id="recordDeadlineTimeEntry",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def record_chronos_time_entry(
-    payload: ChronosTimeEntryRequest,
+async def record_deadline_time_entry(
+    payload: DeadlineTimeEntryRequest,
     request: Request,
-) -> ChronosTimeEntryResponse:
+) -> DeadlineTimeEntryResponse:
     app_container = await _require_csrf_payload_deadline_scope(
         request,
-        payload.course_id,
+        payload.learning_path_id,
         payload.deadline_id,
     )
     await record_time(
@@ -209,22 +209,22 @@ async def record_chronos_time_entry(
         payload.note,
         recorded_at=payload.recorded_at,
     )
-    return ChronosTimeEntryResponse(deadline_id=payload.deadline_id, recorded=True)
+    return DeadlineTimeEntryResponse(deadline_id=payload.deadline_id, recorded=True)
 
 
 @router.post(
-    "/chronos/reflections",
-    response_model=ChronosReflectionResponse,
-    operation_id="recordChronosReflection",
+    "/deadlines/reflections",
+    response_model=DeadlineReflectionResponse,
+    operation_id="recordDeadlineReflection",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def record_chronos_reflection(
-    payload: ChronosReflectionRequest,
+async def record_deadline_reflection(
+    payload: DeadlineReflectionRequest,
     request: Request,
-) -> ChronosReflectionResponse:
+) -> DeadlineReflectionResponse:
     app_container = await _require_csrf_payload_deadline_scope(
         request,
-        payload.course_id,
+        payload.learning_path_id,
         payload.deadline_id,
     )
     await record_reflection(
@@ -234,27 +234,27 @@ async def record_chronos_reflection(
         actual_hours=payload.actual_hours,
         reflection_text=payload.reflection_text,
     )
-    return ChronosReflectionResponse(deadline_id=payload.deadline_id, recorded=True)
+    return DeadlineReflectionResponse(deadline_id=payload.deadline_id, recorded=True)
 
 
 @router.post(
-    "/chronos/deadlines/{deadline_id}/complete",
-    response_model=ChronosCompletionResponse,
-    operation_id="completeChronosDeadline",
+    "/deadlines/{deadline_id}/complete",
+    response_model=DeadlineCompletionResponse,
+    operation_id="completeDeadline",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def complete_chronos_deadline(
+async def complete_deadline_route(
     deadline_id: DeadlineIdPath,
-    payload: ChronosCompletionRequest,
+    payload: DeadlineCompletionRequest,
     request: Request,
-) -> ChronosCompletionResponse:
+) -> DeadlineCompletionResponse:
     app_container = await _require_csrf_payload_deadline_scope(
         request,
-        payload.course_id,
+        payload.learning_path_id,
         deadline_id,
     )
     predicted_hours, actual_hours, feedback = await complete_deadline(app_container, deadline_id)
-    return ChronosCompletionResponse(
+    return DeadlineCompletionResponse(
         deadline_id=deadline_id,
         predicted_hours=predicted_hours,
         actual_hours=actual_hours,
@@ -264,65 +264,71 @@ async def complete_chronos_deadline(
 
 
 @router.get(
-    "/chronos/workload",
-    response_model=ChronosWorkloadResponse,
-    operation_id="getChronosWorkload",
+    "/deadlines/workload",
+    response_model=WorkloadResponse,
+    operation_id="getDeadlineWorkload",
 )
-async def get_chronos_workload(
+async def get_deadline_workload(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
-) -> ChronosWorkloadResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> WorkloadResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     forecast = await get_workload_forecast(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
-    return _workload_response(forecast, course_id=effective_course_id, horizon_days=horizon_days)
+    return _workload_response(
+        forecast,
+        learning_path_id=effective_learning_path_id,
+        horizon_days=horizon_days,
+    )
 
 
 @router.get(
-    "/chronos/upcoming-exams",
-    response_model=ChronosUpcomingExamListResponse,
-    operation_id="listChronosUpcomingExams",
+    "/deadlines/upcoming-exams",
+    response_model=UpcomingExamListResponse,
+    operation_id="listUpcomingExams",
 )
-async def list_chronos_upcoming_exams(
+async def list_upcoming_exam_deadlines(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
-) -> ChronosUpcomingExamListResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> UpcomingExamListResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     exams = await get_upcoming_exams(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
-    return ChronosUpcomingExamListResponse(
-        course_id=effective_course_id,
+    return UpcomingExamListResponse(
+        learning_path_id=effective_learning_path_id,
         horizon_days=horizon_days,
         exams=[_deadline_response(exam) for exam in exams],
     )
 
 
 @router.get(
-    "/chronos/ics",
-    response_model=ChronosIcsExportResponse,
-    operation_id="exportChronosIcs",
+    "/deadlines/ics",
+    response_model=DeadlineIcsExportResponse,
+    operation_id="exportDeadlinesIcs",
 )
-async def export_chronos_ics(
+async def export_deadline_ics(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
-) -> ChronosIcsExportResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> DeadlineIcsExportResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     ics = await export_deadlines_ics(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
-    return ChronosIcsExportResponse(
-        course_id=effective_course_id, horizon_days=horizon_days, ics=ics
+    return DeadlineIcsExportResponse(
+        learning_path_id=effective_learning_path_id,
+        horizon_days=horizon_days,
+        ics=ics,
     )
 
 
@@ -354,16 +360,16 @@ async def _require_csrf_deadline_scope(
 
 async def _require_csrf_payload_deadline_scope(
     request: Request,
-    payload_course_id: int,
+    payload_learning_path_id: int,
     deadline_id: str,
 ) -> AppContainer:
-    session = await require_csrf_course_scope(request, payload_course_id)
+    session = await require_csrf_course_scope(request, payload_learning_path_id)
     app_container = get_app_container(request)
     course_id = await _deadline_course_id(app_container.db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     ensure_course_scope(session, course_id)
-    if course_id != payload_course_id:
+    if course_id != payload_learning_path_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     return app_container
 
@@ -382,12 +388,12 @@ async def _deadline_course_id(db: aiosqlite.Connection, deadline_id: str) -> int
     raise TypeError(msg)
 
 
-def _deadline_response(deadline: Deadline) -> ChronosDeadlineResponse:
-    return ChronosDeadlineResponse(
+def _deadline_response(deadline: Deadline) -> DeadlineResponse:
+    return DeadlineResponse(
         id=deadline.id,
         name=deadline.name,
-        course_id=deadline.course_id,
-        course_name=deadline.course_name,
+        learning_path_id=deadline.course_id,
+        learning_path_name=deadline.course_name,
         deadline_type=deadline.deadline_type.value,
         due_at=deadline.due_at,
         grade_weight=deadline.grade_weight,
@@ -407,10 +413,10 @@ def _json_extra(extra: dict[str, object]) -> dict[str, JsonPrimitive]:
     return safe_extra
 
 
-def _estimate_response(estimate: EffortEstimate) -> ChronosEffortEstimateResponse:
-    return ChronosEffortEstimateResponse(
+def _estimate_response(estimate: EffortEstimate) -> EffortEstimateResponse:
+    return EffortEstimateResponse(
         deadline_id=estimate.deadline_id,
-        course_id=estimate.course_id,
+        learning_path_id=estimate.course_id,
         predicted_hours=estimate.predicted_hours,
         breakdown=estimate.breakdown,
         implementation_intention=estimate.implementation_intention,
@@ -422,11 +428,11 @@ def _estimate_response(estimate: EffortEstimate) -> ChronosEffortEstimateRespons
 def _workload_response(
     forecast: Mapping[str, object],
     *,
-    course_id: int | None,
+    learning_path_id: int | None,
     horizon_days: int,
-) -> ChronosWorkloadResponse:
-    return ChronosWorkloadResponse(
-        course_id=course_id,
+) -> WorkloadResponse:
+    return WorkloadResponse(
+        learning_path_id=learning_path_id,
         horizon_days=horizon_days,
         total_estimated_hours=_float_value(forecast.get("total_estimated_hours")),
         total_tracked_hours=_float_value(forecast.get("total_tracked_hours")),
@@ -436,16 +442,16 @@ def _workload_response(
     )
 
 
-def _workload_days(value: object) -> list[ChronosWorkloadDayResponse]:
+def _workload_days(value: object) -> list[WorkloadDayResponse]:
     if not isinstance(value, dict):
         return []
 
-    days: list[ChronosWorkloadDayResponse] = []
+    days: list[WorkloadDayResponse] = []
     for date_key, raw_items in cast("dict[object, object]", value).items():
         if not isinstance(date_key, str):
             continue
         days.append(
-            ChronosWorkloadDayResponse(
+            WorkloadDayResponse(
                 date=date_key,
                 items=_workload_items(raw_items),
             )
@@ -453,11 +459,11 @@ def _workload_days(value: object) -> list[ChronosWorkloadDayResponse]:
     return sorted(days, key=lambda day: day.date)
 
 
-def _workload_items(raw_items: object) -> list[ChronosWorkloadItemResponse]:
+def _workload_items(raw_items: object) -> list[WorkloadItemResponse]:
     if not isinstance(raw_items, list):
         return []
 
-    items: list[ChronosWorkloadItemResponse] = []
+    items: list[WorkloadItemResponse] = []
     for raw_item in cast("list[object]", raw_items):
         if not isinstance(raw_item, tuple):
             continue
@@ -466,7 +472,7 @@ def _workload_items(raw_items: object) -> list[ChronosWorkloadItemResponse]:
             continue
         name, hours = item[0], item[1]
         if isinstance(name, str):
-            items.append(ChronosWorkloadItemResponse(name=name, hours=_float_value(hours)))
+            items.append(WorkloadItemResponse(name=name, hours=_float_value(hours)))
     return items
 
 

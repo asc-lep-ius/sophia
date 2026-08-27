@@ -35,29 +35,29 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
             "/api/review/complete",
         }
     ),
-    "chronos": frozenset(
+    "deadlines": frozenset(
         {
-            "/api/chronos/deadlines",
-            "/api/chronos/sync",
-            "/api/chronos/estimates",
-            "/api/chronos/timers/{deadline_id}/start",
-            "/api/chronos/timers/{deadline_id}/stop",
-            "/api/chronos/deadlines/{deadline_id}/tracked-time",
-            "/api/chronos/time-entries",
-            "/api/chronos/reflections",
-            "/api/chronos/deadlines/{deadline_id}/complete",
-            "/api/chronos/workload",
-            "/api/chronos/upcoming-exams",
-            "/api/chronos/ics",
+            "/api/deadlines",
+            "/api/deadlines/sync",
+            "/api/deadlines/estimates",
+            "/api/deadlines/{deadline_id}/timer/start",
+            "/api/deadlines/{deadline_id}/timer/stop",
+            "/api/deadlines/{deadline_id}/tracked-time",
+            "/api/deadlines/time-entries",
+            "/api/deadlines/reflections",
+            "/api/deadlines/{deadline_id}/complete",
+            "/api/deadlines/workload",
+            "/api/deadlines/upcoming-exams",
+            "/api/deadlines/ics",
         }
     ),
-    "chronos_history": frozenset(
+    "deadline_history": frozenset(
         {
-            "/api/chronos-history/deadlines",
-            "/api/chronos-history/deadlines/{deadline_id}/reflection",
-            "/api/chronos-history/deadlines/{deadline_id}/time-entries",
-            "/api/chronos-history/effort-distribution",
-            "/api/chronos-history/calibration",
+            "/api/deadline-history",
+            "/api/deadline-history/{deadline_id}/reflection",
+            "/api/deadline-history/{deadline_id}/time-entries",
+            "/api/deadline-history/effort-distribution",
+            "/api/deadline-history/calibration",
         }
     ),
     "search": frozenset({"/api/search"}),

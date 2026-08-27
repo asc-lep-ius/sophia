@@ -1,4 +1,4 @@
-"""Authenticated Chronos history routes."""
+"""Authenticated deadline history routes."""
 
 from __future__ import annotations
 
@@ -12,18 +12,18 @@ from sophia.api.deps import (
     get_app_container,
     require_effective_course_id,
 )
-from sophia.api.schemas.chronos import ChronosCalibrationMetricResponse, ChronosDeadlineResponse
-from sophia.api.schemas.chronos_history import (
-    ChronosHistoryCalibrationResponse,
-    ChronosHistoryDeadlineListResponse,
-    ChronosHistoryEffortDayResponse,
-    ChronosHistoryEffortDistributionResponse,
-    ChronosHistoryReflectionItemResponse,
-    ChronosHistoryReflectionResponse,
-    ChronosHistoryTimeEntryListResponse,
-    ChronosHistoryTimeEntryResponse,
-)
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
+from sophia.api.schemas.deadline_history import (
+    DeadlineReflectionDetailResponse,
+    DeadlineReflectionItemResponse,
+    DeadlineTimeEntryItemResponse,
+    DeadlineTimeEntryListResponse,
+    EffortCalibrationResponse,
+    EffortDayResponse,
+    EffortDistributionResponse,
+    PastDeadlineListResponse,
+)
+from sophia.api.schemas.deadlines import DeadlineResponse, EffortCalibrationMetricResponse
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.domain.models import Deadline  # noqa: TC001
 from sophia.services.chronos_export import get_calibration_metrics
@@ -43,9 +43,9 @@ if TYPE_CHECKING:
     from sophia.domain.models import CalibrationMetrics
     from sophia.infra.di import AppContainer
 
-router = APIRouter(tags=["chronos-history"])
+router = APIRouter(tags=["deadline-history"])
 
-CourseIdQuery = Annotated[int | None, Query(gt=0)]
+LearningPathIdQuery = Annotated[int | None, Query(gt=0)]
 DeadlineIdPath = Annotated[str, Path(min_length=1)]
 HorizonDaysQuery = Annotated[int, Query(ge=1, le=365)]
 LimitQuery = Annotated[int, Query(ge=1, le=500)]
@@ -54,105 +54,105 @@ DbRow = tuple[object, ...]
 
 
 @router.get(
-    "/chronos-history/deadlines",
-    response_model=ChronosHistoryDeadlineListResponse,
-    operation_id="listChronosHistoryDeadlines",
+    "/deadline-history",
+    response_model=PastDeadlineListResponse,
+    operation_id="listPastDeadlines",
 )
-async def list_chronos_history_deadlines(
+async def list_past_deadlines(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     limit: LimitQuery = 50,
-) -> ChronosHistoryDeadlineListResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> PastDeadlineListResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     deadlines = await get_past_deadlines(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         limit=limit,
     )
-    return ChronosHistoryDeadlineListResponse(
-        course_id=effective_course_id,
+    return PastDeadlineListResponse(
+        learning_path_id=effective_learning_path_id,
         limit=limit,
         deadlines=[_deadline_response(deadline) for deadline in deadlines],
     )
 
 
 @router.get(
-    "/chronos-history/deadlines/{deadline_id}/reflection",
-    response_model=ChronosHistoryReflectionResponse,
-    operation_id="getChronosHistoryReflection",
+    "/deadline-history/{deadline_id}/reflection",
+    response_model=DeadlineReflectionDetailResponse,
+    operation_id="getDeadlineReflection",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def get_chronos_history_reflection(
+async def get_deadline_reflection_detail(
     deadline_id: DeadlineIdPath,
     request: Request,
-) -> ChronosHistoryReflectionResponse:
+) -> DeadlineReflectionDetailResponse:
     app_container, _course_id = await _require_deadline_scope(request, deadline_id)
     reflection = await get_deadline_reflection(app_container.db, deadline_id)
     if reflection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return ChronosHistoryReflectionResponse(
+    return DeadlineReflectionDetailResponse(
         deadline_id=deadline_id,
         reflection=_reflection_response(reflection),
     )
 
 
 @router.get(
-    "/chronos-history/deadlines/{deadline_id}/time-entries",
-    response_model=ChronosHistoryTimeEntryListResponse,
-    operation_id="listChronosHistoryTimeEntries",
+    "/deadline-history/{deadline_id}/time-entries",
+    response_model=DeadlineTimeEntryListResponse,
+    operation_id="listDeadlineTimeEntries",
     responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
 )
-async def list_chronos_history_time_entries(
+async def list_deadline_time_entries(
     deadline_id: DeadlineIdPath,
     request: Request,
-) -> ChronosHistoryTimeEntryListResponse:
+) -> DeadlineTimeEntryListResponse:
     app_container, _course_id = await _require_deadline_scope(request, deadline_id)
     entries = await get_time_entries(app_container.db, deadline_id)
-    return ChronosHistoryTimeEntryListResponse(
+    return DeadlineTimeEntryListResponse(
         deadline_id=deadline_id,
         entries=[_time_entry_response(entry) for entry in entries],
     )
 
 
 @router.get(
-    "/chronos-history/effort-distribution",
-    response_model=ChronosHistoryEffortDistributionResponse,
-    operation_id="getChronosHistoryEffortDistribution",
+    "/deadline-history/effort-distribution",
+    response_model=EffortDistributionResponse,
+    operation_id="getEffortDistribution",
 )
-async def get_chronos_history_effort_distribution(
+async def get_effort_distribution_route(
     request: Request,
-    course_id: CourseIdQuery = None,
+    learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
-) -> ChronosHistoryEffortDistributionResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+) -> EffortDistributionResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     days = await get_effort_distribution(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
-    return ChronosHistoryEffortDistributionResponse(
-        course_id=effective_course_id,
+    return EffortDistributionResponse(
+        learning_path_id=effective_learning_path_id,
         horizon_days=horizon_days,
         days=[_effort_day_response(day) for day in days],
     )
 
 
 @router.get(
-    "/chronos-history/calibration",
-    response_model=ChronosHistoryCalibrationResponse,
-    operation_id="getChronosHistoryCalibration",
+    "/deadline-history/calibration",
+    response_model=EffortCalibrationResponse,
+    operation_id="getEffortCalibration",
 )
-async def get_chronos_history_calibration(
+async def get_effort_calibration(
     request: Request,
-    course_id: CourseIdQuery = None,
-) -> ChronosHistoryCalibrationResponse:
-    effective_course_id = await require_effective_course_id(request, course_id)
+    learning_path_id: LearningPathIdQuery = None,
+) -> EffortCalibrationResponse:
+    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
     metrics = await get_calibration_metrics(
         get_app_container(request).db,
-        course_id=effective_course_id,
+        course_id=effective_learning_path_id,
     )
-    return ChronosHistoryCalibrationResponse(
-        course_id=effective_course_id,
+    return EffortCalibrationResponse(
+        learning_path_id=effective_learning_path_id,
         metrics=[_calibration_metric_response(metric) for metric in metrics],
     )
 
@@ -184,12 +184,12 @@ async def _deadline_course_id(db: aiosqlite.Connection, deadline_id: str) -> int
     raise TypeError(msg)
 
 
-def _deadline_response(deadline: Deadline) -> ChronosDeadlineResponse:
-    return ChronosDeadlineResponse(
+def _deadline_response(deadline: Deadline) -> DeadlineResponse:
+    return DeadlineResponse(
         id=deadline.id,
         name=deadline.name,
-        course_id=deadline.course_id,
-        course_name=deadline.course_name,
+        learning_path_id=deadline.course_id,
+        learning_path_name=deadline.course_name,
         deadline_type=deadline.deadline_type.value,
         due_at=deadline.due_at,
         grade_weight=deadline.grade_weight,
@@ -211,8 +211,8 @@ def _json_extra(extra: dict[str, object]) -> dict[str, JsonPrimitive]:
 
 def _reflection_response(
     reflection: DeadlineReflection,
-) -> ChronosHistoryReflectionItemResponse:
-    return ChronosHistoryReflectionItemResponse(
+) -> DeadlineReflectionItemResponse:
+    return DeadlineReflectionItemResponse(
         predicted_hours=reflection.predicted_hours,
         actual_hours=reflection.actual_hours,
         reflection_text=reflection.reflection_text,
@@ -220,8 +220,8 @@ def _reflection_response(
     )
 
 
-def _time_entry_response(entry: TimeEntry) -> ChronosHistoryTimeEntryResponse:
-    return ChronosHistoryTimeEntryResponse(
+def _time_entry_response(entry: TimeEntry) -> DeadlineTimeEntryItemResponse:
+    return DeadlineTimeEntryItemResponse(
         hours=entry.hours,
         source=entry.source,
         note=entry.note,
@@ -229,8 +229,8 @@ def _time_entry_response(entry: TimeEntry) -> ChronosHistoryTimeEntryResponse:
     )
 
 
-def _effort_day_response(day: DayEffort) -> ChronosHistoryEffortDayResponse:
-    return ChronosHistoryEffortDayResponse(
+def _effort_day_response(day: DayEffort) -> EffortDayResponse:
+    return EffortDayResponse(
         date=day.date,
         deadline_efforts=day.deadline_efforts,
         unestimated=day.unestimated,
@@ -238,8 +238,8 @@ def _effort_day_response(day: DayEffort) -> ChronosHistoryEffortDayResponse:
     )
 
 
-def _calibration_metric_response(metric: CalibrationMetrics) -> ChronosCalibrationMetricResponse:
-    return ChronosCalibrationMetricResponse(
+def _calibration_metric_response(metric: CalibrationMetrics) -> EffortCalibrationMetricResponse:
+    return EffortCalibrationMetricResponse(
         domain=metric.domain,
         sample_count=metric.sample_count,
         mean_error=metric.mean_error,
