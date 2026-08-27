@@ -13,6 +13,7 @@ from sophia.infra.persistence import run_migrations
 REPO_ROOT = Path(__file__).parents[2]
 MIGRATIONS_DIR = REPO_ROOT / "src" / "sophia" / "infra" / "migrations"
 TENANCY_MIGRATION_VERSION = 22
+BACKFILL_MIGRATION_VERSION = 23
 
 TABLES_WITH_EXISTING_COURSE_ID = {
     "confidence_ratings",
@@ -68,7 +69,8 @@ async def test_tenancy_columns_apply_to_fresh_database() -> None:
 
         cursor = await db.execute("SELECT MAX(version) FROM schema_version")
         row = await cursor.fetchone()
-        assert row == (TENANCY_MIGRATION_VERSION,)
+        assert row is not None
+        assert row[0] >= TENANCY_MIGRATION_VERSION
 
 
 @pytest.mark.asyncio
@@ -125,6 +127,11 @@ async def test_tenancy_migration_preserves_version_21_rows(tmp_path: Path) -> No
         assert topic_columns.count("course_id") == 1
 
 
+async def _metacognition_scopes(db: aiosqlite.Connection) -> list[tuple[str, str]]:
+    cursor = await db.execute("SELECT item_id, course_id FROM metacognition_log ORDER BY item_id")
+    return [(str(row[0]), str(row[1])) for row in await cursor.fetchall()]
+
+
 async def _table_columns(db: aiosqlite.Connection, table_name: str) -> list[str]:
     cursor = await db.execute(f"PRAGMA table_info({table_name})")
     return [str(row[1]) for row in await cursor.fetchall()]
@@ -147,3 +154,51 @@ def _copy_migrations_through(destination: Path, *, version: int) -> None:
         migration_version = int(sql_file.stem.split("_")[0])
         if migration_version <= version:
             shutil.copy2(sql_file, destination / sql_file.name)
+
+
+@pytest.mark.asyncio
+async def test_backfill_recovers_course_scope_for_pre_tenancy_metacognition(
+    tmp_path: Path,
+) -> None:
+    """Rows stranded at 'default' by 022 are unreachable to course-scoped queries."""
+    historical_migrations = tmp_path / "migrations"
+    _copy_migrations_through(historical_migrations, version=TENANCY_MIGRATION_VERSION)
+
+    async with aiosqlite.connect(":memory:") as db:
+        await run_migrations(db, migrations_dir=historical_migrations)
+        await db.execute(
+            """
+            INSERT INTO deadline_cache (id, name, course_id, deadline_type, due_at)
+            VALUES ('assign:1', 'Homework 1', 42, 'assignment', '2026-06-01T10:00:00Z')
+            """
+        )
+        await db.executemany(
+            "INSERT INTO metacognition_log (domain, item_id, predicted, actual) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                ("effort:assignment", "assign:1", 5.0, 5.0),
+                ("effort:assignment", "assign:gone", 4.0, 4.0),
+                ("confidence:7", "eigenvalues", 0.8, None),
+            ],
+        )
+        await db.commit()
+
+        assert await _metacognition_scopes(db) == [
+            ("assign:1", "default"),
+            ("assign:gone", "default"),
+            ("eigenvalues", "default"),
+        ]
+
+        await run_migrations(db)
+
+        # The unmappable effort row and the confidence row stay as they were.
+        assert await _metacognition_scopes(db) == [
+            ("assign:1", "42"),
+            ("assign:gone", "default"),
+            ("eigenvalues", "default"),
+        ]
+
+        cursor = await db.execute("SELECT MAX(version) FROM schema_version")
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] >= BACKFILL_MIGRATION_VERSION
