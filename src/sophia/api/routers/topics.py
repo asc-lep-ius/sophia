@@ -7,10 +7,10 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
 from sophia.api.deps import (
-    ensure_course_scope,
+    ensure_learning_path_scope,
     get_app_container,
-    require_course_scope,
-    require_csrf_course_scope,
+    require_csrf_learning_path_scope,
+    require_learning_path_scope,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.topics import (
@@ -58,7 +58,7 @@ async def list_topics(
     learning_path_id: LearningPathIdPath,
     request: Request,
 ) -> TopicListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     topics = await get_course_topics(get_app_container(request), learning_path_id)
     return TopicListResponse(
         learning_path_id=learning_path_id,
@@ -77,10 +77,10 @@ async def extract_topics(
     payload: TopicExtractionRequest,
     request: Request,
 ) -> TopicExtractionResponse:
-    session = await require_csrf_course_scope(request, learning_path_id)
+    session = await require_csrf_learning_path_scope(request, learning_path_id)
     # Content source ownership is not persisted yet, so the pre-existing scope
     # equality check is kept verbatim rather than relaxed here. See #103.
-    ensure_course_scope(session, payload.content_source_id)
+    ensure_learning_path_scope(session, payload.content_source_id)
     topics = await extract_topics_from_lectures(
         get_app_container(request),
         payload.content_source_id,
@@ -106,7 +106,7 @@ async def create_manual_topic(
     payload: ManualTopicRequest,
     request: Request,
 ) -> TopicResponse:
-    await require_csrf_course_scope(request, learning_path_id)
+    await require_csrf_learning_path_scope(request, learning_path_id)
     topic = await save_manual_topic(get_app_container(request), payload.topic, learning_path_id)
     if topic is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -124,7 +124,7 @@ async def list_topic_confidence_ratings(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> TopicConfidenceListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     ratings = await get_confidence_ratings(get_app_container(request).db, learning_path_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
@@ -147,7 +147,7 @@ async def save_topic_confidence_rating(
     payload: TopicConfidenceRequest,
     request: Request,
 ) -> TopicConfidenceResponse:
-    await require_csrf_course_scope(request, learning_path_id)
+    await require_csrf_learning_path_scope(request, learning_path_id)
     rating = await rate_confidence(
         get_app_container(request),
         payload.topic,

@@ -23,7 +23,7 @@ class RequestContext:
 
     request_id: str
     org_id: str = "local"
-    course_id: str = "default-course"
+    learning_path_id: str = "default-learning-path"
     cohort_id: str = "default-cohort"
     user_id: str = "anonymous"
     role: str = "student"

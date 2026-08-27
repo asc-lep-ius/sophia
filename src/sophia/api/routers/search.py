@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from sophia.api.deps import get_app_container, require_effective_course_id
+from sophia.api.deps import get_app_container, require_effective_learning_path_id
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.search import (
     ContentSearchRequest,
@@ -40,7 +40,7 @@ async def search_content(
     payload: ContentSearchRequest,
     request: Request,
 ) -> ContentSearchResponse:
-    effective_learning_path_id = await require_effective_course_id(
+    effective_learning_path_id = await require_effective_learning_path_id(
         request,
         payload.learning_path_id,
     )

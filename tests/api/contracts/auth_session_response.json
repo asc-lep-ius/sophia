@@ -3,12 +3,12 @@
   "csrf_token": "csrf-token",
   "settings": {
     "locale": "en",
-    "selected_course_id": "course-1",
+    "selected_learning_path_id": "course-1",
     "theme": "system"
   },
   "tenant": {
     "cohort_id": "cohort-a",
-    "course_id": "course-1",
+    "learning_path_id": "course-1",
     "org_id": "tu-wien",
     "role": "student"
   },

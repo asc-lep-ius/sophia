@@ -76,10 +76,10 @@ def _patched_settings(
     return SessionSettings(
         theme=theme,
         locale=locale,
-        selected_course_id=(
-            payload.selected_course_id
-            if "selected_course_id" in fields
-            else current_settings.selected_course_id
+        selected_learning_path_id=(
+            payload.selected_learning_path_id
+            if "selected_learning_path_id" in fields
+            else current_settings.selected_learning_path_id
         ),
     )
 
@@ -88,5 +88,5 @@ def _settings_response(settings: SessionSettings) -> SettingsResponse:
     return SettingsResponse(
         theme=settings.theme,
         locale=settings.locale,
-        selected_course_id=settings.selected_course_id,
+        selected_learning_path_id=settings.selected_learning_path_id,
     )

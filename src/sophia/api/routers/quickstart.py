@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
     get_app_container,
-    require_csrf_course_scope,
-    require_effective_course_id,
+    require_csrf_learning_path_scope,
+    require_effective_learning_path_id,
 )
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
 from sophia.api.schemas.deadlines import DeadlineResponse
@@ -55,7 +55,7 @@ async def get_quickstart_overview_route(
     request: Request,
     learning_path_id: LearningPathIdQuery = None,
 ) -> QuickstartOverviewResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     overview = await get_quickstart_overview(
         get_app_container(request),
         course_id=effective_learning_path_id,
@@ -75,7 +75,7 @@ async def save_quickstart_confidence(
     payload: QuickstartConfidenceRequest,
     request: Request,
 ) -> QuickstartConfidenceResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     saved_count = await save_initial_confidence(
         get_app_container(request),
         course_id=payload.learning_path_id,
@@ -97,7 +97,7 @@ async def save_quickstart_manual_topics(
     payload: QuickstartManualTopicsRequest,
     request: Request,
 ) -> QuickstartManualTopicsResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     topics = await save_manual_topics(
         get_app_container(request),
         course_id=payload.learning_path_id,
@@ -118,7 +118,7 @@ async def get_quickstart_session_count(
     request: Request,
     learning_path_id: LearningPathIdQuery = None,
 ) -> QuickstartSessionCountResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     completed_session_count = await get_completed_session_count(
         get_app_container(request),
         course_id=effective_learning_path_id,

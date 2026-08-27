@@ -12,7 +12,7 @@ describe("settings route", () => {
       fetch: vi.fn().mockResolvedValue(
         jsonResponse({
           locale: "de",
-          selected_course_id: "course-2",
+          selected_learning_path_id: "course-2",
           theme: "dark",
         }),
       ),
@@ -21,7 +21,7 @@ describe("settings route", () => {
     await expect(load(event as never)).resolves.toEqual({
       settings: {
         locale: "de",
-        selected_course_id: "course-2",
+        selected_learning_path_id: "course-2",
         theme: "dark",
       },
     });
@@ -48,7 +48,7 @@ describe("settings route", () => {
     const fetch = vi.fn().mockResolvedValue(
       jsonResponse({
         locale: "de",
-        selected_course_id: "course-2",
+        selected_learning_path_id: "course-2",
         theme: "oled",
       }),
     );
@@ -56,7 +56,7 @@ describe("settings route", () => {
       fetch,
       form: {
         locale: "de",
-        selected_course_id: "course-2",
+        selected_learning_path_id: "course-2",
         theme: "oled",
       },
     });
@@ -64,7 +64,7 @@ describe("settings route", () => {
     await expect(settingsAction(event)).resolves.toEqual({
       settings: {
         locale: "de",
-        selected_course_id: "course-2",
+        selected_learning_path_id: "course-2",
         theme: "oled",
       },
     });
@@ -76,7 +76,7 @@ describe("settings route", () => {
     expect(init.body).toBe(
       JSON.stringify({
         locale: "de",
-        selected_course_id: "course-2",
+        selected_learning_path_id: "course-2",
         theme: "oled",
       }),
     );
@@ -102,7 +102,7 @@ describe("settings route", () => {
           locale: "en",
           settings: {
             locale: "en",
-            selected_course_id: "course-1",
+            selected_learning_path_id: "course-1",
             theme: "dark",
           },
           theme: "light",
@@ -151,7 +151,7 @@ function createEvent({
     locals: {
       apiSetCookies: [],
       authenticated: true,
-      course_id: "course-1",
+      learning_path_id: "course-1",
       csrfToken: "csrf-from-session",
       locale: "en",
       org_id: "tu-wien",
@@ -159,11 +159,11 @@ function createEvent({
       role: "student",
       sessionSettings: {
         locale: "en",
-        selected_course_id: "course-1",
+        selected_learning_path_id: "course-1",
         theme: "dark",
       },
       tenant: {
-        course_id: "course-1",
+        learning_path_id: "course-1",
         org_id: "tu-wien",
         role: "student",
       },

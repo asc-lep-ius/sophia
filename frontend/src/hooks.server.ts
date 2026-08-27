@@ -22,7 +22,7 @@ type SettingsResponse = components["schemas"]["SettingsResponse"];
 type SophiaRole = "student" | "peer_instructor" | "ta" | "instructor";
 
 const DEFAULT_ORG_ID = "local";
-const DEFAULT_COURSE_ID = "default-course";
+const DEFAULT_LEARNING_PATH_ID = "default-learning-path";
 const DEFAULT_ROLE = "student";
 const CSRF_COOKIE = "__Host-sophia_csrf";
 const E2E_AUTH_COOKIE = "sophia-e2e-auth";
@@ -46,15 +46,15 @@ const contextHandle: Handle = async ({ event, resolve }) => {
   event.locals.authenticated = false;
   event.locals.user = null;
   event.locals.org_id = event.cookies.get("sophia-org-id") ?? DEFAULT_ORG_ID;
-  event.locals.course_id =
-    event.cookies.get("sophia-course-id") ?? DEFAULT_COURSE_ID;
+  event.locals.learning_path_id =
+    event.cookies.get("sophia-learning-path-id") ?? DEFAULT_LEARNING_PATH_ID;
   event.locals.role = DEFAULT_ROLE;
   event.locals.locale = locale;
   event.locals.csrfToken = csrfTokenFromCookie(event);
   event.locals.sessionSettings = null;
   event.locals.tenant = {
     org_id: event.locals.org_id,
-    course_id: event.locals.course_id,
+    learning_path_id: event.locals.learning_path_id,
     role: event.locals.role,
   };
   event.locals.request_id = requestId;
@@ -171,7 +171,7 @@ function applyE2eAuthLocals(event: RequestEvent): void {
   };
   event.locals.sessionSettings = {
     locale: event.locals.locale,
-    selected_course_id: event.locals.course_id,
+    selected_learning_path_id: event.locals.learning_path_id,
     theme: "light",
   };
 }
@@ -201,12 +201,12 @@ function applyAuthSessionLocals(
   if (isSessionTenantResponse(session.tenant)) {
     const role = normalizeRole(session.tenant.role);
     event.locals.org_id = session.tenant.org_id;
-    event.locals.course_id = session.tenant.course_id;
+    event.locals.learning_path_id = session.tenant.learning_path_id;
     event.locals.role = role;
     event.locals.tenant = {
       cohort_id: session.tenant.cohort_id,
       org_id: session.tenant.org_id,
-      course_id: session.tenant.course_id,
+      learning_path_id: session.tenant.learning_path_id,
       role,
     };
   }
@@ -255,7 +255,7 @@ function isSessionTenantResponse(
   return (
     isRecord(value) &&
     typeof value.org_id === "string" &&
-    typeof value.course_id === "string" &&
+    typeof value.learning_path_id === "string" &&
     typeof value.role === "string" &&
     (value.cohort_id === null ||
       value.cohort_id === undefined ||
@@ -268,9 +268,9 @@ function isSettingsResponse(value: unknown): value is SettingsResponse {
     isRecord(value) &&
     typeof value.theme === "string" &&
     typeof value.locale === "string" &&
-    (value.selected_course_id === null ||
-      value.selected_course_id === undefined ||
-      typeof value.selected_course_id === "string")
+    (value.selected_learning_path_id === null ||
+      value.selected_learning_path_id === undefined ||
+      typeof value.selected_learning_path_id === "string")
   );
 }
 

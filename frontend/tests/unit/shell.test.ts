@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 import AppShell from "../../src/lib/components/AppShell.svelte";
 
 const tenant = {
-  course_id: "course-42",
+  learning_path_id: "course-42",
   org_id: "tu-wien",
   role: "student",
 };

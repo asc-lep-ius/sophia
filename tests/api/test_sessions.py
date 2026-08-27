@@ -155,7 +155,7 @@ async def test_session_store_preserves_ttl_on_save_and_refreshes_explicitly() ->
 
     updated_record = replace(
         record,
-        settings=SessionSettings(theme="dark", locale="de", selected_course_id="course-2"),
+        settings=SessionSettings(theme="dark", locale="de", selected_learning_path_id="course-2"),
     )
     assert await store.save(updated_record) is True
 
@@ -251,7 +251,7 @@ def test_session_record_round_trips_as_json_compatible_payload() -> None:
     assert payload["user"] == {"id": "learner-1", "display_name": "Learner One", "email": ""}
     assert payload["tenant"] == {
         "org_id": "tu-wien",
-        "course_id": "course-1",
+        "learning_path_id": "course-1",
         "cohort_id": "cohort-a",
         "role": "student",
     }
@@ -271,11 +271,11 @@ def _session_record(
         csrf_token="csrf-token",
         tenant=SessionTenant(
             org_id="tu-wien",
-            course_id="course-1",
+            learning_path_id="course-1",
             cohort_id="cohort-a",
             role="student",
         ),
-        settings=SessionSettings(theme="system", locale="en", selected_course_id="course-1"),
+        settings=SessionSettings(theme="system", locale="en", selected_learning_path_id="course-1"),
         tuwel_credentials=tuwel_credentials,
         tiss_credentials=tiss_credentials,
         created_at="2026-05-25T00:00:00Z",

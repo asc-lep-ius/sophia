@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Annotated, cast
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
 from sophia.api.deps import (
-    ensure_course_scope,
+    ensure_learning_path_scope,
     get_app_container,
-    require_course_scope,
     require_csrf,
-    require_csrf_course_scope,
+    require_csrf_learning_path_scope,
+    require_learning_path_scope,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.study import (
@@ -79,7 +79,7 @@ async def list_study_sessions(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> StudySessionListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     sessions = await get_study_sessions(get_app_container(request).db, learning_path_id, topic)
     if topic is not None and not sessions:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -99,7 +99,7 @@ async def create_study_session(
     payload: StudySessionStartRequest,
     request: Request,
 ) -> StudySessionResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     session = await start_study_session(
         get_app_container(request).db,
         payload.learning_path_id,
@@ -124,7 +124,7 @@ async def mark_study_session_complete(
     learning_path_id = await _study_session_learning_path_id(app_container.db, session_id)
     if learning_path_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, learning_path_id)
+    ensure_learning_path_scope(session, learning_path_id)
     await complete_study_session(
         app_container.db,
         session_id,
@@ -144,7 +144,7 @@ async def create_study_flashcard(
     payload: StudyFlashcardRequest,
     request: Request,
 ) -> StudyFlashcardResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     flashcard = await save_flashcard(
         get_app_container(request).db,
         payload.learning_path_id,

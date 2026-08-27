@@ -8,9 +8,9 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
 from sophia.api.deps import (
     current_session_record,
-    ensure_course_scope,
+    ensure_learning_path_scope,
     get_app_container,
-    require_effective_course_id,
+    require_effective_learning_path_id,
 )
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
 from sophia.api.schemas.deadline_history import (
@@ -63,7 +63,7 @@ async def list_past_deadlines(
     learning_path_id: LearningPathIdQuery = None,
     limit: LimitQuery = 50,
 ) -> PastDeadlineListResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     deadlines = await get_past_deadlines(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -124,7 +124,7 @@ async def get_effort_distribution_route(
     learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
 ) -> EffortDistributionResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     days = await get_effort_distribution(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -146,7 +146,7 @@ async def get_effort_calibration(
     request: Request,
     learning_path_id: LearningPathIdQuery = None,
 ) -> EffortCalibrationResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     metrics = await get_calibration_metrics(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -166,7 +166,7 @@ async def _require_deadline_scope(
     course_id = await _deadline_course_id(app_container.db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, course_id)
     return app_container, course_id
 
 

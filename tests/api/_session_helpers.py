@@ -154,7 +154,7 @@ def _successful_login_for_tenant(tenant: SessionTenant | None) -> LoginAuthentic
 def _login_identity(payload: AuthLoginRequest, tenant: SessionTenant | None) -> LoginIdentity:
     session_tenant = tenant or SessionTenant(
         org_id="tu-wien",
-        course_id="course-1",
+        learning_path_id="course-1",
         cohort_id="cohort-a",
         role="student",
     )
@@ -168,7 +168,7 @@ def _login_identity(payload: AuthLoginRequest, tenant: SessionTenant | None) -> 
         settings=SessionSettings(
             theme="system",
             locale="en",
-            selected_course_id=session_tenant.course_id,
+            selected_learning_path_id=session_tenant.learning_path_id,
         ),
         tuwel_credentials=SessionCredential(
             reference="tuwel:test-session",

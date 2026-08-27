@@ -8,8 +8,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
     get_app_container,
-    require_course_scope,
-    require_csrf_course_scope,
+    require_csrf_learning_path_scope,
+    require_learning_path_scope,
 )
 from sophia.api.schemas.calibration import (
     ActualScoreUpdateRequest,
@@ -66,7 +66,7 @@ async def list_calibration_ratings(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> CalibrationRatingListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     ratings = await get_confidence_ratings(get_app_container(request).db, learning_path_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
@@ -87,7 +87,7 @@ async def list_calibration_blind_spots(
     learning_path_id: LearningPathIdQuery,
     request: Request,
 ) -> CalibrationRatingListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     ratings = await get_blind_spots(get_app_container(request).db, learning_path_id)
     return CalibrationRatingListResponse(
         learning_path_id=learning_path_id,
@@ -105,7 +105,7 @@ async def save_calibration_rating(
     payload: CalibrationRatingRequest,
     request: Request,
 ) -> CalibrationRatingSavedResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     rating = await rate_confidence(
         get_app_container(request),
         payload.topic,
@@ -125,7 +125,7 @@ async def patch_actual_score(
     payload: ActualScoreUpdateRequest,
     request: Request,
 ) -> ActualScoreUpdateResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     await update_actual_score(
         get_app_container(request).db,
         payload.topic,

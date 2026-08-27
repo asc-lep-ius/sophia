@@ -11,13 +11,13 @@ from fastapi.testclient import TestClient
 from sophia.api import create_api_app
 from sophia.api.deps import (
     current_cohort,
-    current_course,
+    current_learning_path,
     current_org,
     current_role,
     current_user,
     get_app_container,
 )
-from sophia.api.schemas.common import CohortScope, CourseScope, OrgScope, RoleScope, UserScope
+from sophia.api.schemas.common import CohortScope, LearningPathScope, OrgScope, RoleScope, UserScope
 
 from ._session_helpers import build_harness, login
 
@@ -31,14 +31,14 @@ def test_scope_dependencies_return_default_stubs() -> None:
     @api_app.get("/api/_scope")
     async def read_scope(
         org: Annotated[OrgScope, Depends(current_org)],
-        course: Annotated[CourseScope, Depends(current_course)],
+        learning_path: Annotated[LearningPathScope, Depends(current_learning_path)],
         cohort: Annotated[CohortScope, Depends(current_cohort)],
         user: Annotated[UserScope, Depends(current_user)],
         role: Annotated[RoleScope, Depends(current_role)],
     ) -> dict[str, str]:
         return {
             "org_id": org.id,
-            "course_id": course.id,
+            "learning_path_id": learning_path.id,
             "cohort_id": cohort.id,
             "user_id": user.id,
             "role": role.value,
@@ -49,7 +49,7 @@ def test_scope_dependencies_return_default_stubs() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "org_id": "local",
-        "course_id": "default-course",
+        "learning_path_id": "default-learning-path",
         "cohort_id": "default-cohort",
         "user_id": "anonymous",
         "role": "student",
@@ -62,14 +62,14 @@ def test_scope_dependencies_read_authenticated_session_record() -> None:
     @harness.app.get("/api/_scope")
     async def read_scope(
         org: Annotated[OrgScope, Depends(current_org)],
-        course: Annotated[CourseScope, Depends(current_course)],
+        learning_path: Annotated[LearningPathScope, Depends(current_learning_path)],
         cohort: Annotated[CohortScope, Depends(current_cohort)],
         user: Annotated[UserScope, Depends(current_user)],
         role: Annotated[RoleScope, Depends(current_role)],
     ) -> dict[str, str]:
         return {
             "org_id": org.id,
-            "course_id": course.id,
+            "learning_path_id": learning_path.id,
             "cohort_id": cohort.id,
             "user_id": user.id,
             "role": role.value,
@@ -81,7 +81,7 @@ def test_scope_dependencies_read_authenticated_session_record() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "org_id": "tu-wien",
-        "course_id": "course-1",
+        "learning_path_id": "course-1",
         "cohort_id": "cohort-a",
         "user_id": "learner",
         "role": "student",

@@ -9,7 +9,7 @@
 
   type Tenant = {
     org_id: string;
-    course_id: string;
+    learning_path_id: string;
     role: string;
   };
 
@@ -289,7 +289,7 @@
       </div>
       <div>
         <dt>{m.tenant_course()}</dt>
-        <dd>{tenant.course_id}</dd>
+        <dd>{tenant.learning_path_id}</dd>
       </div>
       <div>
         <dt>{m.tenant_role()}</dt>
@@ -319,7 +319,7 @@
       <dl class="shell-metadata" aria-label={m.tenant_label()}>
         <div>
           <dt>{m.tenant_course()}</dt>
-          <dd>{tenant.course_id}</dd>
+          <dd>{tenant.learning_path_id}</dd>
         </div>
         <div>
           <dt>{m.theme_label()}</dt>
@@ -389,7 +389,7 @@
       </div>
       <div>
         <dt>{m.tenant_course()}</dt>
-        <dd>{tenant.course_id}</dd>
+        <dd>{tenant.learning_path_id}</dd>
       </div>
     </dl>
   </dialog>

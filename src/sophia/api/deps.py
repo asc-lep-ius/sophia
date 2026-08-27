@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 from fastapi import HTTPException, Request, status
 
 from sophia.api.context import get_request_context
-from sophia.api.schemas.common import CohortScope, CourseScope, OrgScope, RoleScope, UserScope
+from sophia.api.schemas.common import CohortScope, LearningPathScope, OrgScope, RoleScope, UserScope
 from sophia.api.sessions import InvalidSessionToken, SessionCore, SessionRecord
 from sophia.domain.errors import AuthError
 
@@ -89,31 +89,40 @@ async def require_csrf(request: Request) -> SessionRecord:
     return session
 
 
-async def require_course_scope(request: Request, course_id: int | str) -> SessionRecord:
+async def require_learning_path_scope(
+    request: Request,
+    learning_path_id: int | str,
+) -> SessionRecord:
     session = await current_session_record(request)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, learning_path_id)
     return session
 
 
-async def require_effective_course_id(request: Request, course_id: int | None) -> int:
-    if course_id is not None:
-        await require_course_scope(request, course_id)
-        return course_id
+async def require_effective_learning_path_id(
+    request: Request,
+    learning_path_id: int | None,
+) -> int:
+    if learning_path_id is not None:
+        await require_learning_path_scope(request, learning_path_id)
+        return learning_path_id
     session = await current_session_record(request)
     try:
-        return int(session.tenant.course_id)
+        return int(session.tenant.learning_path_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN) from exc
 
 
-async def require_csrf_course_scope(request: Request, course_id: int | str) -> SessionRecord:
+async def require_csrf_learning_path_scope(
+    request: Request,
+    learning_path_id: int | str,
+) -> SessionRecord:
     session = await require_csrf(request)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, learning_path_id)
     return session
 
 
-def ensure_course_scope(session: SessionRecord, course_id: int | str) -> None:
-    if session.tenant.course_id != str(course_id):
+def ensure_learning_path_scope(session: SessionRecord, learning_path_id: int | str) -> None:
+    if session.tenant.learning_path_id != str(learning_path_id):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
 
 
@@ -125,14 +134,17 @@ async def current_org(request: Request) -> OrgScope:
     return OrgScope(id=context.org_id if context else "local", display_name="Local")
 
 
-async def current_course(request: Request) -> CourseScope:
+async def current_learning_path(request: Request) -> LearningPathScope:
     session = await optional_session_record(request)
     if session is not None:
-        return CourseScope(id=session.tenant.course_id, display_name=session.tenant.course_id)
+        return LearningPathScope(
+            id=session.tenant.learning_path_id,
+            display_name=session.tenant.learning_path_id,
+        )
     context = get_request_context()
-    return CourseScope(
-        id=context.course_id if context else "default-course",
-        display_name="Default Course",
+    return LearningPathScope(
+        id=context.learning_path_id if context else "default-learning-path",
+        display_name="Default Learning Path",
     )
 
 

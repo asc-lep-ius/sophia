@@ -185,14 +185,14 @@ def _authenticated_response(record: SessionRecord) -> AuthSessionResponse:
         ),
         tenant=SessionTenantResponse(
             org_id=record.tenant.org_id,
-            course_id=record.tenant.course_id,
+            learning_path_id=record.tenant.learning_path_id,
             cohort_id=record.tenant.cohort_id,
             role=record.tenant.role,
         ),
         settings=SettingsResponse(
             theme=record.settings.theme,
             locale=record.settings.locale,
-            selected_course_id=record.settings.selected_course_id,
+            selected_learning_path_id=record.settings.selected_learning_path_id,
         ),
         csrf_token=record.csrf_token,
     )

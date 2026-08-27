@@ -156,7 +156,7 @@ function createActionEvent({
     locals: {
       apiSetCookies: [],
       authenticated: false,
-      course_id: "default-course",
+      learning_path_id: "default-learning-path",
       csrfToken: null,
       locale: "en",
       org_id: "local",
@@ -164,7 +164,7 @@ function createActionEvent({
       role: "student",
       sessionSettings: null,
       tenant: {
-        course_id: "default-course",
+        learning_path_id: "default-learning-path",
         org_id: "local",
         role: "student",
       },

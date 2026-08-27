@@ -22,7 +22,7 @@ class SessionUserResponse(ApiModel):
 
 class SessionTenantResponse(ApiModel):
     org_id: str
-    course_id: str
+    learning_path_id: str
     cohort_id: str | None = None
     role: str
 

@@ -9,11 +9,11 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
 from sophia.api.deps import (
     current_session_record,
-    ensure_course_scope,
+    ensure_learning_path_scope,
     get_app_container,
     require_csrf,
-    require_csrf_course_scope,
-    require_effective_course_id,
+    require_csrf_learning_path_scope,
+    require_effective_learning_path_id,
 )
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
 from sophia.api.schemas.deadlines import (
@@ -81,7 +81,7 @@ async def list_deadlines(
     horizon_days: HorizonDaysQuery = 14,
     deadline_type: DeadlineTypeQuery = None,
 ) -> DeadlineListResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     deadlines = await get_deadlines(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -105,7 +105,7 @@ async def list_deadlines(
 )
 async def sync_deadline_cache(request: Request) -> DeadlineSyncResponse:
     await require_csrf(request)
-    effective_learning_path_id = await require_effective_course_id(request, None)
+    effective_learning_path_id = await require_effective_learning_path_id(request, None)
     deadlines = await sync_deadlines(get_app_container(request))
     scoped_deadlines = [
         deadline for deadline in deadlines if deadline.course_id == effective_learning_path_id
@@ -273,7 +273,7 @@ async def get_deadline_workload(
     learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 14,
 ) -> WorkloadResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     forecast = await get_workload_forecast(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -296,7 +296,7 @@ async def list_upcoming_exam_deadlines(
     learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
 ) -> UpcomingExamListResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     exams = await get_upcoming_exams(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -319,7 +319,7 @@ async def export_deadline_ics(
     learning_path_id: LearningPathIdQuery = None,
     horizon_days: HorizonDaysQuery = 30,
 ) -> DeadlineIcsExportResponse:
-    effective_learning_path_id = await require_effective_course_id(request, learning_path_id)
+    effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     ics = await export_deadlines_ics(
         get_app_container(request).db,
         course_id=effective_learning_path_id,
@@ -341,7 +341,7 @@ async def _require_deadline_scope(
     course_id = await _deadline_course_id(app_container.db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, course_id)
     return app_container, course_id
 
 
@@ -354,7 +354,7 @@ async def _require_csrf_deadline_scope(
     course_id = await _deadline_course_id(app_container.db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, course_id)
     return app_container, course_id
 
 
@@ -363,12 +363,12 @@ async def _require_csrf_payload_deadline_scope(
     payload_learning_path_id: int,
     deadline_id: str,
 ) -> AppContainer:
-    session = await require_csrf_course_scope(request, payload_learning_path_id)
+    session = await require_csrf_learning_path_scope(request, payload_learning_path_id)
     app_container = get_app_container(request)
     course_id = await _deadline_course_id(app_container.db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_course_scope(session, course_id)
+    ensure_learning_path_scope(session, course_id)
     if course_id != payload_learning_path_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     return app_container

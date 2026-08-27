@@ -33,14 +33,14 @@ def test_login_sets_signed_session_and_csrf_cookies() -> None:
     }
     assert body["tenant"] == {
         "org_id": "tu-wien",
-        "course_id": "course-1",
+        "learning_path_id": "course-1",
         "cohort_id": "cohort-a",
         "role": "student",
     }
     assert body["settings"] == {
         "theme": "system",
         "locale": "en",
-        "selected_course_id": "course-1",
+        "selected_learning_path_id": "course-1",
     }
 
     session_cookie = response.cookies.get(harness.settings.session_cookie_name)
@@ -92,7 +92,7 @@ def test_session_endpoint_returns_authenticated_session() -> None:
     assert body["authenticated"] is True
     assert body["user"]["id"] == "learner"
     assert body["tenant"]["org_id"] == "tu-wien"
-    assert body["settings"]["selected_course_id"] == "course-1"
+    assert body["settings"]["selected_learning_path_id"] == "course-1"
     assert body["csrf_token"] == harness.client.cookies.get(harness.settings.csrf_cookie_name)
 
 

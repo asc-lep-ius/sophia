@@ -27,7 +27,7 @@ class FakeAppContainer:
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
-        course_id=str(learning_path_id),
+        learning_path_id=str(learning_path_id),
         cohort_id="cohort-a",
         role="student",
     )

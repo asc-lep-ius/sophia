@@ -6,7 +6,11 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from sophia.api.deps import get_app_container, require_course_scope, require_csrf_course_scope
+from sophia.api.deps import (
+    get_app_container,
+    require_csrf_learning_path_scope,
+    require_learning_path_scope,
+)
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.review import (
     DueReviewListResponse,
@@ -44,7 +48,7 @@ async def list_due_reviews(
     learning_path_id: LearningPathIdQuery,
     request: Request,
 ) -> DueReviewListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     reviews = await get_due_reviews(get_app_container(request).db, learning_path_id)
     return DueReviewListResponse(
         learning_path_id=learning_path_id,
@@ -62,7 +66,7 @@ async def list_upcoming_reviews(
     request: Request,
     days_ahead: DaysAheadQuery = 3,
 ) -> UpcomingReviewListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     reviews = await get_upcoming_reviews(
         get_app_container(request).db,
         learning_path_id,
@@ -86,7 +90,7 @@ async def list_review_schedules(
     request: Request,
     topic: TopicFilterQuery = None,
 ) -> ReviewScheduleListResponse:
-    await require_course_scope(request, learning_path_id)
+    await require_learning_path_scope(request, learning_path_id)
     schedules = await get_all_schedules(get_app_container(request).db, learning_path_id)
     if topic is not None:
         schedules = [schedule for schedule in schedules if schedule.topic == topic]
@@ -108,7 +112,7 @@ async def create_review_schedule(
     payload: ReviewScheduleRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     schedule = await schedule_review(
         get_app_container(request).db,
         payload.topic,
@@ -127,7 +131,7 @@ async def complete_review_schedule(
     payload: ReviewCompletionRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf_course_scope(request, payload.learning_path_id)
+    await require_csrf_learning_path_scope(request, payload.learning_path_id)
     schedule = await complete_review(
         get_app_container(request).db,
         payload.topic,

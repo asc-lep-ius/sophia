@@ -6,7 +6,11 @@ export async function authenticateShell(page: Page): Promise<void> {
   await page.context().addCookies([
     { name: "sophia-e2e-auth", value: "1", url: PREVIEW_ORIGIN },
     { name: "sophia-org-id", value: "local", url: PREVIEW_ORIGIN },
-    { name: "sophia-course-id", value: "default-course", url: PREVIEW_ORIGIN },
+    {
+      name: "sophia-learning-path-id",
+      value: "default-learning-path",
+      url: PREVIEW_ORIGIN,
+    },
   ]);
 }
 

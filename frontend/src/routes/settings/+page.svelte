@@ -6,7 +6,7 @@
 
   type SettingsState = {
     locale: string;
-    selected_course_id?: string | null;
+    selected_learning_path_id?: string | null;
     theme: string;
   };
 
@@ -42,7 +42,7 @@
   );
   const persistedTheme = $derived(normalizeTheme(settings.theme));
   const selectedLocale = $derived(settings.locale);
-  const selectedCourseId = $derived(settings.selected_course_id ?? "");
+  const selectedLearningPathId = $derived(settings.selected_learning_path_id ?? "");
 
   let selectedTheme = $derived<Theme>(persistedTheme);
 
@@ -54,7 +54,7 @@
   function fallbackSettings(pageData: SettingsPageData): SettingsState {
     return {
       locale: pageData.locale,
-      selected_course_id: null,
+      selected_learning_path_id: null,
       theme: pageData.theme,
     };
   }
@@ -81,7 +81,7 @@
     <p class="form-status" role="status">{m.settings_saved()}</p>
   {/if}
 
-  <input name="selected_course_id" type="hidden" value={selectedCourseId} />
+  <input name="selected_learning_path_id" type="hidden" value={selectedLearningPathId} />
 
   <fieldset>
     <legend>{m.settings_theme_label()}</legend>

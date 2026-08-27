@@ -5,7 +5,7 @@ import AppShell from "../../src/lib/components/AppShell.svelte";
 import StudyPage from "../../src/routes/study/+page.svelte";
 
 const tenant = {
-  course_id: "default-course",
+  learning_path_id: "default-learning-path",
   org_id: "local",
   role: "student",
 };
@@ -32,7 +32,7 @@ describe("frontend scaffold smoke", () => {
       screen.getByRole("link", { name: "Study" }).getAttribute("aria-current"),
     ).toBe("page");
     const sidebar = screen.getByRole("complementary", { name: "Sophia" });
-    expect(within(sidebar).getByText("default-course")).toBeTruthy();
+    expect(within(sidebar).getByText("default-learning-path")).toBeTruthy();
   });
 
   it("renders the study controls with pointer equivalents", () => {

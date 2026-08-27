@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 SESSION_SALT = "sophia.api.session"
 SESSION_COOKIE_CLAIM = "session_id"
 SESSION_KEY_NAMESPACE = "sophia:session"
-SESSION_RECORD_VERSION = 1
+SESSION_RECORD_VERSION = 2
 _TOKEN_BYTES = 32
 
 type JsonScalar = str | int | float | bool | None
@@ -84,16 +84,16 @@ class SessionUser:
 
 @dataclass(frozen=True, slots=True)
 class SessionTenant:
-    """Org/course scope carried by a server-side session."""
+    """Org and learning-path scope carried by a server-side session."""
 
     org_id: str = "local"
-    course_id: str = "default-course"
+    learning_path_id: str = "default-learning-path"
     cohort_id: str | None = None
     role: str = "student"
 
     def __post_init__(self) -> None:
         _require_non_empty("tenant.org_id", self.org_id)
-        _require_non_empty("tenant.course_id", self.course_id)
+        _require_non_empty("tenant.learning_path_id", self.learning_path_id)
         _require_non_empty("tenant.role", self.role)
         if self.cohort_id is not None:
             _require_non_empty("tenant.cohort_id", self.cohort_id)
@@ -105,13 +105,16 @@ class SessionSettings:
 
     theme: str = "system"
     locale: str = "en"
-    selected_course_id: str | None = None
+    selected_learning_path_id: str | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty("settings.theme", self.theme)
         _require_non_empty("settings.locale", self.locale)
-        if self.selected_course_id is not None:
-            _require_non_empty("settings.selected_course_id", self.selected_course_id)
+        if self.selected_learning_path_id is not None:
+            _require_non_empty(
+                "settings.selected_learning_path_id",
+                self.selected_learning_path_id,
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,7 +267,7 @@ def serialize_session_record(record: SessionRecord) -> JsonObject:
         },
         "tenant": {
             "org_id": record.tenant.org_id,
-            "course_id": record.tenant.course_id,
+            "learning_path_id": record.tenant.learning_path_id,
             "cohort_id": record.tenant.cohort_id,
             "role": record.tenant.role,
         },
@@ -272,7 +275,7 @@ def serialize_session_record(record: SessionRecord) -> JsonObject:
         "settings": {
             "theme": record.settings.theme,
             "locale": record.settings.locale,
-            "selected_course_id": record.settings.selected_course_id,
+            "selected_learning_path_id": record.settings.selected_learning_path_id,
         },
         "tuwel_credentials": _serialize_credential(record.tuwel_credentials),
         "tiss_credentials": _serialize_credential(record.tiss_credentials),
@@ -448,7 +451,7 @@ def _deserialize_user(payload: Mapping[str, object]) -> SessionUser:
 def _deserialize_tenant(payload: Mapping[str, object]) -> SessionTenant:
     return SessionTenant(
         org_id=_required_string(payload, "org_id"),
-        course_id=_required_string(payload, "course_id"),
+        learning_path_id=_required_string(payload, "learning_path_id"),
         cohort_id=_optional_string(payload, "cohort_id"),
         role=_required_string(payload, "role"),
     )
@@ -458,7 +461,7 @@ def _deserialize_settings(payload: Mapping[str, object]) -> SessionSettings:
     return SessionSettings(
         theme=_required_string(payload, "theme"),
         locale=_required_string(payload, "locale"),
-        selected_course_id=_optional_string(payload, "selected_course_id"),
+        selected_learning_path_id=_optional_string(payload, "selected_learning_path_id"),
     )
 
 

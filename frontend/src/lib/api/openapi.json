@@ -1974,8 +1974,8 @@
             ],
             "title": "Cohort Id"
           },
-          "course_id": {
-            "title": "Course Id",
+          "learning_path_id": {
+            "title": "Learning Path Id",
             "type": "string"
           },
           "org_id": {
@@ -1989,7 +1989,7 @@
         },
         "required": [
           "org_id",
-          "course_id",
+          "learning_path_id",
           "role"
         ],
         "title": "SessionTenantResponse",
@@ -2032,7 +2032,7 @@
             ],
             "title": "Locale"
           },
-          "selected_course_id": {
+          "selected_learning_path_id": {
             "anyOf": [
               {
                 "minLength": 1,
@@ -2042,7 +2042,7 @@
                 "type": "null"
               }
             ],
-            "title": "Selected Course Id"
+            "title": "Selected Learning Path Id"
           },
           "theme": {
             "anyOf": [
@@ -2066,7 +2066,7 @@
             "title": "Locale",
             "type": "string"
           },
-          "selected_course_id": {
+          "selected_learning_path_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -2075,7 +2075,7 @@
                 "type": "null"
               }
             ],
-            "title": "Selected Course Id"
+            "title": "Selected Learning Path Id"
           },
           "theme": {
             "title": "Theme",

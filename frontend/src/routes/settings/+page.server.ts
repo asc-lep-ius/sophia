@@ -72,15 +72,15 @@ async function settingsFromForm(
   event: RequestEvent,
 ): Promise<SettingsResponse> {
   const formData = await event.request.formData();
-  const selectedCourseId = readOptionalFormString(
+  const selectedLearningPathId = readOptionalFormString(
     formData,
-    "selected_course_id",
+    "selected_learning_path_id",
   );
   return {
     locale:
       normalizeLocale(readFormString(formData, "locale")) ??
       event.locals.locale,
-    selected_course_id: selectedCourseId,
+    selected_learning_path_id: selectedLearningPathId,
     theme: normalizeTheme(readFormString(formData, "theme")),
   };
 }
@@ -98,9 +98,9 @@ function normalizeSettingsResponse(
 function fallbackSettings(event: RequestEvent): SettingsResponse {
   return {
     locale: event.locals.sessionSettings?.locale ?? event.locals.locale,
-    selected_course_id:
-      event.locals.sessionSettings?.selected_course_id ??
-      event.locals.course_id,
+    selected_learning_path_id:
+      event.locals.sessionSettings?.selected_learning_path_id ??
+      event.locals.learning_path_id,
     theme: event.locals.sessionSettings?.theme ?? "light",
   };
 }
@@ -134,10 +134,11 @@ function isSettingsResponse(value: unknown): value is SettingsResponse {
     typeof value === "object" &&
     typeof (value as { theme?: unknown }).theme === "string" &&
     typeof (value as { locale?: unknown }).locale === "string" &&
-    ((value as { selected_course_id?: unknown }).selected_course_id === null ||
-      (value as { selected_course_id?: unknown }).selected_course_id ===
-        undefined ||
-      typeof (value as { selected_course_id?: unknown }).selected_course_id ===
-        "string")
+    ((value as { selected_learning_path_id?: unknown })
+      .selected_learning_path_id === null ||
+      (value as { selected_learning_path_id?: unknown })
+        .selected_learning_path_id === undefined ||
+      typeof (value as { selected_learning_path_id?: unknown })
+        .selected_learning_path_id === "string")
   );
 }

@@ -16,7 +16,7 @@ class OrgScope(ApiModel):
     display_name: str
 
 
-class CourseScope(ApiModel):
+class LearningPathScope(ApiModel):
     id: str
     display_name: str
 

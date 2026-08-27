@@ -105,12 +105,12 @@ describe("server hook API helpers", () => {
             csrf_token: "csrf-from-api",
             settings: {
               locale: "de",
-              selected_course_id: "course-2",
+              selected_learning_path_id: "course-2",
               theme: "dark",
             },
             tenant: {
               cohort_id: "cohort-a",
-              course_id: "course-2",
+              learning_path_id: "course-2",
               org_id: "tu-wien",
               role: "ta",
             },
@@ -140,13 +140,13 @@ describe("server hook API helpers", () => {
     });
     expect(event.locals.tenant).toEqual({
       cohort_id: "cohort-a",
-      course_id: "course-2",
+      learning_path_id: "course-2",
       org_id: "tu-wien",
       role: "ta",
     });
     expect(event.locals.sessionSettings).toEqual({
       locale: "de",
-      selected_course_id: "course-2",
+      selected_learning_path_id: "course-2",
       theme: "dark",
     });
     expect(event.locals.csrfToken).toBe("csrf-from-api");
@@ -165,7 +165,7 @@ describe("server hook API helpers", () => {
     expect(event.locals.authenticated).toBe(false);
     expect(event.locals.user).toBeNull();
     expect(event.locals.tenant).toEqual({
-      course_id: "default-course",
+      learning_path_id: "default-learning-path",
       org_id: "local",
       role: "student",
     });
@@ -194,7 +194,7 @@ function createEvent({
     locals: {
       apiSetCookies: [],
       authenticated: false,
-      course_id: "default-course",
+      learning_path_id: "default-learning-path",
       csrfToken,
       locale: "en",
       org_id: "local",
@@ -202,7 +202,7 @@ function createEvent({
       role: "student",
       sessionSettings: null,
       tenant: {
-        course_id: "default-course",
+        learning_path_id: "default-learning-path",
         org_id: "local",
         role: "student",
       },

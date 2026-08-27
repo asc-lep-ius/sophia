@@ -107,15 +107,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chronos-history/calibration": {
+    "/api/content-sources": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Chronos History Calibration */
-        get: operations["getChronosHistoryCalibration"];
+        /** List Content Sources */
+        get: operations["listContentSources"];
         put?: never;
         post?: never;
         delete?: never;
@@ -124,92 +124,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chronos-history/deadlines": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chronos History Deadlines */
-        get: operations["listChronosHistoryDeadlines"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos-history/deadlines/{deadline_id}/reflection": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Chronos History Reflection */
-        get: operations["getChronosHistoryReflection"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos-history/deadlines/{deadline_id}/time-entries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chronos History Time Entries */
-        get: operations["listChronosHistoryTimeEntries"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos-history/effort-distribution": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Chronos History Effort Distribution */
-        get: operations["getChronosHistoryEffortDistribution"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/deadlines": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chronos Deadlines */
-        get: operations["listChronosDeadlines"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/deadlines/{deadline_id}/complete": {
+    "/api/content-sources/discover": {
         parameters: {
             query?: never;
             header?: never;
@@ -218,23 +133,23 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Complete Chronos Deadline */
-        post: operations["completeChronosDeadline"];
+        /** Discover Content Sources */
+        post: operations["discoverContentSources"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/chronos/deadlines/{deadline_id}/tracked-time": {
+    "/api/content-sources/{content_source_id}/content-items": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Chronos Tracked Time */
-        get: operations["getChronosTrackedTime"];
+        /** List Content Items */
+        get: operations["listContentItems"];
         put?: never;
         post?: never;
         delete?: never;
@@ -243,32 +158,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chronos/estimates": {
+    "/api/content-sources/{content_source_id}/ingestion-status": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /** Record Chronos Estimate */
-        post: operations["recordChronosEstimate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/ics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Export Chronos Ics */
-        get: operations["exportChronosIcs"];
+        /** Read Content Source Ingestion Status */
+        get: operations["readContentSourceIngestionStatus"];
         put?: never;
         post?: never;
         delete?: never;
@@ -277,100 +175,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chronos/reflections": {
+    "/api/deadline-history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        /** Record Chronos Reflection */
-        post: operations["recordChronosReflection"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/sync": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Sync Chronos Deadlines */
-        post: operations["syncChronosDeadlines"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/time-entries": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Record Chronos Time Entry */
-        post: operations["recordChronosTimeEntry"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/timers/{deadline_id}/start": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Start Chronos Timer */
-        post: operations["startChronosTimer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/timers/{deadline_id}/stop": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Stop Chronos Timer */
-        post: operations["stopChronosTimer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/chronos/upcoming-exams": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Chronos Upcoming Exams */
-        get: operations["listChronosUpcomingExams"];
+        /** List Past Deadlines */
+        get: operations["listPastDeadlines"];
         put?: never;
         post?: never;
         delete?: never;
@@ -379,15 +192,270 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/chronos/workload": {
+    "/api/deadline-history/calibration": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Chronos Workload */
-        get: operations["getChronosWorkload"];
+        /** Get Effort Calibration */
+        get: operations["getEffortCalibration"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadline-history/effort-distribution": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Effort Distribution Route */
+        get: operations["getEffortDistribution"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadline-history/{deadline_id}/reflection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deadline Reflection Detail */
+        get: operations["getDeadlineReflection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadline-history/{deadline_id}/time-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deadline Time Entries */
+        get: operations["listDeadlineTimeEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Deadlines */
+        get: operations["listDeadlines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/estimates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Deadline Estimate */
+        post: operations["recordDeadlineEstimate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export Deadline Ics */
+        get: operations["exportDeadlinesIcs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/reflections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Deadline Reflection */
+        post: operations["recordDeadlineReflection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sync Deadline Cache */
+        post: operations["syncDeadlines"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/time-entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Deadline Time Entry */
+        post: operations["recordDeadlineTimeEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/upcoming-exams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Upcoming Exam Deadlines */
+        get: operations["listUpcomingExams"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/workload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deadline Workload */
+        get: operations["getDeadlineWorkload"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/{deadline_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Deadline Route */
+        post: operations["completeDeadline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/{deadline_id}/timer/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start Deadline Timer */
+        post: operations["startDeadlineTimer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/{deadline_id}/timer/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop Deadline Timer */
+        post: operations["stopDeadlineTimer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/deadlines/{deadline_id}/tracked-time": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Deadline Tracked Time */
+        get: operations["getDeadlineTrackedTime"];
         put?: never;
         post?: never;
         delete?: never;
@@ -413,7 +481,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/lectures/discover": {
+    "/api/learning-paths/{learning_path_id}/topics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Topics */
+        get: operations["listTopics"];
+        put?: never;
+        /** Create Manual Topic */
+        post: operations["saveManualTopic"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning-paths/{learning_path_id}/topics/confidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Topic Confidence Ratings */
+        get: operations["listTopicConfidenceRatings"];
+        put?: never;
+        /** Save Topic Confidence Rating */
+        post: operations["saveTopicConfidenceRating"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning-paths/{learning_path_id}/topics/extract": {
         parameters: {
             query?: never;
             header?: never;
@@ -422,59 +526,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Discover Modules */
-        post: operations["discoverLectureModules"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/lectures/modules": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Lecture Modules */
-        get: operations["listLectureModules"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/lectures/modules/{module_id}/episodes": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Lecture Module Episodes */
-        get: operations["listLectureModuleEpisodes"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/lectures/modules/{module_id}/pipeline-status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Lecture Pipeline Status */
-        get: operations["readLecturePipelineStatus"];
-        put?: never;
-        post?: never;
+        /** Extract Topics */
+        post: operations["extractTopics"];
         delete?: never;
         options?: never;
         head?: never;
@@ -652,7 +705,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/search/lectures": {
+    "/api/search": {
         parameters: {
             query?: never;
             header?: never;
@@ -661,8 +714,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Search Lecture Content */
-        post: operations["searchLectureContent"];
+        /** Search Content */
+        post: operations["searchContent"];
         delete?: never;
         options?: never;
         head?: never;
@@ -739,75 +792,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/topics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Topics */
-        get: operations["listTopics"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/topics/confidence": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Topic Confidence Ratings */
-        get: operations["listTopicConfidenceRatings"];
-        put?: never;
-        /** Save Topic Confidence Rating */
-        post: operations["saveTopicConfidenceRating"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/topics/extract": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Extract Topics */
-        post: operations["extractTopics"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/topics/manual": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Create Manual Topic */
-        post: operations["saveManualTopic"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -816,8 +800,8 @@ export interface components {
         ActualScoreUpdateRequest: {
             /** Actual */
             actual: number;
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topic */
             topic: string;
         };
@@ -825,8 +809,8 @@ export interface components {
         ActualScoreUpdateResponse: {
             /** Actual */
             actual: number;
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topic */
             topic: string;
             /** Updated */
@@ -853,15 +837,15 @@ export interface components {
         };
         /** CalibrationRatingListResponse */
         CalibrationRatingListResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Ratings */
             ratings: components["schemas"]["CalibrationRatingResponse"][];
         };
         /** CalibrationRatingRequest */
         CalibrationRatingRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Rating */
             rating: number;
             /** Topic */
@@ -873,12 +857,12 @@ export interface components {
             actual: number | null;
             /** Calibration Error */
             calibration_error: number | null;
-            /** Course Id */
-            course_id: number;
             /** Difficulty Level */
             difficulty_level: string;
             /** Is Blind Spot */
             is_blind_spot: boolean;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Predicted */
             predicted: number;
             /** Rated At */
@@ -890,26 +874,113 @@ export interface components {
         CalibrationRatingSavedResponse: {
             rating: components["schemas"]["CalibrationRatingResponse"];
         };
-        /** ChronosCalibrationMetricResponse */
-        ChronosCalibrationMetricResponse: {
-            /** Domain */
-            domain: string;
-            /** Mean Absolute Error */
-            mean_absolute_error: number;
-            /** Mean Error */
-            mean_error: number;
-            /** Sample Count */
-            sample_count: number;
-            /** Trend */
-            trend: string;
+        /** ContentItemListResponse */
+        ContentItemListResponse: {
+            /** Content Source Id */
+            content_source_id: number;
+            /** Items */
+            items: components["schemas"]["ContentItemResponse"][];
         };
-        /** ChronosCompletionRequest */
-        ChronosCompletionRequest: {
-            /** Course Id */
-            course_id: number;
+        /** ContentItemResponse */
+        ContentItemResponse: {
+            /** Download Status */
+            download_status: string;
+            /** Id */
+            id: string;
+            /** Index Status */
+            index_status: string | null;
+            /** Missed At */
+            missed_at: string | null;
+            /** Sequence Number */
+            sequence_number: number | null;
+            /** Skip Reason */
+            skip_reason: string | null;
+            /** Title */
+            title: string;
+            /** Transcription Status */
+            transcription_status: string | null;
         };
-        /** ChronosCompletionResponse */
-        ChronosCompletionResponse: {
+        /** ContentSearchRequest */
+        ContentSearchRequest: {
+            /** Content Source Id */
+            content_source_id: number;
+            /** Learning Path Id */
+            learning_path_id?: number | null;
+            /**
+             * Missed Only
+             * @default false
+             */
+            missed_only: boolean;
+            /**
+             * N Results
+             * @default 5
+             */
+            n_results: number;
+            /** Query */
+            query: string;
+            source_filter?: components["schemas"]["ContentSearchSourceFilter"] | null;
+        };
+        /** ContentSearchResponse */
+        ContentSearchResponse: {
+            /** Results */
+            results: components["schemas"]["ContentSearchResultResponse"][];
+        };
+        /** ContentSearchResultResponse */
+        ContentSearchResultResponse: {
+            /** Chunk Text */
+            chunk_text: string;
+            /** Content Item Id */
+            content_item_id: string;
+            /** End Time */
+            end_time: number;
+            /** Score */
+            score: number;
+            /** Source */
+            source: string;
+            /** Start Time */
+            start_time: number;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ContentSearchSourceFilter
+         * @description Kind of indexed content a search request is restricted to.
+         * @enum {string}
+         */
+        ContentSearchSourceFilter: "all" | "transcript" | "document";
+        /** ContentSourceDiscoveryResponse */
+        ContentSourceDiscoveryResponse: {
+            /** Sources */
+            sources: components["schemas"]["DiscoveredContentSourceResponse"][];
+        };
+        /** ContentSourceIngestionStatusResponse */
+        ContentSourceIngestionStatusResponse: {
+            /** Content Source Id */
+            content_source_id: number;
+            /** Items */
+            items: components["schemas"]["ContentItemResponse"][];
+        };
+        /** ContentSourceListResponse */
+        ContentSourceListResponse: {
+            /** Sources */
+            sources: components["schemas"]["ContentSourceResponse"][];
+        };
+        /** ContentSourceResponse */
+        ContentSourceResponse: {
+            /** External Ref */
+            external_ref: string;
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+        };
+        /** DeadlineCompletionRequest */
+        DeadlineCompletionRequest: {
+            /** Learning Path Id */
+            learning_path_id: number;
+        };
+        /** DeadlineCompletionResponse */
+        DeadlineCompletionResponse: {
             /** Actual Hours */
             actual_hours: number;
             /** Completed */
@@ -921,21 +992,63 @@ export interface components {
             /** Predicted Hours */
             predicted_hours: number | null;
         };
-        /** ChronosDeadlineListResponse */
-        ChronosDeadlineListResponse: {
-            /** Course Id */
-            course_id: number | null;
-            /** Deadlines */
-            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
+        /** DeadlineIcsExportResponse */
+        DeadlineIcsExportResponse: {
             /** Horizon Days */
             horizon_days: number;
+            /** Ics */
+            ics: string;
+            /** Learning Path Id */
+            learning_path_id: number | null;
         };
-        /** ChronosDeadlineResponse */
-        ChronosDeadlineResponse: {
-            /** Course Id */
-            course_id: number;
-            /** Course Name */
-            course_name: string;
+        /** DeadlineListResponse */
+        DeadlineListResponse: {
+            /** Deadlines */
+            deadlines: components["schemas"]["DeadlineResponse"][];
+            /** Horizon Days */
+            horizon_days: number;
+            /** Learning Path Id */
+            learning_path_id: number | null;
+        };
+        /** DeadlineReflectionDetailResponse */
+        DeadlineReflectionDetailResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            reflection: components["schemas"]["DeadlineReflectionItemResponse"];
+        };
+        /** DeadlineReflectionItemResponse */
+        DeadlineReflectionItemResponse: {
+            /** Actual Hours */
+            actual_hours: number;
+            /** Predicted Hours */
+            predicted_hours: number | null;
+            /** Reflected At */
+            reflected_at: string;
+            /** Reflection Text */
+            reflection_text: string | null;
+        };
+        /** DeadlineReflectionRequest */
+        DeadlineReflectionRequest: {
+            /** Actual Hours */
+            actual_hours: number;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Predicted Hours */
+            predicted_hours?: number | null;
+            /** Reflection Text */
+            reflection_text: string;
+        };
+        /** DeadlineReflectionResponse */
+        DeadlineReflectionResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Recorded */
+            recorded: boolean;
+        };
+        /** DeadlineResponse */
+        DeadlineResponse: {
             /** Deadline Type */
             deadline_type: string;
             /**
@@ -951,6 +1064,10 @@ export interface components {
             grade_weight: number | null;
             /** Id */
             id: string;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Learning Path Name */
+            learning_path_name: string;
             /** Name */
             name: string;
             /** Submission Status */
@@ -958,62 +1075,120 @@ export interface components {
             /** Url */
             url: string | null;
         };
-        /** ChronosEffortEstimateResponse */
-        ChronosEffortEstimateResponse: {
-            /** Breakdown */
-            breakdown: {
-                [key: string]: number;
-            } | null;
-            /** Course Id */
-            course_id: number;
-            /** Deadline Id */
-            deadline_id: string;
-            /** Estimated At */
-            estimated_at: string;
-            /** Implementation Intention */
-            implementation_intention: string | null;
-            /** Predicted Hours */
-            predicted_hours: number;
-            /** Scaffold Level */
-            scaffold_level: string;
-        };
-        /** ChronosEstimateRequest */
-        ChronosEstimateRequest: {
-            /** Breakdown */
-            breakdown?: {
-                [key: string]: number;
-            } | null;
-            /** Course Id */
-            course_id: number;
-            /** Deadline Id */
-            deadline_id: string;
-            /** Intention */
-            intention?: string | null;
-            /** Predicted Hours */
-            predicted_hours: number;
-        };
-        /** ChronosEstimateResponse */
-        ChronosEstimateResponse: {
-            estimate: components["schemas"]["ChronosEffortEstimateResponse"];
-        };
-        /** ChronosHistoryCalibrationResponse */
-        ChronosHistoryCalibrationResponse: {
-            /** Course Id */
-            course_id: number | null;
-            /** Metrics */
-            metrics: components["schemas"]["ChronosCalibrationMetricResponse"][];
-        };
-        /** ChronosHistoryDeadlineListResponse */
-        ChronosHistoryDeadlineListResponse: {
-            /** Course Id */
-            course_id: number | null;
+        /** DeadlineSyncResponse */
+        DeadlineSyncResponse: {
             /** Deadlines */
-            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
-            /** Limit */
-            limit: number;
+            deadlines: components["schemas"]["DeadlineResponse"][];
+            /** Synced Count */
+            synced_count: number;
         };
-        /** ChronosHistoryEffortDayResponse */
-        ChronosHistoryEffortDayResponse: {
+        /** DeadlineTimeEntryItemResponse */
+        DeadlineTimeEntryItemResponse: {
+            /** Hours */
+            hours: number;
+            /** Note */
+            note: string | null;
+            /** Recorded At */
+            recorded_at: string;
+            /** Source */
+            source: string;
+        };
+        /** DeadlineTimeEntryListResponse */
+        DeadlineTimeEntryListResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Entries */
+            entries: components["schemas"]["DeadlineTimeEntryItemResponse"][];
+        };
+        /** DeadlineTimeEntryRequest */
+        DeadlineTimeEntryRequest: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Hours */
+            hours: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Note */
+            note?: string | null;
+            /** Recorded At */
+            recorded_at?: string | null;
+        };
+        /** DeadlineTimeEntryResponse */
+        DeadlineTimeEntryResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Recorded */
+            recorded: boolean;
+        };
+        /** DeadlineTimerStartResponse */
+        DeadlineTimerStartResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Started */
+            started: boolean;
+        };
+        /** DeadlineTimerStopResponse */
+        DeadlineTimerStopResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Elapsed Hours */
+            elapsed_hours: number;
+        };
+        /** DeadlineTrackedTimeResponse */
+        DeadlineTrackedTimeResponse: {
+            /** Deadline Id */
+            deadline_id: string;
+            /** Total Hours */
+            total_hours: number;
+        };
+        /**
+         * DeadlineType
+         * @description Source type of a deadline.
+         * @enum {string}
+         */
+        DeadlineType: "assignment" | "quiz" | "checkmark" | "exam" | "exam_registration";
+        /** DiscoveredContentSourceResponse */
+        DiscoveredContentSourceResponse: {
+            /** Content Item Count */
+            content_item_count: number;
+            /** Id */
+            id: number;
+            /** Learning Path Short Title */
+            learning_path_short_title: string;
+            /** Learning Path Title */
+            learning_path_title: string;
+            /** Title */
+            title: string;
+        };
+        /** DueReviewListResponse */
+        DueReviewListResponse: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Reviews */
+            reviews: components["schemas"]["ReviewScheduleItemResponse"][];
+        };
+        /** EffortCalibrationMetricResponse */
+        EffortCalibrationMetricResponse: {
+            /** Domain */
+            domain: string;
+            /** Mean Absolute Error */
+            mean_absolute_error: number;
+            /** Mean Error */
+            mean_error: number;
+            /** Sample Count */
+            sample_count: number;
+            /** Trend */
+            trend: string;
+        };
+        /** EffortCalibrationResponse */
+        EffortCalibrationResponse: {
+            /** Learning Path Id */
+            learning_path_id: number | null;
+            /** Metrics */
+            metrics: components["schemas"]["EffortCalibrationMetricResponse"][];
+        };
+        /** EffortDayResponse */
+        EffortDayResponse: {
             /** Date */
             date: string;
             /** Deadline Efforts */
@@ -1025,192 +1200,52 @@ export interface components {
             /** Unestimated */
             unestimated: string[];
         };
-        /** ChronosHistoryEffortDistributionResponse */
-        ChronosHistoryEffortDistributionResponse: {
-            /** Course Id */
-            course_id: number | null;
+        /** EffortDistributionResponse */
+        EffortDistributionResponse: {
             /** Days */
-            days: components["schemas"]["ChronosHistoryEffortDayResponse"][];
+            days: components["schemas"]["EffortDayResponse"][];
             /** Horizon Days */
             horizon_days: number;
+            /** Learning Path Id */
+            learning_path_id: number | null;
         };
-        /** ChronosHistoryReflectionItemResponse */
-        ChronosHistoryReflectionItemResponse: {
-            /** Actual Hours */
-            actual_hours: number;
+        /** EffortEstimateRequest */
+        EffortEstimateRequest: {
+            /** Breakdown */
+            breakdown?: {
+                [key: string]: number;
+            } | null;
+            /** Deadline Id */
+            deadline_id: string;
+            /** Intention */
+            intention?: string | null;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Predicted Hours */
-            predicted_hours: number | null;
-            /** Reflected At */
-            reflected_at: string;
-            /** Reflection Text */
-            reflection_text: string | null;
+            predicted_hours: number;
         };
-        /** ChronosHistoryReflectionResponse */
-        ChronosHistoryReflectionResponse: {
+        /** EffortEstimateResponse */
+        EffortEstimateResponse: {
+            /** Breakdown */
+            breakdown: {
+                [key: string]: number;
+            } | null;
             /** Deadline Id */
             deadline_id: string;
-            reflection: components["schemas"]["ChronosHistoryReflectionItemResponse"];
-        };
-        /** ChronosHistoryTimeEntryListResponse */
-        ChronosHistoryTimeEntryListResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Entries */
-            entries: components["schemas"]["ChronosHistoryTimeEntryResponse"][];
-        };
-        /** ChronosHistoryTimeEntryResponse */
-        ChronosHistoryTimeEntryResponse: {
-            /** Hours */
-            hours: number;
-            /** Note */
-            note: string | null;
-            /** Recorded At */
-            recorded_at: string;
-            /** Source */
-            source: string;
-        };
-        /** ChronosIcsExportResponse */
-        ChronosIcsExportResponse: {
-            /** Course Id */
-            course_id: number | null;
-            /** Horizon Days */
-            horizon_days: number;
-            /** Ics */
-            ics: string;
-        };
-        /** ChronosReflectionRequest */
-        ChronosReflectionRequest: {
-            /** Actual Hours */
-            actual_hours: number;
-            /** Course Id */
-            course_id: number;
-            /** Deadline Id */
-            deadline_id: string;
+            /** Estimated At */
+            estimated_at: string;
+            /** Implementation Intention */
+            implementation_intention: string | null;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Predicted Hours */
-            predicted_hours?: number | null;
-            /** Reflection Text */
-            reflection_text: string;
+            predicted_hours: number;
+            /** Scaffold Level */
+            scaffold_level: string;
         };
-        /** ChronosReflectionResponse */
-        ChronosReflectionResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Recorded */
-            recorded: boolean;
-        };
-        /** ChronosSyncResponse */
-        ChronosSyncResponse: {
-            /** Deadlines */
-            deadlines: components["schemas"]["ChronosDeadlineResponse"][];
-            /** Synced Count */
-            synced_count: number;
-        };
-        /** ChronosTimeEntryRequest */
-        ChronosTimeEntryRequest: {
-            /** Course Id */
-            course_id: number;
-            /** Deadline Id */
-            deadline_id: string;
-            /** Hours */
-            hours: number;
-            /** Note */
-            note?: string | null;
-            /** Recorded At */
-            recorded_at?: string | null;
-        };
-        /** ChronosTimeEntryResponse */
-        ChronosTimeEntryResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Recorded */
-            recorded: boolean;
-        };
-        /** ChronosTimerStartResponse */
-        ChronosTimerStartResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Started */
-            started: boolean;
-        };
-        /** ChronosTimerStopResponse */
-        ChronosTimerStopResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Elapsed Hours */
-            elapsed_hours: number;
-        };
-        /** ChronosTrackedTimeResponse */
-        ChronosTrackedTimeResponse: {
-            /** Deadline Id */
-            deadline_id: string;
-            /** Total Hours */
-            total_hours: number;
-        };
-        /** ChronosUpcomingExamListResponse */
-        ChronosUpcomingExamListResponse: {
-            /** Course Id */
-            course_id: number | null;
-            /** Exams */
-            exams: components["schemas"]["ChronosDeadlineResponse"][];
-            /** Horizon Days */
-            horizon_days: number;
-        };
-        /** ChronosWorkloadDayResponse */
-        ChronosWorkloadDayResponse: {
-            /** Date */
-            date: string;
-            /** Items */
-            items: components["schemas"]["ChronosWorkloadItemResponse"][];
-        };
-        /** ChronosWorkloadItemResponse */
-        ChronosWorkloadItemResponse: {
-            /** Hours */
-            hours: number;
-            /** Name */
-            name: string;
-        };
-        /** ChronosWorkloadResponse */
-        ChronosWorkloadResponse: {
-            /** Course Id */
-            course_id: number | null;
-            /** Deadline Count */
-            deadline_count: number;
-            /** Horizon Days */
-            horizon_days: number;
-            /** Per Day */
-            per_day: components["schemas"]["ChronosWorkloadDayResponse"][];
-            /** Remaining Hours */
-            remaining_hours: number;
-            /** Total Estimated Hours */
-            total_estimated_hours: number;
-            /** Total Tracked Hours */
-            total_tracked_hours: number;
-        };
-        /**
-         * DeadlineType
-         * @description Source type of a deadline.
-         * @enum {string}
-         */
-        DeadlineType: "assignment" | "quiz" | "checkmark" | "exam" | "exam_registration";
-        /** DiscoveredLectureModuleResponse */
-        DiscoveredLectureModuleResponse: {
-            /** Course Fullname */
-            course_fullname: string;
-            /** Course Shortname */
-            course_shortname: string;
-            /** Episode Count */
-            episode_count: number;
-            /** Module Id */
-            module_id: number;
-            /** Module Name */
-            module_name: string;
-        };
-        /** DueReviewListResponse */
-        DueReviewListResponse: {
-            /** Course Id */
-            course_id: number;
-            /** Reviews */
-            reviews: components["schemas"]["ReviewScheduleItemResponse"][];
+        /** EffortEstimateSavedResponse */
+        EffortEstimateSavedResponse: {
+            estimate: components["schemas"]["EffortEstimateResponse"];
         };
         /** ErrorDetail */
         ErrorDetail: {
@@ -1225,12 +1260,6 @@ export interface components {
         ErrorEnvelope: {
             detail: components["schemas"]["ErrorDetail"];
         };
-        /**
-         * FlashcardSource
-         * @description Origin of a flashcard.
-         * @enum {string}
-         */
-        FlashcardSource: "study" | "lecture" | "manual";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -1245,112 +1274,24 @@ export interface components {
             status: "ok";
         };
         JsonPrimitive: string | number | boolean | null;
-        /** LectureDiscoveryResponse */
-        LectureDiscoveryResponse: {
-            /** Modules */
-            modules: components["schemas"]["DiscoveredLectureModuleResponse"][];
-        };
-        /** LectureEpisodeResponse */
-        LectureEpisodeResponse: {
-            /** Download Status */
-            download_status: string;
-            /** Episode Id */
-            episode_id: string;
-            /** Index Status */
-            index_status: string | null;
-            /** Lecture Number */
-            lecture_number: number | null;
-            /** Missed At */
-            missed_at: string | null;
-            /** Skip Reason */
-            skip_reason: string | null;
-            /** Title */
-            title: string;
-            /** Transcription Status */
-            transcription_status: string | null;
-        };
-        /** LectureEpisodesResponse */
-        LectureEpisodesResponse: {
-            /** Episodes */
-            episodes: components["schemas"]["LectureEpisodeResponse"][];
-            /** Module Id */
-            module_id: number;
-        };
-        /** LectureModuleResponse */
-        LectureModuleResponse: {
-            /** Course Name */
-            course_name: string;
-            /** Module Id */
-            module_id: number;
-            /** Series Id */
-            series_id: string;
-        };
-        /** LectureModulesResponse */
-        LectureModulesResponse: {
-            /** Modules */
-            modules: components["schemas"]["LectureModuleResponse"][];
-        };
-        /** LecturePipelineStatusResponse */
-        LecturePipelineStatusResponse: {
-            /** Episodes */
-            episodes: components["schemas"]["LectureEpisodeResponse"][];
-            /** Module Id */
-            module_id: number;
-        };
-        /** LectureSearchRequest */
-        LectureSearchRequest: {
-            /** Course Id */
-            course_id?: number | null;
-            /**
-             * Missed Only
-             * @default false
-             */
-            missed_only: boolean;
-            /** Module Id */
-            module_id: number;
-            /**
-             * N Results
-             * @default 5
-             */
-            n_results: number;
-            /** Query */
-            query: string;
-            /** Source Filter */
-            source_filter?: ("all" | "lecture" | "pdf") | null;
-        };
-        /** LectureSearchResponse */
-        LectureSearchResponse: {
-            /** Results */
-            results: components["schemas"]["LectureSearchResultResponse"][];
-        };
-        /** LectureSearchResultResponse */
-        LectureSearchResultResponse: {
-            /** Chunk Text */
-            chunk_text: string;
-            /** End Time */
-            end_time: number;
-            /** Episode Id */
-            episode_id: string;
-            /** Score */
-            score: number;
-            /** Source */
-            source: string;
-            /** Start Time */
-            start_time: number;
-            /** Title */
-            title: string;
-        };
         /** ManualTopicRequest */
         ManualTopicRequest: {
-            /** Course Id */
-            course_id: number;
             /** Topic */
             topic: string;
         };
+        /** PastDeadlineListResponse */
+        PastDeadlineListResponse: {
+            /** Deadlines */
+            deadlines: components["schemas"]["DeadlineResponse"][];
+            /** Learning Path Id */
+            learning_path_id: number | null;
+            /** Limit */
+            limit: number;
+        };
         /** QuickstartConfidenceRequest */
         QuickstartConfidenceRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Ratings */
             ratings: {
                 [key: string]: number;
@@ -1358,33 +1299,33 @@ export interface components {
         };
         /** QuickstartConfidenceResponse */
         QuickstartConfidenceResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Saved Count */
             saved_count: number;
         };
-        /** QuickstartCourseResponse */
-        QuickstartCourseResponse: {
-            /** Fullname */
-            fullname: string;
+        /** QuickstartLearningPathResponse */
+        QuickstartLearningPathResponse: {
             /** Id */
             id: number;
-            /** Shortname */
-            shortname: string;
+            /** Short Title */
+            short_title: string;
+            /** Title */
+            title: string;
             /** Url */
             url: string | null;
         };
         /** QuickstartManualTopicsRequest */
         QuickstartManualTopicsRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topics */
             topics: string[];
         };
         /** QuickstartManualTopicsResponse */
         QuickstartManualTopicsResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topics */
             topics: components["schemas"]["QuickstartTopicResponse"][];
         };
@@ -1392,11 +1333,11 @@ export interface components {
         QuickstartOverviewResponse: {
             /** Completed Session Count */
             completed_session_count: number;
-            /** Course Id */
-            course_id: number | null;
-            /** Courses */
-            courses: components["schemas"]["QuickstartCourseResponse"][];
-            nearest_deadline: components["schemas"]["ChronosDeadlineResponse"] | null;
+            /** Learning Path Id */
+            learning_path_id: number | null;
+            /** Learning Paths */
+            learning_paths: components["schemas"]["QuickstartLearningPathResponse"][];
+            nearest_deadline: components["schemas"]["DeadlineResponse"] | null;
             /** Topics */
             topics: components["schemas"]["QuickstartTopicResponse"][];
         };
@@ -1404,17 +1345,16 @@ export interface components {
         QuickstartSessionCountResponse: {
             /** Completed Session Count */
             completed_session_count: number;
-            /** Course Id */
-            course_id: number | null;
+            /** Learning Path Id */
+            learning_path_id: number | null;
         };
         /** QuickstartTopicResponse */
         QuickstartTopicResponse: {
-            /** Course Id */
-            course_id: number;
             /** Frequency */
             frequency: number;
-            /** Source */
-            source: string;
+            /** Learning Path Id */
+            learning_path_id: number;
+            source: components["schemas"]["TopicOrigin"];
             /** Topic */
             topic: string;
         };
@@ -1440,8 +1380,8 @@ export interface components {
         };
         /** ReviewCompletionRequest */
         ReviewCompletionRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Score */
             score: number;
             /** Topic */
@@ -1449,8 +1389,6 @@ export interface components {
         };
         /** ReviewScheduleItemResponse */
         ReviewScheduleItemResponse: {
-            /** Course Id */
-            course_id: number;
             /** Difficulty */
             difficulty: number;
             /** Interval Days */
@@ -1461,6 +1399,8 @@ export interface components {
             is_due: boolean;
             /** Last Reviewed At */
             last_reviewed_at: string | null;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Next Review At */
             next_review_at: string;
             /** Review Count */
@@ -1474,15 +1414,15 @@ export interface components {
         };
         /** ReviewScheduleListResponse */
         ReviewScheduleListResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Schedules */
             schedules: components["schemas"]["ReviewScheduleItemResponse"][];
         };
         /** ReviewScheduleRequest */
         ReviewScheduleRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topic */
             topic: string;
         };
@@ -1494,8 +1434,8 @@ export interface components {
         SessionTenantResponse: {
             /** Cohort Id */
             cohort_id?: string | null;
-            /** Course Id */
-            course_id: string;
+            /** Learning Path Id */
+            learning_path_id: string;
             /** Org Id */
             org_id: string;
             /** Role */
@@ -1514,8 +1454,8 @@ export interface components {
         SettingsPatchRequest: {
             /** Locale */
             locale?: string | null;
-            /** Selected Course Id */
-            selected_course_id?: string | null;
+            /** Selected Learning Path Id */
+            selected_learning_path_id?: string | null;
             /** Theme */
             theme?: string | null;
         };
@@ -1523,8 +1463,8 @@ export interface components {
         SettingsResponse: {
             /** Locale */
             locale: string;
-            /** Selected Course Id */
-            selected_course_id?: string | null;
+            /** Selected Learning Path Id */
+            selected_learning_path_id?: string | null;
             /** Theme */
             theme: string;
         };
@@ -1532,16 +1472,15 @@ export interface components {
         StudyFlashcardItemResponse: {
             /** Back */
             back: string;
-            /** Course Id */
-            course_id: number;
             /** Created At */
             created_at: string;
             /** Front */
             front: string;
             /** Id */
             id: number;
-            /** Source */
-            source: string;
+            /** Learning Path Id */
+            learning_path_id: number;
+            source: components["schemas"]["StudyFlashcardSource"];
             /** Topic */
             topic: string;
         };
@@ -1549,12 +1488,12 @@ export interface components {
         StudyFlashcardRequest: {
             /** Back */
             back: string;
-            /** Course Id */
-            course_id: number;
             /** Front */
             front: string;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** @default study */
-            source: components["schemas"]["FlashcardSource"];
+            source: components["schemas"]["StudyFlashcardSource"];
             /** Topic */
             topic: string;
         };
@@ -1562,6 +1501,12 @@ export interface components {
         StudyFlashcardResponse: {
             flashcard: components["schemas"]["StudyFlashcardItemResponse"];
         };
+        /**
+         * StudyFlashcardSource
+         * @description Where a flashcard came from, in source-agnostic terms.
+         * @enum {string}
+         */
+        StudyFlashcardSource: "study" | "transcript" | "manual";
         /** StudySessionCompleteRequest */
         StudySessionCompleteRequest: {
             /** Post Test Score */
@@ -1580,12 +1525,12 @@ export interface components {
         StudySessionItemResponse: {
             /** Completed At */
             completed_at: string | null;
-            /** Course Id */
-            course_id: number;
             /** Id */
             id: number;
             /** Improvement */
             improvement: number | null;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Post Test Score */
             post_test_score: number | null;
             /** Pre Test Score */
@@ -1597,8 +1542,8 @@ export interface components {
         };
         /** StudySessionListResponse */
         StudySessionListResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Sessions */
             sessions: components["schemas"]["StudySessionItemResponse"][];
         };
@@ -1608,15 +1553,15 @@ export interface components {
         };
         /** StudySessionStartRequest */
         StudySessionStartRequest: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topic */
             topic: string;
         };
         /** TopicConfidenceListResponse */
         TopicConfidenceListResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Ratings */
             ratings: components["schemas"]["TopicConfidenceRatingResponse"][];
         };
@@ -1626,10 +1571,10 @@ export interface components {
             actual: number | null;
             /** Calibration Error */
             calibration_error: number | null;
-            /** Course Id */
-            course_id: number;
             /** Is Blind Spot */
             is_blind_spot: boolean;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Predicted */
             predicted: number;
             /** Rated At */
@@ -1639,8 +1584,6 @@ export interface components {
         };
         /** TopicConfidenceRequest */
         TopicConfidenceRequest: {
-            /** Course Id */
-            course_id: number;
             /** Rating */
             rating: number;
             /** Topic */
@@ -1652,49 +1595,63 @@ export interface components {
         };
         /** TopicExtractionRequest */
         TopicExtractionRequest: {
+            /** Content Source Id */
+            content_source_id: number;
             /**
              * Force
              * @default false
              */
             force: boolean;
-            /** Module Id */
-            module_id: number;
         };
         /** TopicExtractionResponse */
         TopicExtractionResponse: {
-            /** Module Id */
-            module_id: number;
+            /** Content Source Id */
+            content_source_id: number;
             /** Topics */
             topics: components["schemas"]["TopicMappingResponse"][];
         };
         /** TopicListResponse */
         TopicListResponse: {
-            /** Course Id */
-            course_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Topics */
             topics: components["schemas"]["TopicMappingResponse"][];
         };
         /** TopicMappingResponse */
         TopicMappingResponse: {
-            /** Course Id */
-            course_id: number;
             /** Frequency */
             frequency: number;
-            /** Source */
-            source: string;
+            /** Learning Path Id */
+            learning_path_id: number;
+            source: components["schemas"]["TopicOrigin"];
             /** Topic */
             topic: string;
         };
+        /**
+         * TopicOrigin
+         * @description Where a topic mapping came from, in source-agnostic terms.
+         * @enum {string}
+         */
+        TopicOrigin: "transcript" | "quiz" | "manual";
         /** TopicResponse */
         TopicResponse: {
             topic: components["schemas"]["TopicMappingResponse"];
         };
+        /** UpcomingExamListResponse */
+        UpcomingExamListResponse: {
+            /** Exams */
+            exams: components["schemas"]["DeadlineResponse"][];
+            /** Horizon Days */
+            horizon_days: number;
+            /** Learning Path Id */
+            learning_path_id: number | null;
+        };
         /** UpcomingReviewListResponse */
         UpcomingReviewListResponse: {
-            /** Course Id */
-            course_id: number;
             /** Days Ahead */
             days_ahead: number;
+            /** Learning Path Id */
+            learning_path_id: number;
             /** Reviews */
             reviews: components["schemas"]["ReviewScheduleItemResponse"][];
         };
@@ -1723,6 +1680,37 @@ export interface components {
              * @constant
              */
             status: "reserved";
+        };
+        /** WorkloadDayResponse */
+        WorkloadDayResponse: {
+            /** Date */
+            date: string;
+            /** Items */
+            items: components["schemas"]["WorkloadItemResponse"][];
+        };
+        /** WorkloadItemResponse */
+        WorkloadItemResponse: {
+            /** Hours */
+            hours: number;
+            /** Name */
+            name: string;
+        };
+        /** WorkloadResponse */
+        WorkloadResponse: {
+            /** Deadline Count */
+            deadline_count: number;
+            /** Horizon Days */
+            horizon_days: number;
+            /** Learning Path Id */
+            learning_path_id: number | null;
+            /** Per Day */
+            per_day: components["schemas"]["WorkloadDayResponse"][];
+            /** Remaining Hours */
+            remaining_hours: number;
+            /** Total Estimated Hours */
+            total_estimated_hours: number;
+            /** Total Tracked Hours */
+            total_tracked_hours: number;
         };
     };
     responses: never;
@@ -1846,7 +1834,7 @@ export interface operations {
     listCalibrationBlindSpots: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
             };
             header?: never;
             path?: never;
@@ -1879,7 +1867,7 @@ export interface operations {
     listCalibrationRatings: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
                 topic?: string | null;
             };
             header?: never;
@@ -1955,11 +1943,9 @@ export interface operations {
             };
         };
     };
-    getChronosHistoryCalibration: {
+    listContentSources: {
         parameters: {
-            query?: {
-                course_id?: number | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
@@ -1973,7 +1959,61 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosHistoryCalibrationResponse"];
+                    "application/json": components["schemas"]["ContentSourceListResponse"];
+                };
+            };
+        };
+    };
+    discoverContentSources: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentSourceDiscoveryResponse"];
+                };
+            };
+        };
+    };
+    listContentItems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentItemListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Validation Error */
@@ -1988,10 +2028,53 @@ export interface operations {
             };
         };
     };
-    listChronosHistoryDeadlines: {
+    readContentSourceIngestionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_source_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentSourceIngestionStatusResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listPastDeadlines: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
                 limit?: number;
             };
             header?: never;
@@ -2007,7 +2090,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosHistoryDeadlineListResponse"];
+                    "application/json": components["schemas"]["PastDeadlineListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2022,96 +2105,43 @@ export interface operations {
             };
         };
     };
-    getChronosHistoryReflection: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deadline_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChronosHistoryReflectionResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    listChronosHistoryTimeEntries: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deadline_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChronosHistoryTimeEntryListResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    getChronosHistoryEffortDistribution: {
+    getEffortCalibration: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["EffortCalibrationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getEffortDistribution: {
+        parameters: {
+            query?: {
+                learning_path_id?: number | null;
                 horizon_days?: number;
             };
             header?: never;
@@ -2127,7 +2157,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosHistoryEffortDistributionResponse"];
+                    "application/json": components["schemas"]["EffortDistributionResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2142,10 +2172,96 @@ export interface operations {
             };
         };
     };
-    listChronosDeadlines: {
+    getDeadlineReflection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadlineReflectionDetailResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listDeadlineTimeEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadlineTimeEntryListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listDeadlines: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
                 horizon_days?: number;
                 deadline_type?: components["schemas"]["DeadlineType"] | null;
             };
@@ -2162,7 +2278,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosDeadlineListResponse"];
+                    "application/json": components["schemas"]["DeadlineListResponse"];
                 };
             };
             /** @description Not Found */
@@ -2187,97 +2303,7 @@ export interface operations {
             };
         };
     };
-    completeChronosDeadline: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deadline_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChronosCompletionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChronosCompletionResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    getChronosTrackedTime: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                deadline_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChronosTrackedTimeResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    recordChronosEstimate: {
+    recordDeadlineEstimate: {
         parameters: {
             query?: never;
             header?: never;
@@ -2286,7 +2312,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChronosEstimateRequest"];
+                "application/json": components["schemas"]["EffortEstimateRequest"];
             };
         };
         responses: {
@@ -2297,7 +2323,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosEstimateResponse"];
+                    "application/json": components["schemas"]["EffortEstimateSavedResponse"];
                 };
             };
             /** @description Unprocessable Content */
@@ -2312,10 +2338,10 @@ export interface operations {
             };
         };
     };
-    exportChronosIcs: {
+    exportDeadlinesIcs: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
                 horizon_days?: number;
             };
             header?: never;
@@ -2331,7 +2357,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosIcsExportResponse"];
+                    "application/json": components["schemas"]["DeadlineIcsExportResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2346,7 +2372,7 @@ export interface operations {
             };
         };
     };
-    recordChronosReflection: {
+    recordDeadlineReflection: {
         parameters: {
             query?: never;
             header?: never;
@@ -2355,7 +2381,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChronosReflectionRequest"];
+                "application/json": components["schemas"]["DeadlineReflectionRequest"];
             };
         };
         responses: {
@@ -2366,7 +2392,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosReflectionResponse"];
+                    "application/json": components["schemas"]["DeadlineReflectionResponse"];
                 };
             };
             /** @description Not Found */
@@ -2391,7 +2417,7 @@ export interface operations {
             };
         };
     };
-    syncChronosDeadlines: {
+    syncDeadlines: {
         parameters: {
             query?: never;
             header?: never;
@@ -2407,12 +2433,12 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosSyncResponse"];
+                    "application/json": components["schemas"]["DeadlineSyncResponse"];
                 };
             };
         };
     };
-    recordChronosTimeEntry: {
+    recordDeadlineTimeEntry: {
         parameters: {
             query?: never;
             header?: never;
@@ -2421,7 +2447,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChronosTimeEntryRequest"];
+                "application/json": components["schemas"]["DeadlineTimeEntryRequest"];
             };
         };
         responses: {
@@ -2432,7 +2458,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosTimeEntryResponse"];
+                    "application/json": components["schemas"]["DeadlineTimeEntryResponse"];
                 };
             };
             /** @description Not Found */
@@ -2457,7 +2483,122 @@ export interface operations {
             };
         };
     };
-    startChronosTimer: {
+    listUpcomingExams: {
+        parameters: {
+            query?: {
+                learning_path_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["UpcomingExamListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getDeadlineWorkload: {
+        parameters: {
+            query?: {
+                learning_path_id?: number | null;
+                horizon_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkloadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    completeDeadline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                deadline_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeadlineCompletionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeadlineCompletionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    startDeadlineTimer: {
         parameters: {
             query?: never;
             header?: never;
@@ -2475,7 +2616,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosTimerStartResponse"];
+                    "application/json": components["schemas"]["DeadlineTimerStartResponse"];
                 };
             };
             /** @description Not Found */
@@ -2500,7 +2641,7 @@ export interface operations {
             };
         };
     };
-    stopChronosTimer: {
+    stopDeadlineTimer: {
         parameters: {
             query?: never;
             header?: never;
@@ -2518,7 +2659,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosTimerStopResponse"];
+                    "application/json": components["schemas"]["DeadlineTimerStopResponse"];
                 };
             };
             /** @description Not Found */
@@ -2543,14 +2684,13 @@ export interface operations {
             };
         };
     };
-    listChronosUpcomingExams: {
+    getDeadlineTrackedTime: {
         parameters: {
-            query?: {
-                course_id?: number | null;
-                horizon_days?: number;
-            };
+            query?: never;
             header?: never;
-            path?: never;
+            path: {
+                deadline_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -2562,41 +2702,17 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["ChronosUpcomingExamListResponse"];
+                    "application/json": components["schemas"]["DeadlineTrackedTimeResponse"];
                 };
             };
-            /** @description Validation Error */
-            422: {
+            /** @description Not Found */
+            404: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    getChronosWorkload: {
-        parameters: {
-            query?: {
-                course_id?: number | null;
-                horizon_days?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChronosWorkloadResponse"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Validation Error */
@@ -2632,54 +2748,12 @@ export interface operations {
             };
         };
     };
-    discoverLectureModules: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["LectureDiscoveryResponse"];
-                };
-            };
-        };
-    };
-    listLectureModules: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["LectureModulesResponse"];
-                };
-            };
-        };
-    };
-    listLectureModuleEpisodes: {
+    listTopics: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                module_id: number;
+                learning_path_id: number;
             };
             cookie?: never;
         };
@@ -2692,7 +2766,89 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["LectureEpisodesResponse"];
+                    "application/json": components["schemas"]["TopicListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    saveManualTopic: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManualTopicRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTopicConfidenceRatings: {
+        parameters: {
+            query?: {
+                topic?: string | null;
+            };
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicConfidenceListResponse"];
                 };
             };
             /** @description Not Found */
@@ -2717,16 +2873,20 @@ export interface operations {
             };
         };
     };
-    readLecturePipelineStatus: {
+    saveTopicConfidenceRating: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                module_id: number;
+                learning_path_id: number;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TopicConfidenceRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -2735,11 +2895,11 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["LecturePipelineStatusResponse"];
+                    "application/json": components["schemas"]["TopicConfidenceResponse"];
                 };
             };
-            /** @description Not Found */
-            404: {
+            /** @description Unprocessable Content */
+            422: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;
@@ -2748,14 +2908,41 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Validation Error */
+        };
+    };
+    extractTopics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TopicExtractionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopicExtractionResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
             422: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -2854,7 +3041,7 @@ export interface operations {
     getQuickstartOverview: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -2897,7 +3084,7 @@ export interface operations {
     getQuickstartSessionCount: {
         parameters: {
             query?: {
-                course_id?: number | null;
+                learning_path_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -2996,7 +3183,7 @@ export interface operations {
     listDueReviews: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
             };
             header?: never;
             path?: never;
@@ -3029,7 +3216,7 @@ export interface operations {
     listReviewSchedules: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
                 topic?: string | null;
             };
             header?: never;
@@ -3108,7 +3295,7 @@ export interface operations {
     listUpcomingReviews: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
                 days_ahead?: number;
             };
             header?: never;
@@ -3139,7 +3326,7 @@ export interface operations {
             };
         };
     };
-    searchLectureContent: {
+    searchContent: {
         parameters: {
             query?: never;
             header?: never;
@@ -3148,7 +3335,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LectureSearchRequest"];
+                "application/json": components["schemas"]["ContentSearchRequest"];
             };
         };
         responses: {
@@ -3159,7 +3346,7 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["LectureSearchResponse"];
+                    "application/json": components["schemas"]["ContentSearchResponse"];
                 };
             };
             /** @description Unprocessable Content */
@@ -3268,7 +3455,7 @@ export interface operations {
     listStudySessions: {
         parameters: {
             query: {
-                course_id: number;
+                learning_path_id: number;
                 topic?: string | null;
             };
             header?: never;
@@ -3367,198 +3554,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudySessionCompletionResponse"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    listTopics: {
-        parameters: {
-            query: {
-                course_id: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopicListResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    listTopicConfidenceRatings: {
-        parameters: {
-            query: {
-                course_id: number;
-                topic?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopicConfidenceListResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    saveTopicConfidenceRating: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TopicConfidenceRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopicConfidenceResponse"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    extractTopics: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TopicExtractionRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopicExtractionResponse"];
-                };
-            };
-            /** @description Unprocessable Content */
-            422: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-        };
-    };
-    saveManualTopic: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ManualTopicRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["TopicResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    /** @description Request correlation identifier. */
-                    "X-Request-ID"?: string;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Unprocessable Content */
