@@ -481,6 +481,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/integrations/tiss/registration/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Tiss Registration Attempt */
+        post: operations["createTissRegistrationAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/tiss/registration/favorites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tiss Favorites */
+        get: operations["listTissFavorites"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/tiss/registration/targets/{course_number}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Tiss Registration Target */
+        get: operations["getTissRegistrationTarget"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/tiss/registration/targets/{course_number}/exam-dates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tiss Exam Dates */
+        get: operations["listTissExamDates"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/integrations/tiss/registration/targets/{course_number}/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Tiss Registration Groups */
+        get: operations["listTissRegistrationGroups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning-paths/{learning_path_id}/topics": {
         parameters: {
             query?: never;
@@ -1557,6 +1642,159 @@ export interface components {
             learning_path_id: number;
             /** Topic */
             topic: string;
+        };
+        /**
+         * TissConnectionState
+         * @description State of the learner's stored TISS credentials.
+         * @enum {string}
+         */
+        TissConnectionState: "connected" | "session_missing" | "session_expired";
+        /** TissExamDateListResponse */
+        TissExamDateListResponse: {
+            /** Course Number */
+            course_number: string;
+            /** Exams */
+            exams: components["schemas"]["TissExamDateResponse"][];
+        };
+        /** TissExamDateResponse */
+        TissExamDateResponse: {
+            /** Course Number */
+            course_number: string;
+            /** Date End */
+            date_end: string | null;
+            /** Date Start */
+            date_start: string | null;
+            /** Exam Id */
+            exam_id: string;
+            /** Mode */
+            mode: string;
+            /** Registration End */
+            registration_end: string | null;
+            /** Registration Start */
+            registration_start: string | null;
+            /** Title */
+            title: string;
+        };
+        /** TissFavoriteListResponse */
+        TissFavoriteListResponse: {
+            connection: components["schemas"]["TissConnectionState"];
+            /** Favorites */
+            favorites: components["schemas"]["TissFavoriteResponse"][];
+            /** Semester */
+            semester: string;
+        };
+        /** TissFavoriteResponse */
+        TissFavoriteResponse: {
+            /** Course Number */
+            course_number: string;
+            /** Course Type */
+            course_type: string;
+            /** Ects */
+            ects: number;
+            /** Exam Registered */
+            exam_registered: boolean;
+            /** Group Registered */
+            group_registered: boolean;
+            /** Hours */
+            hours: number;
+            /** Lva Registered */
+            lva_registered: boolean;
+            /** Semester */
+            semester: string;
+            /** Title */
+            title: string;
+        };
+        /** TissRegistrationAttemptRequest */
+        TissRegistrationAttemptRequest: {
+            /** Course Number */
+            course_number: string;
+            /** Group Id */
+            group_id?: string | null;
+            /** Semester */
+            semester?: string | null;
+        };
+        /** TissRegistrationAttemptResponse */
+        TissRegistrationAttemptResponse: {
+            connection: components["schemas"]["TissConnectionState"];
+            /** Course Number */
+            course_number: string;
+            result: components["schemas"]["TissRegistrationAttemptResultResponse"] | null;
+            /** Semester */
+            semester: string;
+        };
+        /** TissRegistrationAttemptResultResponse */
+        TissRegistrationAttemptResultResponse: {
+            /** Attempted At */
+            attempted_at: string;
+            /** Course Number */
+            course_number: string;
+            /** Group Name */
+            group_name: string;
+            /** Message */
+            message: string;
+            /** Registration Type */
+            registration_type: string;
+            /** Success */
+            success: boolean;
+        };
+        /** TissRegistrationGroupListResponse */
+        TissRegistrationGroupListResponse: {
+            connection: components["schemas"]["TissConnectionState"];
+            /** Course Number */
+            course_number: string;
+            /** Groups */
+            groups: components["schemas"]["TissRegistrationGroupResponse"][];
+            /** Semester */
+            semester: string;
+        };
+        /** TissRegistrationGroupResponse */
+        TissRegistrationGroupResponse: {
+            /** Capacity */
+            capacity: number;
+            /** Day */
+            day: string;
+            /** Enrolled */
+            enrolled: number;
+            /** Group Id */
+            group_id: string;
+            /** Location */
+            location: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Time End */
+            time_end: string;
+            /** Time Start */
+            time_start: string;
+        };
+        /** TissRegistrationStatusResponse */
+        TissRegistrationStatusResponse: {
+            connection: components["schemas"]["TissConnectionState"];
+            /** Course Number */
+            course_number: string;
+            /** Semester */
+            semester: string;
+            target: components["schemas"]["TissRegistrationTargetResponse"] | null;
+        };
+        /** TissRegistrationTargetResponse */
+        TissRegistrationTargetResponse: {
+            /** Course Number */
+            course_number: string;
+            /** Groups */
+            groups: components["schemas"]["TissRegistrationGroupResponse"][];
+            /** Registration End */
+            registration_end: string | null;
+            /** Registration Start */
+            registration_start: string | null;
+            /** Registration Type */
+            registration_type: string;
+            /** Semester */
+            semester: string;
+            /** Status */
+            status: string;
+            /** Title */
+            title: string;
         };
         /** TopicConfidenceListResponse */
         TopicConfidenceListResponse: {
@@ -2744,6 +2982,217 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    createTissRegistrationAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TissRegistrationAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TissRegistrationAttemptResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTissFavorites: {
+        parameters: {
+            query?: {
+                semester?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TissFavoriteListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getTissRegistrationTarget: {
+        parameters: {
+            query?: {
+                semester?: string | null;
+            };
+            header?: never;
+            path: {
+                course_number: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TissRegistrationStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listTissExamDates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                course_number: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TissExamDateListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listTissRegistrationGroups: {
+        parameters: {
+            query?: {
+                semester?: string | null;
+            };
+            header?: never;
+            path: {
+                course_number: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["TissRegistrationGroupListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };

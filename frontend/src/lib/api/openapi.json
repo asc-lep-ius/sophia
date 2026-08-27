@@ -2358,6 +2358,481 @@
         "title": "StudySessionStartRequest",
         "type": "object"
       },
+      "TissConnectionState": {
+        "description": "State of the learner's stored TISS credentials.",
+        "enum": [
+          "connected",
+          "session_missing",
+          "session_expired"
+        ],
+        "title": "TissConnectionState",
+        "type": "string"
+      },
+      "TissExamDateListResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "exams": {
+            "items": {
+              "$ref": "#/components/schemas/TissExamDateResponse"
+            },
+            "title": "Exams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_number",
+          "exams"
+        ],
+        "title": "TissExamDateListResponse",
+        "type": "object"
+      },
+      "TissExamDateResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "date_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date End"
+          },
+          "date_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Start"
+          },
+          "exam_id": {
+            "title": "Exam Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "registration_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration End"
+          },
+          "registration_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Start"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exam_id",
+          "course_number",
+          "title",
+          "date_start",
+          "date_end",
+          "registration_start",
+          "registration_end",
+          "mode"
+        ],
+        "title": "TissExamDateResponse",
+        "type": "object"
+      },
+      "TissFavoriteListResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "favorites": {
+            "items": {
+              "$ref": "#/components/schemas/TissFavoriteResponse"
+            },
+            "title": "Favorites",
+            "type": "array"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "semester",
+          "favorites"
+        ],
+        "title": "TissFavoriteListResponse",
+        "type": "object"
+      },
+      "TissFavoriteResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "course_type": {
+            "title": "Course Type",
+            "type": "string"
+          },
+          "ects": {
+            "title": "Ects",
+            "type": "number"
+          },
+          "exam_registered": {
+            "title": "Exam Registered",
+            "type": "boolean"
+          },
+          "group_registered": {
+            "title": "Group Registered",
+            "type": "boolean"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "lva_registered": {
+            "title": "Lva Registered",
+            "type": "boolean"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_number",
+          "title",
+          "course_type",
+          "semester",
+          "hours",
+          "ects",
+          "lva_registered",
+          "group_registered",
+          "exam_registered"
+        ],
+        "title": "TissFavoriteResponse",
+        "type": "object"
+      },
+      "TissRegistrationAttemptRequest": {
+        "properties": {
+          "course_number": {
+            "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+            "title": "Course Number",
+            "type": "string"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "semester": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}[SW]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semester"
+          }
+        },
+        "required": [
+          "course_number"
+        ],
+        "title": "TissRegistrationAttemptRequest",
+        "type": "object"
+      },
+      "TissRegistrationAttemptResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TissRegistrationAttemptResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "result"
+        ],
+        "title": "TissRegistrationAttemptResponse",
+        "type": "object"
+      },
+      "TissRegistrationAttemptResultResponse": {
+        "properties": {
+          "attempted_at": {
+            "title": "Attempted At",
+            "type": "string"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "group_name": {
+            "title": "Group Name",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "registration_type": {
+            "title": "Registration Type",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "course_number",
+          "registration_type",
+          "success",
+          "group_name",
+          "message",
+          "attempted_at"
+        ],
+        "title": "TissRegistrationAttemptResultResponse",
+        "type": "object"
+      },
+      "TissRegistrationGroupListResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TissRegistrationGroupResponse"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "groups"
+        ],
+        "title": "TissRegistrationGroupListResponse",
+        "type": "object"
+      },
+      "TissRegistrationGroupResponse": {
+        "properties": {
+          "capacity": {
+            "title": "Capacity",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "enrolled": {
+            "title": "Enrolled",
+            "type": "integer"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "time_end": {
+            "title": "Time End",
+            "type": "string"
+          },
+          "time_start": {
+            "title": "Time Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "name",
+          "day",
+          "time_start",
+          "time_end",
+          "location",
+          "capacity",
+          "enrolled",
+          "status"
+        ],
+        "title": "TissRegistrationGroupResponse",
+        "type": "object"
+      },
+      "TissRegistrationStatusResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TissRegistrationTargetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "target"
+        ],
+        "title": "TissRegistrationStatusResponse",
+        "type": "object"
+      },
+      "TissRegistrationTargetResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TissRegistrationGroupResponse"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "registration_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration End"
+          },
+          "registration_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Start"
+          },
+          "registration_type": {
+            "title": "Registration Type",
+            "type": "string"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_number",
+          "semester",
+          "registration_type",
+          "title",
+          "registration_start",
+          "registration_end",
+          "status",
+          "groups"
+        ],
+        "title": "TissRegistrationTargetResponse",
+        "type": "object"
+      },
       "TopicConfidenceListResponse": {
         "properties": {
           "learning_path_id": {
@@ -4685,6 +5160,412 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/attempts": {
+      "post": {
+        "operationId": "createTissRegistrationAttempt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TissRegistrationAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationAttemptResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Tiss Registration Attempt",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/favorites": {
+      "get": {
+        "operationId": "listTissFavorites",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissFavoriteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Favorites",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}": {
+      "get": {
+        "operationId": "getTissRegistrationTarget",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Tiss Registration Target",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}/exam-dates": {
+      "get": {
+        "operationId": "listTissExamDates",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissExamDateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Exam Dates",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}/groups": {
+      "get": {
+        "operationId": "listTissRegistrationGroups",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationGroupListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Registration Groups",
+        "tags": [
+          "integrations-tiss"
         ]
       }
     },

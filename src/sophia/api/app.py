@@ -20,6 +20,7 @@ from sophia.api.routers import (
     deadline_history,
     deadlines,
     health,
+    integrations_tiss,
     metrics,
     quickstart,
     review,
@@ -92,6 +93,7 @@ def create_api_app(
     api_app.include_router(deadlines.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(deadline_history.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(quickstart.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(integrations_tiss.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
 
