@@ -5,16 +5,25 @@ from __future__ import annotations
 import os
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
 import pytest
 
+_INTEGRATION_ROOT = Path(__file__).parents[1]
+
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Auto-mark all integration GUI tests as e2e."""
+    """Auto-mark tests under tests/integration as e2e.
+
+    This hook sees every item in the session, so it must match on the directory
+    rather than on the substring "integration": that also caught unrelated files
+    such as tests/api/test_integrations_tiss.py, which were then deselected by
+    the default -m "not e2e" and silently never ran.
+    """
     for item in items:
-        if "integration" in str(item.fspath):
+        if _INTEGRATION_ROOT in Path(str(item.path)).parents:
             item.add_marker(pytest.mark.e2e)
 
 
