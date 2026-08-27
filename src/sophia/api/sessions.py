@@ -288,8 +288,10 @@ def deserialize_session_record(payload: Mapping[str, object]) -> SessionRecord:
     """Validate and convert a JSON mapping into a session record."""
     version = _required_int(payload, "version")
     if version != SESSION_RECORD_VERSION:
+        # Records written by an earlier schema are unreadable, not corrupt: callers
+        # treat this as a missing session so the learner simply signs in again.
         msg = f"unsupported session record version: {version}"
-        raise ValueError(msg)
+        raise InvalidSessionToken(msg)
 
     return SessionRecord(
         session_id=_required_string(payload, "session_id"),
@@ -310,13 +312,21 @@ def dumps_session_record(record: SessionRecord) -> str:
 
 
 def loads_session_record(payload: bytes | str) -> SessionRecord:
-    """Deserialize a Redis payload into a validated session record."""
+    """Deserialize a Redis payload into a validated session record.
+
+    Unreadable stored state is reported as an invalid token so callers ask the
+    learner to sign in again, rather than failing the request with a 500.
+    """
     if isinstance(payload, bytes):
         payload = payload.decode("utf-8")
-    data = json.loads(payload)
+    try:
+        data = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        msg = "session record payload is not valid JSON"
+        raise InvalidSessionToken(msg) from exc
     if not isinstance(data, Mapping):
         msg = "session record payload must be a JSON object"
-        raise ValueError(msg)
+        raise InvalidSessionToken(msg)
     return deserialize_session_record(cast("Mapping[str, object]", data))
 
 

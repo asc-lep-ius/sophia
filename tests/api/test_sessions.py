@@ -8,6 +8,7 @@ from dataclasses import replace
 import pytest
 
 from sophia.api.sessions import (
+    SESSION_RECORD_VERSION,
     InvalidSessionToken,
     RedisSessionStore,
     SecretKeySessionManager,
@@ -19,6 +20,7 @@ from sophia.api.sessions import (
     SessionUser,
     deserialize_session_record,
     dumps_session_record,
+    loads_session_record,
     serialize_session_record,
     sign_session_cookie,
 )
@@ -281,3 +283,36 @@ def _session_record(
         created_at="2026-05-25T00:00:00Z",
         updated_at="2026-05-25T00:00:00Z",
     )
+
+
+def test_stale_session_record_version_reads_as_invalid_token() -> None:
+    stale_payload = json.dumps(
+        {
+            "version": SESSION_RECORD_VERSION - 1,
+            "session_id": "session-1",
+            "user": {"id": "learner", "display_name": "Learner One", "email": ""},
+            "tenant": {
+                "org_id": "tu-wien",
+                "course_id": "course-1",
+                "cohort_id": None,
+                "role": "student",
+            },
+            "csrf_token": "csrf-token",
+            "settings": {"theme": "system", "locale": "en", "selected_course_id": "course-1"},
+            "tuwel_credentials": None,
+            "tiss_credentials": None,
+            "created_at": "2026-05-26T10:00:00Z",
+            "updated_at": "2026-05-26T10:00:00Z",
+        }
+    )
+
+    with pytest.raises(InvalidSessionToken):
+        loads_session_record(stale_payload)
+
+
+def test_corrupt_session_record_reads_as_invalid_token() -> None:
+    with pytest.raises(InvalidSessionToken):
+        loads_session_record("{not json")
+
+    with pytest.raises(InvalidSessionToken):
+        loads_session_record(json.dumps(["not", "a", "mapping"]))
