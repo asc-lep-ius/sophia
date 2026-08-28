@@ -83,6 +83,8 @@ class Course(BaseModel):
     fullname: str
     shortname: str
     url: str | None = None
+    exam_language: str | None = None
+    """Language the course is examined in, when the upstream source states it."""
 
 
 class BookReference(BaseModel):

@@ -74,6 +74,13 @@ class Settings(BaseSettings):
     # Session health
     session_keepalive_interval: int = 300
 
+    # Learning process integrity
+    default_content_language: Literal["de", "en"] = "de"
+    learning_event_retention_days: int = Field(default=180, gt=0)
+    learning_event_max_future_skew_seconds: int = Field(default=60, ge=0)
+    elaboration_min_chars: int = Field(default=80, ge=0)
+    elaboration_min_prompt_dwell_ms: int = Field(default=5000, ge=0)
+
     # Observability
     log_format: Literal["json", "console"] = "json"
     log_debug: bool = False

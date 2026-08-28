@@ -16,16 +16,20 @@ from sophia.api.errors import register_error_handlers
 from sophia.api.routers import (
     auth,
     calibration,
+    content_language,
     content_sources,
     deadline_history,
     deadlines,
     health,
     integrations_tiss,
+    learning_events,
     metrics,
     quickstart,
+    reserved,
     review,
     search,
     study,
+    study_questions,
     topics,
 )
 from sophia.api.routers import settings as settings_router
@@ -88,12 +92,19 @@ def create_api_app(
     api_app.include_router(search.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(topics.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(study.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(
+        study_questions.router,
+        prefix=_normalize_route_prefix(route_prefix),
+    )
     api_app.include_router(review.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(calibration.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(deadlines.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(deadline_history.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(quickstart.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(integrations_tiss.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(learning_events.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(content_language.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(reserved.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
 

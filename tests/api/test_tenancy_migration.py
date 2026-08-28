@@ -17,6 +17,12 @@ BACKFILL_MIGRATION_VERSION = 23
 
 TABLES_WITH_EXISTING_COURSE_ID = {
     "confidence_ratings",
+    "content_provenance",
+    "content_translations",
+    "generated_questions",
+    "learning_events",
+    "learning_path_settings",
+    "question_attempts",
     "course_materials",
     "deadline_cache",
     "discovered_references",

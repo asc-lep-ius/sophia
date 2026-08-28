@@ -1,5 +1,7 @@
 """Domain error hierarchy."""
 
+from __future__ import annotations
+
 
 class SophiaError(Exception):
     """Base error for all Sophia exceptions."""
@@ -83,6 +85,18 @@ class StudySessionError(AthenaError):
 
 class CardReviewError(AthenaError):
     """Card review workflow failed."""
+
+
+class EngagementPolicyUnmet(AthenaError):
+    """An answer was submitted without the learning process the question requires.
+
+    ``params`` names what is missing so the study surface can prompt for the
+    step that was skipped instead of dead-ending the learner.
+    """
+
+    def __init__(self, message: str, params: dict[str, str | int] | None = None) -> None:
+        super().__init__(message)
+        self.params = params or {}
 
 
 class ChronosError(SophiaError):
