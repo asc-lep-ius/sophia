@@ -147,13 +147,10 @@ class TestErrorDisplay:
 
             @ui.page("/")
             def index() -> None:
-                exc: Exception | None = None
                 try:
                     msg = "dup error"
                     raise RuntimeError(msg)  # noqa: TRY301
-                except Exception as e:
-                    exc = e
-                if exc is not None:
+                except Exception as exc:
                     error_display(exc)
                     error_display(exc)
                     error_display(exc)
@@ -166,13 +163,10 @@ class TestErrorDisplay:
 
             @ui.page("/")
             def index() -> None:
-                exc: Exception | None = None
                 try:
                     msg = "clearable"
                     raise RuntimeError(msg)  # noqa: TRY301
-                except Exception as e:
-                    exc = e
-                if exc is not None:
+                except Exception as exc:
                     error_display(exc)
                     clear_errors()
                     error_display(exc)

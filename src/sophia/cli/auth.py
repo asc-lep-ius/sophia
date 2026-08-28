@@ -36,9 +36,15 @@ async def login(*, save_credentials: bool = False) -> None:
         "TU Wien username", console=console
     )
     password = getpass.getpass("TU Wien password: ")
+    mfa_code = (
+        os.environ.get("SOPHIA_TUWEL_MFA_CODE") or getpass.getpass("TU Wien MFA code: ")
+    ).strip()
+    if not (mfa_code.isdigit() and len(mfa_code) == 6):
+        console.print("[red]TU Wien MFA code must be 6 digits.[/red]")
+        raise SystemExit(1)
 
     tuwel_creds, tiss_creds = await login_both(
-        settings.tuwel_host, settings.tiss_host, username, password
+        settings.tuwel_host, settings.tiss_host, username, password, mfa_code
     )
 
     save_session(tuwel_creds, session_path(settings.config_dir))

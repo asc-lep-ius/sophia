@@ -33,6 +33,9 @@ async def db():
     await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/017_chronos.sql").read_text())
     await conn.executescript(Path("src/sophia/infra/migrations/018_chronos_time.sql").read_text())
+    await conn.execute(
+        "ALTER TABLE metacognition_log ADD COLUMN course_id TEXT NOT NULL DEFAULT 'default'"
+    )
     await conn.commit()
     yield conn
     await conn.close()
@@ -664,6 +667,23 @@ class TestRecordEstimate:
         assert row[1] == "assign:1"
         assert row[2] == pytest.approx(3.0)  # pyright: ignore[reportUnknownMemberType]
 
+    async def test_writes_metacognition_course_scope(self, app_container: MagicMock) -> None:
+        from sophia.services.chronos import record_estimate
+
+        await _insert_deadline(app_container.db)
+
+        await record_estimate(
+            app_container, deadline_id="assign:1", course_id=42, predicted_hours=3.0
+        )
+
+        cursor = await app_container.db.execute(
+            "SELECT course_id FROM metacognition_log WHERE domain = ? AND item_id = ?",
+            ("effort:assignment", "assign:1"),
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row[0] == "42"
+
     async def test_stores_breakdown(self, app_container: MagicMock) -> None:
         from sophia.services.chronos import record_estimate
 
@@ -752,8 +772,8 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 5.0, 2.0),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 5.0, 2.0, "42"),
             )
         await db.commit()
 
@@ -767,8 +787,8 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, 3.1),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 3.0, 3.1, "42"),
             )
         await db.commit()
 
@@ -782,13 +802,48 @@ class TestGetScaffoldLevel:
         for i in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, 3.5),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{i}", 3.0, 3.5, "42"),
             )
         await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.MINIMAL
+
+    async def test_scaffold_level_filters_calibration_rows_by_course(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        from sophia.services.chronos import get_scaffold_level
+
+        for index in range(5):
+            await db.execute(
+                "INSERT OR REPLACE INTO metacognition_log "
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{index}", 3.0, 3.05, "99"),
+            )
+        await db.commit()
+
+        level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert level == EstimationScaffold.FULL
+
+    async def test_scaffold_level_filters_count_fallback_by_course(
+        self,
+        db: aiosqlite.Connection,
+    ) -> None:
+        from sophia.services.chronos import get_scaffold_level
+
+        for index in range(30):
+            await db.execute(
+                "INSERT INTO effort_estimates "
+                "(deadline_id, course_id, predicted_hours, scaffold_level) "
+                "VALUES (?, ?, ?, ?)",
+                (f"assign:{index}", 99, 2.0, "full"),
+            )
+        await db.commit()
+
+        level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert level == EstimationScaffold.FULL
 
 
 # ---------------------------------------------------------------------------
@@ -834,21 +889,22 @@ class TestFormatReferenceClassHint:
         assert "hour" in hint.lower()
 
     async def test_hint_filters_by_course(self, db: aiosqlite.Connection) -> None:
-        """When course_id is given but no entries match, return None."""
+        """When course_id is given, only matching course entries build the hint."""
         from sophia.services.chronos import format_reference_class_hint
 
-        # Insert entries for a different course (item_id encodes course)
-        for i in range(5):
+        for index in range(5):
             await db.execute(
                 "INSERT OR REPLACE INTO metacognition_log "
-                "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
-                ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+                "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+                ("effort:assignment", f"assign:{index}", 3.0, float(2 + index), "99"),
             )
         await db.commit()
 
-        # With no course filter, should have a hint
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
+        scoped_hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT, course_id=42)
+
         assert hint is not None
+        assert scoped_hint is None
 
 
 # ---------------------------------------------------------------------------
@@ -876,6 +932,24 @@ class TestGetReferenceClass:
 
         refs = await get_reference_class(db, DeadlineType.QUIZ)
         assert refs == []
+
+    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+        from sophia.services.chronos import get_reference_class
+
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+            ("effort:assignment", "assign:target", 3.0, 4.0, "42"),
+        )
+        await db.execute(
+            "INSERT OR REPLACE INTO metacognition_log "
+            "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
+            ("effort:assignment", "assign:other", 8.0, 9.0, "99"),
+        )
+        await db.commit()
+
+        refs = await get_reference_class(db, DeadlineType.ASSIGNMENT, course_id=42)
+        assert refs == [(3.0, 4.0)]
 
 
 # ---------------------------------------------------------------------------
@@ -1496,6 +1570,46 @@ async def _insert_deadline_cache(
 
 
 class TestCalibrationMetrics:
+    async def test_course_metrics_include_chronos_effort_flow(
+        self,
+        app_container: MagicMock,
+    ) -> None:
+        from sophia.services.chronos import (
+            complete_deadline,
+            get_calibration_metrics,
+            record_estimate,
+            record_time,
+        )
+
+        for index in range(3):
+            deadline_id = f"assign:{index}"
+            await _insert_deadline(app_container.db, id=deadline_id, course_id=42)
+            await record_estimate(
+                app_container,
+                deadline_id=deadline_id,
+                course_id=42,
+                predicted_hours=2.0,
+            )
+            await record_time(app_container.db, deadline_id, 3.0)
+            await complete_deadline(app_container, deadline_id)
+
+        await _insert_deadline(app_container.db, id="assign:other", course_id=99)
+        await record_estimate(
+            app_container,
+            deadline_id="assign:other",
+            course_id=99,
+            predicted_hours=1.0,
+        )
+        await record_time(app_container.db, "assign:other", 9.0)
+        await complete_deadline(app_container, "assign:other")
+
+        metrics = await get_calibration_metrics(app_container.db, course_id=42)
+
+        assert len(metrics) == 1
+        assert metrics[0].domain == "effort:assignment"
+        assert metrics[0].sample_count == 3
+        assert metrics[0].mean_error == pytest.approx(1.0)
+
     async def test_returns_metrics_for_completed_domains(self, db: aiosqlite.Connection) -> None:
         """Insert 3+ completed effort entries → metrics returned."""
         from sophia.services.chronos import get_calibration_metrics
@@ -1690,6 +1804,21 @@ class TestExportIcs:
         assert str(ev["SUMMARY"]) == "Analysis HW"
         assert "Math" in str(ev["DESCRIPTION"])
         assert str(ev["UID"]) == "a:1"
+
+    async def test_exports_only_the_requested_course(self, db: aiosqlite.Connection) -> None:
+        """The calendar a learner downloads must not leak another course's deadlines."""
+        from icalendar import Calendar as ICalendar
+
+        from sophia.services.chronos import export_deadlines_ics
+
+        await _insert_deadline_cache(db, deadline_id="a:1", name="Mine", course_id=42)
+        await _insert_deadline_cache(db, deadline_id="a:2", name="Theirs", course_id=99)
+
+        ics_str = await export_deadlines_ics(db, course_id=42, horizon_days=30)
+
+        cal = ICalendar.from_ical(ics_str)
+        summaries = [str(c["SUMMARY"]) for c in cal.walk() if c.name == "VEVENT"]
+        assert summaries == ["Mine"]
 
     async def test_empty_when_no_deadlines(self, db: aiosqlite.Connection) -> None:
         """No deadlines → valid but empty calendar."""

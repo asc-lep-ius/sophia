@@ -146,6 +146,11 @@ async def log_confidence_prediction(
 
     Domain: 'confidence:{course_id}'
     Predicted: confidence score (already 0-1 from rating_to_score).
+
+    The row's course_id column is deliberately left at its default: the scope
+    lives in the domain string for confidence rows. Any future course filter
+    over them must match on domain, not course_id — see
+    023_metacognition_course_backfill.sql, which backfills effort rows only.
     """
     domain = f"confidence:{course_id}"
     now = datetime.now(UTC).isoformat()

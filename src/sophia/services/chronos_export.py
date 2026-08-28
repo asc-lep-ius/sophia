@@ -6,11 +6,10 @@ Extracted from ``chronos.py`` to keep that module under 800 lines.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sophia.domain.models import CalibrationMetrics, Deadline, DeadlineType
-from sophia.services.chronos import get_deadlines
 
 if TYPE_CHECKING:
     import aiosqlite
@@ -18,12 +17,18 @@ if TYPE_CHECKING:
 
 async def export_deadlines_ics(
     db: aiosqlite.Connection,
+    *,
+    course_id: int | None = None,
     horizon_days: int = 30,
 ) -> str:
     """Export upcoming deadlines as an ICS calendar string."""
     from icalendar import Calendar, Event  # type: ignore[import-untyped]
 
-    deadlines = await get_deadlines(db, horizon_days=horizon_days)
+    # Imported here because chronos re-exports this module for the CLI, and a
+    # module-level import would make that cycle depend on import order.
+    from sophia.services.chronos import get_deadlines
+
+    deadlines = await get_deadlines(db, course_id=course_id, horizon_days=horizon_days)
 
     cal = Calendar()
     cal.add("prodid", "-//Sophia//Chronos//EN")  # type: ignore[reportUnknownMemberType]
@@ -83,17 +88,20 @@ async def get_missed_deadlines(
 
 async def get_upcoming_exams(
     db: aiosqlite.Connection,
+    *,
     course_id: int | None = None,
+    horizon_days: int = 30,
 ) -> list[Deadline]:
     """Return exam deadlines from cache. Athena integration point."""
     now = datetime.now(UTC).isoformat()
+    horizon_end = datetime.fromisoformat(now) + timedelta(days=horizon_days)
     query = (
         "SELECT id, name, course_id, course_name, deadline_type, due_at, "
         "grade_weight, submission_status, url, extra "
         "FROM deadline_cache "
-        "WHERE deadline_type = 'exam' AND due_at > ? "
+        "WHERE deadline_type = 'exam' AND due_at > ? AND due_at < ? "
     )
-    params: list[str | int] = [now]
+    params: list[str | int] = [now, horizon_end.isoformat()]
     if course_id is not None:
         query += "AND course_id = ? "
         params.append(course_id)
@@ -129,6 +137,8 @@ _TREND_THRESHOLD = 0.10
 async def get_calibration_metrics(
     db: aiosqlite.Connection,
     deadline_type: DeadlineType | None = None,
+    *,
+    course_id: int | None = None,
 ) -> list[CalibrationMetrics]:
     """Per-domain estimation accuracy: bias, MAE, trend."""
     query = (
@@ -140,6 +150,9 @@ async def get_calibration_metrics(
     if deadline_type is not None:
         query += "AND domain = ? "
         params.append(f"effort:{deadline_type.value}")
+    if course_id is not None:
+        query += "AND course_id = ? "
+        params.append(course_id)
     query += "ORDER BY predicted_at ASC"
 
     cursor = await db.execute(query, params)

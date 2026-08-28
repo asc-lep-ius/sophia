@@ -1,17 +1,40 @@
-# Sophia CI — local GitLab runners + registry
+# Sophia CI - local GitLab runners + registry
 #
 # Docker builds use BuildKit (docker buildx) via DinD on the privileged runner.
 # Registry: gitlab.hephaestus:5050 (HTTP, insecure).
 # Tags: hephaestus (check), privileged (docker builds).
 
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - when: never
+
 variables:
   LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
+  PNPM_STORE_PATH: "$CI_PROJECT_DIR/.cache/pnpm"
 
 stages:
   - rebuild-ci
   - check
   - build
+  - deploy
+
+.optional-manual-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      when: manual
+      allow_failure: true
+    - when: never
 
 # --- Docker build template (BuildKit + DinD) ---
 .docker-build:
@@ -23,16 +46,13 @@ stages:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
   before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    - printf '%s' "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
     - |
       cat > /tmp/buildkitd.toml << EOF
       [registry."gitlab.hephaestus:5050"]
         http = true
       EOF
-    - docker buildx create --use --name ci-builder
-        --driver docker-container
-        --driver-opt network=host
-        --config /tmp/buildkitd.toml
+    - docker buildx create --use --name ci-builder --driver docker-container --driver-opt network=host --config /tmp/buildkitd.toml
     - docker buildx inspect --bootstrap
   after_script:
     - docker buildx rm ci-builder 2>/dev/null || true
@@ -41,12 +61,22 @@ stages:
 # --- CI image rebuild ---
 .ci-rebuild-rules:
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
         - ci/Dockerfile.ci
         - pyproject.toml
         - uv.lock
-    - when: manual
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - ci/Dockerfile.ci
+        - pyproject.toml
+        - uv.lock
+      when: manual
       allow_failure: true
+    - when: never
 
 rebuild-ci-image:
   stage: rebuild-ci
@@ -55,13 +85,7 @@ rebuild-ci-image:
     - .ci-rebuild-rules
   script:
     - CI_HASH=$(cat ci/Dockerfile.ci pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - docker buildx build
-        --file ci/Dockerfile.ci
-        --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache
-        --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max
-        --tag ${LOCAL_REGISTRY}/ci:${CI_HASH}
-        --tag ${LOCAL_REGISTRY}/ci:latest
-        --push .
+    - docker buildx build --file ci/Dockerfile.ci --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max --tag ${LOCAL_REGISTRY}/ci:${CI_HASH} --tag ${LOCAL_REGISTRY}/ci:latest --push .
 
 # --- Pre-built CI image template ---
 .python-job:
@@ -69,59 +93,321 @@ rebuild-ci-image:
   variables:
     UV_LINK_MODE: copy
     UV_PROJECT_ENVIRONMENT: /app/.venv
+  cache:
+    key:
+      prefix: uv
+      files:
+        - uv.lock
+    paths:
+      - .cache/pip/
+      - .cache/uv/
   before_script:
-    - uv sync --extra web --extra test --group dev
+    - uv sync --frozen --extra web --extra test --group dev
 
-# --- Check stage ---
+# --- Blocking merge gate ---
 lint:
   stage: check
   tags: [hephaestus]
   extends: .python-job
   script:
-    - uv run ruff check src/ tests/
-    - uv run ruff format --check src/ tests/
+    - uv run ruff check .
+    - uv run ruff format --check .
 
 typecheck:
   stage: check
   tags: [hephaestus]
   extends: .python-job
   script:
-    - uv run pyright src/
+    - uv run pyright
 
 test:3.12:
   stage: check
   tags: [hephaestus]
   extends: .python-job
   script:
-    - uv run pytest tests/ -x --tb=short --cov=sophia --cov-report=term
-  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/' 
+    - uv run pytest --tb=short -q --cov=src/sophia --cov-report=term --cov-report=xml --junitxml=pytest.xml --cov-fail-under=85
+  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/'
+  artifacts:
+    when: always
+    reports:
+      junit: pytest.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - pytest.xml
+      - coverage.xml
+    expire_in: 1 week
 
+openapi-check:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/export_openapi.py --check
+
+blocking-audit:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/blocking_audit.py --check
+
+secret-policy:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/secret_policy.py --check
+
+deployment-policy:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/deployment_policy.py --check
+
+compose-config:
+  stage: check
+  image: docker:27-cli
+  tags: [privileged]
+  script:
+    - docker compose config
+    - IMAGE_TAG="$CI_COMMIT_SHA" docker compose -f docker-compose.prod.yml config
+
+.frontend-job:
+  stage: check
+  # The runner's allowed_images does not include mcr.microsoft.com, and only the
+  # a11y job needs a browser, so the shared base is plain Node and that one job
+  # installs Chromium for itself.
+  image: node:24-bookworm-slim
+  tags: [hephaestus]
+  cache:
+    key:
+      prefix: pnpm
+      files:
+        - frontend/pnpm-lock.yaml
+    paths:
+      - .cache/pnpm/
+  before_script:
+    - corepack enable
+    - corepack prepare pnpm@11.3.0 --activate
+    - pnpm -C frontend install --frozen-lockfile --store-dir "$PNPM_STORE_PATH"
+
+frontend-contract-guards:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run guard:package-contract
+    - pnpm -C frontend run guard:server-fetch
+    - pnpm -C frontend run guard:openapi-types
+    - pnpm -C frontend run guard:api-client
+
+frontend-paraglide:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run paraglide:check
+
+frontend-check:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run check
+
+frontend-lint:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run lint
+
+frontend-unit:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run test:unit
+
+frontend-size:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend run size-limit
+
+frontend-a11y:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend exec playwright install --with-deps chromium
+    - pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
+  artifacts:
+    when: on_failure
+    paths:
+      - frontend/test-results/
+      - frontend/playwright-report/
+    expire_in: 1 week
+
+# --- Optional checks ---
 test:3.14:
   stage: check
   tags: [hephaestus]
   image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
+  extends: .optional-manual-rules
+  variables:
+    UV_LINK_MODE: copy
+  cache:
+    key:
+      prefix: uv-py314
+      files:
+        - uv.lock
+    paths:
+      - .cache/uv/
   script:
-    - uv sync --extra web --extra test
+    - uv sync --frozen --extra web --extra test --group dev
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
+dependency-audit:
+  stage: check
+  tags: [hephaestus]
+  extends:
+    - .python-job
+    - .optional-manual-rules
+  script:
+    - uv run pip-audit
+  allow_failure: true
+
 # --- Build stage ---
+docker-api-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build --file Dockerfile --cache-from type=registry,ref=${LOCAL_REGISTRY}/api-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/api-cache,mode=max --tag ${LOCAL_REGISTRY}/api:${CI_COMMIT_SHA} --push .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Dockerfile
+        - docker-compose.yml
+        - docker-compose.prod.yml
+        - pyproject.toml
+        - uv.lock
+        - src/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+docker-frontend-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build --file Dockerfile.frontend --cache-from type=registry,ref=${LOCAL_REGISTRY}/frontend-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/frontend-cache,mode=max --tag ${LOCAL_REGISTRY}/frontend:${CI_COMMIT_SHA} --push .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Dockerfile.frontend
+        - docker-compose.yml
+        - docker-compose.prod.yml
+        - frontend/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+docker-nicegui-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build --file Dockerfile.nicegui --cache-from type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache,mode=max --tag ${LOCAL_REGISTRY}/nicegui:${CI_COMMIT_SHA} --push .
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Dockerfile.nicegui
+        - docker-compose.yml
+        - docker-compose.prod.yml
+        - pyproject.toml
+        - uv.lock
+        - src/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
 docker-gui-build-gpu:
   stage: build
   extends: .docker-build
   timeout: 3h
   script:
     - GPU_HASH=$(cat Dockerfile.gui.cuda pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - docker buildx build
-        --file Dockerfile.gui.cuda
-        --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache
-        --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max
-        --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH}
-        --tag ${LOCAL_REGISTRY}/gui-cuda:latest
-        --push .
+    - docker buildx build --file Dockerfile.gui.cuda --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH} --tag ${LOCAL_REGISTRY}/gui-cuda:latest --push .
   rules:
-    - changes:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
         - Dockerfile.gui.cuda
         - pyproject.toml
         - uv.lock
         - src/**/*
+      when: manual
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - Dockerfile.gui.cuda
+        - pyproject.toml
+        - uv.lock
+        - src/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+docker-proxy-build:
+  stage: build
+  extends: .docker-build
+  script:
+    - docker buildx build --file proxy/Dockerfile --cache-from type=registry,ref=${LOCAL_REGISTRY}/proxy-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/proxy-cache,mode=max --tag ${LOCAL_REGISTRY}/proxy:${CI_COMMIT_SHA} --push proxy
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    - if: '$CI_COMMIT_BRANCH == "master"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - proxy/**/*
+        - docker-compose.yml
+        - docker-compose.prod.yml
+      when: manual
+      allow_failure: true
+    - when: never
+
+deploy:production:
+  stage: deploy
+  image: python:3.12-alpine
+  tags: [hephaestus]
+  resource_group: production
+  needs:
+    - docker-proxy-build
+    - docker-api-build
+    - docker-frontend-build
+    - docker-nicegui-build
+  variables:
+    IMAGE_TAG: $CI_COMMIT_SHA
+  before_script:
+    - apk add --no-cache openssh-client
+  script:
+    - test -n "$DEPLOY_HOST"
+    - test -n "$DEPLOY_PATH"
+    - test -n "$SOPHIA_PRODUCTION_URL"
+    - test -n "$CI_COMMIT_SHA"
+    - ssh "$DEPLOY_HOST" "cd '$DEPLOY_PATH' && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml pull && LOCAL_REGISTRY='${LOCAL_REGISTRY}' IMAGE_TAG='${CI_COMMIT_SHA}' docker compose -f docker-compose.prod.yml up -d --remove-orphans"
+    - python3 scripts/deploy_smoke.py --base-url "$SOPHIA_PRODUCTION_URL" --sse-path "${SOPHIA_SMOKE_SSE_PATH:-/api/events}"
+  environment:
+    name: production
+    url: $SOPHIA_PRODUCTION_URL
+    deployment_tier: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+    - when: never

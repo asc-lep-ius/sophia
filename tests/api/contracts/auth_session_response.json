@@ -1,0 +1,20 @@
+{
+  "authenticated": true,
+  "csrf_token": "csrf-token",
+  "settings": {
+    "locale": "en",
+    "selected_learning_path_id": "course-1",
+    "theme": "system"
+  },
+  "tenant": {
+    "cohort_id": "cohort-a",
+    "learning_path_id": "course-1",
+    "org_id": "tu-wien",
+    "role": "student"
+  },
+  "user": {
+    "display_name": "Learner One",
+    "email": "learner@example.test",
+    "id": "learner"
+  }
+}

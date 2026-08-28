@@ -45,5 +45,5 @@ def launch(
         title="Sophia",
         reload=reload,
         show=native,
-        storage_secret="sophia-gui-storage",
+        storage_secret=settings.nicegui_storage_secret(),
     )

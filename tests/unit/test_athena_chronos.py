@@ -531,13 +531,13 @@ async def _make_athena_open(db: aiosqlite.Connection, course_id: int) -> None:
     await db.commit()
 
 
-async def _make_chronos_open(db: aiosqlite.Connection) -> None:
+async def _make_chronos_open(db: aiosqlite.Connection, course_id: int = 42) -> None:
     """Insert well-calibrated metacognition entries to reach chronos scaffold 'open'."""
     for i in range(10):
         await db.execute(
-            "INSERT INTO metacognition_log (domain, item_id, predicted, actual) "
-            "VALUES ('effort:exam', ?, ?, ?)",
-            (f"item_{i}", 5.0, 5.0),
+            "INSERT INTO metacognition_log (domain, item_id, predicted, actual, course_id) "
+            "VALUES ('effort:exam', ?, ?, ?, ?)",
+            (f"item_{i}", 5.0, 5.0, course_id),
         )
     await db.commit()
 
@@ -584,6 +584,16 @@ class TestGetScaffoldHint:
     async def test_returns_none_when_no_data(self, db: aiosqlite.Connection) -> None:
         """No data at all → both at full scaffold → no contrast."""
         from sophia.services.athena_chronos import get_scaffold_hint
+
+        hint = await get_scaffold_hint(db, 42)
+        assert hint is None
+
+    @pytest.mark.asyncio
+    async def test_ignores_calibration_from_another_course(self, db: aiosqlite.Connection) -> None:
+        """Estimation maturity is per course, not global."""
+        from sophia.services.athena_chronos import get_scaffold_hint
+
+        await _make_chronos_open(db, course_id=99)
 
         hint = await get_scaffold_hint(db, 42)
         assert hint is None

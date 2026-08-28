@@ -1,0 +1,7039 @@
+{
+  "components": {
+    "schemas": {
+      "ActualScoreUpdateRequest": {
+        "properties": {
+          "actual": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Actual",
+            "type": "number"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "actual"
+        ],
+        "title": "ActualScoreUpdateRequest",
+        "type": "object"
+      },
+      "ActualScoreUpdateResponse": {
+        "properties": {
+          "actual": {
+            "title": "Actual",
+            "type": "number"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "actual",
+          "updated"
+        ],
+        "title": "ActualScoreUpdateResponse",
+        "type": "object"
+      },
+      "AuthLoginRequest": {
+        "properties": {
+          "mfa_code": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mfa Code"
+          },
+          "password": {
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "minLength": 1,
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "AuthLoginRequest",
+        "type": "object"
+      },
+      "AuthSessionResponse": {
+        "properties": {
+          "authenticated": {
+            "title": "Authenticated",
+            "type": "boolean"
+          },
+          "csrf_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csrf Token"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionTenantResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SessionUserResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "title": "AuthSessionResponse",
+        "type": "object"
+      },
+      "CalibrationRatingListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/CalibrationRatingResponse"
+            },
+            "title": "Ratings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "ratings"
+        ],
+        "title": "CalibrationRatingListResponse",
+        "type": "object"
+      },
+      "CalibrationRatingRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "rating"
+        ],
+        "title": "CalibrationRatingRequest",
+        "type": "object"
+      },
+      "CalibrationRatingResponse": {
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "calibration_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Error"
+          },
+          "difficulty_level": {
+            "title": "Difficulty Level",
+            "type": "string"
+          },
+          "is_blind_spot": {
+            "title": "Is Blind Spot",
+            "type": "boolean"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "rated_at": {
+            "title": "Rated At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "learning_path_id",
+          "predicted",
+          "actual",
+          "rated_at",
+          "calibration_error",
+          "is_blind_spot",
+          "difficulty_level"
+        ],
+        "title": "CalibrationRatingResponse",
+        "type": "object"
+      },
+      "CalibrationRatingSavedResponse": {
+        "properties": {
+          "rating": {
+            "$ref": "#/components/schemas/CalibrationRatingResponse"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "CalibrationRatingSavedResponse",
+        "type": "object"
+      },
+      "ContentItemListResponse": {
+        "properties": {
+          "content_source_id": {
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_source_id",
+          "items"
+        ],
+        "title": "ContentItemListResponse",
+        "type": "object"
+      },
+      "ContentItemResponse": {
+        "properties": {
+          "download_status": {
+            "title": "Download Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "index_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Index Status"
+          },
+          "missed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed At"
+          },
+          "sequence_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Number"
+          },
+          "skip_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skip Reason"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "transcription_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Status"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "download_status",
+          "skip_reason",
+          "transcription_status",
+          "index_status",
+          "sequence_number",
+          "missed_at"
+        ],
+        "title": "ContentItemResponse",
+        "type": "object"
+      },
+      "ContentSearchRequest": {
+        "properties": {
+          "content_source_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "missed_only": {
+            "default": false,
+            "title": "Missed Only",
+            "type": "boolean"
+          },
+          "n_results": {
+            "default": 5,
+            "maximum": 25.0,
+            "minimum": 1.0,
+            "title": "N Results",
+            "type": "integer"
+          },
+          "query": {
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "source_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentSearchSourceFilter"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "content_source_id",
+          "query"
+        ],
+        "title": "ContentSearchRequest",
+        "type": "object"
+      },
+      "ContentSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSearchResultResponse"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "ContentSearchResponse",
+        "type": "object"
+      },
+      "ContentSearchResultResponse": {
+        "properties": {
+          "chunk_text": {
+            "title": "Chunk Text",
+            "type": "string"
+          },
+          "content_item_id": {
+            "title": "Content Item Id",
+            "type": "string"
+          },
+          "end_time": {
+            "title": "End Time",
+            "type": "number"
+          },
+          "score": {
+            "title": "Score",
+            "type": "number"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "start_time": {
+            "title": "Start Time",
+            "type": "number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_item_id",
+          "title",
+          "chunk_text",
+          "start_time",
+          "end_time",
+          "score",
+          "source"
+        ],
+        "title": "ContentSearchResultResponse",
+        "type": "object"
+      },
+      "ContentSearchSourceFilter": {
+        "description": "Kind of indexed content a search request is restricted to.",
+        "enum": [
+          "all",
+          "transcript",
+          "document"
+        ],
+        "title": "ContentSearchSourceFilter",
+        "type": "string"
+      },
+      "ContentSourceDiscoveryResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveredContentSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "title": "ContentSourceDiscoveryResponse",
+        "type": "object"
+      },
+      "ContentSourceIngestionStatusResponse": {
+        "properties": {
+          "content_source_id": {
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_source_id",
+          "items"
+        ],
+        "title": "ContentSourceIngestionStatusResponse",
+        "type": "object"
+      },
+      "ContentSourceListResponse": {
+        "properties": {
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources"
+        ],
+        "title": "ContentSourceListResponse",
+        "type": "object"
+      },
+      "ContentSourceResponse": {
+        "properties": {
+          "external_ref": {
+            "title": "External Ref",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "external_ref",
+          "title"
+        ],
+        "title": "ContentSourceResponse",
+        "type": "object"
+      },
+      "DeadlineCompletionRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id"
+        ],
+        "title": "DeadlineCompletionRequest",
+        "type": "object"
+      },
+      "DeadlineCompletionResponse": {
+        "properties": {
+          "actual_hours": {
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "feedback": {
+            "title": "Feedback",
+            "type": "string"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "predicted_hours",
+          "actual_hours",
+          "feedback",
+          "completed"
+        ],
+        "title": "DeadlineCompletionResponse",
+        "type": "object"
+      },
+      "DeadlineIcsExportResponse": {
+        "properties": {
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "ics": {
+            "title": "Ics",
+            "type": "string"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "horizon_days",
+          "ics"
+        ],
+        "title": "DeadlineIcsExportResponse",
+        "type": "object"
+      },
+      "DeadlineListResponse": {
+        "properties": {
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/DeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "horizon_days",
+          "deadlines"
+        ],
+        "title": "DeadlineListResponse",
+        "type": "object"
+      },
+      "DeadlineReflectionDetailResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "reflection": {
+            "$ref": "#/components/schemas/DeadlineReflectionItemResponse"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "reflection"
+        ],
+        "title": "DeadlineReflectionDetailResponse",
+        "type": "object"
+      },
+      "DeadlineReflectionItemResponse": {
+        "properties": {
+          "actual_hours": {
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          },
+          "reflected_at": {
+            "title": "Reflected At",
+            "type": "string"
+          },
+          "reflection_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reflection Text"
+          }
+        },
+        "required": [
+          "predicted_hours",
+          "actual_hours",
+          "reflection_text",
+          "reflected_at"
+        ],
+        "title": "DeadlineReflectionItemResponse",
+        "type": "object"
+      },
+      "DeadlineReflectionRequest": {
+        "properties": {
+          "actual_hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Actual Hours",
+            "type": "number"
+          },
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted_hours": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Hours"
+          },
+          "reflection_text": {
+            "minLength": 1,
+            "title": "Reflection Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "deadline_id",
+          "actual_hours",
+          "reflection_text"
+        ],
+        "title": "DeadlineReflectionRequest",
+        "type": "object"
+      },
+      "DeadlineReflectionResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "recorded"
+        ],
+        "title": "DeadlineReflectionResponse",
+        "type": "object"
+      },
+      "DeadlineResponse": {
+        "properties": {
+          "deadline_type": {
+            "title": "Deadline Type",
+            "type": "string"
+          },
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "extra": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonPrimitive"
+            },
+            "title": "Extra",
+            "type": "object"
+          },
+          "grade_weight": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grade Weight"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "learning_path_name": {
+            "title": "Learning Path Name",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "submission_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submission Status"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "learning_path_id",
+          "learning_path_name",
+          "deadline_type",
+          "due_at",
+          "grade_weight",
+          "submission_status",
+          "url"
+        ],
+        "title": "DeadlineResponse",
+        "type": "object"
+      },
+      "DeadlineSyncResponse": {
+        "properties": {
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/DeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "synced_count": {
+            "title": "Synced Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "synced_count",
+          "deadlines"
+        ],
+        "title": "DeadlineSyncResponse",
+        "type": "object"
+      },
+      "DeadlineTimeEntryItemResponse": {
+        "properties": {
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recorded_at": {
+            "title": "Recorded At",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "hours",
+          "source",
+          "note",
+          "recorded_at"
+        ],
+        "title": "DeadlineTimeEntryItemResponse",
+        "type": "object"
+      },
+      "DeadlineTimeEntryListResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/DeadlineTimeEntryItemResponse"
+            },
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "entries"
+        ],
+        "title": "DeadlineTimeEntryListResponse",
+        "type": "object"
+      },
+      "DeadlineTimeEntryRequest": {
+        "properties": {
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Hours",
+            "type": "number"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "recorded_at": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recorded At"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "deadline_id",
+          "hours"
+        ],
+        "title": "DeadlineTimeEntryRequest",
+        "type": "object"
+      },
+      "DeadlineTimeEntryResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "recorded": {
+            "title": "Recorded",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "recorded"
+        ],
+        "title": "DeadlineTimeEntryResponse",
+        "type": "object"
+      },
+      "DeadlineTimerStartResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "started": {
+            "title": "Started",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "started"
+        ],
+        "title": "DeadlineTimerStartResponse",
+        "type": "object"
+      },
+      "DeadlineTimerStopResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "elapsed_hours": {
+            "title": "Elapsed Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "elapsed_hours"
+        ],
+        "title": "DeadlineTimerStopResponse",
+        "type": "object"
+      },
+      "DeadlineTrackedTimeResponse": {
+        "properties": {
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "total_hours": {
+            "title": "Total Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "total_hours"
+        ],
+        "title": "DeadlineTrackedTimeResponse",
+        "type": "object"
+      },
+      "DeadlineType": {
+        "description": "Source type of a deadline.",
+        "enum": [
+          "assignment",
+          "quiz",
+          "checkmark",
+          "exam",
+          "exam_registration"
+        ],
+        "title": "DeadlineType",
+        "type": "string"
+      },
+      "DiscoveredContentSourceResponse": {
+        "properties": {
+          "content_item_count": {
+            "title": "Content Item Count",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_short_title": {
+            "title": "Learning Path Short Title",
+            "type": "string"
+          },
+          "learning_path_title": {
+            "title": "Learning Path Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "learning_path_title",
+          "learning_path_short_title",
+          "content_item_count"
+        ],
+        "title": "DiscoveredContentSourceResponse",
+        "type": "object"
+      },
+      "DueReviewListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "reviews"
+        ],
+        "title": "DueReviewListResponse",
+        "type": "object"
+      },
+      "EffortCalibrationMetricResponse": {
+        "properties": {
+          "domain": {
+            "title": "Domain",
+            "type": "string"
+          },
+          "mean_absolute_error": {
+            "title": "Mean Absolute Error",
+            "type": "number"
+          },
+          "mean_error": {
+            "title": "Mean Error",
+            "type": "number"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "trend": {
+            "title": "Trend",
+            "type": "string"
+          }
+        },
+        "required": [
+          "domain",
+          "sample_count",
+          "mean_error",
+          "mean_absolute_error",
+          "trend"
+        ],
+        "title": "EffortCalibrationMetricResponse",
+        "type": "object"
+      },
+      "EffortCalibrationResponse": {
+        "properties": {
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/EffortCalibrationMetricResponse"
+            },
+            "title": "Metrics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "metrics"
+        ],
+        "title": "EffortCalibrationResponse",
+        "type": "object"
+      },
+      "EffortDayResponse": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "deadline_efforts": {
+            "additionalProperties": {
+              "type": "number"
+            },
+            "title": "Deadline Efforts",
+            "type": "object"
+          },
+          "total": {
+            "title": "Total",
+            "type": "number"
+          },
+          "unestimated": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Unestimated",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "deadline_efforts",
+          "unestimated",
+          "total"
+        ],
+        "title": "EffortDayResponse",
+        "type": "object"
+      },
+      "EffortDistributionResponse": {
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/EffortDayResponse"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "horizon_days",
+          "days"
+        ],
+        "title": "EffortDistributionResponse",
+        "type": "object"
+      },
+      "EffortEstimateRequest": {
+        "properties": {
+          "breakdown": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "exclusiveMinimum": 0.0,
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakdown"
+          },
+          "deadline_id": {
+            "minLength": 1,
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "intention": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intention"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted_hours": {
+            "exclusiveMinimum": 0.0,
+            "title": "Predicted Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "deadline_id",
+          "predicted_hours"
+        ],
+        "title": "EffortEstimateRequest",
+        "type": "object"
+      },
+      "EffortEstimateResponse": {
+        "properties": {
+          "breakdown": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Breakdown"
+          },
+          "deadline_id": {
+            "title": "Deadline Id",
+            "type": "string"
+          },
+          "estimated_at": {
+            "title": "Estimated At",
+            "type": "string"
+          },
+          "implementation_intention": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Implementation Intention"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted_hours": {
+            "title": "Predicted Hours",
+            "type": "number"
+          },
+          "scaffold_level": {
+            "title": "Scaffold Level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "deadline_id",
+          "learning_path_id",
+          "predicted_hours",
+          "breakdown",
+          "implementation_intention",
+          "scaffold_level",
+          "estimated_at"
+        ],
+        "title": "EffortEstimateResponse",
+        "type": "object"
+      },
+      "EffortEstimateSavedResponse": {
+        "properties": {
+          "estimate": {
+            "$ref": "#/components/schemas/EffortEstimateResponse"
+          }
+        },
+        "required": [
+          "estimate"
+        ],
+        "title": "EffortEstimateSavedResponse",
+        "type": "object"
+      },
+      "ErrorDetail": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonPrimitive"
+            },
+            "title": "Params",
+            "type": "object"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "ErrorDetail",
+        "type": "object"
+      },
+      "ErrorEnvelope": {
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/ErrorDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      },
+      "JsonPrimitive": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "integer"
+          },
+          {
+            "type": "number"
+          },
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "ManualTopicRequest": {
+        "properties": {
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "title": "ManualTopicRequest",
+        "type": "object"
+      },
+      "PastDeadlineListResponse": {
+        "properties": {
+          "deadlines": {
+            "items": {
+              "$ref": "#/components/schemas/DeadlineResponse"
+            },
+            "title": "Deadlines",
+            "type": "array"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "limit",
+          "deadlines"
+        ],
+        "title": "PastDeadlineListResponse",
+        "type": "object"
+      },
+      "QuickstartConfidenceRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "additionalProperties": {
+              "maximum": 5.0,
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "minProperties": 1,
+            "title": "Ratings",
+            "type": "object"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "ratings"
+        ],
+        "title": "QuickstartConfidenceRequest",
+        "type": "object"
+      },
+      "QuickstartConfidenceResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "saved_count": {
+            "title": "Saved Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "saved_count"
+        ],
+        "title": "QuickstartConfidenceResponse",
+        "type": "object"
+      },
+      "QuickstartLearningPathResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "short_title": {
+            "title": "Short Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "short_title",
+          "url"
+        ],
+        "title": "QuickstartLearningPathResponse",
+        "type": "object"
+      },
+      "QuickstartManualTopicsRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topics"
+        ],
+        "title": "QuickstartManualTopicsRequest",
+        "type": "object"
+      },
+      "QuickstartManualTopicsResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartTopicResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topics"
+        ],
+        "title": "QuickstartManualTopicsResponse",
+        "type": "object"
+      },
+      "QuickstartOverviewResponse": {
+        "properties": {
+          "completed_session_count": {
+            "title": "Completed Session Count",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "learning_paths": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartLearningPathResponse"
+            },
+            "title": "Learning Paths",
+            "type": "array"
+          },
+          "nearest_deadline": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DeadlineResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/QuickstartTopicResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "learning_paths",
+          "topics",
+          "nearest_deadline",
+          "completed_session_count"
+        ],
+        "title": "QuickstartOverviewResponse",
+        "type": "object"
+      },
+      "QuickstartSessionCountResponse": {
+        "properties": {
+          "completed_session_count": {
+            "title": "Completed Session Count",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "completed_session_count"
+        ],
+        "title": "QuickstartSessionCountResponse",
+        "type": "object"
+      },
+      "QuickstartTopicResponse": {
+        "properties": {
+          "frequency": {
+            "title": "Frequency",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TopicOrigin"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "learning_path_id",
+          "source",
+          "frequency"
+        ],
+        "title": "QuickstartTopicResponse",
+        "type": "object"
+      },
+      "ReadinessCheck": {
+        "properties": {
+          "name": {
+            "enum": [
+              "database",
+              "sse_broker"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "ok"
+        ],
+        "title": "ReadinessCheck",
+        "type": "object"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "checks": {
+            "items": {
+              "$ref": "#/components/schemas/ReadinessCheck"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessResponse",
+        "type": "object"
+      },
+      "ReviewCompletionRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Score",
+            "type": "number"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "score"
+        ],
+        "title": "ReviewCompletionRequest",
+        "type": "object"
+      },
+      "ReviewScheduleItemResponse": {
+        "properties": {
+          "difficulty": {
+            "title": "Difficulty",
+            "type": "number"
+          },
+          "interval_days": {
+            "title": "Interval Days",
+            "type": "integer"
+          },
+          "interval_index": {
+            "title": "Interval Index",
+            "type": "integer"
+          },
+          "is_due": {
+            "title": "Is Due",
+            "type": "boolean"
+          },
+          "last_reviewed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Reviewed At"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "next_review_at": {
+            "title": "Next Review At",
+            "type": "string"
+          },
+          "review_count": {
+            "title": "Review Count",
+            "type": "integer"
+          },
+          "score_at_last_review": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score At Last Review"
+          },
+          "stability": {
+            "title": "Stability",
+            "type": "number"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "learning_path_id",
+          "interval_index",
+          "interval_days",
+          "last_reviewed_at",
+          "next_review_at",
+          "score_at_last_review",
+          "difficulty",
+          "stability",
+          "review_count",
+          "is_due"
+        ],
+        "title": "ReviewScheduleItemResponse",
+        "type": "object"
+      },
+      "ReviewScheduleListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "schedules": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Schedules",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "schedules"
+        ],
+        "title": "ReviewScheduleListResponse",
+        "type": "object"
+      },
+      "ReviewScheduleRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic"
+        ],
+        "title": "ReviewScheduleRequest",
+        "type": "object"
+      },
+      "ReviewScheduleResponse": {
+        "properties": {
+          "schedule": {
+            "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+          }
+        },
+        "required": [
+          "schedule"
+        ],
+        "title": "ReviewScheduleResponse",
+        "type": "object"
+      },
+      "SessionTenantResponse": {
+        "properties": {
+          "cohort_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cohort Id"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "string"
+          },
+          "org_id": {
+            "title": "Org Id",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "org_id",
+          "learning_path_id",
+          "role"
+        ],
+        "title": "SessionTenantResponse",
+        "type": "object"
+      },
+      "SessionUserResponse": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "email"
+        ],
+        "title": "SessionUserResponse",
+        "type": "object"
+      },
+      "SettingsPatchRequest": {
+        "properties": {
+          "locale": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale"
+          },
+          "selected_learning_path_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Learning Path Id"
+          },
+          "theme": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theme"
+          }
+        },
+        "title": "SettingsPatchRequest",
+        "type": "object"
+      },
+      "SettingsResponse": {
+        "properties": {
+          "locale": {
+            "title": "Locale",
+            "type": "string"
+          },
+          "selected_learning_path_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Learning Path Id"
+          },
+          "theme": {
+            "title": "Theme",
+            "type": "string"
+          }
+        },
+        "required": [
+          "theme",
+          "locale"
+        ],
+        "title": "SettingsResponse",
+        "type": "object"
+      },
+      "StudyFlashcardItemResponse": {
+        "properties": {
+          "back": {
+            "title": "Back",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "front": {
+            "title": "Front",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudyFlashcardSource"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "learning_path_id",
+          "topic",
+          "front",
+          "back",
+          "source",
+          "created_at"
+        ],
+        "title": "StudyFlashcardItemResponse",
+        "type": "object"
+      },
+      "StudyFlashcardRequest": {
+        "properties": {
+          "back": {
+            "minLength": 1,
+            "title": "Back",
+            "type": "string"
+          },
+          "front": {
+            "minLength": 1,
+            "title": "Front",
+            "type": "string"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/StudyFlashcardSource",
+            "default": "study"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "front",
+          "back"
+        ],
+        "title": "StudyFlashcardRequest",
+        "type": "object"
+      },
+      "StudyFlashcardResponse": {
+        "properties": {
+          "flashcard": {
+            "$ref": "#/components/schemas/StudyFlashcardItemResponse"
+          }
+        },
+        "required": [
+          "flashcard"
+        ],
+        "title": "StudyFlashcardResponse",
+        "type": "object"
+      },
+      "StudyFlashcardSource": {
+        "description": "Where a flashcard came from, in source-agnostic terms.",
+        "enum": [
+          "study",
+          "transcript",
+          "manual"
+        ],
+        "title": "StudyFlashcardSource",
+        "type": "string"
+      },
+      "StudySessionCompleteRequest": {
+        "properties": {
+          "post_test_score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Post Test Score",
+            "type": "number"
+          },
+          "pre_test_score": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Pre Test Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pre_test_score",
+          "post_test_score"
+        ],
+        "title": "StudySessionCompleteRequest",
+        "type": "object"
+      },
+      "StudySessionCompletionResponse": {
+        "properties": {
+          "completed": {
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "completed"
+        ],
+        "title": "StudySessionCompletionResponse",
+        "type": "object"
+      },
+      "StudySessionItemResponse": {
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "improvement": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Improvement"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "post_test_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Test Score"
+          },
+          "pre_test_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pre Test Score"
+          },
+          "started_at": {
+            "title": "Started At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "learning_path_id",
+          "topic",
+          "pre_test_score",
+          "post_test_score",
+          "started_at",
+          "completed_at",
+          "improvement"
+        ],
+        "title": "StudySessionItemResponse",
+        "type": "object"
+      },
+      "StudySessionListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/StudySessionItemResponse"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "sessions"
+        ],
+        "title": "StudySessionListResponse",
+        "type": "object"
+      },
+      "StudySessionResponse": {
+        "properties": {
+          "session": {
+            "$ref": "#/components/schemas/StudySessionItemResponse"
+          }
+        },
+        "required": [
+          "session"
+        ],
+        "title": "StudySessionResponse",
+        "type": "object"
+      },
+      "StudySessionStartRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic"
+        ],
+        "title": "StudySessionStartRequest",
+        "type": "object"
+      },
+      "TissConnectionState": {
+        "description": "State of the learner's stored TISS credentials.",
+        "enum": [
+          "connected",
+          "session_missing",
+          "session_expired"
+        ],
+        "title": "TissConnectionState",
+        "type": "string"
+      },
+      "TissExamDateListResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "exams": {
+            "items": {
+              "$ref": "#/components/schemas/TissExamDateResponse"
+            },
+            "title": "Exams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "course_number",
+          "exams"
+        ],
+        "title": "TissExamDateListResponse",
+        "type": "object"
+      },
+      "TissExamDateResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "date_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date End"
+          },
+          "date_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Start"
+          },
+          "exam_id": {
+            "title": "Exam Id",
+            "type": "string"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "registration_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration End"
+          },
+          "registration_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Start"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "exam_id",
+          "course_number",
+          "title",
+          "date_start",
+          "date_end",
+          "registration_start",
+          "registration_end",
+          "mode"
+        ],
+        "title": "TissExamDateResponse",
+        "type": "object"
+      },
+      "TissFavoriteListResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "favorites": {
+            "items": {
+              "$ref": "#/components/schemas/TissFavoriteResponse"
+            },
+            "title": "Favorites",
+            "type": "array"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "semester",
+          "favorites"
+        ],
+        "title": "TissFavoriteListResponse",
+        "type": "object"
+      },
+      "TissFavoriteResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "course_type": {
+            "title": "Course Type",
+            "type": "string"
+          },
+          "ects": {
+            "title": "Ects",
+            "type": "number"
+          },
+          "exam_registered": {
+            "title": "Exam Registered",
+            "type": "boolean"
+          },
+          "group_registered": {
+            "title": "Group Registered",
+            "type": "boolean"
+          },
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "lva_registered": {
+            "title": "Lva Registered",
+            "type": "boolean"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_number",
+          "title",
+          "course_type",
+          "semester",
+          "hours",
+          "ects",
+          "lva_registered",
+          "group_registered",
+          "exam_registered"
+        ],
+        "title": "TissFavoriteResponse",
+        "type": "object"
+      },
+      "TissRegistrationAttemptRequest": {
+        "properties": {
+          "course_number": {
+            "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+            "title": "Course Number",
+            "type": "string"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "semester": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}[SW]$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Semester"
+          }
+        },
+        "required": [
+          "course_number"
+        ],
+        "title": "TissRegistrationAttemptRequest",
+        "type": "object"
+      },
+      "TissRegistrationAttemptResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TissRegistrationAttemptResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "result"
+        ],
+        "title": "TissRegistrationAttemptResponse",
+        "type": "object"
+      },
+      "TissRegistrationAttemptResultResponse": {
+        "properties": {
+          "attempted_at": {
+            "title": "Attempted At",
+            "type": "string"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "group_name": {
+            "title": "Group Name",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "registration_type": {
+            "title": "Registration Type",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "course_number",
+          "registration_type",
+          "success",
+          "group_name",
+          "message",
+          "attempted_at"
+        ],
+        "title": "TissRegistrationAttemptResultResponse",
+        "type": "object"
+      },
+      "TissRegistrationGroupListResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TissRegistrationGroupResponse"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "groups"
+        ],
+        "title": "TissRegistrationGroupListResponse",
+        "type": "object"
+      },
+      "TissRegistrationGroupResponse": {
+        "properties": {
+          "capacity": {
+            "title": "Capacity",
+            "type": "integer"
+          },
+          "day": {
+            "title": "Day",
+            "type": "string"
+          },
+          "enrolled": {
+            "title": "Enrolled",
+            "type": "integer"
+          },
+          "group_id": {
+            "title": "Group Id",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "time_end": {
+            "title": "Time End",
+            "type": "string"
+          },
+          "time_start": {
+            "title": "Time Start",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group_id",
+          "name",
+          "day",
+          "time_start",
+          "time_end",
+          "location",
+          "capacity",
+          "enrolled",
+          "status"
+        ],
+        "title": "TissRegistrationGroupResponse",
+        "type": "object"
+      },
+      "TissRegistrationStatusResponse": {
+        "properties": {
+          "connection": {
+            "$ref": "#/components/schemas/TissConnectionState"
+          },
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TissRegistrationTargetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "connection",
+          "course_number",
+          "semester",
+          "target"
+        ],
+        "title": "TissRegistrationStatusResponse",
+        "type": "object"
+      },
+      "TissRegistrationTargetResponse": {
+        "properties": {
+          "course_number": {
+            "title": "Course Number",
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/components/schemas/TissRegistrationGroupResponse"
+            },
+            "title": "Groups",
+            "type": "array"
+          },
+          "registration_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration End"
+          },
+          "registration_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Registration Start"
+          },
+          "registration_type": {
+            "title": "Registration Type",
+            "type": "string"
+          },
+          "semester": {
+            "title": "Semester",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "course_number",
+          "semester",
+          "registration_type",
+          "title",
+          "registration_start",
+          "registration_end",
+          "status",
+          "groups"
+        ],
+        "title": "TissRegistrationTargetResponse",
+        "type": "object"
+      },
+      "TopicConfidenceListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "ratings": {
+            "items": {
+              "$ref": "#/components/schemas/TopicConfidenceRatingResponse"
+            },
+            "title": "Ratings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "ratings"
+        ],
+        "title": "TopicConfidenceListResponse",
+        "type": "object"
+      },
+      "TopicConfidenceRatingResponse": {
+        "properties": {
+          "actual": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actual"
+          },
+          "calibration_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Error"
+          },
+          "is_blind_spot": {
+            "title": "Is Blind Spot",
+            "type": "boolean"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "rated_at": {
+            "title": "Rated At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "learning_path_id",
+          "predicted",
+          "actual",
+          "rated_at",
+          "calibration_error",
+          "is_blind_spot"
+        ],
+        "title": "TopicConfidenceRatingResponse",
+        "type": "object"
+      },
+      "TopicConfidenceRequest": {
+        "properties": {
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "rating"
+        ],
+        "title": "TopicConfidenceRequest",
+        "type": "object"
+      },
+      "TopicConfidenceResponse": {
+        "properties": {
+          "rating": {
+            "$ref": "#/components/schemas/TopicConfidenceRatingResponse"
+          }
+        },
+        "required": [
+          "rating"
+        ],
+        "title": "TopicConfidenceResponse",
+        "type": "object"
+      },
+      "TopicExtractionRequest": {
+        "properties": {
+          "content_source_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "content_source_id"
+        ],
+        "title": "TopicExtractionRequest",
+        "type": "object"
+      },
+      "TopicExtractionResponse": {
+        "properties": {
+          "content_source_id": {
+            "title": "Content Source Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicMappingResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_source_id",
+          "topics"
+        ],
+        "title": "TopicExtractionResponse",
+        "type": "object"
+      },
+      "TopicListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/TopicMappingResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topics"
+        ],
+        "title": "TopicListResponse",
+        "type": "object"
+      },
+      "TopicMappingResponse": {
+        "properties": {
+          "frequency": {
+            "title": "Frequency",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "source": {
+            "$ref": "#/components/schemas/TopicOrigin"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "learning_path_id",
+          "source",
+          "frequency"
+        ],
+        "title": "TopicMappingResponse",
+        "type": "object"
+      },
+      "TopicOrigin": {
+        "description": "Where a topic mapping came from, in source-agnostic terms.",
+        "enum": [
+          "transcript",
+          "quiz",
+          "manual"
+        ],
+        "title": "TopicOrigin",
+        "type": "string"
+      },
+      "TopicResponse": {
+        "properties": {
+          "topic": {
+            "$ref": "#/components/schemas/TopicMappingResponse"
+          }
+        },
+        "required": [
+          "topic"
+        ],
+        "title": "TopicResponse",
+        "type": "object"
+      },
+      "UpcomingExamListResponse": {
+        "properties": {
+          "exams": {
+            "items": {
+              "$ref": "#/components/schemas/DeadlineResponse"
+            },
+            "title": "Exams",
+            "type": "array"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "horizon_days",
+          "exams"
+        ],
+        "title": "UpcomingExamListResponse",
+        "type": "object"
+      },
+      "UpcomingReviewListResponse": {
+        "properties": {
+          "days_ahead": {
+            "title": "Days Ahead",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewScheduleItemResponse"
+            },
+            "title": "Reviews",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "days_ahead",
+          "reviews"
+        ],
+        "title": "UpcomingReviewListResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WebVitalsReservedResponse": {
+        "properties": {
+          "code": {
+            "const": "metrics.web_vitals.reserved",
+            "title": "Code",
+            "type": "string"
+          },
+          "status": {
+            "const": "reserved",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "code"
+        ],
+        "title": "WebVitalsReservedResponse",
+        "type": "object"
+      },
+      "WorkloadDayResponse": {
+        "properties": {
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WorkloadItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "date",
+          "items"
+        ],
+        "title": "WorkloadDayResponse",
+        "type": "object"
+      },
+      "WorkloadItemResponse": {
+        "properties": {
+          "hours": {
+            "title": "Hours",
+            "type": "number"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "hours"
+        ],
+        "title": "WorkloadItemResponse",
+        "type": "object"
+      },
+      "WorkloadResponse": {
+        "properties": {
+          "deadline_count": {
+            "title": "Deadline Count",
+            "type": "integer"
+          },
+          "horizon_days": {
+            "title": "Horizon Days",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "per_day": {
+            "items": {
+              "$ref": "#/components/schemas/WorkloadDayResponse"
+            },
+            "title": "Per Day",
+            "type": "array"
+          },
+          "remaining_hours": {
+            "title": "Remaining Hours",
+            "type": "number"
+          },
+          "total_estimated_hours": {
+            "title": "Total Estimated Hours",
+            "type": "number"
+          },
+          "total_tracked_hours": {
+            "title": "Total Tracked Hours",
+            "type": "number"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "horizon_days",
+          "total_estimated_hours",
+          "total_tracked_hours",
+          "remaining_hours",
+          "deadline_count",
+          "per_day"
+        ],
+        "title": "WorkloadResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Sophia API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/auth/login": {
+      "post": {
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "operationId": "logout_api_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session": {
+      "get": {
+        "operationId": "read_session_api_auth_session_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/calibration/actual-score": {
+      "patch": {
+        "operationId": "updateCalibrationActualScore",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualScoreUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActualScoreUpdateResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Patch Actual Score",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/calibration/blind-spots": {
+      "get": {
+        "operationId": "listCalibrationBlindSpots",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Calibration Blind Spots",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/calibration/ratings": {
+      "get": {
+        "operationId": "listCalibrationRatings",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Calibration Ratings",
+        "tags": [
+          "calibration"
+        ]
+      },
+      "post": {
+        "operationId": "saveCalibrationConfidenceRating",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalibrationRatingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalibrationRatingSavedResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Calibration Rating",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/content-sources": {
+      "get": {
+        "operationId": "listContentSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Content Sources",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/discover": {
+      "post": {
+        "operationId": "discoverContentSources",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceDiscoveryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Discover Content Sources",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/{content_source_id}/content-items": {
+      "get": {
+        "operationId": "listContentItems",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_source_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Content Source Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentItemListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Content Items",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/{content_source_id}/ingestion-status": {
+      "get": {
+        "operationId": "readContentSourceIngestionStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "content_source_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Content Source Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceIngestionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Content Source Ingestion Status",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/deadline-history": {
+      "get": {
+        "operationId": "listPastDeadlines",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PastDeadlineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Past Deadlines",
+        "tags": [
+          "deadline-history"
+        ]
+      }
+    },
+    "/api/deadline-history/calibration": {
+      "get": {
+        "operationId": "getEffortCalibration",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortCalibrationResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Effort Calibration",
+        "tags": [
+          "deadline-history"
+        ]
+      }
+    },
+    "/api/deadline-history/effort-distribution": {
+      "get": {
+        "operationId": "getEffortDistribution",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortDistributionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Effort Distribution Route",
+        "tags": [
+          "deadline-history"
+        ]
+      }
+    },
+    "/api/deadline-history/{deadline_id}/reflection": {
+      "get": {
+        "operationId": "getDeadlineReflection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineReflectionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Deadline Reflection Detail",
+        "tags": [
+          "deadline-history"
+        ]
+      }
+    },
+    "/api/deadline-history/{deadline_id}/time-entries": {
+      "get": {
+        "operationId": "listDeadlineTimeEntries",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineTimeEntryListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Deadline Time Entries",
+        "tags": [
+          "deadline-history"
+        ]
+      }
+    },
+    "/api/deadlines": {
+      "get": {
+        "operationId": "listDeadlines",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deadline_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/DeadlineType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Deadline Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Deadlines",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/estimates": {
+      "post": {
+        "operationId": "recordDeadlineEstimate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EffortEstimateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EffortEstimateSavedResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Deadline Estimate",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/ics": {
+      "get": {
+        "operationId": "exportDeadlinesIcs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineIcsExportResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Export Deadline Ics",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/reflections": {
+      "post": {
+        "operationId": "recordDeadlineReflection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineReflectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineReflectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Deadline Reflection",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/sync": {
+      "post": {
+        "operationId": "syncDeadlines",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineSyncResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Sync Deadline Cache",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/time-entries": {
+      "post": {
+        "operationId": "recordDeadlineTimeEntry",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineTimeEntryRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineTimeEntryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Record Deadline Time Entry",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/upcoming-exams": {
+      "get": {
+        "operationId": "listUpcomingExams",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpcomingExamListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Upcoming Exam Deadlines",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/workload": {
+      "get": {
+        "operationId": "getDeadlineWorkload",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "horizon_days",
+            "required": false,
+            "schema": {
+              "default": 14,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Horizon Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkloadResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Deadline Workload",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/{deadline_id}/complete": {
+      "post": {
+        "operationId": "completeDeadline",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeadlineCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineCompletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Complete Deadline Route",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/{deadline_id}/timer/start": {
+      "post": {
+        "operationId": "startDeadlineTimer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineTimerStartResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Deadline Timer",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/{deadline_id}/timer/stop": {
+      "post": {
+        "operationId": "stopDeadlineTimer",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineTimerStopResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Stop Deadline Timer",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/deadlines/{deadline_id}/tracked-time": {
+      "get": {
+        "operationId": "getDeadlineTrackedTime",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "deadline_id",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Deadline Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeadlineTrackedTimeResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Deadline Tracked Time",
+        "tags": [
+          "deadlines"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/attempts": {
+      "post": {
+        "operationId": "createTissRegistrationAttempt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TissRegistrationAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationAttemptResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Tiss Registration Attempt",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/favorites": {
+      "get": {
+        "operationId": "listTissFavorites",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissFavoriteListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Favorites",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}": {
+      "get": {
+        "operationId": "getTissRegistrationTarget",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Tiss Registration Target",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}/exam-dates": {
+      "get": {
+        "operationId": "listTissExamDates",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissExamDateListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Exam Dates",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/integrations/tiss/registration/targets/{course_number}/groups": {
+      "get": {
+        "operationId": "listTissRegistrationGroups",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "course_number",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{3}\\.[A-Za-z0-9]{3}$",
+              "title": "Course Number",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "semester",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Semester"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TissRegistrationGroupListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Tiss Registration Groups",
+        "tags": [
+          "integrations-tiss"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/topics": {
+      "get": {
+        "operationId": "listTopics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topics",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "saveManualTopic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualTopicRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Manual Topic",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/topics/confidence": {
+      "get": {
+        "operationId": "listTopicConfidenceRatings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Topic Confidence Ratings",
+        "tags": [
+          "topics"
+        ]
+      },
+      "post": {
+        "operationId": "saveTopicConfidenceRating",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Topic Confidence Rating",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/topics/extract": {
+      "post": {
+        "operationId": "extractTopics",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TopicExtractionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TopicExtractionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Extract Topics",
+        "tags": [
+          "topics"
+        ]
+      }
+    },
+    "/api/metrics/web-vitals": {
+      "post": {
+        "operationId": "reserve_web_vitals_api_metrics_web_vitals_post",
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebVitalsReservedResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Reserve Web Vitals",
+        "tags": [
+          "metrics"
+        ]
+      }
+    },
+    "/api/quickstart/confidence": {
+      "post": {
+        "operationId": "saveQuickstartConfidence",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickstartConfidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Quickstart Confidence",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/manual-topics": {
+      "post": {
+        "operationId": "saveQuickstartManualTopics",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuickstartManualTopicsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartManualTopicsResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Quickstart Manual Topics",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/overview": {
+      "get": {
+        "operationId": "getQuickstartOverview",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartOverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Quickstart Overview Route",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/quickstart/session-count": {
+      "get": {
+        "operationId": "getQuickstartSessionCount",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuickstartSessionCountResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Quickstart Session Count",
+        "tags": [
+          "quickstart"
+        ]
+      }
+    },
+    "/api/ready": {
+      "get": {
+        "operationId": "ready_api_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Ready",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/api/review/complete": {
+      "post": {
+        "operationId": "completeReview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewCompletionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Complete Review Schedule",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/due": {
+      "get": {
+        "operationId": "listDueReviews",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DueReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Due Reviews",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/schedules": {
+      "get": {
+        "operationId": "listReviewSchedules",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Review Schedules",
+        "tags": [
+          "review"
+        ]
+      },
+      "post": {
+        "operationId": "scheduleReview",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewScheduleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewScheduleResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Review Schedule",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/review/upcoming": {
+      "get": {
+        "operationId": "listUpcomingReviews",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "days_ahead",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Days Ahead",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpcomingReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Upcoming Reviews",
+        "tags": [
+          "review"
+        ]
+      }
+    },
+    "/api/search": {
+      "post": {
+        "operationId": "searchContent",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search Content",
+        "tags": [
+          "search"
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "read_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Settings",
+        "tags": [
+          "settings"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_settings_api_settings_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Patch Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/study/flashcards": {
+      "post": {
+        "operationId": "saveStudyFlashcard",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyFlashcardRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyFlashcardResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Study Flashcard",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions": {
+      "get": {
+        "operationId": "listStudySessions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "topic",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Topic"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Study Sessions",
+        "tags": [
+          "study"
+        ]
+      },
+      "post": {
+        "operationId": "startStudySession",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySessionStartRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Study Session",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions/{session_id}/complete": {
+      "post": {
+        "operationId": "completeStudySession",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySessionCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionCompletionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Mark Study Session Complete",
+        "tags": [
+          "study"
+        ]
+      }
+    }
+  }
+}

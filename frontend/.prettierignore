@@ -1,0 +1,12 @@
+.svelte-kit/
+build/
+node_modules/
+playwright-report/
+pnpm-lock.yaml
+project.inlang/.meta.json
+project.inlang/README.md
+project.inlang/cache/
+src/lib/api/openapi.json
+src/lib/api/schema.d.ts
+src/lib/paraglide/
+test-results/

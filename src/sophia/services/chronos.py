@@ -325,11 +325,15 @@ async def get_scaffold_level(
     """Determine scaffold level based on calibration accuracy or count fallback."""
     domain = f"effort:{deadline_type.value}"
 
-    # Check metacognition_log for calibration data
-    cursor = await db.execute(
-        "SELECT predicted, actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL",
-        (domain,),
+    metacognition_query = (
+        "SELECT predicted, actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
     )
+    metacognition_params: list[str] = [domain]
+    if course_id is not None:
+        metacognition_query += " AND course_id = ?"
+        metacognition_params.append(str(course_id))
+
+    cursor = await db.execute(metacognition_query, metacognition_params)
     cal_rows = list(await cursor.fetchall())
 
     if len(cal_rows) >= CALIBRATION_THRESHOLD_ENTRIES:
@@ -344,9 +348,13 @@ async def get_scaffold_level(
         return EstimationScaffold.OPEN
 
     # Count-based fallback: how many estimates exist
-    count_cursor = await db.execute(
-        "SELECT COUNT(*) FROM effort_estimates",
-    )
+    count_query = "SELECT COUNT(*) FROM effort_estimates"
+    count_params: list[int] = []
+    if course_id is not None:
+        count_query += " WHERE course_id = ?"
+        count_params.append(course_id)
+
+    count_cursor = await db.execute(count_query, count_params)
     count_row = await count_cursor.fetchone()
     count = count_row[0] if count_row else 0
 
@@ -368,10 +376,13 @@ async def get_reference_class(
     Returns list of (predicted, actual) tuples.
     """
     domain = f"effort:{deadline_type.value}"
-    cursor = await db.execute(
-        "SELECT predicted, actual FROM metacognition_log WHERE domain = ?",
-        (domain,),
-    )
+    query = "SELECT predicted, actual FROM metacognition_log WHERE domain = ?"
+    params: list[str] = [domain]
+    if course_id is not None:
+        query += " AND course_id = ?"
+        params.append(str(course_id))
+
+    cursor = await db.execute(query, params)
     return list(await cursor.fetchall())  # type: ignore[return-value]
 
 
@@ -383,10 +394,13 @@ async def format_reference_class_hint(
 ) -> str | None:
     """Format past actual times for display. None if <3 historical entries."""
     domain = f"effort:{deadline_type.value}"
-    cursor = await db.execute(
-        "SELECT actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL",
-        (domain,),
-    )
+    query = "SELECT actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
+    params: list[str] = [domain]
+    if course_id is not None:
+        query += " AND course_id = ?"
+        params.append(str(course_id))
+
+    cursor = await db.execute(query, params)
     rows = list(await cursor.fetchall())
 
     if len(rows) < REFERENCE_CLASS_MIN_ENTRIES:
@@ -446,8 +460,8 @@ async def record_estimate(
     domain = f"effort:{deadline_type.value}"
     await db.execute(
         "INSERT OR REPLACE INTO metacognition_log "
-        "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
-        (domain, deadline_id, predicted_hours, now),
+        "(domain, item_id, predicted, predicted_at, course_id) VALUES (?, ?, ?, ?, ?)",
+        (domain, deadline_id, predicted_hours, now, course_id),
     )
 
     await db.commit()
@@ -582,10 +596,11 @@ async def complete_deadline(
 
     # Look up deadline_type for metacognition domain
     cursor = await db.execute(
-        "SELECT deadline_type FROM deadline_cache WHERE id = ?", (deadline_id,)
+        "SELECT deadline_type, course_id FROM deadline_cache WHERE id = ?", (deadline_id,)
     )
     row = await cursor.fetchone()
     deadline_type = DeadlineType(row[0]) if row else DeadlineType.ASSIGNMENT
+    course_id = int(row[1]) if row and row[1] is not None else None
 
     # Get predicted from effort_estimates
     cursor = await db.execute(
@@ -598,10 +613,19 @@ async def complete_deadline(
 
     # Update metacognition_log with actual
     domain = f"effort:{deadline_type.value}"
-    await db.execute(
-        "UPDATE metacognition_log SET actual = ?, actual_at = ? WHERE domain = ? AND item_id = ?",
-        (actual_hours, datetime.now(UTC).isoformat(), domain, deadline_id),
-    )
+    actual_at = datetime.now(UTC).isoformat()
+    if course_id is None:
+        await db.execute(
+            "UPDATE metacognition_log SET actual = ?, actual_at = ? "
+            "WHERE domain = ? AND item_id = ?",
+            (actual_hours, actual_at, domain, deadline_id),
+        )
+    else:
+        await db.execute(
+            "UPDATE metacognition_log SET actual = ?, actual_at = ?, course_id = ? "
+            "WHERE domain = ? AND item_id = ?",
+            (actual_hours, actual_at, course_id, domain, deadline_id),
+        )
     await db.commit()
 
     feedback = format_estimation_feedback(predicted_hours, actual_hours)
@@ -688,21 +712,28 @@ def compute_priority_score(
 
 async def get_workload_forecast(
     db: aiosqlite.Connection,
+    *,
+    course_id: int | None = None,
     horizon_days: int = 7,
 ) -> dict[str, object]:
     """Compute workload summary for the horizon window."""
     now = datetime.now(UTC)
     horizon_end = now + timedelta(days=horizon_days)
 
-    cursor = await db.execute(
+    query = (
         "SELECT dc.id, dc.name, dc.due_at, "
         "  (SELECT e.predicted_hours FROM effort_estimates e "
         "   WHERE e.deadline_id = dc.id ORDER BY e.estimated_at DESC LIMIT 1) AS est_hours "
         "FROM deadline_cache dc "
         "WHERE dc.due_at > ? AND dc.due_at < ? "
-        "ORDER BY dc.due_at ASC",
-        (now.isoformat(), horizon_end.isoformat()),
     )
+    params: list[str | int] = [now.isoformat(), horizon_end.isoformat()]
+    if course_id is not None:
+        query += "AND dc.course_id = ? "
+        params.append(course_id)
+    query += "ORDER BY dc.due_at ASC"
+
+    cursor = await db.execute(query, params)
     rows = list(await cursor.fetchall())
 
     total_estimated = 0.0

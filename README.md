@@ -801,6 +801,8 @@ Key design decisions:
 | Type checking | Pyright (strict mode) |
 | Packaging | uv + hatchling |
 | Web GUI | NiceGUI 2.0+ (Vue/Quasar-based) |
+| Frontend pivot | SvelteKit 2 + Svelte 5 + adapter-node under `/app` |
+| Frontend i18n | Paraglide JS v2 generated middleware via `@inlang/paraglide-js`; see [docs/frontend-paraglide-decision.md](docs/frontend-paraglide-decision.md) |
 | E2E Testing | Playwright + axe-core (WCAG 2.1 AA) |
 | CI | GitLab CI |
 
@@ -1024,6 +1026,10 @@ uv run pytest -x               # stop on first failure (useful when debugging)
 uv run ruff check .            # lint (style, complexity, imports)
 uv run ruff format --check .   # check formatting
 uv run pyright                 # strict type checking
+
+# Frontend pivot checks
+pnpm -C frontend run paraglide:check  # regenerate Paraglide JS v2 output and validate messages
+pnpm -C frontend run test:unit        # Vitest unit contracts, smoke, locale, web-vitals
 ```
 
 The test suite uses `pytest` with `pytest-asyncio` for async tests, `respx` for HTTP mocking (no real network calls in tests), and `hypothesis` for property-based testing of domain models.
@@ -1045,7 +1051,7 @@ The test suite uses `pytest` with `pytest-asyncio` for async tests, `respx` for 
 | `make docker-up` | Start services (detached) |
 | `make docker-down` | Stop services |
 | `make docker-logs` | Tail service logs |
-| `make docker-backup` | Backup SQLite from Docker volume |
+| `make docker-backup` | One-off local SQLite copy from Docker volume; production uses Litestream drills in [DEPLOYMENT.md](DEPLOYMENT.md) |
 | `make test-gui` | Run GUI unit tests |
 | `make test-gui-e2e` | Run GUI E2E tests (Playwright) |
 | `make test-gui-a11y` | Run WCAG accessibility audit |
@@ -1066,7 +1072,7 @@ docker compose up -d               # start (detached)
 docker compose down                # stop
 docker compose logs -f             # tail logs
 
-# Backup database from container
+# One-off local backup from container; use DEPLOYMENT.md for production Litestream drills
 make docker-backup                 # saves sophia-backup-YYYYMMDD.db
 
 # GUI Docker deployment (CPU — default)

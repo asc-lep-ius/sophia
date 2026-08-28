@@ -136,6 +136,8 @@ async def app_shell(content_fn: Callable[[], Any]) -> None:
     # Skip-to-content link — visible only on focus
     ui.html('<a href="#main-content" class="skip-link">Skip to content</a>')
 
+    await ui.context.client.connected()
+
     # Desktop sidebar — hidden on small screens
     with (
         ui.element("nav")

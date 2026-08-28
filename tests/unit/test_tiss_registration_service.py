@@ -1,4 +1,4 @@
-"""Tests for GUI registration service wrappers."""
+"""Tests for the TISS registration service."""
 
 from __future__ import annotations
 
@@ -20,9 +20,27 @@ from sophia.domain.models import (
 if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
-_PATCH_BASE = "sophia.gui.services.registration_service"
+_PATCH_BASE = "sophia.services.tiss_registration"
 _COURSE = "186.813"
 _SEMESTER = "2026S"
+
+
+@pytest.fixture
+def mock_container() -> AppContainer:
+    """Fake AppContainer with mocked async resources."""
+    from sophia.config import Settings
+
+    container = MagicMock(
+        spec_set=["settings", "http", "db", "moodle", "tiss", "opencast", "lecture_downloader"],
+    )
+    container.settings = Settings()
+    container.http = AsyncMock()
+    container.db = AsyncMock()
+    container.moodle = MagicMock()
+    container.tiss = MagicMock()
+    container.opencast = MagicMock()
+    container.lecture_downloader = MagicMock()
+    return container
 
 
 def _make_favorite(**overrides: Any) -> FavoriteCourse:
@@ -91,7 +109,7 @@ def _make_result(**overrides: Any) -> RegistrationResult:
 class TestGetFavorites:
     @pytest.mark.asyncio
     async def test_no_session_returns_no_session_status(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_favorites
+        from sophia.services.tiss_registration import get_favorites
 
         with patch(f"{_PATCH_BASE}._load_credentials", return_value=None):
             result = await get_favorites(mock_container)
@@ -101,7 +119,7 @@ class TestGetFavorites:
 
     @pytest.mark.asyncio
     async def test_returns_favorites_on_success(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_favorites
+        from sophia.services.tiss_registration import get_favorites
 
         expected = [_make_favorite()]
         mock_adapter = MagicMock()
@@ -118,7 +136,7 @@ class TestGetFavorites:
 
     @pytest.mark.asyncio
     async def test_auth_error_returns_auth_expired(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_favorites
+        from sophia.services.tiss_registration import get_favorites
 
         mock_adapter = MagicMock()
         mock_adapter.get_favorites = AsyncMock(side_effect=AuthError("expired"))
@@ -133,7 +151,7 @@ class TestGetFavorites:
 
     @pytest.mark.asyncio
     async def test_generic_error_returns_error(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_favorites
+        from sophia.services.tiss_registration import get_favorites
 
         mock_adapter = MagicMock()
         mock_adapter.get_favorites = AsyncMock(side_effect=RuntimeError("boom"))
@@ -149,7 +167,7 @@ class TestGetFavorites:
 
     @pytest.mark.asyncio
     async def test_network_error_returns_network_error(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_favorites
+        from sophia.services.tiss_registration import get_favorites
 
         mock_adapter = MagicMock()
         mock_adapter.get_favorites = AsyncMock(side_effect=NetworkError("Cannot reach TISS"))
@@ -170,7 +188,7 @@ class TestGetFavorites:
 class TestGetRegistrationStatus:
     @pytest.mark.asyncio
     async def test_no_session_returns_no_session(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_registration_status
+        from sophia.services.tiss_registration import get_registration_status
 
         with patch(f"{_PATCH_BASE}._load_credentials", return_value=None):
             result = await get_registration_status(mock_container, _COURSE, _SEMESTER)
@@ -179,7 +197,7 @@ class TestGetRegistrationStatus:
 
     @pytest.mark.asyncio
     async def test_returns_target_on_success(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_registration_status
+        from sophia.services.tiss_registration import get_registration_status
 
         target = _make_target()
         mock_adapter = MagicMock()
@@ -201,7 +219,7 @@ class TestGetRegistrationStatus:
 class TestGetGroups:
     @pytest.mark.asyncio
     async def test_no_session_returns_no_session(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_groups
+        from sophia.services.tiss_registration import get_groups
 
         with patch(f"{_PATCH_BASE}._load_credentials", return_value=None):
             result = await get_groups(mock_container, _COURSE, _SEMESTER)
@@ -211,7 +229,7 @@ class TestGetGroups:
 
     @pytest.mark.asyncio
     async def test_returns_groups_on_success(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_groups
+        from sophia.services.tiss_registration import get_groups
 
         expected = [_make_group()]
         mock_adapter = MagicMock()
@@ -233,7 +251,7 @@ class TestGetGroups:
 class TestRegisterCourse:
     @pytest.mark.asyncio
     async def test_no_session_returns_no_session(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import register_course
+        from sophia.services.tiss_registration import register_course
 
         with patch(f"{_PATCH_BASE}._load_credentials", return_value=None):
             result = await register_course(mock_container, _COURSE, _SEMESTER)
@@ -242,7 +260,7 @@ class TestRegisterCourse:
 
     @pytest.mark.asyncio
     async def test_successful_registration(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import register_course
+        from sophia.services.tiss_registration import register_course
 
         reg_result = _make_result()
         mock_adapter = MagicMock()
@@ -260,7 +278,7 @@ class TestRegisterCourse:
 
     @pytest.mark.asyncio
     async def test_auth_error_returns_auth_expired(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import register_course
+        from sophia.services.tiss_registration import register_course
 
         mock_adapter = MagicMock()
         mock_adapter.register = AsyncMock(side_effect=AuthError("session expired"))
@@ -275,7 +293,7 @@ class TestRegisterCourse:
 
     @pytest.mark.asyncio
     async def test_network_error_returns_network_error(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import register_course
+        from sophia.services.tiss_registration import register_course
 
         mock_adapter = MagicMock()
         mock_adapter.register = AsyncMock(side_effect=NetworkError("Cannot reach TISS"))
@@ -297,7 +315,7 @@ class TestGetExamDates:
     @pytest.mark.asyncio
     async def test_returns_exam_dates(self, mock_container: AppContainer) -> None:
         from sophia.domain.models import TissExamDate
-        from sophia.gui.services.registration_service import get_exam_dates
+        from sophia.services.tiss_registration import get_exam_dates
 
         expected = [
             TissExamDate(
@@ -320,7 +338,7 @@ class TestGetExamDates:
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:
-        from sophia.gui.services.registration_service import get_exam_dates
+        from sophia.services.tiss_registration import get_exam_dates
 
         mock_container.tiss.get_exam_dates = AsyncMock(side_effect=RuntimeError("down"))
 

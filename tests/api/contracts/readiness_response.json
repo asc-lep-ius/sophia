@@ -1,0 +1,13 @@
+{
+  "checks": [
+    {
+      "name": "database",
+      "ok": true
+    },
+    {
+      "name": "sse_broker",
+      "ok": true
+    }
+  ],
+  "status": "ready"
+}
