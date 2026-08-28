@@ -192,6 +192,14 @@ compose-config:
   stage: check
   image: docker:27-cli
   tags: [privileged]
+  # Production requires these to be set explicitly, so the syntax check supplies
+  # placeholders the same way it already does for IMAGE_TAG. A real deployment
+  # still fails loudly if any of them is missing.
+  variables:
+    SOPHIA_POSTGRES_USER: ci-syntax-check
+    SOPHIA_POSTGRES_PASSWORD: ci-syntax-check
+    SOPHIA_POSTGRES_DB: ci-syntax-check
+    SOPHIA_BACKUP_URL: postgresql://ci-syntax-check@postgres:5432/ci-syntax-check
   script:
     - docker compose config
     - IMAGE_TAG="$CI_COMMIT_SHA" docker compose -f docker-compose.prod.yml config
