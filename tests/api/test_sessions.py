@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
+from typing import cast
 
 import pytest
+from itsdangerous import URLSafeSerializer
 
 from sophia.api.sessions import (
+    SESSION_COOKIE_CLAIM,
     SESSION_RECORD_VERSION,
     InvalidSessionToken,
+    JsonObject,  # noqa: TC001
     RedisSessionStore,
     SecretKeySessionManager,
     SessionCore,
@@ -18,6 +23,7 @@ from sophia.api.sessions import (
     SessionSettings,
     SessionTenant,
     SessionUser,
+    create_session_record,
     deserialize_session_record,
     dumps_session_record,
     loads_session_record,
@@ -316,3 +322,78 @@ def test_corrupt_session_record_reads_as_invalid_token() -> None:
 
     with pytest.raises(InvalidSessionToken):
         loads_session_record(json.dumps(["not", "a", "mapping"]))
+
+
+def test_credential_payload_rejects_non_json_values() -> None:
+    """A credential payload must survive a JSON round trip through Redis."""
+    with pytest.raises(ValueError, match="payload"):
+        SessionCredential(payload=cast("JsonObject", {"moodle_session": object()}))
+
+
+def test_credential_payload_rejects_non_string_keys() -> None:
+    with pytest.raises(ValueError, match="payload"):
+        SessionCredential(payload=cast("JsonObject", {7: "value"}))
+
+
+def test_credential_payload_rejects_non_json_values_nested_in_a_list() -> None:
+    """TISS credentials carry a cookie list, so the list branch needs the same guard."""
+    with pytest.raises(ValueError, match="payload"):
+        SessionCredential(payload=cast("JsonObject", {"cookies": ["ok", object()]}))
+
+
+def test_stored_record_rejects_empty_required_strings() -> None:
+    payload = json.loads(dumps_session_record(_session_record(session_id="empty-user")))
+    payload["user"]["id"] = ""
+
+    with pytest.raises(ValueError, match="id must be a non-empty string"):
+        deserialize_session_record(payload)
+
+
+def test_stored_record_version_rejects_a_boolean() -> None:
+    """bool is an int in Python, so True would otherwise read as version 1."""
+    payload = json.loads(dumps_session_record(_session_record(session_id="bool-version")))
+    payload["version"] = True
+
+    with pytest.raises(ValueError, match="version must be an integer"):
+        deserialize_session_record(payload)
+
+
+def test_forged_cookie_with_a_non_string_claim_is_rejected() -> None:
+    signer = SecretKeySessionManager(current_key=VALID_CURRENT_KEY)
+    forged = URLSafeSerializer(secret_key=VALID_CURRENT_KEY, salt=signer.salt).dumps(
+        {SESSION_COOKIE_CLAIM: 12345},
+    )
+
+    with pytest.raises(InvalidSessionToken):
+        signer.verify(forged)
+
+
+def test_record_round_trip_preserves_role_email_and_credentials() -> None:
+    record = replace(
+        _session_record(
+            session_id="round-trip",
+            tuwel_credentials=SessionCredential(reference="tuwel:ref"),
+        ),
+        user=SessionUser(id="learner-1", display_name="Learner One", email="learner@example.test"),
+        tenant=SessionTenant(
+            org_id="tu-wien",
+            learning_path_id="course-1",
+            cohort_id="cohort-a",
+            role="instructor",
+        ),
+    )
+
+    restored = deserialize_session_record(serialize_session_record(record))
+
+    assert restored.tenant.role == "instructor"
+    assert restored.user.email == "learner@example.test"
+    assert restored.tuwel_credentials == SessionCredential(reference="tuwel:ref")
+
+
+def test_created_at_is_utc_with_a_z_suffix() -> None:
+    record = create_session_record(user=SessionUser(id="learner-1"))
+
+    assert record.created_at.endswith("Z")
+    assert datetime.fromisoformat(record.created_at).tzinfo == UTC
+    assert "." not in record.created_at, "timestamps are stored at second granularity"
+    assert record.updated_at == record.created_at

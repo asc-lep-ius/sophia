@@ -1805,6 +1805,21 @@ class TestExportIcs:
         assert "Math" in str(ev["DESCRIPTION"])
         assert str(ev["UID"]) == "a:1"
 
+    async def test_exports_only_the_requested_course(self, db: aiosqlite.Connection) -> None:
+        """The calendar a learner downloads must not leak another course's deadlines."""
+        from icalendar import Calendar as ICalendar
+
+        from sophia.services.chronos import export_deadlines_ics
+
+        await _insert_deadline_cache(db, deadline_id="a:1", name="Mine", course_id=42)
+        await _insert_deadline_cache(db, deadline_id="a:2", name="Theirs", course_id=99)
+
+        ics_str = await export_deadlines_ics(db, course_id=42, horizon_days=30)
+
+        cal = ICalendar.from_ical(ics_str)
+        summaries = [str(c["SUMMARY"]) for c in cal.walk() if c.name == "VEVENT"]
+        assert summaries == ["Mine"]
+
     async def test_empty_when_no_deadlines(self, db: aiosqlite.Connection) -> None:
         """No deadlines → valid but empty calendar."""
         from icalendar import Calendar as ICalendar
