@@ -177,7 +177,10 @@ compose-config:
 
 .frontend-job:
   stage: check
-  image: mcr.microsoft.com/playwright:v1.60.0-noble
+  # The runner's allowed_images does not include mcr.microsoft.com, and only the
+  # a11y job needs a browser, so the shared base is plain Node and that one job
+  # installs Chromium for itself.
+  image: node:24-bookworm-slim
   tags: [hephaestus]
   cache:
     key:
@@ -227,6 +230,7 @@ frontend-size:
 frontend-a11y:
   extends: .frontend-job
   script:
+    - pnpm -C frontend exec playwright install --with-deps chromium
     - pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
   artifacts:
     when: on_failure
