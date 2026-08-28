@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from sophia.api.schemas.common import ApiModel
+from sophia.api.schemas.content import ContentLanguage  # noqa: TC001
+from sophia.api.schemas.provenance import Provenance  # noqa: TC001
+from sophia.api.schemas.questions import Question  # noqa: TC001
 from sophia.api.schemas.study.requests import StudyFlashcardSource  # noqa: TC001
 
 
@@ -39,7 +42,30 @@ class StudyFlashcardItemResponse(ApiModel):
     back: str
     source: StudyFlashcardSource
     created_at: str
+    provenance: Provenance
 
 
 class StudyFlashcardResponse(ApiModel):
     flashcard: StudyFlashcardItemResponse
+
+
+class StudyQuestionListResponse(ApiModel):
+    """Generated questions plus the language they were generated in."""
+
+    learning_path_id: int
+    topic: str
+    content_language: ContentLanguage
+    questions: list[Question]
+
+
+class StudyAttemptItemResponse(ApiModel):
+    id: int
+    learning_path_id: int
+    question_id: str
+    answer_text: str
+    confidence: int | None
+    submitted_at: str
+
+
+class StudyAttemptResponse(ApiModel):
+    attempt: StudyAttemptItemResponse

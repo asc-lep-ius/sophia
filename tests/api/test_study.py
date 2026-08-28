@@ -39,6 +39,10 @@ class FakeStudySessionDb:
         return FakeStudySessionCursor(None if course_id is None else (course_id,))
 
 
+async def noop_record_provenance(_db: object, _provenance: object, *, commit: bool = True) -> None:
+    """The flashcard route tests exercise the route, not provenance persistence."""
+
+
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
@@ -296,6 +300,7 @@ def test_save_flashcard_returns_saved_flashcard(monkeypatch: pytest.MonkeyPatch)
         )
 
     monkeypatch.setattr(study_router, "save_flashcard", fake_save_flashcard)
+    monkeypatch.setattr(study_router, "record_provenance", noop_record_provenance)
 
     response = harness.client.post(
         "/api/study/flashcards",
@@ -319,6 +324,15 @@ def test_save_flashcard_returns_saved_flashcard(monkeypatch: pytest.MonkeyPatch)
             "back": "A partition of graph vertices.",
             "source": "manual",
             "created_at": "2026-05-26T14:00:00Z",
+            "provenance": {
+                "origin": "lms",
+                "generated_by": "learner",
+                "generator_ref": None,
+                "generated_at": "2026-05-26T14:00:00Z",
+                "verified_by": None,
+                "verified_at": None,
+                "source_spans": [],
+            },
         },
     }
 
@@ -492,6 +506,7 @@ def test_flashcard_transcript_source_maps_to_domain_lecture_source(
         )
 
     monkeypatch.setattr(study_router, "save_flashcard", fake_save_flashcard)
+    monkeypatch.setattr(study_router, "record_provenance", noop_record_provenance)
 
     response = harness.client.post(
         "/api/study/flashcards",

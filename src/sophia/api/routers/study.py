@@ -13,6 +13,7 @@ from sophia.api.deps import (
     require_csrf_learning_path_scope,
     require_learning_path_scope,
 )
+from sophia.api.provenance import api_provenance
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.study import (
     StudyFlashcardItemResponse,
@@ -26,6 +27,7 @@ from sophia.api.schemas.study import (
     StudySessionResponse,
     StudySessionStartRequest,
 )
+from sophia.domain.learning import ContentKind
 from sophia.domain.models import FlashcardSource
 from sophia.services.athena_session import (
     complete_study_session,
@@ -33,10 +35,12 @@ from sophia.services.athena_session import (
     save_flashcard,
     start_study_session,
 )
+from sophia.services.provenance import learner_authored, record_provenance
 
 if TYPE_CHECKING:
     import aiosqlite
 
+    from sophia.api.schemas.provenance import Provenance
     from sophia.domain.models import StudentFlashcard, StudySession
 
 router = APIRouter(tags=["study"])
@@ -145,15 +149,25 @@ async def create_study_flashcard(
     request: Request,
 ) -> StudyFlashcardResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
+    db = get_app_container(request).db
     flashcard = await save_flashcard(
-        get_app_container(request).db,
+        db,
         payload.learning_path_id,
         payload.topic,
         payload.front,
         payload.back,
         _DOMAIN_FLASHCARD_SOURCE[payload.source].value,
     )
-    return StudyFlashcardResponse(flashcard=_flashcard_response(flashcard))
+    provenance = learner_authored(
+        ContentKind.FLASHCARD,
+        str(flashcard.id),
+        flashcard.course_id,
+        generated_at=flashcard.created_at,
+    )
+    await record_provenance(db, provenance)
+    return StudyFlashcardResponse(
+        flashcard=_flashcard_response(flashcard, api_provenance(provenance)),
+    )
 
 
 async def _study_session_learning_path_id(
@@ -186,7 +200,10 @@ def _study_session_response(session: StudySession) -> StudySessionItemResponse:
     )
 
 
-def _flashcard_response(flashcard: StudentFlashcard) -> StudyFlashcardItemResponse:
+def _flashcard_response(
+    flashcard: StudentFlashcard,
+    provenance: Provenance,
+) -> StudyFlashcardItemResponse:
     return StudyFlashcardItemResponse(
         id=flashcard.id,
         learning_path_id=flashcard.course_id,
@@ -195,4 +212,5 @@ def _flashcard_response(flashcard: StudentFlashcard) -> StudyFlashcardItemRespon
         back=flashcard.back,
         source=_API_FLASHCARD_SOURCE[flashcard.source],
         created_at=flashcard.created_at,
+        provenance=provenance,
     )

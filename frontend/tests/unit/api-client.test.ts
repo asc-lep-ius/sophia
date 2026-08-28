@@ -65,4 +65,41 @@ describe("API client normalization", () => {
       status: 404,
     });
   });
+
+  it("normalizes reserved-endpoint 501 responses", async () => {
+    const body = { detail: { code: "feature.not_implemented", params: {} } };
+    const response = new Response(JSON.stringify(body), {
+      headers: { "x-request-id": "req-reserved" },
+      status: 501,
+    });
+
+    await expect(
+      unwrapApiResponse(
+        Promise.resolve({ data: undefined, error: body, response }),
+      ),
+    ).rejects.toMatchObject({
+      detail: { code: "feature.not_implemented", params: {} },
+      requestId: "req-reserved",
+      status: 501,
+    });
+  });
+
+  it("normalizes engagement policy 412 params so the UI can name the missing step", () => {
+    const error = normalizeApiError(
+      {
+        detail: {
+          code: "engagement.policy_unmet",
+          params: {
+            missing_event_types: "elaboration_written",
+            elaboration_chars: 4,
+          },
+        },
+      },
+      412,
+    );
+
+    expect(error.detail.code).toBe("engagement.policy_unmet");
+    expect(error.detail.params.missing_event_types).toBe("elaboration_written");
+    expect(error.detail.params.elaboration_chars).toBe(4);
+  });
 });

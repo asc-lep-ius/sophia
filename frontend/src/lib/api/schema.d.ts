@@ -464,6 +464,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/events/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ingest Learning Event Batch */
+        post: operations["ingestLearningEvents"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -473,6 +490,23 @@ export interface paths {
         };
         /** Health */
         get: operations["health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/instructor/provenance-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Instructor Provenance Review */
+        get: operations["listInstructorProvenanceReview"];
         put?: never;
         post?: never;
         delete?: never;
@@ -566,6 +600,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning-paths/{learning_path_id}/content-language": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Content Language */
+        get: operations["getContentLanguage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning-paths/{learning_path_id}/topics": {
         parameters: {
             query?: never;
@@ -630,6 +681,23 @@ export interface paths {
         put?: never;
         /** Reserve Web Vitals */
         post: operations["reserve_web_vitals_api_metrics_web_vitals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/problems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Problems */
+        get: operations["listProblems"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -825,6 +893,23 @@ export interface paths {
         patch: operations["patch_settings_api_settings_patch"];
         trace?: never;
     };
+    "/api/study/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit Attempt */
+        post: operations["submitStudyAttempt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/study/flashcards": {
         parameters: {
             query?: never;
@@ -836,6 +921,23 @@ export interface paths {
         put?: never;
         /** Create Study Flashcard */
         post: operations["saveStudyFlashcard"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Questions */
+        post: operations["generateStudyQuestions"];
         delete?: never;
         options?: never;
         head?: never;
@@ -871,6 +973,40 @@ export interface paths {
         put?: never;
         /** Mark Study Session Complete */
         post: operations["completeStudySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tutoring/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Request Tutoring Turn */
+        post: operations["requestTutoringTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/worked-examples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Worked Examples */
+        get: operations["listWorkedExamples"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -959,6 +1095,47 @@ export interface components {
         CalibrationRatingSavedResponse: {
             rating: components["schemas"]["CalibrationRatingResponse"];
         };
+        /**
+         * ClozeQuestion
+         * @description Fill-in-the-blank question, rendered from ordered segments.
+         */
+        ClozeQuestion: {
+            content_language: components["schemas"]["ContentLanguage"];
+            difficulty: components["schemas"]["QuestionDifficulty"];
+            /**
+             * @default {
+             *       "kind": "none"
+             *     }
+             */
+            engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "cloze";
+            provenance: components["schemas"]["Provenance"];
+            /** Segments */
+            segments: components["schemas"]["ClozeSegment"][];
+            /** Topic */
+            topic: string;
+            /** Translations */
+            translations?: components["schemas"]["ContentTranslation"][];
+        };
+        /**
+         * ClozeSegment
+         * @description One segment of a cloze question; a blank segment carries no text.
+         */
+        ClozeSegment: {
+            /**
+             * Blank
+             * @default false
+             */
+            blank: boolean;
+            /** Text */
+            text?: string | null;
+        };
         /** ContentItemListResponse */
         ContentItemListResponse: {
             /** Content Source Id */
@@ -985,6 +1162,51 @@ export interface components {
             /** Transcription Status */
             transcription_status: string | null;
         };
+        /**
+         * ContentKind
+         * @description What kind of content a translation record describes.
+         * @enum {string}
+         */
+        ContentKind: "flashcard" | "question" | "summary";
+        /**
+         * ContentLanguage
+         * @description Language a piece of learning content is authored in.
+         *
+         *     Deliberately separate from the UI locale: content follows the exam language
+         *     of the learning path, never the language of the chrome around it.
+         * @enum {string}
+         */
+        ContentLanguage: "de" | "en";
+        /**
+         * ContentLanguageOrigin
+         * @description Which fallback rung decided the content language of a response.
+         * @enum {string}
+         */
+        ContentLanguageOrigin: "override" | "learning_path" | "default";
+        /**
+         * ContentLanguageResponse
+         * @description The resolved content language for a learning path, and how it was chosen.
+         */
+        ContentLanguageResponse: {
+            /** Available Translations */
+            available_translations: components["schemas"]["ContentTranslation"][];
+            content_language: components["schemas"]["ContentLanguage"];
+            /** Learning Path Id */
+            learning_path_id: number;
+            resolved_from: components["schemas"]["ContentLanguageOrigin"];
+        };
+        /**
+         * ContentOrigin
+         * @description Kind of system a piece of content was ingested from.
+         *
+         *     Reserved discriminator. Values name the *kind* of upstream system rather
+         *     than the vendor, so the generated client never learns which product a
+         *     deployment happens to ingest from. Adding a value is additive: the column
+         *     behind it is free-form text, so a new origin needs no schema migration and
+         *     breaks no existing client.
+         * @enum {string}
+         */
+        ContentOrigin: "lms";
         /** ContentSearchRequest */
         ContentSearchRequest: {
             /** Content Source Id */
@@ -1058,6 +1280,21 @@ export interface components {
             id: number;
             /** Title */
             title: string;
+        };
+        /**
+         * ContentTranslation
+         * @description A translated rendering of a content item.
+         *
+         *     Reserved shape. Nothing writes these until the translation pipeline ships;
+         *     the field exists so adding translations later is additive for clients.
+         */
+        ContentTranslation: {
+            /** Content Id */
+            content_id: string;
+            content_kind: components["schemas"]["ContentKind"];
+            language: components["schemas"]["ContentLanguage"];
+            /** Translated At */
+            translated_at: string;
         };
         /** DeadlineCompletionRequest */
         DeadlineCompletionRequest: {
@@ -1332,6 +1569,28 @@ export interface components {
         EffortEstimateSavedResponse: {
             estimate: components["schemas"]["EffortEstimateResponse"];
         };
+        /**
+         * ElaborationPolicy
+         * @description Answering is gated on a recorded elaboration trace.
+         *
+         *     The client cannot satisfy this by asserting it complied: the server reads
+         *     the learner's own ingested events and rejects the submission with 412 when
+         *     the trace is missing.
+         */
+        ElaborationPolicy: {
+            /**
+             * Kind
+             * @default elaboration
+             * @constant
+             */
+            kind: "elaboration";
+            /** Min Elaboration Chars */
+            min_elaboration_chars: number;
+            /** Min Prompt Dwell Ms */
+            min_prompt_dwell_ms: number;
+            /** Required Event Types */
+            required_event_types: components["schemas"]["LearningEventType"][];
+        };
         /** ErrorDetail */
         ErrorDetail: {
             /** Code */
@@ -1344,6 +1603,28 @@ export interface components {
         /** ErrorEnvelope */
         ErrorEnvelope: {
             detail: components["schemas"]["ErrorDetail"];
+        };
+        /**
+         * FeatureNotImplementedDetail
+         * @description Detail body of a reserved endpoint's 501 response.
+         */
+        FeatureNotImplementedDetail: {
+            /**
+             * Code
+             * @default feature.not_implemented
+             * @constant
+             */
+            code: "feature.not_implemented";
+        };
+        /**
+         * FeatureNotImplementedEnvelope
+         * @description Envelope returned by every reserved-but-unavailable endpoint.
+         *
+         *     Named rather than reusing ``ErrorEnvelope`` so the generated client can see
+         *     at the type level that a reserved route has exactly one outcome.
+         */
+        FeatureNotImplementedEnvelope: {
+            detail: components["schemas"]["FeatureNotImplementedDetail"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1359,10 +1640,133 @@ export interface components {
             status: "ok";
         };
         JsonPrimitive: string | number | boolean | null;
+        /**
+         * LearningEventBatchRequest
+         * @description A bounded batch of learner-process events for one learning path.
+         */
+        LearningEventBatchRequest: {
+            /** Events */
+            events: components["schemas"]["LearningEventInput"][];
+            /** Learning Path Id */
+            learning_path_id: number;
+        };
+        /**
+         * LearningEventBatchResponse
+         * @description Outcome of ingesting a batch.
+         *
+         *     ``duplicate`` counts events already recorded under the same ``event_id``;
+         *     a retried batch therefore reports zero accepted rather than failing.
+         */
+        LearningEventBatchResponse: {
+            /** Accepted */
+            accepted: number;
+            /** Duplicate */
+            duplicate: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+        };
+        /**
+         * LearningEventInput
+         * @description One learner-process event submitted for ingestion.
+         *
+         *     ``event_id`` is the client's idempotency key: re-sending a batch after a
+         *     timeout records nothing twice. The owning user and learning path are taken
+         *     from the session, never from the body, so a client cannot attribute events
+         *     to somebody else.
+         */
+        LearningEventInput: {
+            /** Event Id */
+            event_id: string;
+            event_type: components["schemas"]["LearningEventType"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Payload */
+            payload?: {
+                [key: string]: components["schemas"]["JsonPrimitive"];
+            };
+            /** Question Id */
+            question_id?: string | null;
+            /** Session Id */
+            session_id?: number | null;
+        };
+        /**
+         * LearningEventType
+         * @description Traceable steps of the predict → act → reflect cycle.
+         * @enum {string}
+         */
+        LearningEventType: "prompt_shown" | "prediction_made" | "elaboration_written" | "hint_requested" | "answer_revealed" | "self_explanation_written" | "reflection_written";
         /** ManualTopicRequest */
         ManualTopicRequest: {
             /** Topic */
             topic: string;
+        };
+        /**
+         * MultipleChoiceQuestion
+         * @description Recognition question; ungated because selecting is not elaborating.
+         */
+        MultipleChoiceQuestion: {
+            content_language: components["schemas"]["ContentLanguage"];
+            difficulty: components["schemas"]["QuestionDifficulty"];
+            /**
+             * @default {
+             *       "kind": "none"
+             *     }
+             */
+            engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "multiple_choice";
+            /** Options */
+            options: components["schemas"]["QuestionOption"][];
+            /** Prompt */
+            prompt: string;
+            provenance: components["schemas"]["Provenance"];
+            /** Topic */
+            topic: string;
+            /** Translations */
+            translations?: components["schemas"]["ContentTranslation"][];
+        };
+        /**
+         * NoEngagementPolicy
+         * @description Answering is ungated — recognition formats carry no elaboration demand.
+         */
+        NoEngagementPolicy: {
+            /**
+             * Kind
+             * @default none
+             * @constant
+             */
+            kind: "none";
+        };
+        /**
+         * OpenResponseQuestion
+         * @description Free-response question, the only format that can gate on elaboration.
+         */
+        OpenResponseQuestion: {
+            content_language: components["schemas"]["ContentLanguage"];
+            difficulty: components["schemas"]["QuestionDifficulty"];
+            engagement_policy: components["schemas"]["ElaborationPolicy"];
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "open_response";
+            /** Prompt */
+            prompt: string;
+            provenance: components["schemas"]["Provenance"];
+            /** Topic */
+            topic: string;
+            /** Translations */
+            translations?: components["schemas"]["ContentTranslation"][];
         };
         /** PastDeadlineListResponse */
         PastDeadlineListResponse: {
@@ -1372,6 +1776,50 @@ export interface components {
             learning_path_id: number | null;
             /** Limit */
             limit: number;
+        };
+        /**
+         * Provenance
+         * @description Where a piece of content came from and whether a human has checked it.
+         *
+         *     ``verified_by`` is null for anything no human has signed off on, which is
+         *     what makes unverified generated content distinguishable at a glance.
+         */
+        Provenance: {
+            /** Generated At */
+            generated_at: string;
+            generated_by: components["schemas"]["ProvenanceAgent"];
+            /** Generator Ref */
+            generator_ref?: string | null;
+            origin: components["schemas"]["ContentOrigin"];
+            /** Source Spans */
+            source_spans?: components["schemas"]["SourceSpan"][];
+            /** Verified At */
+            verified_at?: string | null;
+            /** Verified By */
+            verified_by?: string | null;
+        };
+        /**
+         * ProvenanceAgent
+         * @description Who produced a piece of content.
+         * @enum {string}
+         */
+        ProvenanceAgent: "learner" | "model";
+        Question: components["schemas"]["OpenResponseQuestion"] | components["schemas"]["MultipleChoiceQuestion"] | components["schemas"]["ClozeQuestion"];
+        /**
+         * QuestionDifficulty
+         * @description Adaptive difficulty band a question was generated for.
+         * @enum {string}
+         */
+        QuestionDifficulty: "cued" | "explain" | "transfer";
+        /**
+         * QuestionOption
+         * @description One selectable option of a multiple-choice question.
+         */
+        QuestionOption: {
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
         };
         /** QuickstartConfidenceRequest */
         QuickstartConfidenceRequest: {
@@ -1553,6 +2001,64 @@ export interface components {
             /** Theme */
             theme: string;
         };
+        /**
+         * SourceSpan
+         * @description A located region of ingested material backing a piece of content.
+         *
+         *     Character offsets locate text material and millisecond offsets locate
+         *     time-based material; both are optional because a span may be known only as
+         *     a whole content item.
+         */
+        SourceSpan: {
+            /** Content Item Id */
+            content_item_id: string;
+            /** End Char */
+            end_char?: number | null;
+            /** End Ms */
+            end_ms?: number | null;
+            /** Excerpt */
+            excerpt?: string | null;
+            /** Start Char */
+            start_char?: number | null;
+            /** Start Ms */
+            start_ms?: number | null;
+        };
+        /** StudyAttemptItemResponse */
+        StudyAttemptItemResponse: {
+            /** Answer Text */
+            answer_text: string;
+            /** Confidence */
+            confidence: number | null;
+            /** Id */
+            id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Question Id */
+            question_id: string;
+            /** Submitted At */
+            submitted_at: string;
+        };
+        /**
+         * StudyAttemptRequest
+         * @description A learner's answer to a previously generated question.
+         *
+         *     The question is referenced by id rather than echoed back, so the engagement
+         *     policy the server enforces is the one it issued, not one the client claims.
+         */
+        StudyAttemptRequest: {
+            /** Answer Text */
+            answer_text: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Question Id */
+            question_id: string;
+        };
+        /** StudyAttemptResponse */
+        StudyAttemptResponse: {
+            attempt: components["schemas"]["StudyAttemptItemResponse"];
+        };
         /** StudyFlashcardItemResponse */
         StudyFlashcardItemResponse: {
             /** Back */
@@ -1565,6 +2071,7 @@ export interface components {
             id: number;
             /** Learning Path Id */
             learning_path_id: number;
+            provenance: components["schemas"]["Provenance"];
             source: components["schemas"]["StudyFlashcardSource"];
             /** Topic */
             topic: string;
@@ -1592,6 +2099,31 @@ export interface components {
          * @enum {string}
          */
         StudyFlashcardSource: "study" | "transcript" | "manual";
+        /**
+         * StudyQuestionListResponse
+         * @description Generated questions plus the language they were generated in.
+         */
+        StudyQuestionListResponse: {
+            content_language: components["schemas"]["ContentLanguage"];
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+            /** Topic */
+            topic: string;
+        };
+        /** StudyQuestionRequest */
+        StudyQuestionRequest: {
+            /**
+             * Count
+             * @default 3
+             */
+            count: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Topic */
+            topic: string;
+        };
         /** StudySessionCompleteRequest */
         StudySessionCompleteRequest: {
             /** Post Test Score */
@@ -2965,6 +3497,51 @@ export interface operations {
             };
         };
     };
+    ingestLearningEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningEventBatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningEventBatchResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     health_api_health_get: {
         parameters: {
             query?: never;
@@ -2982,6 +3559,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    listInstructorProvenanceReview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureNotImplementedEnvelope"];
                 };
             };
         };
@@ -3193,6 +3791,51 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    getContentLanguage: {
+        parameters: {
+            query?: {
+                lang?: components["schemas"]["ContentLanguage"] | null;
+            };
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentLanguageResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3413,6 +4056,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WebVitalsReservedResponse"];
+                };
+            };
+        };
+    };
+    listProblems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureNotImplementedEnvelope"];
                 };
             };
         };
@@ -3866,6 +4530,61 @@ export interface operations {
             };
         };
     };
+    submitStudyAttempt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyAttemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyAttemptResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     saveStudyFlashcard: {
         parameters: {
             query?: never;
@@ -3887,6 +4606,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudyFlashcardResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    generateStudyQuestions: {
+        parameters: {
+            query?: {
+                lang?: components["schemas"]["ContentLanguage"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyQuestionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyQuestionListResponse"];
                 };
             };
             /** @description Unprocessable Content */
@@ -4013,6 +4769,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    requestTutoringTurn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureNotImplementedEnvelope"];
+                };
+            };
+        };
+    };
+    listWorkedExamples: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            501: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeatureNotImplementedEnvelope"];
                 };
             };
         };

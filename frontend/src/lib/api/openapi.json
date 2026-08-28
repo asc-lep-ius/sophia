@@ -264,6 +264,87 @@
         "title": "CalibrationRatingSavedResponse",
         "type": "object"
       },
+      "ClozeQuestion": {
+        "description": "Fill-in-the-blank question, rendered from ordered segments.",
+        "properties": {
+          "content_language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/QuestionDifficulty"
+          },
+          "engagement_policy": {
+            "$ref": "#/components/schemas/NoEngagementPolicy",
+            "default": {
+              "kind": "none"
+            }
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "cloze",
+            "default": "cloze",
+            "title": "Kind",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/ClozeSegment"
+            },
+            "title": "Segments",
+            "type": "array"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/ContentTranslation"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "topic",
+          "difficulty",
+          "content_language",
+          "provenance",
+          "segments"
+        ],
+        "title": "ClozeQuestion",
+        "type": "object"
+      },
+      "ClozeSegment": {
+        "description": "One segment of a cloze question; a blank segment carries no text.",
+        "properties": {
+          "blank": {
+            "default": false,
+            "title": "Blank",
+            "type": "boolean"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "ClozeSegment",
+        "type": "object"
+      },
       "ContentItemListResponse": {
         "properties": {
           "content_source_id": {
@@ -367,6 +448,73 @@
         ],
         "title": "ContentItemResponse",
         "type": "object"
+      },
+      "ContentKind": {
+        "description": "What kind of content a translation record describes.",
+        "enum": [
+          "flashcard",
+          "question",
+          "summary"
+        ],
+        "title": "ContentKind",
+        "type": "string"
+      },
+      "ContentLanguage": {
+        "description": "Language a piece of learning content is authored in.\n\nDeliberately separate from the UI locale: content follows the exam language\nof the learning path, never the language of the chrome around it.",
+        "enum": [
+          "de",
+          "en"
+        ],
+        "title": "ContentLanguage",
+        "type": "string"
+      },
+      "ContentLanguageOrigin": {
+        "description": "Which fallback rung decided the content language of a response.",
+        "enum": [
+          "override",
+          "learning_path",
+          "default"
+        ],
+        "title": "ContentLanguageOrigin",
+        "type": "string"
+      },
+      "ContentLanguageResponse": {
+        "description": "The resolved content language for a learning path, and how it was chosen.",
+        "properties": {
+          "available_translations": {
+            "items": {
+              "$ref": "#/components/schemas/ContentTranslation"
+            },
+            "title": "Available Translations",
+            "type": "array"
+          },
+          "content_language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "resolved_from": {
+            "$ref": "#/components/schemas/ContentLanguageOrigin"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "content_language",
+          "resolved_from",
+          "available_translations"
+        ],
+        "title": "ContentLanguageResponse",
+        "type": "object"
+      },
+      "ContentOrigin": {
+        "description": "Kind of system a piece of content was ingested from.\n\nReserved discriminator. Values name the *kind* of upstream system rather\nthan the vendor, so the generated client never learns which product a\ndeployment happens to ingest from. Adding a value is additive: the column\nbehind it is free-form text, so a new origin needs no schema migration and\nbreaks no existing client.",
+        "enum": [
+          "lms"
+        ],
+        "title": "ContentOrigin",
+        "type": "string"
       },
       "ContentSearchRequest": {
         "properties": {
@@ -565,6 +713,33 @@
           "title"
         ],
         "title": "ContentSourceResponse",
+        "type": "object"
+      },
+      "ContentTranslation": {
+        "description": "A translated rendering of a content item.\n\nReserved shape. Nothing writes these until the translation pipeline ships;\nthe field exists so adding translations later is additive for clients.",
+        "properties": {
+          "content_id": {
+            "title": "Content Id",
+            "type": "string"
+          },
+          "content_kind": {
+            "$ref": "#/components/schemas/ContentKind"
+          },
+          "language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "translated_at": {
+            "title": "Translated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content_kind",
+          "content_id",
+          "language",
+          "translated_at"
+        ],
+        "title": "ContentTranslation",
         "type": "object"
       },
       "DeadlineCompletionRequest": {
@@ -1405,6 +1580,41 @@
         "title": "EffortEstimateSavedResponse",
         "type": "object"
       },
+      "ElaborationPolicy": {
+        "description": "Answering is gated on a recorded elaboration trace.\n\nThe client cannot satisfy this by asserting it complied: the server reads\nthe learner's own ingested events and rejects the submission with 412 when\nthe trace is missing.",
+        "properties": {
+          "kind": {
+            "const": "elaboration",
+            "default": "elaboration",
+            "title": "Kind",
+            "type": "string"
+          },
+          "min_elaboration_chars": {
+            "minimum": 0.0,
+            "title": "Min Elaboration Chars",
+            "type": "integer"
+          },
+          "min_prompt_dwell_ms": {
+            "minimum": 0.0,
+            "title": "Min Prompt Dwell Ms",
+            "type": "integer"
+          },
+          "required_event_types": {
+            "items": {
+              "$ref": "#/components/schemas/LearningEventType"
+            },
+            "title": "Required Event Types",
+            "type": "array"
+          }
+        },
+        "required": [
+          "required_event_types",
+          "min_elaboration_chars",
+          "min_prompt_dwell_ms"
+        ],
+        "title": "ElaborationPolicy",
+        "type": "object"
+      },
       "ErrorDetail": {
         "properties": {
           "code": {
@@ -1435,6 +1645,32 @@
           "detail"
         ],
         "title": "ErrorEnvelope",
+        "type": "object"
+      },
+      "FeatureNotImplementedDetail": {
+        "description": "Detail body of a reserved endpoint's 501 response.",
+        "properties": {
+          "code": {
+            "const": "feature.not_implemented",
+            "default": "feature.not_implemented",
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "title": "FeatureNotImplementedDetail",
+        "type": "object"
+      },
+      "FeatureNotImplementedEnvelope": {
+        "description": "Envelope returned by every reserved-but-unavailable endpoint.\n\nNamed rather than reusing ``ErrorEnvelope`` so the generated client can see\nat the type level that a reserved route has exactly one outcome.",
+        "properties": {
+          "detail": {
+            "$ref": "#/components/schemas/FeatureNotImplementedDetail"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "FeatureNotImplementedEnvelope",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -1483,6 +1719,128 @@
           }
         ]
       },
+      "LearningEventBatchRequest": {
+        "description": "A bounded batch of learner-process events for one learning path.",
+        "properties": {
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/LearningEventInput"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "events"
+        ],
+        "title": "LearningEventBatchRequest",
+        "type": "object"
+      },
+      "LearningEventBatchResponse": {
+        "description": "Outcome of ingesting a batch.\n\n``duplicate`` counts events already recorded under the same ``event_id``;\na retried batch therefore reports zero accepted rather than failing.",
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "duplicate": {
+            "title": "Duplicate",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "accepted",
+          "duplicate"
+        ],
+        "title": "LearningEventBatchResponse",
+        "type": "object"
+      },
+      "LearningEventInput": {
+        "description": "One learner-process event submitted for ingestion.\n\n``event_id`` is the client's idempotency key: re-sending a batch after a\ntimeout records nothing twice. The owning user and learning path are taken\nfrom the session, never from the body, so a client cannot attribute events\nto somebody else.",
+        "properties": {
+          "event_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Event Id",
+            "type": "string"
+          },
+          "event_type": {
+            "$ref": "#/components/schemas/LearningEventType"
+          },
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonPrimitive"
+            },
+            "maxProperties": 20,
+            "title": "Payload",
+            "type": "object"
+          },
+          "question_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          }
+        },
+        "required": [
+          "event_id",
+          "event_type",
+          "occurred_at"
+        ],
+        "title": "LearningEventInput",
+        "type": "object"
+      },
+      "LearningEventType": {
+        "description": "Traceable steps of the predict \u2192 act \u2192 reflect cycle.",
+        "enum": [
+          "prompt_shown",
+          "prediction_made",
+          "elaboration_written",
+          "hint_requested",
+          "answer_revealed",
+          "self_explanation_written",
+          "reflection_written"
+        ],
+        "title": "LearningEventType",
+        "type": "string"
+      },
       "ManualTopicRequest": {
         "properties": {
           "topic": {
@@ -1495,6 +1853,135 @@
           "topic"
         ],
         "title": "ManualTopicRequest",
+        "type": "object"
+      },
+      "MultipleChoiceQuestion": {
+        "description": "Recognition question; ungated because selecting is not elaborating.",
+        "properties": {
+          "content_language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/QuestionDifficulty"
+          },
+          "engagement_policy": {
+            "$ref": "#/components/schemas/NoEngagementPolicy",
+            "default": {
+              "kind": "none"
+            }
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "multiple_choice",
+            "default": "multiple_choice",
+            "title": "Kind",
+            "type": "string"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/QuestionOption"
+            },
+            "title": "Options",
+            "type": "array"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/ContentTranslation"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "topic",
+          "difficulty",
+          "content_language",
+          "provenance",
+          "prompt",
+          "options"
+        ],
+        "title": "MultipleChoiceQuestion",
+        "type": "object"
+      },
+      "NoEngagementPolicy": {
+        "description": "Answering is ungated \u2014 recognition formats carry no elaboration demand.",
+        "properties": {
+          "kind": {
+            "const": "none",
+            "default": "none",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "NoEngagementPolicy",
+        "type": "object"
+      },
+      "OpenResponseQuestion": {
+        "description": "Free-response question, the only format that can gate on elaboration.",
+        "properties": {
+          "content_language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/QuestionDifficulty"
+          },
+          "engagement_policy": {
+            "$ref": "#/components/schemas/ElaborationPolicy"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "open_response",
+            "default": "open_response",
+            "title": "Kind",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          },
+          "translations": {
+            "items": {
+              "$ref": "#/components/schemas/ContentTranslation"
+            },
+            "title": "Translations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "topic",
+          "difficulty",
+          "content_language",
+          "provenance",
+          "prompt",
+          "engagement_policy"
+        ],
+        "title": "OpenResponseQuestion",
         "type": "object"
       },
       "PastDeadlineListResponse": {
@@ -1528,6 +2015,127 @@
           "deadlines"
         ],
         "title": "PastDeadlineListResponse",
+        "type": "object"
+      },
+      "Provenance": {
+        "description": "Where a piece of content came from and whether a human has checked it.\n\n``verified_by`` is null for anything no human has signed off on, which is\nwhat makes unverified generated content distinguishable at a glance.",
+        "properties": {
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "generated_by": {
+            "$ref": "#/components/schemas/ProvenanceAgent"
+          },
+          "generator_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generator Ref"
+          },
+          "origin": {
+            "$ref": "#/components/schemas/ContentOrigin"
+          },
+          "source_spans": {
+            "items": {
+              "$ref": "#/components/schemas/SourceSpan"
+            },
+            "title": "Source Spans",
+            "type": "array"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "verified_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified By"
+          }
+        },
+        "required": [
+          "origin",
+          "generated_by",
+          "generated_at"
+        ],
+        "title": "Provenance",
+        "type": "object"
+      },
+      "ProvenanceAgent": {
+        "description": "Who produced a piece of content.",
+        "enum": [
+          "learner",
+          "model"
+        ],
+        "title": "ProvenanceAgent",
+        "type": "string"
+      },
+      "Question": {
+        "discriminator": {
+          "mapping": {
+            "cloze": "#/components/schemas/ClozeQuestion",
+            "multiple_choice": "#/components/schemas/MultipleChoiceQuestion",
+            "open_response": "#/components/schemas/OpenResponseQuestion"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/OpenResponseQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/MultipleChoiceQuestion"
+          },
+          {
+            "$ref": "#/components/schemas/ClozeQuestion"
+          }
+        ]
+      },
+      "QuestionDifficulty": {
+        "description": "Adaptive difficulty band a question was generated for.",
+        "enum": [
+          "cued",
+          "explain",
+          "transfer"
+        ],
+        "title": "QuestionDifficulty",
+        "type": "string"
+      },
+      "QuestionOption": {
+        "description": "One selectable option of a multiple-choice question.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "QuestionOption",
         "type": "object"
       },
       "QuickstartConfidenceRequest": {
@@ -2089,6 +2697,173 @@
         "title": "SettingsResponse",
         "type": "object"
       },
+      "SourceSpan": {
+        "description": "A located region of ingested material backing a piece of content.\n\nCharacter offsets locate text material and millisecond offsets locate\ntime-based material; both are optional because a span may be known only as\na whole content item.",
+        "properties": {
+          "content_item_id": {
+            "title": "Content Item Id",
+            "type": "string"
+          },
+          "end_char": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Char"
+          },
+          "end_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Ms"
+          },
+          "excerpt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Excerpt"
+          },
+          "start_char": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Char"
+          },
+          "start_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Ms"
+          }
+        },
+        "required": [
+          "content_item_id"
+        ],
+        "title": "SourceSpan",
+        "type": "object"
+      },
+      "StudyAttemptItemResponse": {
+        "properties": {
+          "answer_text": {
+            "title": "Answer Text",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          },
+          "submitted_at": {
+            "title": "Submitted At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "learning_path_id",
+          "question_id",
+          "answer_text",
+          "confidence",
+          "submitted_at"
+        ],
+        "title": "StudyAttemptItemResponse",
+        "type": "object"
+      },
+      "StudyAttemptRequest": {
+        "description": "A learner's answer to a previously generated question.\n\nThe question is referenced by id rather than echoed back, so the engagement\npolicy the server enforces is the one it issued, not one the client claims.",
+        "properties": {
+          "answer_text": {
+            "minLength": 1,
+            "title": "Answer Text",
+            "type": "string"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "maximum": 5.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "question_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "question_id",
+          "answer_text"
+        ],
+        "title": "StudyAttemptRequest",
+        "type": "object"
+      },
+      "StudyAttemptResponse": {
+        "properties": {
+          "attempt": {
+            "$ref": "#/components/schemas/StudyAttemptItemResponse"
+          }
+        },
+        "required": [
+          "attempt"
+        ],
+        "title": "StudyAttemptResponse",
+        "type": "object"
+      },
       "StudyFlashcardItemResponse": {
         "properties": {
           "back": {
@@ -2111,6 +2886,9 @@
             "title": "Learning Path Id",
             "type": "integer"
           },
+          "provenance": {
+            "$ref": "#/components/schemas/Provenance"
+          },
           "source": {
             "$ref": "#/components/schemas/StudyFlashcardSource"
           },
@@ -2126,7 +2904,8 @@
           "front",
           "back",
           "source",
-          "created_at"
+          "created_at",
+          "provenance"
         ],
         "title": "StudyFlashcardItemResponse",
         "type": "object"
@@ -2188,6 +2967,64 @@
         ],
         "title": "StudyFlashcardSource",
         "type": "string"
+      },
+      "StudyQuestionListResponse": {
+        "description": "Generated questions plus the language they were generated in.",
+        "properties": {
+          "content_language": {
+            "$ref": "#/components/schemas/ContentLanguage"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "content_language",
+          "questions"
+        ],
+        "title": "StudyQuestionListResponse",
+        "type": "object"
+      },
+      "StudyQuestionRequest": {
+        "properties": {
+          "count": {
+            "default": 3,
+            "maximum": 10.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic"
+        ],
+        "title": "StudyQuestionRequest",
+        "type": "object"
       },
       "StudySessionCompleteRequest": {
         "properties": {
@@ -5134,6 +5971,81 @@
         ]
       }
     },
+    "/api/events/batch": {
+      "post": {
+        "operationId": "ingestLearningEvents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningEventBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningEventBatchResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Ingest Learning Event Batch",
+        "tags": [
+          "events"
+        ]
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "health_api_health_get",
@@ -5160,6 +6072,35 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/api/instructor/provenance-review": {
+      "get": {
+        "operationId": "listInstructorProvenanceReview",
+        "responses": {
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureNotImplementedEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Instructor Provenance Review",
+        "tags": [
+          "instructor"
         ]
       }
     },
@@ -5569,6 +6510,99 @@
         ]
       }
     },
+    "/api/learning-paths/{learning_path_id}/content-language": {
+      "get": {
+        "operationId": "getContentLanguage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentLanguage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentLanguageResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Content Language",
+        "tags": [
+          "content-language"
+        ]
+      }
+    },
     "/api/learning-paths/{learning_path_id}/topics": {
       "get": {
         "operationId": "listTopics",
@@ -5969,6 +7003,35 @@
         "summary": "Reserve Web Vitals",
         "tags": [
           "metrics"
+        ]
+      }
+    },
+    "/api/problems": {
+      "get": {
+        "operationId": "listProblems",
+        "responses": {
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureNotImplementedEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Problems",
+        "tags": [
+          "problems"
         ]
       }
     },
@@ -6760,6 +7823,99 @@
         ]
       }
     },
+    "/api/study/attempts": {
+      "post": {
+        "operationId": "submitStudyAttempt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyAttemptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyAttemptResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition Failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Submit Attempt",
+        "tags": [
+          "study"
+        ]
+      }
+    },
     "/api/study/flashcards": {
       "post": {
         "operationId": "saveStudyFlashcard",
@@ -6812,6 +7968,81 @@
           }
         },
         "summary": "Create Study Flashcard",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/questions": {
+      "post": {
+        "operationId": "generateStudyQuestions",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lang",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentLanguage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lang"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyQuestionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Generate Questions",
         "tags": [
           "study"
         ]
@@ -7032,6 +8263,64 @@
         "summary": "Mark Study Session Complete",
         "tags": [
           "study"
+        ]
+      }
+    },
+    "/api/tutoring/turns": {
+      "post": {
+        "operationId": "requestTutoringTurn",
+        "responses": {
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureNotImplementedEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Request Tutoring Turn",
+        "tags": [
+          "tutoring"
+        ]
+      }
+    },
+    "/api/worked-examples": {
+      "get": {
+        "operationId": "listWorkedExamples",
+        "responses": {
+          "501": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeatureNotImplementedEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Worked Examples",
+        "tags": [
+          "worked-examples"
         ]
       }
     }

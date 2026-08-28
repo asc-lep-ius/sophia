@@ -9,6 +9,7 @@ from sophia.domain.models import Course, Deadline, TopicMapping  # noqa: TC001
 from sophia.services.athena_confidence import rate_confidence
 from sophia.services.athena_study import get_course_topics, save_manual_topic
 from sophia.services.chronos import get_deadlines
+from sophia.services.content_language import sync_learning_path_settings
 
 if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
@@ -31,6 +32,7 @@ async def get_quickstart_overview(
 ) -> QuickstartOverview:
     """Aggregate the quickstart wizard's course, topic, deadline, and session data."""
     courses = await get_enrolled_courses(app)
+    await sync_learning_path_settings(app.db, courses)
     visible_courses = [course for course in courses if course_id is None or course.id == course_id]
     topic_course_ids = [course_id] if course_id is not None else [course.id for course in courses]
     topics = await get_topics_for_courses(app, topic_course_ids)

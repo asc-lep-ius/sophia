@@ -219,6 +219,26 @@ class TestGetEnrolledCourses:
         assert courses[1].url is None
 
     @respx.mock
+    async def test_maps_upstream_language_to_exam_language(self, adapter: MoodleAdapter):
+        """A course's own language decides the exam language, locale suffix and all."""
+        respx.route(method="POST", path=AJAX_PATH).mock(
+            return_value=_ajax_ok(
+                {
+                    "courses": [
+                        {"id": 1, "fullname": "Analysis", "shortname": "AN", "lang": "de_at"},
+                        {"id": 2, "fullname": "Compilers", "shortname": "CO", "lang": "EN"},
+                        {"id": 3, "fullname": "Logic", "shortname": "LO", "lang": ""},
+                        {"id": 4, "fullname": "Physics", "shortname": "PH", "lang": "fr"},
+                        {"id": 5, "fullname": "Algebra", "shortname": "AL"},
+                    ],
+                    "nextoffset": 0,
+                }
+            )
+        )
+        courses = await adapter.get_enrolled_courses()
+        assert [course.exam_language for course in courses] == ["de", "en", None, None, None]
+
+    @respx.mock
     async def test_empty_courses(self, adapter: MoodleAdapter):
         respx.route(method="POST", path=AJAX_PATH).mock(
             return_value=_ajax_ok({"courses": [], "nextoffset": 0})

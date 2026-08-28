@@ -19,6 +19,7 @@ import structlog
 from bs4 import BeautifulSoup, Tag
 
 from sophia.domain.errors import AuthError, MoodleError
+from sophia.domain.learning import ContentLanguage
 from sophia.domain.models import (
     AssignmentInfo,
     CheckmarkInfo,
@@ -231,6 +232,7 @@ class MoodleAdapter:
                 fullname=c["fullname"],
                 shortname=c["shortname"],
                 url=c.get("viewurl"),
+                exam_language=_exam_language(c.get("lang")),
             )
             for c in data["courses"]
         ]
@@ -983,3 +985,18 @@ def _truncate_text(text: str) -> str:
     if len(normalized) <= _MAX_INGESTION_CHARS:
         return normalized
     return normalized[:_MAX_INGESTION_CHARS].rstrip()
+
+
+def _exam_language(raw_language: object) -> str | None:
+    """Map an upstream course language tag onto a supported content language.
+
+    Moodle reports a full locale (``de_at``) or an empty string when the course
+    simply follows the site default. An unrecognised or absent value returns
+    ``None`` so the caller falls back to its own configured default rather than
+    guessing at the exam language.
+    """
+    if not isinstance(raw_language, str):
+        return None
+    base_language = raw_language.strip().lower().split("_")[0]
+    supported = {language.value for language in ContentLanguage}
+    return base_language if base_language in supported else None
