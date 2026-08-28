@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     # Session health
     session_keepalive_interval: int = 300
 
+    # Persistence
+    database_url: str = "postgresql+asyncpg://sophia:sophia@localhost:5432/sophia"
+    database_pool_size: int = Field(default=5, gt=0)
+    database_max_overflow: int = Field(default=10, ge=0)
+    database_pool_timeout: int = Field(default=30, gt=0)
+    database_pool_recycle: int = Field(default=1800, gt=0)
+    database_echo: bool = False
+
     # Learning process integrity
     default_content_language: Literal["de", "en"] = "de"
     learning_event_retention_days: int = Field(default=180, gt=0)
@@ -109,6 +117,24 @@ class Settings(BaseSettings):
             msg = "redis_url must use redis://, rediss://, or unix://"
             raise ValueError(msg)
         return redis_url
+
+    @field_validator("database_url")
+    @classmethod
+    def _database_url_uses_async_driver(cls, value: str) -> str:
+        """Reject the sync driver early.
+
+        ``postgresql://`` resolves to psycopg and blocks the event loop on every
+        query. It fails at first use, deep inside a request, rather than at
+        startup — so it is worth catching here.
+        """
+        database_url = value.strip()
+        if not database_url:
+            msg = "database_url must not be empty"
+            raise ValueError(msg)
+        if not database_url.startswith("postgresql+asyncpg://"):
+            msg = "database_url must use the postgresql+asyncpg:// driver"
+            raise ValueError(msg)
+        return database_url
 
     @field_validator("session_cookie_name", "csrf_cookie_name")
     @classmethod

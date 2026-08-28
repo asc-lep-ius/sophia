@@ -263,6 +263,112 @@ field is missing, the drill fails because the restored database does not yet
 prove the learning progress, due schedule, grade history, and review-event
 continuity required by Phase 4.
 
+## Postgres Backups And Restore Drills
+
+Postgres runs alongside SQLite for one release. SQLite remains authoritative
+until the service cutover lands, so Litestream stays running and the sections
+above still apply. This section covers the Postgres side, which is live from the
+moment the `postgres` service starts.
+
+Both `postgres` and `postgres-backup` are pinned by sha256 digest rather than by
+the `18.4` tag, because a tag can be re-pushed and a storage engine that changes
+underneath a running cluster is not a detail. `make deployment-policy` enforces
+the pin.
+
+### Backup Policy
+
+The `postgres-backup` sidecar runs `pg_dump --format=custom --compress=9` on
+`SOPHIA_BACKUP_INTERVAL_SECONDS` (default daily) and prunes dumps older than
+`SOPHIA_BACKUP_RETENTION_DAYS` (default 14).
+
+Custom format is used so a restore can be selective and parallel. `--no-sync` is
+deliberately **not** passed: it lets `pg_dump` return before the dump is on
+stable storage, which turns a backup into a promise rather than a file.
+
+Dumps land on the `postgres-backups` volume. That volume is on the same host as
+the database, so it survives a container loss but not a host loss. Ship the
+dumps **encrypted off-host** — the volume alone is not a backup:
+
+```bash
+docker compose -f docker-compose.prod.yml exec postgres-backup \
+  sh -c 'cat /backups/$(ls -t /backups | head -1)' \
+  | age -r "$SOPHIA_BACKUP_AGE_RECIPIENT" \
+  | aws s3 cp - "s3://$SOPHIA_BACKUP_BUCKET/sophia-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
+```
+
+### Postgres Restore Drill
+
+Run after every schema migration, and on the same weekly and monthly cadence as
+the Litestream drill. The drill restores into a scratch database and never
+touches the live one:
+
+```bash
+make db.restore BACKUP_PATH=backups/sophia-20260828T020000Z.dump
+```
+
+That runs `pg_restore --exit-on-error` into `<database>_restore_drill`, compares
+per-table row counts against the source, drops the scratch database, and prints
+the elapsed restore time.
+
+Record two numbers from each drill:
+
+- **RTO** — the restore time the drill prints, plus the time to repoint the API.
+  Budget: under 30 minutes for the current data volume.
+- **RPO** — the backup interval, so at most
+  `SOPHIA_BACKUP_INTERVAL_SECONDS` of writes are at risk. Default: 24 hours.
+  Shorten the interval, or add WAL archiving, if that window is too wide.
+
+A drill that does not restore learning-progress continuity fails for the same
+reason the SQLite drill does: matching row counts alone do not prove that
+`study_sessions`, `review_schedule`, and `card_review_attempts` still describe
+the same learner history.
+
+### Postgres Cutover Playbook
+
+The cutover is the only step that can lose writes, so it stops them first.
+
+1. **Stop writes.** Scale the writers to zero and leave the proxy serving a
+   maintenance response:
+   ```bash
+   docker compose -f docker-compose.prod.yml stop api sophia-gui
+   ```
+2. **Back up SQLite** and confirm Litestream has caught up:
+   ```bash
+   docker compose -f docker-compose.prod.yml exec litestream \
+     litestream snapshots "$LITESTREAM_REPLICA_URL"
+   ```
+3. **Migrate the schema:**
+   ```bash
+   make db.migrate
+   ```
+4. **Dry-run the transfer** and read the report before writing anything:
+   ```bash
+   make db.import SQLITE=/var/lib/docker/volumes/sophia_sophia-data/_data/sophia.db MODE=dry-run
+   ```
+5. **Import,** which copies every table, aligns the identity sequences, and
+   verifies as it goes:
+   ```bash
+   make db.import SQLITE=... MODE=import
+   ```
+6. **Verify independently.** `scripts/sqlite_to_postgres.py --mode verify`
+   re-reads both sides and compares row counts *and* per-table checksums. Row
+   counts alone would pass a migration that silently nulled a column:
+   ```bash
+   make db.verify SQLITE=...
+   ```
+   A non-zero exit aborts the cutover. Restart the old stack and investigate.
+7. **Restart writers** against Postgres and confirm readiness:
+   ```bash
+   docker compose -f docker-compose.prod.yml up -d api sophia-gui
+   curl -f https://sophia.example.com/api/ready
+   ```
+
+**Read-only SQLite fallback.** Keep the SQLite volume mounted read-only for one
+full release after cutover, and keep Litestream replicating it. It is the
+evidence for any post-cutover discrepancy a learner reports, and the rollback
+path if one is found. Remove it only once a release has passed without such a
+report.
+
 ## Operational Notes
 
 - Keep `IMAGE_TAG` pinned to the full commit SHA that passed CI.

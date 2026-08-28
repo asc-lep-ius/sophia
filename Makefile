@@ -1,8 +1,13 @@
-.PHONY: dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: db.up db.down db.migrate db.downgrade db.revision db.import db.verify db.backup db.restore dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
 
 PROD_IMAGE_TAG ?= $(shell git rev-parse --verify HEAD)
 SOPHIA_SMOKE_BASE_URL ?= http://localhost
 SOPHIA_SMOKE_SSE_PATH ?= /api/events
+MODE ?= dry-run
+SQLITE ?= $(HOME)/.local/share/sophia/sophia.db
+BACKUP_PATH ?= backups/sophia-$(shell date +%Y%m%dT%H%M%SZ).dump
+SOPHIA_TEST_DATABASE_URL ?= postgresql+asyncpg://sophia:sophia@localhost:5432/sophia_test
+export SOPHIA_TEST_DATABASE_URL
 
 dev:                             ## Install all dev dependencies
 	uv sync --all-extras --group dev
@@ -10,7 +15,7 @@ dev:                             ## Install all dev dependencies
 setup-hermes:                    ## Configure Hermes for your hardware (GPU, models, providers)
 	uv run sophia lectures setup
 
-test:                            ## Run test suite with coverage
+test: db.up                      ## Run test suite with coverage (needs Postgres)
 	uv run pytest --tb=short -q --cov=src/sophia --cov-fail-under=85
 
 lint: secret-policy              ## Lint, secret policy, and format check
@@ -18,6 +23,34 @@ lint: secret-policy              ## Lint, secret policy, and format check
 
 typecheck:                       ## Type check with pyright
 	uv run pyright
+
+db.up:                           ## Start the local Postgres and wait for it
+	docker compose up -d postgres
+	until docker compose exec -T postgres pg_isready -U sophia >/dev/null 2>&1; do sleep 1; done
+
+db.down:                         ## Stop the local Postgres
+	docker compose stop postgres
+
+db.migrate:                      ## Apply Alembic migrations to head
+	uv run alembic upgrade head
+
+db.downgrade:                    ## Roll back one Alembic revision
+	uv run alembic downgrade -1
+
+db.revision:                     ## Autogenerate a revision (review it by hand before committing)
+	uv run alembic revision --autogenerate -m "$(MESSAGE)"
+
+db.import:                       ## Copy SQLite into Postgres (SQLITE=path, defaults to dry-run)
+	uv run python scripts/sqlite_to_postgres.py --sqlite "$(SQLITE)" --mode "$(MODE)"
+
+db.verify:                       ## Compare an imported Postgres against its SQLite source
+	uv run python scripts/sqlite_to_postgres.py --sqlite "$(SQLITE)" --mode verify
+
+db.backup:                       ## Write a compressed pg_dump to BACKUP_PATH
+	uv run python scripts/pg_backup.py backup --output "$(BACKUP_PATH)"
+
+db.restore:                      ## Restore a pg_dump into a scratch database and verify it
+	uv run python scripts/pg_backup.py restore --input "$(BACKUP_PATH)"
 
 openapi:                         ## Export deterministic OpenAPI JSON for frontend clients
 	uv run python scripts/export_openapi.py
