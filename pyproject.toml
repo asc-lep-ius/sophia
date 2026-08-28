@@ -107,6 +107,8 @@ typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
 include = ["src", "tests"]
+# scripts/ is a namespace package the tests import from (see test_openapi_export)
+extraPaths = ["."]
 # Tests legitimately access private helpers for white-box testing
 reportPrivateUsage = "warning"
 

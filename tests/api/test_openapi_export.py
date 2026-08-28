@@ -70,3 +70,50 @@ def _run_export(*args: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         check=False,
     )
+
+
+def test_status_descriptions_do_not_depend_on_the_interpreter() -> None:
+    """3.13 renamed 422 to the RFC 9110 wording, so the raw phrase is not portable."""
+    document = json.loads(_render_document())
+    descriptions = {
+        response.get("description")
+        for path_item in document["paths"].values()
+        for method, operation in path_item.items()
+        if method in HTTP_METHODS
+        for status_code, response in operation.get("responses", {}).items()
+        if status_code == "422"
+    }
+
+    # "Validation Error" is FastAPI's own wording for the automatic 422 and is
+    # portable; only the HTTPStatus-derived phrase moves between interpreters.
+    assert "Unprocessable Entity" not in descriptions
+    assert "Unprocessable Content" in descriptions
+
+
+def test_canonicalisation_rewrites_the_pre_3_13_phrase() -> None:
+    from scripts.export_openapi import _canonicalize_status_descriptions
+
+    document: dict[str, object] = {
+        "paths": {
+            "/api/search": {
+                "post": {
+                    "responses": {
+                        "422": {"description": "Unprocessable Entity"},
+                        "404": {"description": "Not Found"},
+                    },
+                },
+            },
+        },
+    }
+
+    _canonicalize_status_descriptions(document)
+
+    responses = document["paths"]["/api/search"]["post"]["responses"]  # type: ignore[index]
+    assert responses["422"]["description"] == "Unprocessable Content"
+    assert responses["404"]["description"] == "Not Found"
+
+
+def _render_document() -> bytes:
+    from scripts.export_openapi import render_openapi
+
+    return render_openapi()

@@ -13,6 +13,11 @@ from sophia.api import create_api_app
 DEFAULT_OUTPUT = Path("frontend/src/lib/api/openapi.json")
 HTTP_METHODS = frozenset({"delete", "get", "patch", "post", "put"})
 REQUEST_ID_HEADER_NAME = "X-Request-ID"
+# http.HTTPStatus phrases are not stable across interpreters: 3.13 renamed 422 to
+# the RFC 9110 wording, and FastAPI derives the response description from them.
+# Pinning the canonical phrase keeps the snapshot identical whoever exports it.
+CANONICAL_STATUS_DESCRIPTIONS = {"422": "Unprocessable Content"}
+INTERPRETER_STATUS_PHRASES = {"422": frozenset({"Unprocessable Entity", "Unprocessable Content"})}
 REQUEST_ID_HEADER_SCHEMA = {
     "description": "Request correlation identifier.",
     "schema": {"type": "string"},
@@ -46,9 +51,33 @@ def main(argv: list[str] | None = None) -> int:
 
 def render_openapi() -> bytes:
     document = create_api_app().openapi()
+    _canonicalize_status_descriptions(document)
     _add_response_header_contracts(document)
     sorted_document = _sort_openapi_document(document)
     return f"{json.dumps(sorted_document, sort_keys=True, indent=2)}\n".encode()
+
+
+def _canonicalize_status_descriptions(document: dict[str, Any]) -> None:
+    """Replace interpreter-derived status phrases with the project's wording."""
+    paths = document.get("paths")
+    if not isinstance(paths, dict):
+        return
+
+    for path_item in paths.values():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method not in HTTP_METHODS or not isinstance(operation, dict):
+                continue
+            responses = operation.get("responses")
+            if not isinstance(responses, dict):
+                continue
+            for status_code, response in responses.items():
+                canonical = CANONICAL_STATUS_DESCRIPTIONS.get(status_code)
+                if canonical is None or not isinstance(response, dict):
+                    continue
+                if response.get("description") in INTERPRETER_STATUS_PHRASES[status_code]:
+                    response["description"] = canonical
 
 
 def _add_response_header_contracts(document: dict[str, Any]) -> None:
