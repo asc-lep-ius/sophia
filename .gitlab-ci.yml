@@ -64,11 +64,17 @@ stages:
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
       allow_failure: true
+    # allow_failure: this job only refreshes a cache. It sits in the first
+    # stage, so without it a registry outage skips every check behind it and
+    # master merges unverified -- which is exactly what happened on 2026-08-28.
+    # The check jobs run `uv sync --frozen` regardless, so a stale ci:latest
+    # makes them slower, never wrong.
     - if: '$CI_COMMIT_BRANCH == "master"'
       changes:
         - ci/Dockerfile.ci
         - pyproject.toml
         - uv.lock
+      allow_failure: true
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - ci/Dockerfile.ci
