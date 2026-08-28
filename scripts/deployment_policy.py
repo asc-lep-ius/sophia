@@ -22,7 +22,11 @@ REQUIRED_DEPENDENCIES = {
     "proxy": frozenset({"api", "frontend", "sophia-gui"}),
     "api": frozenset({"redis"}),
     "litestream": frozenset({"api"}),
+    "postgres-backup": frozenset({"postgres"}),
 }
+# Postgres is pinned by digest rather than by tag: 18.4 can be re-pushed, and a
+# storage engine that changes underneath a running cluster is not a detail.
+POSTGRES_DIGEST_SERVICES = frozenset({"postgres", "postgres-backup"})
 FULL_COMMIT_SHA_PATTERN = re.compile(r"[0-9a-f]{40}", re.IGNORECASE)
 SHA256_DIGEST_PATTERN = re.compile(r"@sha256:[0-9a-f]{64}\b", re.IGNORECASE)
 REQUIRED_COMMIT_TAG_PATTERN = re.compile(r"\$\{(?:IMAGE_TAG|CI_COMMIT_SHA):\?[^}]+\}")
@@ -88,6 +92,23 @@ REQUIRED_BACKUP_DOC_TERMS = {
         "pragma integrity_check",
         "sqlite3",
         "curl -f https://sophia.example.com/api/ready",
+    ),
+    "postgres-backup-policy": (
+        "pg_dump",
+        "--format=custom",
+        "encrypted off-host",
+    ),
+    "postgres-restore-drill": (
+        "pg_restore",
+        "make db.restore",
+        "rto",
+        "rpo",
+    ),
+    "postgres-cutover": (
+        "stop writes",
+        "sqlite_to_postgres",
+        "--mode verify",
+        "read-only sqlite fallback",
     ),
 }
 
@@ -453,6 +474,19 @@ def _scan_image(
     elif service_name == "redis" and not image.startswith("redis:8.6.3"):
         violations.append(
             _violation(path, service_name, "image", "redis baseline must be redis:8.6.3")
+        )
+    elif service_name in POSTGRES_DIGEST_SERVICES and not SHA256_DIGEST_PATTERN.search(image):
+        violations.append(
+            _violation(
+                path,
+                service_name,
+                "image",
+                "postgres images must be pinned by sha256 digest",
+            )
+        )
+    elif service_name in POSTGRES_DIGEST_SERVICES and not image.startswith("postgres@"):
+        violations.append(
+            _violation(path, service_name, "image", "postgres baseline must be the postgres image")
         )
     elif service_name == "litestream" and image != "litestream/litestream:0.5.11":
         violations.append(

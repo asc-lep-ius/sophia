@@ -121,6 +121,75 @@ services:
       retries: 3
       start_period: 20s
 
+  postgres:
+    image: postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${SOPHIA_POSTGRES_USER:?set SOPHIA_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${SOPHIA_POSTGRES_PASSWORD:?set SOPHIA_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${SOPHIA_POSTGRES_DB:?set SOPHIA_POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    networks:
+      - data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres-backup:
+    image: postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    # No --no-sync: a dump that returns before it is on stable storage is a
+    # promise, not a backup. Dumps are written to a local volume and are
+    # expected to be shipped off-host encrypted; see DEPLOYMENT.md.
+    command:
+      - >-
+        while true; do
+        pg_dump --format=custom --compress=9 --no-owner --no-privileges
+        --file=/backups/sophia-$$(date -u +%Y%m%dT%H%M%SZ).dump
+        "$$SOPHIA_BACKUP_URL" || echo "pg_dump failed";
+        find /backups -name 'sophia-*.dump' -mtime +$${SOPHIA_BACKUP_RETENTION_DAYS:-14} -delete;
+        sleep $${SOPHIA_BACKUP_INTERVAL_SECONDS:-86400};
+        done
+    environment:
+      SOPHIA_BACKUP_URL: ${SOPHIA_BACKUP_URL:?set SOPHIA_BACKUP_URL}
+      SOPHIA_BACKUP_INTERVAL_SECONDS: ${SOPHIA_BACKUP_INTERVAL_SECONDS:-86400}
+      SOPHIA_BACKUP_RETENTION_DAYS: ${SOPHIA_BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - postgres-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data
+    healthcheck:
+      test: ["CMD-SHELL", "ls /backups/sophia-*.dump >/dev/null 2>&1"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   redis:
     image: redis:8.6.3-alpine
     restart: unless-stopped
@@ -174,6 +243,8 @@ services:
       start_period: 5s
 
 volumes:
+  postgres-data:
+  postgres-backups:
   sophia-data:
   sophia-config:
   model-cache:

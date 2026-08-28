@@ -1,0 +1,140 @@
+"""Provenance, learning event, question, and content language tables."""
+
+from __future__ import annotations
+
+from sqlalchemy import (
+    Column,
+    ForeignKey,
+    Index,
+    Integer,
+    Table,
+    Text,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.dialects.postgresql import TIMESTAMP
+
+from sophia.infra.schema._shared import metadata, org_id_column
+
+_NOW = text("CURRENT_TIMESTAMP")
+
+learning_path_settings = Table(
+    "learning_path_settings",
+    metadata,
+    Column("course_id", Integer, primary_key=True, autoincrement=False),
+    Column("exam_language", Text, nullable=False, server_default="de"),
+    Column("content_origin", Text, nullable=False, server_default="tuwel"),
+    org_id_column(),
+    Column("updated_at", TIMESTAMP(timezone=True), server_default=_NOW),
+)
+
+content_provenance = Table(
+    "content_provenance",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("content_kind", Text, nullable=False),
+    Column("content_id", Text, nullable=False),
+    Column("course_id", Integer, nullable=False),
+    Column("content_origin", Text, nullable=False, server_default="tuwel"),
+    Column("generated_by", Text, nullable=False),
+    Column("generator_ref", Text),
+    Column("generated_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("verified_by", Text),
+    Column("verified_at", TIMESTAMP(timezone=True)),
+    org_id_column(),
+    UniqueConstraint("content_kind", "content_id", name="uq_content_provenance_content_kind"),
+    Index("idx_content_provenance_scope", "course_id", "content_kind"),
+)
+
+content_source_spans = Table(
+    "content_source_spans",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "provenance_id",
+        Integer,
+        ForeignKey("content_provenance.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("content_item_id", Text, nullable=False),
+    Column("start_char", Integer),
+    Column("end_char", Integer),
+    Column("start_ms", Integer),
+    Column("end_ms", Integer),
+    Column("excerpt", Text),
+    Index("idx_content_source_spans_provenance", "provenance_id"),
+)
+
+content_translations = Table(
+    "content_translations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("content_kind", Text, nullable=False),
+    Column("content_id", Text, nullable=False),
+    Column("language", Text, nullable=False),
+    Column("translated_text", Text, nullable=False, server_default=""),
+    Column("course_id", Integer, nullable=False),
+    org_id_column(),
+    Column("translated_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    UniqueConstraint(
+        "content_kind",
+        "content_id",
+        "language",
+        name="uq_content_translations_content_kind",
+    ),
+)
+
+generated_questions = Table(
+    "generated_questions",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("course_id", Integer, nullable=False),
+    Column("topic", Text, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("prompt", Text, nullable=False, server_default=""),
+    Column("difficulty", Text, nullable=False),
+    Column("content_language", Text, nullable=False, server_default="de"),
+    Column("options", Text, nullable=False, server_default="[]"),
+    Column("segments", Text, nullable=False, server_default="[]"),
+    Column("elaboration_policy", Text),
+    org_id_column(),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Index("idx_generated_questions_scope", "course_id", "topic"),
+)
+
+learning_events = Table(
+    "learning_events",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("event_id", Text, nullable=False, unique=True),
+    Column("course_id", Integer, nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("occurred_at", TIMESTAMP(timezone=True), nullable=False),
+    Column("received_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("session_id", Integer),
+    Column("question_id", Text),
+    Column("payload", Text, nullable=False, server_default="{}"),
+    org_id_column(),
+    Index("idx_learning_events_trace", "course_id", "question_id", "user_id", "event_type"),
+    Index("idx_learning_events_retention", "received_at"),
+)
+
+question_attempts = Table(
+    "question_attempts",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False),
+    Column(
+        "question_id",
+        Text,
+        ForeignKey("generated_questions.id", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    Column("user_id", Text, nullable=False),
+    Column("answer_text", Text, nullable=False),
+    Column("confidence", Integer),
+    org_id_column(),
+    Column("submitted_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Index("idx_question_attempts_scope", "course_id", "question_id", "user_id"),
+)
