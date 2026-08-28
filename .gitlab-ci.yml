@@ -110,6 +110,19 @@ rebuild-ci-image:
   before_script:
     - uv sync --frozen --extra web --extra test --group dev
 
+# --- Postgres service for database-backed tests ---
+# Pinned by digest so a re-tagged 18.4 cannot change what CI proves.
+.postgres-service:
+  services:
+    - name: postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
+      alias: postgres
+  variables:
+    POSTGRES_USER: sophia
+    POSTGRES_PASSWORD: sophia
+    POSTGRES_DB: sophia_test
+    POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    SOPHIA_TEST_DATABASE_URL: "postgresql+asyncpg://sophia:sophia@postgres:5432/sophia_test"
+
 # --- Blocking merge gate ---
 lint:
   stage: check
@@ -129,7 +142,9 @@ typecheck:
 test:3.12:
   stage: check
   tags: [hephaestus]
-  extends: .python-job
+  extends:
+    - .python-job
+    - .postgres-service
   script:
     - uv run pytest --tb=short -q --cov=src/sophia --cov-report=term --cov-report=xml --junitxml=pytest.xml --cov-fail-under=85
   coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+%)/'
@@ -177,6 +192,14 @@ compose-config:
   stage: check
   image: docker:27-cli
   tags: [privileged]
+  # Production requires these to be set explicitly, so the syntax check supplies
+  # placeholders the same way it already does for IMAGE_TAG. A real deployment
+  # still fails loudly if any of them is missing.
+  variables:
+    SOPHIA_POSTGRES_USER: ci-syntax-check
+    SOPHIA_POSTGRES_PASSWORD: ci-syntax-check
+    SOPHIA_POSTGRES_DB: ci-syntax-check
+    SOPHIA_BACKUP_URL: postgresql://ci-syntax-check@postgres:5432/ci-syntax-check
   script:
     - docker compose config
     - IMAGE_TAG="$CI_COMMIT_SHA" docker compose -f docker-compose.prod.yml config
@@ -250,7 +273,9 @@ test:3.14:
   stage: check
   tags: [hephaestus]
   image: ghcr.io/astral-sh/uv:python3.14-bookworm-slim
-  extends: .optional-manual-rules
+  extends:
+    - .optional-manual-rules
+    - .postgres-service
   variables:
     UV_LINK_MODE: copy
   cache:

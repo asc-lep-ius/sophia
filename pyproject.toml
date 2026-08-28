@@ -25,6 +25,9 @@ dependencies = [
     "isbnlib>=3.10",
     "tenacity>=8.0",
     "aiosqlite>=0.20",
+    "alembic==1.18.4",
+    "asyncpg==0.31.0",
+    "sqlalchemy==2.0.49",
     "textual>=0.80",
     "rich>=13.0",
     "cyclopts>=3.0",
@@ -98,7 +101,10 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = ["e2e: End-to-end GUI tests requiring Playwright"]
+markers = [
+    "e2e: End-to-end GUI tests requiring Playwright",
+    "postgres: Tests requiring a live Postgres (SOPHIA_TEST_DATABASE_URL)",
+]
 addopts = "-p nicegui.testing.user_plugin -m \"not e2e\""
 
 [tool.pyright]
