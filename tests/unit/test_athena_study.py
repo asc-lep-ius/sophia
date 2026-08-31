@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import (
@@ -16,19 +15,13 @@ from sophia.domain.models import (
     TopicMapping,
     TopicSource,
 )
-from sophia.infra.persistence import run_migrations
+
+from .._sql import exec_sql
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-
-@pytest.fixture
-async def db():
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
@@ -54,7 +47,7 @@ def hermes_config(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def app(db: aiosqlite.Connection, tmp_path: Path, hermes_config: None) -> MagicMock:
+def app(db: AsyncSession, tmp_path: Path, hermes_config: None) -> MagicMock:
     mock = MagicMock()
     mock.db = db
     mock.settings.config_dir = tmp_path / "config"
@@ -64,13 +57,14 @@ def app(db: aiosqlite.Connection, tmp_path: Path, hermes_config: None) -> MagicM
 
 
 async def _insert_download(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     module_id: int = 42,
     title: str = "Lecture 1",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         """INSERT INTO lecture_downloads
            (episode_id, module_id, series_id, title, track_url, track_mimetype,
             file_path, status)
@@ -78,37 +72,36 @@ async def _insert_download(
                    '/tmp/audio.mp3', 'completed')""",
         (episode_id, module_id, title),
     )
-    await db.commit()
 
 
 async def _insert_transcription(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     module_id: int = 42,
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO transcriptions (episode_id, module_id, segment_count, status) "
         "VALUES (?, ?, 5, 'completed')",
         (episode_id, module_id),
     )
-    await db.commit()
 
 
 async def _insert_segments(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     count: int = 5,
 ) -> None:
     for i in range(count):
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO transcript_segments "
             "(episode_id, segment_index, start_time, end_time, text) "
             "VALUES (?, ?, ?, ?, ?)",
             (episode_id, i, float(i * 5), float((i + 1) * 5), f"Segment about topic {i}"),
         )
-    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -117,30 +110,29 @@ async def _insert_segments(
 
 
 @pytest.mark.asyncio
-async def test_get_course_topics_empty(app: MagicMock) -> None:
+async def test_get_course_topics_empty(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import get_course_topics
 
-    result = await get_course_topics(app, course_id=99)
+    result = await get_course_topics(db, course_id=99)
     assert result == []
 
 
 @pytest.mark.asyncio
-async def test_get_course_topics_returns_persisted(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_get_course_topics_returns_persisted(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import get_course_topics
 
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
         ("Linear Algebra", 42, "lecture", 2),
     )
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
         ("Calculus", 42, "lecture", 1),
     )
-    await db.commit()
 
-    result = await get_course_topics(app, course_id=42)
+    result = await get_course_topics(db, course_id=42)
     assert len(result) == 2
     assert result[0].topic == "Linear Algebra"
     assert result[0].frequency == 2
@@ -152,17 +144,15 @@ async def test_get_course_topics_returns_persisted(
 
 
 @pytest.mark.asyncio
-async def test_extract_topics_no_transcripts(app: MagicMock) -> None:
+async def test_extract_topics_no_transcripts(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import extract_topics_from_lectures
 
-    result = await extract_topics_from_lectures(app, module_id=42)
+    result = await extract_topics_from_lectures(app, db, module_id=42)
     assert result == []
 
 
 @pytest.mark.asyncio
-async def test_extract_topics_from_lectures_success(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_extract_topics_from_lectures_success(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import extract_topics_from_lectures
 
     await _insert_download(db, episode_id="ep-001", module_id=42)
@@ -176,7 +166,7 @@ async def test_extract_topics_from_lectures_success(
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        result = await extract_topics_from_lectures(app, module_id=42)
+        result = await extract_topics_from_lectures(app, db, module_id=42)
 
     assert len(result) == 2
     assert result[0].topic == "Linear Algebra"
@@ -186,19 +176,19 @@ async def test_extract_topics_from_lectures_success(
     from sophia.services.athena_study import get_course_topics
 
     # Get course_id from the lecture_downloads
-    cursor = await db.execute(
-        "SELECT DISTINCT module_id FROM lecture_downloads WHERE module_id = 42"
+    cursor = await exec_sql(
+        db, "SELECT DISTINCT module_id FROM lecture_downloads WHERE module_id = 42"
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
 
     # Topics should be in the DB now — use course_id from result
-    topics = await get_course_topics(app, course_id=result[0].course_id)
+    topics = await get_course_topics(db, course_id=result[0].course_id)
     assert len(topics) == 2
 
 
 @pytest.mark.asyncio
-async def test_extract_topics_idempotent(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_extract_topics_idempotent(app: MagicMock, db: AsyncSession) -> None:
     """Re-running extraction upserts but doesn't duplicate topics."""
     from sophia.services.athena_study import extract_topics_from_lectures
 
@@ -213,20 +203,18 @@ async def test_extract_topics_idempotent(app: MagicMock, db: aiosqlite.Connectio
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        await extract_topics_from_lectures(app, module_id=42)
+        await extract_topics_from_lectures(app, db, module_id=42)
         # Run again — should upsert, not duplicate
-        await extract_topics_from_lectures(app, module_id=42)
+        await extract_topics_from_lectures(app, db, module_id=42)
 
-    cursor = await db.execute("SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Sorting'")
-    row = await cursor.fetchone()
+    cursor = await exec_sql(db, "SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Sorting'")
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == 1
 
 
 @pytest.mark.asyncio
-async def test_extract_topics_skips_llm_when_cached(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_extract_topics_skips_llm_when_cached(app: MagicMock, db: AsyncSession) -> None:
     """With force=False (default), a pre-existing topic set skips the LLM call.
 
     This is the regression guard for the mixed-language duplicate bug: if
@@ -237,15 +225,16 @@ async def test_extract_topics_skips_llm_when_cached(
     from sophia.services.athena_study import extract_topics_from_lectures
 
     # Pre-seed German topics (as lectures process would have done)
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
         ("Mathematische Aussagen", 42, "lecture", 1),
     )
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
         ("Direkter Beweis", 42, "lecture", 1),
     )
-    await db.commit()
 
     mock_create_extractor = MagicMock()
 
@@ -253,7 +242,7 @@ async def test_extract_topics_skips_llm_when_cached(
         "sophia.services.athena_study._create_topic_extractor",
         mock_create_extractor,
     ):
-        result = await extract_topics_from_lectures(app, module_id=42)
+        result = await extract_topics_from_lectures(app, db, module_id=42)
 
     # LLM extractor must never be instantiated
     mock_create_extractor.assert_not_called()
@@ -263,9 +252,7 @@ async def test_extract_topics_skips_llm_when_cached(
 
 
 @pytest.mark.asyncio
-async def test_extract_topics_force_replaces_cached(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSession) -> None:
     """With force=True the existing topics are deleted and the LLM is called."""
     from sophia.services.athena_study import extract_topics_from_lectures
 
@@ -274,11 +261,11 @@ async def test_extract_topics_force_replaces_cached(
     await _insert_segments(db, episode_id="ep-001", count=3)
 
     # Pre-seed stale topics
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
         ("Old Topic", 42, "lecture", 1),
     )
-    await db.commit()
 
     mock_extractor = AsyncMock()
     mock_extractor.extract_topics = AsyncMock(return_value=["Neues Thema"])
@@ -287,13 +274,13 @@ async def test_extract_topics_force_replaces_cached(
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        result = await extract_topics_from_lectures(app, module_id=42, force=True)
+        result = await extract_topics_from_lectures(app, db, module_id=42, force=True)
 
     assert len(result) == 1
     assert result[0].topic == "Neues Thema"
     # Old stale topic must be gone
-    cursor = await db.execute("SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Old Topic'")
-    row = await cursor.fetchone()
+    cursor = await exec_sql(db, "SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Old Topic'")
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == 0
 
@@ -304,15 +291,15 @@ async def test_extract_topics_force_replaces_cached(
 
 
 @pytest.mark.asyncio
-async def test_link_topics_empty_topics(app: MagicMock) -> None:
+async def test_link_topics_empty_topics(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import link_topics_to_lectures
 
-    result = await link_topics_to_lectures(app, course_id=42, module_id=42, topics=[])
+    result = await link_topics_to_lectures(app, db, course_id=42, module_id=42, topics=[])
     assert result == {}
 
 
 @pytest.mark.asyncio
-async def test_link_topics_to_lectures_success(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import link_topics_to_lectures
 
     await _insert_download(db, episode_id="ep-001", module_id=42)
@@ -346,17 +333,19 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: aiosqlite.Con
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        result = await link_topics_to_lectures(app, course_id=42, module_id=42, topics=["Sorting"])
+        result = await link_topics_to_lectures(
+            app, db, course_id=42, module_id=42, topics=["Sorting"]
+        )
 
     assert "Sorting" in result
     assert len(result["Sorting"]) == 1
     assert result["Sorting"][0][1] == pytest.approx(0.92)  # pyright: ignore[reportUnknownMemberType]
 
     # Verify persisted to DB
-    cursor = await db.execute(
-        "SELECT topic, chunk_id, score FROM topic_lecture_links WHERE course_id = 42"
+    cursor = await exec_sql(
+        db, "SELECT topic, chunk_id, score FROM topic_lecture_links WHERE course_id = 42"
     )
-    rows = list(await cursor.fetchall())
+    rows = list(cursor.fetchall())
     assert len(rows) == 1
     assert rows[0][0] == "Sorting"
     assert rows[0][1] == "ep-001_0"
@@ -421,7 +410,7 @@ class TestStudentFlashcardModel:
 
 
 @pytest.mark.asyncio
-async def test_start_study_session(db: aiosqlite.Connection) -> None:
+async def test_start_study_session(db: AsyncSession) -> None:
     from sophia.services.athena_study import start_study_session
 
     session = await start_study_session(db, course_id=42, topic="Sorting")
@@ -434,12 +423,12 @@ async def test_start_study_session(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_study_session_persists(db: aiosqlite.Connection) -> None:
+async def test_start_study_session_persists(db: AsyncSession) -> None:
     from sophia.services.athena_study import start_study_session
 
     session = await start_study_session(db, course_id=42, topic="Sorting")
-    cursor = await db.execute("SELECT id, topic FROM study_sessions WHERE id = ?", (session.id,))
-    row = await cursor.fetchone()
+    cursor = await exec_sql(db, "SELECT id, topic FROM study_sessions WHERE id = ?", (session.id,))
+    row = cursor.fetchone()
     assert row is not None
     assert row[1] == "Sorting"
 
@@ -450,17 +439,18 @@ async def test_start_study_session_persists(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_complete_study_session(db: aiosqlite.Connection) -> None:
+async def test_complete_study_session(db: AsyncSession) -> None:
     from sophia.services.athena_study import complete_study_session, start_study_session
 
     session = await start_study_session(db, course_id=42, topic="Sorting")
     await complete_study_session(db, session.id, pre_test_score=0.33, post_test_score=0.67)
 
-    cursor = await db.execute(
+    cursor = await exec_sql(
+        db,
         "SELECT pre_test_score, post_test_score, completed_at FROM study_sessions WHERE id = ?",
         (session.id,),
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == pytest.approx(0.33)  # pyright: ignore[reportUnknownMemberType]
     assert row[1] == pytest.approx(0.67)  # pyright: ignore[reportUnknownMemberType]
@@ -473,7 +463,7 @@ async def test_complete_study_session(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_study_sessions_empty(db: aiosqlite.Connection) -> None:
+async def test_get_study_sessions_empty(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_study_sessions
 
     result = await get_study_sessions(db, course_id=99)
@@ -481,7 +471,7 @@ async def test_get_study_sessions_empty(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_study_sessions_all(db: aiosqlite.Connection) -> None:
+async def test_get_study_sessions_all(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_study_sessions, start_study_session
 
     await start_study_session(db, course_id=42, topic="Sorting")
@@ -492,7 +482,7 @@ async def test_get_study_sessions_all(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_study_sessions_by_topic(db: aiosqlite.Connection) -> None:
+async def test_get_study_sessions_by_topic(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_study_sessions, start_study_session
 
     await start_study_session(db, course_id=42, topic="Sorting")
@@ -509,7 +499,7 @@ async def test_get_study_sessions_by_topic(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_flashcard(db: aiosqlite.Connection) -> None:
+async def test_save_flashcard(db: AsyncSession) -> None:
     from sophia.services.athena_study import save_flashcard
 
     card = await save_flashcard(
@@ -525,7 +515,7 @@ async def test_save_flashcard(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_flashcard_with_source(db: aiosqlite.Connection) -> None:
+async def test_save_flashcard_with_source(db: AsyncSession) -> None:
     from sophia.services.athena_study import save_flashcard
 
     card = await save_flashcard(
@@ -535,12 +525,14 @@ async def test_save_flashcard_with_source(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_save_flashcard_persists(db: aiosqlite.Connection) -> None:
+async def test_save_flashcard_persists(db: AsyncSession) -> None:
     from sophia.services.athena_study import save_flashcard
 
     card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
-    cursor = await db.execute("SELECT front, back FROM student_flashcards WHERE id = ?", (card.id,))
-    row = await cursor.fetchone()
+    cursor = await exec_sql(
+        db, "SELECT front, back FROM student_flashcards WHERE id = ?", (card.id,)
+    )
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == "Q?"
 
@@ -551,7 +543,7 @@ async def test_save_flashcard_persists(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_flashcards_empty(db: aiosqlite.Connection) -> None:
+async def test_get_flashcards_empty(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_flashcards
 
     result = await get_flashcards(db, course_id=99)
@@ -559,7 +551,7 @@ async def test_get_flashcards_empty(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_flashcards_all(db: aiosqlite.Connection) -> None:
+async def test_get_flashcards_all(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_flashcards, save_flashcard
 
     await save_flashcard(db, course_id=42, topic="Sorting", front="Q1?", back="A1")
@@ -570,7 +562,7 @@ async def test_get_flashcards_all(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_flashcards_by_topic(db: aiosqlite.Connection) -> None:
+async def test_get_flashcards_by_topic(db: AsyncSession) -> None:
     from sophia.services.athena_study import get_flashcards, save_flashcard
 
     await save_flashcard(db, course_id=42, topic="Sorting", front="Q1?", back="A1")
@@ -587,7 +579,7 @@ async def test_get_flashcards_by_topic(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_generate_study_questions_with_llm(app: MagicMock, db: AsyncSession) -> None:
     """LLM generates questions grounded in lecture context."""
     from sophia.services.athena_study import generate_study_questions
 
@@ -624,7 +616,7 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.C
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
+        questions = await generate_study_questions(app, db, module_id=42, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert "Q about pivots?" in questions
@@ -635,13 +627,13 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: aiosqlite.C
 
 @pytest.mark.asyncio
 async def test_generate_study_questions_fallback_no_lectures(
-    app: MagicMock, db: aiosqlite.Connection
+    app: MagicMock, db: AsyncSession
 ) -> None:
     """Falls back to generic questions when no lecture data available."""
     from sophia.services.athena_study import generate_study_questions
 
     # No downloads inserted → no episode_ids → fallback
-    questions = await generate_study_questions(app, module_id=99, topic="Sorting", count=3)
+    questions = await generate_study_questions(app, db, module_id=99, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert all("Sorting" in q for q in questions)
@@ -649,7 +641,7 @@ async def test_generate_study_questions_fallback_no_lectures(
 
 @pytest.mark.asyncio
 async def test_generate_study_questions_llm_partial_failure(
-    app: MagicMock, db: aiosqlite.Connection
+    app: MagicMock, db: AsyncSession
 ) -> None:
     """Pads with fallback when LLM produces fewer questions than requested."""
     from sophia.services.athena_study import generate_study_questions
@@ -689,7 +681,7 @@ async def test_generate_study_questions_llm_partial_failure(
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        questions = await generate_study_questions(app, module_id=42, topic="Sorting", count=3)
+        questions = await generate_study_questions(app, db, module_id=42, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert questions[0] == "One question?"
@@ -706,7 +698,7 @@ class TestCardReview:
     """Card review service functions."""
 
     @pytest.mark.asyncio
-    async def test_save_review_attempt(self, db: aiosqlite.Connection) -> None:
+    async def test_save_review_attempt(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import save_flashcard, save_review_attempt
 
         card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
@@ -718,7 +710,7 @@ class TestCardReview:
         assert attempt.reviewed_at != ""
 
     @pytest.mark.asyncio
-    async def test_get_review_stats_no_reviews(self, db: aiosqlite.Connection) -> None:
+    async def test_get_review_stats_no_reviews(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import get_review_stats
 
         stats = await get_review_stats(db, course_id=99)
@@ -727,7 +719,7 @@ class TestCardReview:
         assert stats["success_rate"] == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_review_stats_with_reviews(self, db: aiosqlite.Connection) -> None:
+    async def test_get_review_stats_with_reviews(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_review_stats,
             save_flashcard,
@@ -746,7 +738,7 @@ class TestCardReview:
         assert stats["success_rate"] == pytest.approx(2 / 3)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
-    async def test_get_review_stats_per_topic(self, db: aiosqlite.Connection) -> None:
+    async def test_get_review_stats_per_topic(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_review_stats,
             save_flashcard,
@@ -763,7 +755,7 @@ class TestCardReview:
         assert stats["success_count"] == 1
 
     @pytest.mark.asyncio
-    async def test_get_due_cards_unreviewed_first(self, db: aiosqlite.Connection) -> None:
+    async def test_get_due_cards_unreviewed_first(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_due_cards,
             save_flashcard,
@@ -781,7 +773,7 @@ class TestCardReview:
         assert due[0].id == c2.id
 
     @pytest.mark.asyncio
-    async def test_get_due_cards_with_topic_filter(self, db: aiosqlite.Connection) -> None:
+    async def test_get_due_cards_with_topic_filter(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import get_due_cards, save_flashcard
 
         await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
@@ -792,7 +784,7 @@ class TestCardReview:
         assert due[0].topic == "Graphs"
 
     @pytest.mark.asyncio
-    async def test_get_due_cards_respects_limit(self, db: aiosqlite.Connection) -> None:
+    async def test_get_due_cards_respects_limit(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import get_due_cards, save_flashcard
 
         for i in range(5):
@@ -802,7 +794,7 @@ class TestCardReview:
         assert len(due) == 3
 
     @pytest.mark.asyncio
-    async def test_update_topic_calibration(self, db: aiosqlite.Connection) -> None:
+    async def test_update_topic_calibration(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             save_flashcard,
             save_review_attempt,
@@ -810,12 +802,12 @@ class TestCardReview:
         )
 
         # Insert a confidence rating for the topic
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Sorting", 42, 0.75, "2026-01-01T00:00:00"),
         )
-        await db.commit()
 
         # Create flashcards and review them
         c1 = await save_flashcard(db, course_id=42, topic="Sorting", front="Q1", back="A1")
@@ -826,16 +818,17 @@ class TestCardReview:
         # Calibrate — should update actual to 0.5 (1/2)
         await update_topic_calibration(db, course_id=42, topic="Sorting")
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT actual FROM confidence_ratings WHERE topic = ? AND course_id = ?",
             ("Sorting", 42),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
-    async def test_update_topic_calibration_no_reviews(self, db: aiosqlite.Connection) -> None:
+    async def test_update_topic_calibration_no_reviews(self, db: AsyncSession) -> None:
         """No reviews → no calibration update (no crash)."""
         from sophia.services.athena_study import update_topic_calibration
 
@@ -843,9 +836,7 @@ class TestCardReview:
         await update_topic_calibration(db, course_id=42, topic="Nonexistent")
 
     @pytest.mark.asyncio
-    async def test_get_failed_review_cards_returns_wrong_answers(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_get_failed_review_cards_returns_wrong_answers(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_failed_review_cards,
             save_flashcard,
@@ -862,9 +853,7 @@ class TestCardReview:
         assert failed[0].id == c1.id
 
     @pytest.mark.asyncio
-    async def test_get_failed_review_cards_with_topic_filter(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_get_failed_review_cards_with_topic_filter(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_failed_review_cards,
             save_flashcard,
@@ -890,7 +879,7 @@ class TestSelfExplanation:
     """Self-explanation service functions."""
 
     @pytest.mark.asyncio
-    async def test_save_self_explanation(self, db: aiosqlite.Connection) -> None:
+    async def test_save_self_explanation(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import save_flashcard, save_self_explanation
 
         card = await save_flashcard(db, course_id=42, topic="Sorting", front="Q?", back="A.")
@@ -908,7 +897,7 @@ class TestSelfExplanation:
         assert exp.created_at != ""
 
     @pytest.mark.asyncio
-    async def test_get_self_explanations(self, db: aiosqlite.Connection) -> None:
+    async def test_get_self_explanations(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_self_explanations,
             save_flashcard,
@@ -936,7 +925,7 @@ class TestSelfExplanation:
         assert explanations[1].student_explanation == "First"
 
     @pytest.mark.asyncio
-    async def test_get_explanation_count(self, db: aiosqlite.Connection) -> None:
+    async def test_get_explanation_count(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import (
             get_explanation_count,
             save_flashcard,
@@ -1016,9 +1005,7 @@ class TestSelfExplanation:
 
 
 @pytest.mark.asyncio
-async def test_get_lecture_context_include_materials(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_get_lecture_context_include_materials(app: MagicMock, db: AsyncSession) -> None:
     """With include_materials=True, both lecture and PDF chunks appear with provenance.
 
     Uses distinct module_id (42) and course_id (999) to verify the correct ID
@@ -1029,12 +1016,12 @@ async def test_get_lecture_context_include_materials(
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     # Insert a course material — note course_id=999 differs from module_id=42
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO course_materials (id, course_id, module_id, name, url, status, chunk_count) "
         "VALUES (?, ?, ?, ?, ?, 'completed', 5)",
         (10, 999, 42, "Algorithms.pdf", "https://example.com/algo.pdf"),
     )
-    await db.commit()
 
     lecture_chunk = KnowledgeChunk(
         chunk_id="ep-001_0",
@@ -1081,6 +1068,7 @@ async def test_get_lecture_context_include_materials(
     ):
         result = await get_lecture_context(
             app,
+            db,
             module_id=42,
             course_id=999,
             topic="Sorting",
@@ -1096,9 +1084,7 @@ async def test_get_lecture_context_include_materials(
 
 
 @pytest.mark.asyncio
-async def test_get_lecture_context_without_materials_flag(
-    app: MagicMock, db: aiosqlite.Connection
-) -> None:
+async def test_get_lecture_context_without_materials_flag(app: MagicMock, db: AsyncSession) -> None:
     """Default call (include_materials=False) does NOT search PDF chunks."""
     from sophia.services.athena_study import get_lecture_context
 
@@ -1136,6 +1122,7 @@ async def test_get_lecture_context_without_materials_flag(
     ):
         result = await get_lecture_context(
             app,
+            db,
             module_id=42,
             topic="Trees",
         )
@@ -1152,22 +1139,23 @@ async def test_get_lecture_context_without_materials_flag(
 
 class TestGetMaterialEpisodeIds:
     @pytest.mark.asyncio
-    async def test_returns_formatted_ids_and_name_map(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_formatted_ids_and_name_map(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import _get_material_episode_ids
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (id, course_id, module_id, name, url, mimetype, status)"
             " VALUES (10, 1, 100, 'Slides A', 'https://x.com/a.pdf', 'application/pdf',"
             "  'completed')",
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (id, course_id, module_id, name, url, mimetype, status)"
             " VALUES (20, 1, 101, 'Slides B', 'https://x.com/b.pdf', 'application/pdf',"
             "  'completed')",
         )
-        await db.commit()
 
         ep_ids, name_map = await _get_material_episode_ids(db, course_id=1)
 
@@ -1175,16 +1163,16 @@ class TestGetMaterialEpisodeIds:
         assert name_map == {"mat-10": "Slides A", "mat-20": "Slides B"}
 
     @pytest.mark.asyncio
-    async def test_ignores_non_completed(self, db: aiosqlite.Connection) -> None:
+    async def test_ignores_non_completed(self, db: AsyncSession) -> None:
         from sophia.services.athena_study import _get_material_episode_ids
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (id, course_id, module_id, name, url, mimetype, status)"
             " VALUES (30, 1, 100, 'Pending', 'https://x.com/c.pdf', 'application/pdf',"
             "  'pending')",
         )
-        await db.commit()
 
         ep_ids, name_map = await _get_material_episode_ids(db, course_id=1)
         assert ep_ids == []
@@ -1198,7 +1186,11 @@ class TestGetMaterialEpisodeIds:
 
 class TestExtractTopicsCached:
     @pytest.mark.asyncio
-    async def test_returns_cached_topics_without_llm_call(self, app: MagicMock) -> None:
+    async def test_returns_cached_topics_without_llm_call(
+        self,
+        app: MagicMock,
+        db: AsyncSession,
+    ) -> None:
         """When force=False and topics exist, return cached without calling LLM."""
         from sophia.services.athena_study import extract_topics_from_lectures
 
@@ -1215,7 +1207,7 @@ class TestExtractTopicsCached:
                 new_callable=AsyncMock,
             ) as mock_transcript,
         ):
-            result = await extract_topics_from_lectures(app, module_id=1, force=False)
+            result = await extract_topics_from_lectures(app, db, module_id=1, force=False)
 
         assert result == cached
         mock_transcript.assert_not_called()
@@ -1229,7 +1221,7 @@ class TestExtractTopicsCached:
 class TestExtractTopicsForceRefresh:
     @pytest.mark.asyncio
     async def test_force_deletes_old_and_inserts_new(
-        self, db: aiosqlite.Connection, app: MagicMock
+        self, db: AsyncSession, app: MagicMock
     ) -> None:
         """force=True deletes existing topics, calls LLM, and persists new ones."""
         from sophia.services.athena_study import extract_topics_from_lectures
@@ -1240,11 +1232,11 @@ class TestExtractTopicsForceRefresh:
         await _insert_segments(db, episode_id="ep-force", count=3)
 
         # Pre-insert a stale topic that should be deleted by force
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO topic_mappings (topic, course_id, source) "
             "VALUES ('Stale Topic', 1, 'lecture')",
         )
-        await db.commit()
 
         mock_extractor = MagicMock()
         mock_extractor.extract_topics = AsyncMock(return_value=["Linear Algebra", "Calculus"])
@@ -1260,7 +1252,7 @@ class TestExtractTopicsForceRefresh:
                 return_value=mock_extractor,
             ),
         ):
-            mappings = await extract_topics_from_lectures(app, module_id=1, force=True)
+            mappings = await extract_topics_from_lectures(app, db, module_id=1, force=True)
 
         assert len(mappings) == 2
         assert mappings[0].topic == "Linear Algebra"
@@ -1268,10 +1260,10 @@ class TestExtractTopicsForceRefresh:
         assert mappings[1].topic == "Calculus"
 
         # Verify DB: stale topic gone, new ones present
-        cursor = await db.execute(
-            "SELECT topic FROM topic_mappings WHERE course_id = 1 ORDER BY topic"
+        cursor = await exec_sql(
+            db, "SELECT topic FROM topic_mappings WHERE course_id = 1 ORDER BY topic"
         )
-        rows = await cursor.fetchall()
+        rows = cursor.fetchall()
         topics = [r[0] for r in rows]
         assert "Stale Topic" not in topics
         assert "Calculus" in topics

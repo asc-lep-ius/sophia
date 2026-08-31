@@ -33,19 +33,22 @@ _TIER_TRANSFER = 0.8
 @gui_error_handler(operation="get_calibration_ratings", fallback=[])
 async def get_calibration_ratings(app: AppContainer, course_id: int) -> list[ConfidenceRating]:
     """Fetch confidence ratings for a course."""
-    return await _get_confidence_ratings(app.db, course_id)
+    async with app.session() as db:
+        return await _get_confidence_ratings(db, course_id)
 
 
 @gui_error_handler(operation="get_blind_spot_topics", fallback=[])
 async def get_blind_spot_topics(app: AppContainer, course_id: int) -> list[ConfidenceRating]:
     """Fetch overconfident blind-spot topics for a course."""
-    return await _get_blind_spots(app.db, course_id)
+    async with app.session() as db:
+        return await _get_blind_spots(db, course_id)
 
 
 @gui_error_handler(operation="get_course_avg_confidence", fallback=None)
 async def get_course_avg_confidence(app: AppContainer, course_id: int) -> float | None:
     """Get average confidence score for a course."""
-    return await _get_course_confidence(app.db, course_id)
+    async with app.session() as db:
+        return await _get_course_confidence(db, course_id)
 
 
 @gui_error_handler(operation="get_study_sessions_for_topic", fallback=[])
@@ -53,7 +56,8 @@ async def get_study_sessions_for_topic(
     app: AppContainer, course_id: int, topic: str
 ) -> list[StudySession]:
     """Fetch study sessions for a specific topic."""
-    return await _get_study_sessions(app.db, course_id, topic)
+    async with app.session() as db:
+        return await _get_study_sessions(db, course_id, topic)
 
 
 # ---------------------------------------------------------------------------

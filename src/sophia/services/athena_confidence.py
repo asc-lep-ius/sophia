@@ -6,13 +6,15 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import func, insert, select, update
 
 from sophia.domain.models import ConfidenceRating, DifficultyLevel
+from sophia.infra.schema import confidence_ratings
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
 
@@ -38,7 +40,7 @@ def rating_to_score(rating: int) -> float:
 
 
 async def rate_confidence(
-    app: AppContainer,
+    session: AsyncSession,
     topic: str,
     course_id: int,
     rating: int,
@@ -48,58 +50,70 @@ async def rate_confidence(
     Rating is 1-5, mapped to 0.0-1.0 internally.
     """
     predicted = rating_to_score(rating)
-    now = datetime.now(UTC).isoformat()
+    now = datetime.now(UTC)
 
-    await app.db.execute(
-        "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
-        "VALUES (?, ?, ?, ?)",
-        (topic, course_id, predicted, now),
+    await session.execute(
+        insert(confidence_ratings).values(
+            topic=topic,
+            course_id=course_id,
+            predicted=predicted,
+            rated_at=now,
+        )
     )
-    await app.db.commit()
 
     from sophia.services.athena_chronos import log_confidence_prediction
 
-    await log_confidence_prediction(app.db, course_id, topic, predicted)
+    await log_confidence_prediction(session, course_id, topic, predicted)
 
     log.info("confidence_rated", topic=topic, course_id=course_id, predicted=predicted)
-    return ConfidenceRating(topic=topic, course_id=course_id, predicted=predicted, rated_at=now)
+    return ConfidenceRating(
+        topic=topic,
+        course_id=course_id,
+        predicted=predicted,
+        rated_at=now.isoformat(),
+    )
 
 
 async def get_confidence_ratings(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> list[ConfidenceRating]:
     """Load the most recent confidence ratings per topic for a course."""
-    cursor = await db.execute(
-        "SELECT topic, course_id, predicted, actual, rated_at "
-        "FROM confidence_ratings "
-        "WHERE course_id = ? "
-        "AND id IN ("
-        "  SELECT MAX(id) FROM confidence_ratings "
-        "  WHERE course_id = ? GROUP BY topic"
-        ") "
-        "ORDER BY topic",
-        (course_id, course_id),
+    latest_per_topic = (
+        select(func.max(confidence_ratings.c.id))
+        .where(confidence_ratings.c.course_id == course_id)
+        .group_by(confidence_ratings.c.topic)
+        .scalar_subquery()
     )
-    rows = await cursor.fetchall()
-    return [
-        ConfidenceRating(
-            topic=row[0],
-            course_id=row[1],
-            predicted=row[2],
-            actual=row[3],
-            rated_at=row[4] or "",
+    rows = (
+        await session.execute(
+            select(confidence_ratings)
+            .where(
+                confidence_ratings.c.course_id == course_id,
+                confidence_ratings.c.id.in_(latest_per_topic),
+            )
+            .order_by(confidence_ratings.c.topic)
         )
-        for row in rows
-    ]
+    ).all()
+    return [_row_to_rating(row) for row in rows]
+
+
+def _row_to_rating(row: Row[tuple[object, ...]]) -> ConfidenceRating:
+    return ConfidenceRating(
+        topic=row.topic,
+        course_id=row.course_id,
+        predicted=row.predicted,
+        actual=row.actual,
+        rated_at=row.rated_at.isoformat() if row.rated_at else "",
+    )
 
 
 async def get_blind_spots(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> list[ConfidenceRating]:
     """Find topics where the student is significantly overconfident."""
-    ratings = await get_confidence_ratings(db, course_id)
+    ratings = await get_confidence_ratings(session, course_id)
     return [r for r in ratings if r.is_blind_spot]
 
 
@@ -145,7 +159,7 @@ def format_calibration_feedback(rating: ConfidenceRating) -> str:
 
 
 async def update_actual_score(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     topic: str,
     course_id: int,
     actual: float,
@@ -155,19 +169,22 @@ async def update_actual_score(
     Called by card review (Phase 4.3) or quiz import (Phase 4.6) when
     objective performance data becomes available.
     """
-    now = datetime.now(UTC).isoformat()
-    await db.execute(
-        "UPDATE confidence_ratings SET actual = ?, actual_at = ? "
-        "WHERE id = ("
-        "  SELECT MAX(id) FROM confidence_ratings "
-        "  WHERE topic = ? AND course_id = ?"
-        ")",
-        (actual, now, topic, course_id),
+    latest = (
+        select(func.max(confidence_ratings.c.id))
+        .where(
+            confidence_ratings.c.topic == topic,
+            confidence_ratings.c.course_id == course_id,
+        )
+        .scalar_subquery()
     )
-    await db.commit()
+    await session.execute(
+        update(confidence_ratings)
+        .where(confidence_ratings.c.id == latest)
+        .values(actual=actual, actual_at=datetime.now(UTC))
+    )
 
     from sophia.services.athena_chronos import log_confidence_actual
 
-    await log_confidence_actual(db, course_id, topic, actual)
+    await log_confidence_actual(session, course_id, topic, actual)
 
     log.info("actual_score_updated", topic=topic, course_id=course_id, actual=actual)

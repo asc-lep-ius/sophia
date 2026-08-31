@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from sophia.domain.models import CourseMaterial
 from sophia.services.hermes_manage import EpisodeStatus
+
+from .._fakes import with_session
+from .._sql import exec_sql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -62,14 +68,42 @@ def _make_material(
     )
 
 
-def _mock_container(*, db_side_effects: list[Any] | None = None) -> MagicMock:
-    """Build a minimal mock AppContainer."""
+async def _seed_episode(
+    db: AsyncSession,
+    module_id: int = 42,
+    *,
+    episode_id: str = "ep-001",
+    missed: bool = False,
+) -> None:
+    """One completed lecture, so a search has an episode to scope itself to."""
+    await exec_sql(
+        db,
+        "INSERT INTO lecture_downloads "
+        "(episode_id, module_id, title, track_url, track_mimetype, status, missed_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            episode_id,
+            module_id,
+            "Lecture 1",
+            "https://x/1.mp4",
+            "video/mp4",
+            "completed",
+            "2026-01-01T00:00:00+00:00" if missed else None,
+        ),
+    )
+
+
+def _mock_container(*, db: object | None = None) -> MagicMock:
+    """Build a minimal mock AppContainer.
+
+    ``db`` takes a real session for the commands that build their own queries;
+    a mock cannot stand in for one now that the CLI hands SQLAlchemy an
+    expression rather than a string.
+    """
     container = MagicMock()
-    container.db = AsyncMock()
+    container.db = db if db is not None else AsyncMock()
     container.moodle = AsyncMock()
-    if db_side_effects:
-        container.db.execute = AsyncMock(side_effect=db_side_effects)
-    return container
+    return with_session(container)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +116,7 @@ class TestStatusTableColumns:
 
     @pytest.mark.asyncio
     async def test_status_includes_lecture_number_column(
-        self, capsys: pytest.CaptureFixture[str]
+        self, db: AsyncSession, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """The status table renders the lecture_number from EpisodeStatus."""
         from sophia.cli.lectures import lectures_status
@@ -97,7 +131,7 @@ class TestStatusTableColumns:
         mat_cursor = AsyncMock()
         mat_cursor.fetchone = AsyncMock(return_value=(3,))
 
-        container = _mock_container()
+        container = _mock_container(db=db)
         container.db.execute = AsyncMock(return_value=mat_cursor)
 
         with (
@@ -131,24 +165,23 @@ class TestMaterialsCommand:
 
     @pytest.mark.asyncio
     async def test_materials_displays_scraped_results(
-        self, capsys: pytest.CaptureFixture[str]
+        self, db: AsyncSession, capsys: pytest.CaptureFixture[str]
     ) -> None:
         """materials command calls scrape_course_materials and shows a Rich table."""
         from sophia.cli.lectures import materials
 
         scraped = [_make_material(1, name="Slides Week 1"), _make_material(2, name="Handout")]
 
-        # DB query for existing materials returns those + the new ones
-        existing_cursor = AsyncMock()
-        existing_cursor.fetchall = AsyncMock(
-            return_value=[
-                ("Slides Week 1", "https://x.pdf", "application/pdf", 102400, "pending", 0),
-                ("Handout", "https://y.pdf", "application/pdf", 102400, "pending", 0),
-            ]
-        )
+        for name, url in (("Slides Week 1", "https://x.pdf"), ("Handout", "https://y.pdf")):
+            await exec_sql(
+                db,
+                "INSERT INTO course_materials "
+                "(course_id, module_id, name, url, mimetype, file_size_bytes, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (42, 7, name, url, "application/pdf", 102400, "pending"),
+            )
 
-        container = _mock_container()
-        container.db.execute = AsyncMock(return_value=existing_cursor)
+        container = _mock_container(db=db)
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -167,19 +200,23 @@ class TestMaterialsCommand:
         assert "Handout" in captured.out
 
     @pytest.mark.asyncio
-    async def test_materials_with_index_flag(self, capsys: pytest.CaptureFixture[str]) -> None:
+    async def test_materials_with_index_flag(
+        self,
+        db: AsyncSession,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
         """When --index is set, index_materials is called and chunk count displayed."""
         from sophia.cli.lectures import materials
 
-        existing_cursor = AsyncMock()
-        existing_cursor.fetchall = AsyncMock(
-            return_value=[
-                ("Slides", "https://x.pdf", "application/pdf", 1024, "pending", 0),
-            ]
+        await exec_sql(
+            db,
+            "INSERT INTO course_materials "
+            "(course_id, module_id, name, url, mimetype, file_size_bytes, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (42, 7, "Slides", "https://x.pdf", "application/pdf", 1024, "pending"),
         )
 
-        container = _mock_container()
-        container.db.execute = AsyncMock(return_value=existing_cursor)
+        container = _mock_container(db=db)
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -211,7 +248,7 @@ class TestProcessMaterialsFlag:
     """The process command optionally indexes materials after the pipeline."""
 
     @pytest.mark.asyncio
-    async def test_process_materials_flag_calls_index_materials(self) -> None:
+    async def test_process_materials_flag_calls_index_materials(self, db: AsyncSession) -> None:
         """When --materials is set, run_pipeline is called with index_materials=True."""
         from sophia.services.hermes_pipeline import run_pipeline
 
@@ -236,9 +273,11 @@ class TestProcessMaterialsFlag:
                 AsyncMock(return_value=10),
             ) as mock_index_mat,
         ):
-            result = await run_pipeline(container, module_id=42, index_materials=True, course_id=99)
+            result = await run_pipeline(
+                container, db, module_id=42, index_materials=True, course_id=99
+            )
 
-        mock_index_mat.assert_called_once_with(container, 99)
+        mock_index_mat.assert_called_once_with(container, db, 99)
         assert result.material_chunks == 10
 
 
@@ -251,15 +290,12 @@ class TestSearchSourceFilter:
     """The search command accepts --source to filter by lecture/pdf/all."""
 
     @pytest.mark.asyncio
-    async def test_search_lectures_passes_source_filter(self) -> None:
+    async def test_search_lectures_passes_source_filter(self, db: AsyncSession) -> None:
         """search_lectures forwards source_filter to the knowledge store."""
         from sophia.services.hermes_index import search_lectures
 
-        container = MagicMock()
-        container.db = AsyncMock()
-        cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
-        container.db.execute = AsyncMock(return_value=cursor)
+        await _seed_episode(db)
+        container = _mock_container(db=db)
         container.settings.config_dir = "/tmp/test"
         container.settings.data_dir = MagicMock()
         container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
@@ -273,7 +309,7 @@ class TestSearchSourceFilter:
             patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
             patch("sophia.services.hermes_index._create_store", return_value=mock_store),
         ):
-            await search_lectures(container, 42, "test query", source_filter="pdf")
+            await search_lectures(container, db, 42, "test query", source_filter="pdf")
 
         # Verify source_filter was passed to store.search
         mock_store.search.assert_called_once()
@@ -281,7 +317,7 @@ class TestSearchSourceFilter:
         assert call_kwargs["source_filter"] == "pdf"
 
     @pytest.mark.asyncio
-    async def test_search_result_includes_source_field(self) -> None:
+    async def test_search_result_includes_source_field(self, db: AsyncSession) -> None:
         """LectureSearchResult should include a source field."""
         from sophia.domain.models import KnowledgeChunk
         from sophia.services.hermes_index import search_lectures
@@ -296,11 +332,8 @@ class TestSearchSourceFilter:
             source="pdf",
         )
 
-        container = MagicMock()
-        container.db = AsyncMock()
-        cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
-        container.db.execute = AsyncMock(return_value=cursor)
+        await _seed_episode(db)
+        container = _mock_container(db=db)
         container.settings.config_dir = "/tmp/test"
         container.settings.data_dir = MagicMock()
         container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
@@ -314,7 +347,7 @@ class TestSearchSourceFilter:
             patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
             patch("sophia.services.hermes_index._create_store", return_value=mock_store),
         ):
-            results = await search_lectures(container, 42, "test query")
+            results = await search_lectures(container, db, 42, "test query")
 
         assert len(results) == 1
         assert results[0].source == "pdf"
@@ -536,15 +569,13 @@ class TestSearchMissedFlag:
     """The search command accepts --missed to restrict results to missed lectures."""
 
     @pytest.mark.asyncio
-    async def test_search_missed_passes_flag(self) -> None:
+    async def test_search_missed_passes_flag(self, db: AsyncSession) -> None:
         """search_lectures receives missed_only=True when --missed is set."""
         from sophia.services.hermes_index import search_lectures
 
-        container = MagicMock()
-        container.db = AsyncMock()
-        cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
-        container.db.execute = AsyncMock(return_value=cursor)
+        await _seed_episode(db)
+        await _seed_episode(db, episode_id="ep-missed", missed=True)
+        container = _mock_container(db=db)
         container.settings.config_dir = "/tmp/test"
         container.settings.data_dir = MagicMock()
         container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
@@ -558,22 +589,19 @@ class TestSearchMissedFlag:
             patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
             patch("sophia.services.hermes_index._create_store", return_value=mock_store),
         ):
-            await search_lectures(container, 42, "test query", missed_only=True)
+            await search_lectures(container, db, 42, "test query", missed_only=True)
 
-        # SQL should include missed_at filter
-        sql_arg = container.db.execute.call_args_list[0][0][0]
-        assert "missed_at IS NOT NULL" in sql_arg
+        # Only the missed episode is in scope, which is what the flag is for.
+        scoped = mock_store.search.call_args.kwargs["episode_ids"]
+        assert scoped == ["ep-missed"]
 
     @pytest.mark.asyncio
-    async def test_search_without_missed_uses_default_query(self) -> None:
+    async def test_search_without_missed_uses_default_query(self, db: AsyncSession) -> None:
         """Default behavior: no missed_at filter in SQL."""
         from sophia.services.hermes_index import search_lectures
 
-        container = MagicMock()
-        container.db = AsyncMock()
-        cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(return_value=[("ep-001", "Lecture 1")])
-        container.db.execute = AsyncMock(return_value=cursor)
+        await _seed_episode(db)
+        container = _mock_container(db=db)
         container.settings.config_dir = "/tmp/test"
         container.settings.data_dir = MagicMock()
         container.settings.data_dir.__truediv__ = MagicMock(return_value="/tmp/test/knowledge")
@@ -587,7 +615,8 @@ class TestSearchMissedFlag:
             patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
             patch("sophia.services.hermes_index._create_store", return_value=mock_store),
         ):
-            await search_lectures(container, 42, "test query")
+            await search_lectures(container, db, 42, "test query")
 
-        sql_arg = container.db.execute.call_args_list[0][0][0]
-        assert "missed_at" not in sql_arg
+        # Without the flag, every episode in the module is in scope.
+        scoped = mock_store.search.call_args.kwargs["episode_ids"]
+        assert scoped == ["ep-001"]

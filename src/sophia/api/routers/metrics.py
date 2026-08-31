@@ -6,8 +6,9 @@ from fastapi import APIRouter, Request, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
 from sophia.api.schemas.metrics import WebVitalsReservedResponse
+from sophia.api.transactions import TransactionalRoute
 
-router = APIRouter(tags=["metrics"])
+router = APIRouter(tags=["metrics"], route_class=TransactionalRoute)
 
 SSE_CONNECTIONS_OPEN = Gauge(
     "sse_connections_open",

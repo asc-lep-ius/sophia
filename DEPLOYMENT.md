@@ -10,7 +10,7 @@ Sophia Phase 0 runs three application surfaces behind Caddy:
 | `/` | `sophia-gui:8080` | Legacy fallback while the strangler migration is active |
 
 Only the proxy publishes ports in production. The API, frontend, Redis,
-NiceGUI, and litestream containers stay on internal Compose networks.
+and NiceGUI containers stay on internal Compose networks.
 
 ## Local Validation
 
@@ -142,133 +142,11 @@ The API readiness endpoint is deliberately stricter than liveness. A `503`
 means the container is reachable but one of the readiness checks has not been
 marked ready by the current phase's lifecycle wiring.
 
-## Litestream Backups And Restore Drills
-
-The production compose file includes a `litestream/litestream:0.5.11` sidecar
-wired to the read-only `sophia-data` volume. Backups are not considered done
-until the latest replica has been restored into an isolated volume and the
-restored database proves that Sophia's learning state is continuous.
-
-Configure these variables before enabling the sidecar:
-
-| Variable | Purpose |
-|---|---|
-| `LITESTREAM_REPLICA_URL` | Destination, for example `s3://bucket/path/sophia.db` |
-| `LITESTREAM_ACCESS_KEY_ID` | Object-store access key |
-| `LITESTREAM_SECRET_ACCESS_KEY` | Object-store secret key |
-| `LITESTREAM_REGION` | Object-store region, default `auto` |
-| `LITESTREAM_ENDPOINT` | Optional S3-compatible endpoint |
-
-### Replica Smoke Check
-
-Run this after every deploy and before starting a restore drill:
-
-```bash
-docker compose -f docker-compose.prod.yml ps litestream
-docker compose -f docker-compose.prod.yml logs litestream
-docker compose -f docker-compose.prod.yml exec litestream litestream snapshots "$LITESTREAM_REPLICA_URL"
-curl -f https://sophia.example.com/api/metrics >/tmp/sophia-metrics.txt
-grep -E "^(http_requests|web_vitals_reports|sse_connections_open)" /tmp/sophia-metrics.txt
-```
-
-Alert when the `litestream` container exits, restarts repeatedly, or when the
-litestream service is unhealthy for more than five minutes. Treat each of those
-states as stopped replication even if Docker restarts the container. The first
-response is to run `litestream snapshots`, inspect the sidecar logs, and verify
-that the current `LITESTREAM_REPLICA_URL` still accepts writes.
-
-### Restore Drill Cadence
-
-Run the quick `litestream snapshots` validation weekly. Run the full isolated
-restore drill monthly, after every schema migration, after changing
-`LITESTREAM_REPLICA_URL`, and before promoting a new backup mechanism. Record
-the source commit, source snapshot timestamp, restored snapshot timestamp,
-operator, and result in the deployment log.
-
-### Restore Drill
-
-Capture the production learning-state fingerprint before the drill. The same
-queries must match after restore, except for rows intentionally written after
-the selected snapshot timestamp.
-
-```bash
-docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint python api <<'PY'
-import sqlite3
-
-queries = [
-    "PRAGMA integrity_check;",
-    "SELECT COUNT(*) AS study_sessions FROM study_sessions;",
-    "SELECT COUNT(*) AS student_flashcards FROM student_flashcards;",
-    "SELECT COUNT(*) AS self_explanations FROM self_explanations;",
-    "SELECT COUNT(*) AS review_schedule FROM review_schedule;",
-    "SELECT COUNT(*) AS deadline_cache FROM deadline_cache;",
-    "SELECT COUNT(*) AS card_review_attempts FROM card_review_attempts;",
-    "SELECT MIN(next_review_at), MAX(next_review_at) FROM review_schedule;",
-    "SELECT MIN(due_at), MAX(due_at) FROM deadline_cache;",
-    "SELECT COUNT(score_at_last_review) FROM review_schedule;",
-    "SELECT MAX(last_reviewed_at), SUM(review_count) FROM review_schedule;",
-    "SELECT MAX(reviewed_at) FROM card_review_attempts;",
-]
-with sqlite3.connect("/data/sophia.db") as db:
-    for query in queries:
-        print(query, db.execute(query).fetchall())
-PY
-```
-
-The proof points are deliberately tied to user-visible learning continuity:
-
-| Proof point | Tables and fields |
-|---|---|
-| Learning progress | `study_sessions`, `student_flashcards`, `self_explanations` |
-| Due schedule | `review_schedule.next_review_at`, `deadline_cache.due_at` |
-| Grade history | `card_review_attempts`, `review_schedule.score_at_last_review` |
-| Review-event continuity | `review_schedule.last_reviewed_at`, `review_schedule.review_count`, `card_review_attempts.reviewed_at` |
-
-Restore into a temporary volume. Do not restore over the production volume as
-part of a drill.
-
-```bash
-docker volume create sophia_restore_drill
-docker run --rm \
-  -e LITESTREAM_ACCESS_KEY_ID \
-  -e LITESTREAM_SECRET_ACCESS_KEY \
-  -e LITESTREAM_REGION \
-  -e LITESTREAM_ENDPOINT \
-  -v sophia_restore_drill:/data \
-  litestream/litestream:0.5.11 \
-  restore -if-replica-exists -o /data/sophia.db "$LITESTREAM_REPLICA_URL"
-
-docker run --rm -v sophia_restore_drill:/data alpine:3.20 \
-  sh -c "apk add --no-cache sqlite >/dev/null && sqlite3 /data/sophia.db \
-    'PRAGMA integrity_check;' \
-    'SELECT COUNT(*) AS study_sessions FROM study_sessions;' \
-    'SELECT COUNT(*) AS student_flashcards FROM student_flashcards;' \
-    'SELECT COUNT(*) AS self_explanations FROM self_explanations;' \
-    'SELECT COUNT(*) AS review_schedule FROM review_schedule;' \
-    'SELECT COUNT(*) AS deadline_cache FROM deadline_cache;' \
-    'SELECT COUNT(*) AS card_review_attempts FROM card_review_attempts;' \
-    'SELECT MIN(next_review_at), MAX(next_review_at) FROM review_schedule;' \
-    'SELECT MIN(due_at), MAX(due_at) FROM deadline_cache;' \
-    'SELECT COUNT(score_at_last_review) FROM review_schedule;' \
-    'SELECT MAX(last_reviewed_at), SUM(review_count) FROM review_schedule;' \
-    'SELECT MAX(reviewed_at) FROM card_review_attempts;'"
-
-docker volume rm sophia_restore_drill
-curl -f https://sophia.example.com/api/ready
-```
-
-The `PRAGMA integrity_check` result must be `ok`. The restored counts and
-timeline extrema must match the saved fingerprint for the chosen snapshot. If a
-field is missing, the drill fails because the restored database does not yet
-prove the learning progress, due schedule, grade history, and review-event
-continuity required by Phase 4.
-
 ## Postgres Backups And Restore Drills
 
-Postgres runs alongside SQLite for one release. SQLite remains authoritative
-until the service cutover lands, so Litestream stays running and the sections
-above still apply. This section covers the Postgres side, which is live from the
-moment the `postgres` service starts.
+Postgres is the only datastore the application reads or writes. Backups are not
+considered done until the latest dump has been restored into an isolated scratch
+database and that database proves Sophia's learning state is continuous.
 
 Both `postgres` and `postgres-backup` are pinned by sha256 digest rather than by
 the `18.4` tag, because a tag can be re-pushed and a storage engine that changes
@@ -296,11 +174,30 @@ docker compose -f docker-compose.prod.yml exec postgres-backup \
   | aws s3 cp - "s3://$SOPHIA_BACKUP_BUCKET/sophia-$(date -u +%Y%m%dT%H%M%SZ).dump.age"
 ```
 
+### Backup Smoke Check
+
+Run this after every deploy, and before starting a restore drill:
+
+```bash
+docker compose -f docker-compose.prod.yml ps postgres-backup
+docker compose -f docker-compose.prod.yml exec postgres-backup ls -t /backups
+curl -f https://sophia.example.com/api/metrics >/tmp/sophia-metrics.txt
+grep -E "^(http_requests|web_vitals_reports|sse_connections_open)" /tmp/sophia-metrics.txt
+```
+
+Alert when the `postgres-backup` container exits, restarts repeatedly, or when
+the postgres-backup service is unhealthy for more than five minutes. Treat each
+of those states as stopped backups even if Docker restarts the container: the
+healthcheck only proves a dump file exists, not that a recent one does, so check
+the newest dump's timestamp against `SOPHIA_BACKUP_INTERVAL_SECONDS` before
+calling the alert a false positive.
+
 ### Postgres Restore Drill
 
-Run after every schema migration, and on the same weekly and monthly cadence as
-the Litestream drill. The drill restores into a scratch database and never
-touches the live one:
+Run the quick backup smoke check weekly. Run the full restore drill monthly,
+after every schema migration, and before promoting a new backup mechanism.
+Record the source commit, dump timestamp, operator, and result in the deployment
+log. The drill restores into a scratch database and never touches the live one:
 
 ```bash
 make db.restore BACKUP_PATH=backups/sophia-20260828T020000Z.dump
@@ -310,6 +207,45 @@ That runs `pg_restore --exit-on-error` into `<database>_restore_drill`, compares
 per-table row counts against the source, drops the scratch database, and prints
 the elapsed restore time.
 
+Capture the production learning-state fingerprint before the drill. The same
+queries must match afterwards, except for rows written after the dump was taken:
+
+```bash
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  psql -U "$SOPHIA_POSTGRES_USER" -d "$SOPHIA_POSTGRES_DB" <<'SQL'
+SELECT COUNT(*) AS study_sessions FROM study_sessions;
+SELECT COUNT(*) AS student_flashcards FROM student_flashcards;
+SELECT COUNT(*) AS self_explanations FROM self_explanations;
+SELECT COUNT(*) AS review_schedule FROM review_schedule;
+SELECT COUNT(*) AS deadline_cache FROM deadline_cache;
+SELECT COUNT(*) AS card_review_attempts FROM card_review_attempts;
+SELECT MIN(next_review_at), MAX(next_review_at) FROM review_schedule;
+SELECT MIN(due_at), MAX(due_at) FROM deadline_cache;
+SELECT COUNT(score_at_last_review) FROM review_schedule;
+SELECT MAX(last_reviewed_at), SUM(review_count) FROM review_schedule;
+SELECT MAX(reviewed_at) FROM card_review_attempts;
+SQL
+```
+
+The proof points are deliberately tied to user-visible learning continuity:
+
+| Proof point | Tables and fields |
+|---|---|
+| Learning progress | `study_sessions`, `student_flashcards`, `self_explanations` |
+| Due schedule | `review_schedule.next_review_at`, `deadline_cache.due_at` |
+| Grade history | `card_review_attempts`, `review_schedule.score_at_last_review` |
+| Review-event continuity | `review_schedule.last_reviewed_at`, `review_schedule.review_count`, `card_review_attempts.reviewed_at` |
+
+`pg_restore --list` on the dump must name every table before the drill starts —
+a dump that is short a table restores cleanly and proves nothing. Re-run the
+fingerprint against the scratch database with `psql`, then confirm the live
+service is still healthy:
+
+```bash
+pg_restore --list backups/sophia-20260828T020000Z.dump
+curl -f https://sophia.example.com/api/ready
+```
+
 Record two numbers from each drill:
 
 - **RTO** — the restore time the drill prints, plus the time to repoint the API.
@@ -318,10 +254,9 @@ Record two numbers from each drill:
   `SOPHIA_BACKUP_INTERVAL_SECONDS` of writes are at risk. Default: 24 hours.
   Shorten the interval, or add WAL archiving, if that window is too wide.
 
-A drill that does not restore learning-progress continuity fails for the same
-reason the SQLite drill does: matching row counts alone do not prove that
-`study_sessions`, `review_schedule`, and `card_review_attempts` still describe
-the same learner history.
+A drill that does not restore learning-progress continuity fails: matching row
+counts alone do not prove that `study_sessions`, `review_schedule`, and
+`card_review_attempts` still describe the same learner history.
 
 ### Postgres Cutover Playbook
 
@@ -332,42 +267,102 @@ The cutover is the only step that can lose writes, so it stops them first.
    ```bash
    docker compose -f docker-compose.prod.yml stop api sophia-gui
    ```
-2. **Back up SQLite** and confirm Litestream has caught up:
+2. **Confirm the rollback image still exists** before starting, because the
+   import in step 7 is the point of no return:
    ```bash
-   docker compose -f docker-compose.prod.yml exec litestream \
-     litestream snapshots "$LITESTREAM_REPLICA_URL"
+   docker manifest inspect "${LOCAL_REGISTRY}/api:${PRE_CUTOVER_SHA}" >/dev/null
    ```
-3. **Migrate the schema:**
+3. **Archive the SQLite file** before touching it. Copy the whole set — the
+   `-wal` and `-shm` siblings hold committed transactions that `sophia.db`
+   alone does not, and a container that was killed rather than stopped will
+   have a non-empty WAL. Record the checksums; this copy is the only evidence
+   left if the transfer is later disputed. Step 1 already stopped every prod
+   writer, so nothing is mid-write here:
+   ```bash
+   docker run --rm -v sophia_sophia-data:/data:ro -v "$PWD:/out" alpine:3.20 \
+     sh -c 'cp /data/sophia.db* /out/ && sha256sum /out/sophia.db* > /out/sophia-precutover.sha256'
+   ```
+4. **Give the host tooling a route to the database.** Steps 5-8 run `uv run`
+   on the host — `scripts/sqlite_to_postgres.py` is not in the api image, only
+   `src/` is — and they fall back to the `SOPHIA_DATABASE_URL` default of
+   `localhost:5432`, which is not the production database. The prod `postgres`
+   service only exposes 5432 on the internal `data` network, so publish it to
+   the loopback interface for the duration of the cutover. Step 9 takes it
+   away again:
+   ```bash
+   cat > /tmp/cutover-port.yml <<'YAML'
+   services:
+     postgres:
+       ports:
+         - "127.0.0.1:5432:5432"
+   YAML
+   docker compose -f docker-compose.prod.yml -f /tmp/cutover-port.yml up -d postgres
+   export SOPHIA_DATABASE_URL="postgresql+asyncpg://${SOPHIA_POSTGRES_USER}:${SOPHIA_POSTGRES_PASSWORD}@127.0.0.1:5432/${SOPHIA_POSTGRES_DB}"
+   ```
+   Bind to `127.0.0.1`, never `0.0.0.0` — the database would otherwise be
+   reachable from the network for as long as the cutover runs. Percent-encode
+   the password if it contains `@ : / # ?`: the DSN is parsed as a URL, and an
+   unescaped `@` resolves to a different host rather than failing.
+
+5. **Migrate the schema:**
    ```bash
    make db.migrate
    ```
-4. **Dry-run the transfer** and read the report before writing anything:
+6. **Dry-run the transfer** and read the report before writing anything:
    ```bash
    make db.import SQLITE=/var/lib/docker/volumes/sophia_sophia-data/_data/sophia.db MODE=dry-run
    ```
-5. **Import,** which copies every table, aligns the identity sequences, and
+7. **Import,** which copies every table, aligns the identity sequences, and
    verifies as it goes:
    ```bash
    make db.import SQLITE=... MODE=import
    ```
-6. **Verify independently.** `scripts/sqlite_to_postgres.py --mode verify`
+8. **Verify independently.** `scripts/sqlite_to_postgres.py --mode verify`
    re-reads both sides and compares row counts *and* per-table checksums. Row
    counts alone would pass a migration that silently nulled a column:
    ```bash
    make db.verify SQLITE=...
    ```
    A non-zero exit aborts the cutover. Restart the old stack and investigate.
-7. **Restart writers** against Postgres and confirm readiness:
+9. **Restart writers** against Postgres, close the temporary route, and
+   confirm readiness:
    ```bash
+   unset SOPHIA_DATABASE_URL
+   rm -f /tmp/cutover-port.yml
+   docker compose -f docker-compose.prod.yml up -d postgres   # drops the published port
    docker compose -f docker-compose.prod.yml up -d api sophia-gui
    curl -f https://sophia.example.com/api/ready
    ```
+   Confirm the port is gone before calling the cutover done — a forgotten
+   `-f /tmp/cutover-port.yml` in a later `docker compose` invocation would put
+   it back. Check the rendered port list, not `docker compose port`: that
+   command exits 0 whether or not the port is published (it prints
+   `invalid IP:0` when it is not), so it can never fail the check.
+   ```bash
+   docker compose -f docker-compose.prod.yml ps postgres --format '{{.Ports}}' \
+     | grep -q -- '->' \
+     && { echo "postgres is still published — remove the override, re-run step 9"; exit 1; }
+   ```
 
-**Read-only SQLite fallback.** Keep the SQLite volume mounted read-only for one
-full release after cutover, and keep Litestream replicating it. It is the
-evidence for any post-cutover discrepancy a learner reports, and the rollback
-path if one is found. Remove it only once a release has passed without such a
-report.
+**Rollback.** The application no longer contains a SQLite driver, so there is no
+runtime fallback to fall back *to*: rolling back means redeploying the last
+pre-cutover `IMAGE_TAG` against the archived snapshot from step 3, and
+discarding whatever was written to Postgres after the cutover. That is a lossy
+step, which is why steps 6 and 8 refuse to continue on a mismatch rather than
+leaving it to be discovered later.
+
+```bash
+docker compose -f docker-compose.prod.yml down
+docker run --rm -v sophia_sophia-data:/data -v "$PWD:/in" alpine:3.20 \
+  sh -c 'cp /in/sophia.db* /data/ && chown 1000:1000 /data/sophia.db*'
+IMAGE_TAG="$PRE_CUTOVER_SHA" docker compose -f docker-compose.prod.yml up -d
+curl -f https://sophia.example.com/api/ready
+```
+
+Keep the archived snapshot and its checksums for one full release after cutover.
+It is the evidence for any post-cutover discrepancy a learner reports, and the
+input to the rollback above. Delete it only once a release has passed without
+such a report.
 
 ## Operational Notes
 

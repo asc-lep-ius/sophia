@@ -4,9 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import aiosqlite
-import pytest
-
 from sophia.api import create_api_app
 from sophia.api.provenance import api_provenance
 from sophia.domain.learning import (
@@ -16,7 +13,6 @@ from sophia.domain.learning import (
     SourceSpan,
     StoredContentOrigin,
 )
-from sophia.infra.persistence import run_migrations
 from sophia.services.provenance import (
     get_provenance_map,
     learner_authored,
@@ -24,23 +20,16 @@ from sophia.services.provenance import (
     unverified_provenance,
 )
 
+from .._sql import exec_sql
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 SCHEMA_REF_PREFIX = "#/components/schemas/"
 CONTENT_BEARING_SCHEMAS = (
     "StudyFlashcardItemResponse",
     "OpenResponseQuestion",
 )
-
-
-@pytest.fixture
-async def db() -> AsyncIterator[aiosqlite.Connection]:
-    connection = await aiosqlite.connect(":memory:")
-    await connection.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(connection)
-    yield connection
-    await connection.close()
 
 
 def model_provenance(**overrides: Any) -> ContentProvenance:
@@ -84,7 +73,7 @@ def test_origin_discriminator_never_names_the_upstream_vendor() -> None:
 
 
 async def test_unverified_generated_content_has_a_null_verifier(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
 ) -> None:
     await record_provenance(db, model_provenance())
 
@@ -94,7 +83,7 @@ async def test_unverified_generated_content_has_a_null_verifier(
     assert api_provenance(stored["question-1"]).verified_by is None
 
 
-async def test_verified_content_is_distinguishable(db: aiosqlite.Connection) -> None:
+async def test_verified_content_is_distinguishable(db: AsyncSession) -> None:
     await record_provenance(
         db,
         model_provenance(verified_by="instructor-1", verified_at="2026-05-27T09:00:00+00:00"),
@@ -107,7 +96,7 @@ async def test_verified_content_is_distinguishable(db: aiosqlite.Connection) -> 
 
 
 async def test_unverified_query_ignores_learner_authored_content(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
 ) -> None:
     """Instructor triage is about what a model produced, not what a learner wrote."""
     await record_provenance(
@@ -126,7 +115,7 @@ async def test_unverified_query_ignores_learner_authored_content(
     assert [record.content_id for record in pending] == ["question-1"]
 
 
-async def test_source_spans_round_trip(db: aiosqlite.Connection) -> None:
+async def test_source_spans_round_trip(db: AsyncSession) -> None:
     await record_provenance(
         db,
         model_provenance(
@@ -146,7 +135,7 @@ async def test_source_spans_round_trip(db: aiosqlite.Connection) -> None:
 
 
 async def test_re_recording_provenance_replaces_rather_than_duplicates_spans(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
 ) -> None:
     await record_provenance(
         db,
@@ -160,9 +149,9 @@ async def test_re_recording_provenance_replaces_rather_than_duplicates_spans(
     stored = await get_provenance_map(db, ContentKind.QUESTION, ["question-1"])
 
     assert [span.content_item_id for span in stored["question-1"].source_spans] == ["item-2"]
-    cursor = await db.execute("SELECT COUNT(*) FROM content_provenance")
-    assert await cursor.fetchone() == (1,)
+    cursor = await exec_sql(db, "SELECT COUNT(*) FROM content_provenance")
+    assert cursor.fetchone() == (1,)
 
 
-async def test_provenance_lookup_of_nothing_touches_no_rows(db: aiosqlite.Connection) -> None:
+async def test_provenance_lookup_of_nothing_touches_no_rows(db: AsyncSession) -> None:
     assert await get_provenance_map(db, ContentKind.QUESTION, []) == {}

@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock, patch
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import (
@@ -13,11 +12,14 @@ from sophia.domain.models import (
     KnowledgeChunk,
     TranscriptSegment,
 )
-from sophia.infra.persistence import run_migrations
+
+from .._sql import exec_sql
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _run_sync(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -26,16 +28,7 @@ def _run_sync(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
 
 
 @pytest.fixture
-async def db():
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
-
-
-@pytest.fixture
-def app(db: aiosqlite.Connection, tmp_path: Path) -> MagicMock:
+def app(db: AsyncSession, tmp_path: Path) -> MagicMock:
     mock = MagicMock()
     mock.db = db
     mock.settings.config_dir = tmp_path
@@ -45,13 +38,14 @@ def app(db: aiosqlite.Connection, tmp_path: Path) -> MagicMock:
 
 
 async def _insert_download(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     module_id: int = 42,
     title: str = "Lecture 1",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         """INSERT INTO lecture_downloads
            (episode_id, module_id, series_id, title, track_url, track_mimetype,
             file_path, status)
@@ -59,37 +53,36 @@ async def _insert_download(
                    '/tmp/audio.mp3', 'completed')""",
         (episode_id, module_id, title),
     )
-    await db.commit()
 
 
 async def _insert_transcription(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     module_id: int = 42,
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO transcriptions (episode_id, module_id, segment_count, status) "
         "VALUES (?, ?, 5, 'completed')",
         (episode_id, module_id),
     )
-    await db.commit()
 
 
 async def _insert_segments(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str = "ep-001",
     count: int = 5,
 ) -> None:
     for i in range(count):
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO transcript_segments "
             "(episode_id, segment_index, start_time, end_time, text) "
             "VALUES (?, ?, ?, ?, ?)",
             (episode_id, i, float(i * 5), float((i + 1) * 5), f"Segment {i}"),
         )
-    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +150,7 @@ async def test_chunk_segments_fewer_than_chunk_size() -> None:
 
 
 @pytest.mark.asyncio
-async def test_index_lectures_happy_path(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_index_lectures_happy_path(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.hermes_index import index_lectures
 
     await _insert_download(db)
@@ -190,7 +183,7 @@ async def test_index_lectures_happy_path(app: MagicMock, db: aiosqlite.Connectio
             side_effect=_run_sync,
         ),
     ):
-        results = await index_lectures(app, 42, on_start=on_start, on_complete=on_complete)
+        results = await index_lectures(app, db, 42, on_start=on_start, on_complete=on_complete)
 
     assert len(results) == 1
     r = results[0]
@@ -202,10 +195,10 @@ async def test_index_lectures_happy_path(app: MagicMock, db: aiosqlite.Connectio
     on_complete.assert_called_once_with("ep-001", r.chunk_count)
 
     # Verify knowledge_index row in DB
-    cursor = await db.execute(
-        "SELECT status, chunk_count FROM knowledge_index WHERE episode_id = 'ep-001'"
+    cursor = await exec_sql(
+        db, "SELECT status, chunk_count FROM knowledge_index WHERE episode_id = 'ep-001'"
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == "completed"
     assert row[1] > 0
@@ -217,7 +210,7 @@ async def test_index_lectures_happy_path(app: MagicMock, db: aiosqlite.Connectio
 
 
 @pytest.mark.asyncio
-async def test_index_lectures_skips_completed(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_index_lectures_skips_completed(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.hermes_index import index_lectures
 
     await _insert_download(db)
@@ -225,23 +218,23 @@ async def test_index_lectures_skips_completed(app: MagicMock, db: aiosqlite.Conn
     await _insert_segments(db, count=5)
 
     # Pre-insert completed knowledge_index row
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO knowledge_index (episode_id, module_id, chunk_count, status, indexed_at) "
         "VALUES ('ep-001', 42, 3, 'completed', datetime('now'))",
     )
-    await db.commit()
 
-    results = await index_lectures(app, 42)
+    results = await index_lectures(app, db, 42)
 
     assert len(results) == 1
     assert results[0].status == "skipped"
 
 
 @pytest.mark.asyncio
-async def test_index_lectures_no_transcriptions(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_index_lectures_no_transcriptions(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.hermes_index import index_lectures
 
-    results = await index_lectures(app, 42)
+    results = await index_lectures(app, db, 42)
 
     assert results == []
 
@@ -252,7 +245,7 @@ async def test_index_lectures_no_transcriptions(app: MagicMock, db: aiosqlite.Co
 
 
 @pytest.mark.asyncio
-async def test_search_lectures(app: MagicMock, db: aiosqlite.Connection) -> None:
+async def test_search_lectures(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.hermes_index import search_lectures
 
     await _insert_download(db, title="Intro to Algorithms")
@@ -289,7 +282,7 @@ async def test_search_lectures(app: MagicMock, db: aiosqlite.Connection) -> None
             side_effect=_run_sync,
         ),
     ):
-        results = await search_lectures(app, 42, "What are algorithms?")
+        results = await search_lectures(app, db, 42, "What are algorithms?")
 
     assert len(results) == 1
     r = results[0]
@@ -309,19 +302,19 @@ async def test_search_lectures(app: MagicMock, db: aiosqlite.Connection) -> None
 
 @pytest.mark.asyncio
 async def test_search_lectures_pdf_filter_includes_material_ids(
-    app: MagicMock, db: aiosqlite.Connection
+    app: MagicMock, db: AsyncSession
 ) -> None:
     """With source_filter='pdf' and course_id, search includes material episode IDs."""
     from sophia.services.hermes_index import search_lectures
 
     await _insert_download(db, episode_id="ep-001", module_id=42, title="Lecture 1")
     # Insert course material with distinct course_id=999
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO course_materials (id, course_id, module_id, name, url, status) "
         "VALUES (?, ?, ?, ?, ?, 'completed')",
         (10, 999, 42, "Slides.pdf", "https://example.com/s.pdf"),
     )
-    await db.commit()
 
     mock_embedder = MagicMock()
     mock_embedder.embed_query.return_value = [0.1, 0.2]
@@ -340,7 +333,7 @@ async def test_search_lectures_pdf_filter_includes_material_ids(
         ),
         patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
     ):
-        await search_lectures(app, 42, "test query", source_filter="pdf", course_id=999)
+        await search_lectures(app, db, 42, "test query", source_filter="pdf", course_id=999)
 
     call_kwargs = mock_store.search.call_args[1]
     episode_ids = call_kwargs["episode_ids"]

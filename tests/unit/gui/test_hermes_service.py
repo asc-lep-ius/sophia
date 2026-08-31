@@ -12,6 +12,7 @@ from sophia.gui.services.hermes_service import (
     get_module_lectures,
 )
 from sophia.services.hermes_manage import EpisodeStatus
+from tests._fakes import fake_row, session_returning
 
 
 class TestGetLectureModules:
@@ -19,10 +20,12 @@ class TestGetLectureModules:
 
     @pytest.mark.asyncio
     async def test_returns_module_info_list(self) -> None:
-        cursor = AsyncMock()
-        cursor.fetchall.return_value = [(101, "s1", "Intro to CS"), (202, "s2", "Algorithms")]
-        db = AsyncMock()
-        db.execute.return_value = cursor
+        db = session_returning(
+            [
+                fake_row(module_id=101, series_id="s1", course_name="Intro to CS"),
+                fake_row(module_id=202, series_id="s2", course_name="Algorithms"),
+            ]
+        )
 
         result = await get_lecture_modules(db)
 
@@ -33,11 +36,9 @@ class TestGetLectureModules:
         db.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_null_course_name_defaults_to_empty(self) -> None:
-        cursor = AsyncMock()
-        cursor.fetchall.return_value = [(303, "s3", "")]
-        db = AsyncMock()
-        db.execute.return_value = cursor
+    async def test_blank_course_name_is_carried_through(self) -> None:
+        """A module with no course name yields "" — the query coalesces the NULL."""
+        db = session_returning([fake_row(module_id=303, series_id="s3", course_name="")])
 
         result = await get_lecture_modules(db)
 
@@ -45,12 +46,7 @@ class TestGetLectureModules:
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_no_rows(self) -> None:
-        cursor = AsyncMock()
-        cursor.fetchall.return_value = []
-        db = AsyncMock()
-        db.execute.return_value = cursor
-
-        assert await get_lecture_modules(db) == []
+        assert await get_lecture_modules(session_returning([])) == []
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_exception(self) -> None:

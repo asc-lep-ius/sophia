@@ -8,7 +8,10 @@ trail without another migration.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from sqlalchemy import delete, insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.learning import (
     ContentKind,
@@ -17,79 +20,68 @@ from sophia.domain.learning import (
     SourceSpan,
     StoredContentOrigin,
 )
+from sophia.infra.schema import content_provenance, content_source_spans
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    import aiosqlite
-
-_PROVENANCE_COLUMNS = (
-    "id, content_kind, content_id, course_id, content_origin, generated_by, "
-    "generator_ref, generated_at, verified_by, verified_at"
-)
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def record_provenance(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     provenance: ContentProvenance,
-    *,
-    commit: bool = True,
 ) -> None:
     """Upsert a provenance record and replace its source spans."""
-    cursor = await db.execute(
-        "INSERT INTO content_provenance ("
-        "content_kind, content_id, course_id, content_origin, generated_by, "
-        "generator_ref, generated_at, verified_by, verified_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-        "ON CONFLICT(content_kind, content_id) DO UPDATE SET "
-        "course_id = excluded.course_id, "
-        "content_origin = excluded.content_origin, "
-        "generated_by = excluded.generated_by, "
-        "generator_ref = excluded.generator_ref, "
-        "generated_at = excluded.generated_at, "
-        "verified_by = excluded.verified_by, "
-        "verified_at = excluded.verified_at "
-        "RETURNING id",
-        (
-            provenance.content_kind.value,
-            provenance.content_id,
-            provenance.course_id,
-            provenance.origin.value,
-            provenance.generated_by.value,
-            provenance.generator_ref,
-            provenance.generated_at or _now(),
-            provenance.verified_by,
-            provenance.verified_at,
-        ),
-    )
-    row = cast("tuple[int, ...] | None", await cursor.fetchone())
-    if row is None:
-        msg = "provenance upsert returned no row"
-        raise RuntimeError(msg)
-    provenance_id = row[0]
+    values = {
+        "content_kind": provenance.content_kind.value,
+        "content_id": provenance.content_id,
+        "course_id": provenance.course_id,
+        "content_origin": provenance.origin.value,
+        "generated_by": provenance.generated_by.value,
+        "generator_ref": provenance.generator_ref,
+        "generated_at": _as_timestamp(provenance.generated_at),
+        "verified_by": provenance.verified_by,
+        "verified_at": _as_timestamp(provenance.verified_at),
+    }
+    statement = pg_insert(content_provenance).values(**values)
+    upsert = statement.on_conflict_do_update(
+        index_elements=[content_provenance.c.content_kind, content_provenance.c.content_id],
+        set_={
+            key: statement.excluded[key]
+            for key in values
+            if key not in {"content_kind", "content_id"}
+        },
+    ).returning(content_provenance.c.id)
 
-    await db.execute("DELETE FROM content_source_spans WHERE provenance_id = ?", (provenance_id,))
-    for span in provenance.source_spans:
-        await db.execute(
-            "INSERT INTO content_source_spans ("
-            "provenance_id, content_item_id, start_char, end_char, start_ms, end_ms, excerpt) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                provenance_id,
-                span.content_item_id,
-                span.start_char,
-                span.end_char,
-                span.start_ms,
-                span.end_ms,
-                span.excerpt,
-            ),
+    provenance_id = (await session.execute(upsert)).scalar_one()
+
+    await session.execute(
+        delete(content_source_spans).where(
+            content_source_spans.c.provenance_id == provenance_id,
         )
-    if commit:
-        await db.commit()
+    )
+    if provenance.source_spans:
+        await session.execute(
+            insert(content_source_spans),
+            [
+                {
+                    "provenance_id": provenance_id,
+                    "content_item_id": span.content_item_id,
+                    "start_char": span.start_char,
+                    "end_char": span.end_char,
+                    "start_ms": span.start_ms,
+                    "end_ms": span.end_ms,
+                    "excerpt": span.excerpt,
+                }
+                for span in provenance.source_spans
+            ],
+        )
 
 
 async def get_provenance_map(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     content_kind: ContentKind,
     content_ids: Iterable[str],
 ) -> dict[str, ContentProvenance]:
@@ -98,35 +90,36 @@ async def get_provenance_map(
     if not ids:
         return {}
 
-    placeholders = ", ".join("?" for _ in ids)
-    cursor = await db.execute(
-        # Interpolation is a constant column list plus generated placeholders.
-        f"SELECT {_PROVENANCE_COLUMNS} FROM content_provenance "
-        f"WHERE content_kind = ? AND content_id IN ({placeholders})",
-        (content_kind.value, *ids),
-    )
-    rows = cast("Sequence[tuple[object, ...]]", await cursor.fetchall())
-    spans = await _source_spans_by_provenance(db, [int(cast("int", row[0])) for row in rows])
-    return {
-        str(row[2]): _row_to_provenance(row, spans.get(int(cast("int", row[0])), ()))
-        for row in rows
-    }
+    rows = (
+        await session.execute(
+            select(content_provenance).where(
+                content_provenance.c.content_kind == content_kind.value,
+                content_provenance.c.content_id.in_(ids),
+            )
+        )
+    ).all()
+    spans = await _source_spans_by_provenance(session, [row.id for row in rows])
+    return {row.content_id: _row_to_provenance(row, spans.get(row.id, ())) for row in rows}
 
 
 async def unverified_provenance(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> list[ContentProvenance]:
     """Load model-generated content for a learning path that nobody has checked."""
-    cursor = await db.execute(
-        f"SELECT {_PROVENANCE_COLUMNS} FROM content_provenance "
-        "WHERE course_id = ? AND generated_by = ? AND verified_by IS NULL "
-        "ORDER BY generated_at DESC",
-        (course_id, ProvenanceAgent.MODEL.value),
-    )
-    rows = cast("Sequence[tuple[object, ...]]", await cursor.fetchall())
-    spans = await _source_spans_by_provenance(db, [int(cast("int", row[0])) for row in rows])
-    return [_row_to_provenance(row, spans.get(int(cast("int", row[0])), ())) for row in rows]
+    rows = (
+        await session.execute(
+            select(content_provenance)
+            .where(
+                content_provenance.c.course_id == course_id,
+                content_provenance.c.generated_by == ProvenanceAgent.MODEL.value,
+                content_provenance.c.verified_by.is_(None),
+            )
+            .order_by(content_provenance.c.generated_at.desc())
+        )
+    ).all()
+    spans = await _source_spans_by_provenance(session, [row.id for row in rows])
+    return [_row_to_provenance(row, spans.get(row.id, ())) for row in rows]
 
 
 def learner_authored(
@@ -152,49 +145,61 @@ def learner_authored(
 
 
 def _row_to_provenance(
-    row: tuple[object, ...],
-    spans: tuple[SourceSpan, ...],
+    row: Row[tuple[object, ...]], spans: tuple[SourceSpan, ...]
 ) -> ContentProvenance:
     return ContentProvenance(
-        content_kind=ContentKind(str(row[1])),
-        content_id=str(row[2]),
-        course_id=int(cast("int", row[3])),
-        origin=StoredContentOrigin(str(row[4])),
-        generated_by=ProvenanceAgent(str(row[5])),
-        generator_ref=None if row[6] is None else str(row[6]),
-        generated_at=str(row[7] or ""),
-        verified_by=None if row[8] is None else str(row[8]),
-        verified_at=None if row[9] is None else str(row[9]),
+        content_kind=ContentKind(row.content_kind),
+        content_id=row.content_id,
+        course_id=row.course_id,
+        origin=StoredContentOrigin(row.content_origin),
+        generated_by=ProvenanceAgent(row.generated_by),
+        generator_ref=row.generator_ref,
+        generated_at=_as_text(row.generated_at),
+        verified_by=row.verified_by,
+        verified_at=_as_text(row.verified_at) or None,
         source_spans=spans,
     )
 
 
 async def _source_spans_by_provenance(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     provenance_ids: Sequence[int],
 ) -> dict[int, tuple[SourceSpan, ...]]:
     if not provenance_ids:
         return {}
 
-    placeholders = ", ".join("?" for _ in provenance_ids)
-    cursor = await db.execute(
-        "SELECT provenance_id, content_item_id, start_char, end_char, start_ms, end_ms, excerpt "
-        f"FROM content_source_spans WHERE provenance_id IN ({placeholders}) ORDER BY id",
-        tuple(provenance_ids),
-    )
+    rows = (
+        await session.execute(
+            select(content_source_spans)
+            .where(content_source_spans.c.provenance_id.in_(provenance_ids))
+            .order_by(content_source_spans.c.id)
+        )
+    ).all()
     grouped: dict[int, list[SourceSpan]] = {}
-    for row in cast("Sequence[tuple[object, ...]]", await cursor.fetchall()):
-        grouped.setdefault(int(cast("int", row[0])), []).append(
+    for row in rows:
+        grouped.setdefault(row.provenance_id, []).append(
             SourceSpan(
-                content_item_id=str(row[1]),
-                start_char=None if row[2] is None else int(cast("int", row[2])),
-                end_char=None if row[3] is None else int(cast("int", row[3])),
-                start_ms=None if row[4] is None else int(cast("int", row[4])),
-                end_ms=None if row[5] is None else int(cast("int", row[5])),
-                excerpt=None if row[6] is None else str(row[6]),
+                content_item_id=row.content_item_id,
+                start_char=row.start_char,
+                end_char=row.end_char,
+                start_ms=row.start_ms,
+                end_ms=row.end_ms,
+                excerpt=row.excerpt,
             )
         )
     return {key: tuple(value) for key, value in grouped.items()}
+
+
+def _as_timestamp(value: str | None) -> datetime | None:
+    """Parse the ISO strings the domain models carry into real timestamps."""
+    if not value:
+        return None
+    parsed = datetime.fromisoformat(value.replace(" ", "T", 1))
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _as_text(value: datetime | None) -> str:
+    return "" if value is None else value.astimezone(UTC).isoformat()
 
 
 def _now() -> str:

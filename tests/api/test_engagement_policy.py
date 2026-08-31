@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
+from sqlalchemy import func, select
 
-from sophia.api.sessions import SessionTenant
 from sophia.domain.learning import (
     ContentLanguage,
     ElaborationPolicy,
@@ -18,19 +16,20 @@ from sophia.domain.learning import (
     LearningEventType,
     QuestionKind,
 )
-from sophia.infra.persistence import run_migrations
+from sophia.infra.schema import question_attempts
 from sophia.services.engagement_policy import evaluate_elaboration_policy
 from sophia.services.learning_events import ingest_events
 from sophia.services.study_questions import ELABORATION_REQUIRED_EVENTS, _insert_question
 
-from ._session_helpers import ApiHarness, build_harness, csrf_headers, login
+from ._db_harness import db_harness, learning_path_tenant
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-
     from httpx import Response
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-    from sophia.infra.di import AppContainer
+    from ._db_harness import DbHarness
+
+pytestmark = pytest.mark.postgres
 
 QUESTION_ID = "question-1"
 LEARNING_PATH_ID = 12
@@ -41,18 +40,9 @@ POLICY = ElaborationPolicy(
 )
 
 
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: aiosqlite.Connection
-
-
-@pytest.fixture
-async def db() -> AsyncIterator[aiosqlite.Connection]:
-    connection = await aiosqlite.connect(":memory:")
-    await connection.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(connection)
+async def seed_question(session: AsyncSession) -> None:
     await _insert_question(
-        connection,
+        session,
         GeneratedQuestion(
             id=QUESTION_ID,
             course_id=LEARNING_PATH_ID,
@@ -64,34 +54,19 @@ async def db() -> AsyncIterator[aiosqlite.Connection]:
             elaboration_policy=POLICY,
         ),
     )
-    await connection.commit()
-    yield connection
-    await connection.close()
-
-
-def build_logged_in_harness(db: aiosqlite.Connection) -> ApiHarness:
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=SessionTenant(
-            org_id="tu-wien",
-            learning_path_id=str(LEARNING_PATH_ID),
-            cohort_id="cohort-a",
-            role="student",
-        ),
-    )
-    login(harness, username="learner")
-    return harness
 
 
 def trace_event(
     event_id: str,
     event_type: LearningEventType,
     payload: dict[str, str | int | float | bool | None],
+    *,
+    user_id: str = "learner",
 ) -> LearningEvent:
     return LearningEvent(
         event_id=event_id,
         course_id=LEARNING_PATH_ID,
-        user_id="learner",
+        user_id=user_id,
         event_type=event_type,
         occurred_at=datetime.now(UTC),
         question_id=QUESTION_ID,
@@ -99,23 +74,21 @@ def trace_event(
     )
 
 
-async def record_complete_trace(db: aiosqlite.Connection) -> None:
-    await ingest_events(
-        db,
-        [
-            trace_event("event-1", LearningEventType.PROMPT_SHOWN, {"dwell_ms": 9000}),
-            trace_event("event-2", LearningEventType.PREDICTION_MADE, {"confidence": 3}),
-            trace_event("event-3", LearningEventType.ELABORATION_WRITTEN, {"text_length": 140}),
-        ],
-        max_future_skew_seconds=60,
-    )
+# Spelled out because a bare dict literal infers dict[str, int], and dict is
+# invariant, so it would not satisfy trace_event's wider payload type.
+type TracePayload = dict[str, str | int | float | bool | None]
+COMPLETE_TRACE: tuple[tuple[str, LearningEventType, TracePayload], ...] = (
+    ("event-1", LearningEventType.PROMPT_SHOWN, {"dwell_ms": 9000}),
+    ("event-2", LearningEventType.PREDICTION_MADE, {"confidence": 3}),
+    ("event-3", LearningEventType.ELABORATION_WRITTEN, {"text_length": 140}),
+)
 
 
-def submit_answer(
-    harness: ApiHarness,
+async def submit_answer(
+    harness: DbHarness,
     answer: str = "A cut bounds flow because every unit crosses it.",
 ) -> Response:
-    return harness.client.post(
+    return await harness.client.post(
         "/api/study/attempts",
         json={
             "learning_path_id": LEARNING_PATH_ID,
@@ -123,35 +96,53 @@ def submit_answer(
             "answer_text": answer,
             "confidence": 3,
         },
-        headers=csrf_headers(harness),
+        headers=harness.csrf_headers(),
     )
 
 
-async def test_answer_without_trace_is_rejected_with_412(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
+async def attempt_count(harness: DbHarness) -> int:
+    async with harness.seed() as session:
+        return await session.scalar(select(func.count()).select_from(question_attempts)) or 0
 
-    response = submit_answer(harness)
+
+async def test_answer_without_trace_is_rejected_with_412(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+        await harness.login()
+
+        response = await submit_answer(harness)
+        stored = await attempt_count(harness)
 
     assert response.status_code == 412
     assert response.json()["detail"]["code"] == "engagement.policy_unmet"
-    cursor = await db.execute("SELECT COUNT(*) FROM question_attempts")
-    assert await cursor.fetchone() == (0,)
+    assert stored == 0
 
 
-async def test_rejection_names_the_missing_steps(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
+async def test_rejection_names_the_missing_steps(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+        await harness.login()
 
-    params = submit_answer(harness).json()["detail"]["params"]
+        params = (await submit_answer(harness)).json()["detail"]["params"]
 
-    assert params["missing_event_types"] == ("prompt_shown,prediction_made,elaboration_written")
+    assert params["missing_event_types"] == "prompt_shown,prediction_made,elaboration_written"
     assert params["elaboration_chars"] == 0
 
 
-async def test_answer_with_complete_trace_is_accepted(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
-    await record_complete_trace(db)
+async def test_answer_with_complete_trace_is_accepted(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            await ingest_events(
+                session,
+                [trace_event(*event) for event in COMPLETE_TRACE],
+                max_future_skew_seconds=60,
+            )
+        await harness.login()
 
-    response = submit_answer(harness)
+        response = await submit_answer(harness)
 
     assert response.status_code == 200
     attempt = response.json()["attempt"]
@@ -159,61 +150,66 @@ async def test_answer_with_complete_trace_is_accepted(db: aiosqlite.Connection) 
     assert attempt["learning_path_id"] == LEARNING_PATH_ID
 
 
-async def test_shallow_elaboration_does_not_satisfy_the_policy(db: aiosqlite.Connection) -> None:
+async def test_shallow_elaboration_does_not_satisfy_the_policy(
+    clean_engine: AsyncEngine,
+) -> None:
     """Emitting the right event types is not enough; the work has to be there."""
-    harness = build_logged_in_harness(db)
-    await ingest_events(
-        db,
-        [
-            trace_event("event-1", LearningEventType.PROMPT_SHOWN, {"dwell_ms": 9000}),
-            trace_event("event-2", LearningEventType.PREDICTION_MADE, {}),
-            trace_event("event-3", LearningEventType.ELABORATION_WRITTEN, {"text_length": 4}),
-        ],
-        max_future_skew_seconds=60,
-    )
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            await ingest_events(
+                session,
+                [
+                    trace_event("event-1", LearningEventType.PROMPT_SHOWN, {"dwell_ms": 9000}),
+                    trace_event("event-2", LearningEventType.PREDICTION_MADE, {}),
+                    trace_event(
+                        "event-3", LearningEventType.ELABORATION_WRITTEN, {"text_length": 4}
+                    ),
+                ],
+                max_future_skew_seconds=60,
+            )
+        await harness.login()
 
-    response = submit_answer(harness)
+        response = await submit_answer(harness)
 
     assert response.status_code == 412
     assert response.json()["detail"]["params"]["elaboration_chars"] == 4
 
 
 async def test_another_learners_trace_does_not_unlock_the_question(
-    db: aiosqlite.Connection,
+    clean_engine: AsyncEngine,
 ) -> None:
-    harness = build_logged_in_harness(db)
-    await ingest_events(
-        db,
-        [
-            LearningEvent(
-                event_id=f"event-{index}",
-                course_id=LEARNING_PATH_ID,
-                user_id="somebody-else",
-                event_type=event_type,
-                occurred_at=datetime.now(UTC),
-                question_id=QUESTION_ID,
-                payload={"dwell_ms": 9000, "text_length": 140},
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            await ingest_events(
+                session,
+                [
+                    trace_event(event_id, event_type, payload, user_id="somebody-else")
+                    for event_id, event_type, payload in COMPLETE_TRACE
+                ],
+                max_future_skew_seconds=60,
             )
-            for index, event_type in enumerate(ELABORATION_REQUIRED_EVENTS)
-        ],
-        max_future_skew_seconds=60,
-    )
+        await harness.login()
 
-    assert submit_answer(harness).status_code == 412
+        response = await submit_answer(harness)
+
+    assert response.status_code == 412
 
 
-async def test_unknown_question_is_404(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
+async def test_unknown_question_is_404(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        await harness.login()
 
-    response = harness.client.post(
-        "/api/study/attempts",
-        json={
-            "learning_path_id": LEARNING_PATH_ID,
-            "question_id": "does-not-exist",
-            "answer_text": "anything",
-        },
-        headers=csrf_headers(harness),
-    )
+        response = await harness.client.post(
+            "/api/study/attempts",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "question_id": "does-not-exist",
+                "answer_text": "anything",
+            },
+            headers=harness.csrf_headers(),
+        )
 
     assert response.status_code == 404
 

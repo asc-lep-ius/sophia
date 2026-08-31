@@ -2,51 +2,26 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
+from sqlalchemy import func, select, update
 
-from sophia.api.sessions import SessionTenant
 from sophia.domain.learning import LearningEvent, LearningEventType
-from sophia.infra.persistence import run_migrations
+from sophia.infra.schema import learning_events
 from sophia.services.learning_events import (
     get_question_trace,
     ingest_events,
     purge_expired_events,
 )
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._db_harness import db_harness, learning_path_tenant
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-    from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: aiosqlite.Connection
-
-
-@pytest.fixture
-async def db() -> AsyncIterator[aiosqlite.Connection]:
-    connection = await aiosqlite.connect(":memory:")
-    await connection.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(connection)
-    yield connection
-    await connection.close()
-
-
-def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
-    return SessionTenant(
-        org_id="tu-wien",
-        learning_path_id=str(learning_path_id),
-        cohort_id="cohort-a",
-        role="student",
-    )
+pytestmark = pytest.mark.postgres
 
 
 def event_body(event_id: str, event_type: str = "prompt_shown") -> dict[str, object]:
@@ -59,98 +34,92 @@ def event_body(event_id: str, event_type: str = "prompt_shown") -> dict[str, obj
     }
 
 
-async def test_batch_ingestion_is_idempotent_per_event_id(db: aiosqlite.Connection) -> None:
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=learning_path_tenant(),
-    )
-    login(harness)
+async def test_batch_ingestion_is_idempotent_per_event_id(clean_engine: AsyncEngine) -> None:
     body = {"learning_path_id": 12, "events": [event_body("event-1"), event_body("event-2")]}
 
-    first = harness.client.post("/api/events/batch", json=body, headers=csrf_headers(harness))
-    retry = harness.client.post("/api/events/batch", json=body, headers=csrf_headers(harness))
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        first = await harness.client.post(
+            "/api/events/batch", json=body, headers=harness.csrf_headers()
+        )
+        retry = await harness.client.post(
+            "/api/events/batch", json=body, headers=harness.csrf_headers()
+        )
 
     assert first.status_code == 200
     assert first.json() == {"learning_path_id": 12, "accepted": 2, "duplicate": 0}
     assert retry.json() == {"learning_path_id": 12, "accepted": 0, "duplicate": 2}
 
 
-async def test_ingestion_attributes_events_to_the_session_user(db: aiosqlite.Connection) -> None:
+async def test_ingestion_attributes_events_to_the_session_user(
+    clean_engine: AsyncEngine,
+) -> None:
     """A client cannot file events under somebody else's name."""
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=learning_path_tenant(),
-    )
-    login(harness, username="learner-a")
-
-    response = harness.client.post(
-        "/api/events/batch",
-        json={
-            "learning_path_id": 12,
-            "events": [{**event_body("event-1"), "user_id": "somebody-else"}],
-        },
-        headers=csrf_headers(harness),
-    )
+    async with db_harness(clean_engine) as harness:
+        await harness.login("learner-a")
+        response = await harness.client.post(
+            "/api/events/batch",
+            json={
+                "learning_path_id": 12,
+                "events": [{**event_body("event-1"), "user_id": "somebody-else"}],
+            },
+            headers=harness.csrf_headers(),
+        )
+        async with harness.seed() as session:
+            owner = await session.scalar(
+                select(learning_events.c.user_id).where(
+                    learning_events.c.event_id == "event-1",
+                )
+            )
 
     assert response.status_code == 200
-    cursor = await db.execute("SELECT user_id FROM learning_events WHERE event_id = 'event-1'")
-    assert await cursor.fetchone() == ("learner-a",)
+    assert owner == "learner-a"
 
 
-async def test_ingestion_rejects_out_of_scope_learning_paths(db: aiosqlite.Connection) -> None:
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=learning_path_tenant(12),
-    )
-    login(harness)
-
-    response = harness.client.post(
-        "/api/events/batch",
-        json={"learning_path_id": 99, "events": [event_body("event-1")]},
-        headers=csrf_headers(harness),
-    )
+async def test_ingestion_rejects_out_of_scope_learning_paths(
+    clean_engine: AsyncEngine,
+) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(12)) as harness:
+        await harness.login()
+        response = await harness.client.post(
+            "/api/events/batch",
+            json={"learning_path_id": 99, "events": [event_body("event-1")]},
+            headers=harness.csrf_headers(),
+        )
 
     assert response.status_code == 403
 
 
-def test_ingestion_requires_authentication() -> None:
-    harness = build_harness(
-        app_container=cast(
-            "AppContainer", FakeAppContainer(db=cast("aiosqlite.Connection", object()))
+async def test_ingestion_requires_authentication(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        response = await harness.client.post(
+            "/api/events/batch",
+            json={"learning_path_id": 12, "events": [event_body("event-1")]},
+            headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
         )
-    )
-
-    response = harness.client.post(
-        "/api/events/batch",
-        json={"learning_path_id": 12, "events": [event_body("event-1")]},
-        headers={"X-Requested-With": "fetch", "X-CSRF-Token": "missing-session"},
-    )
 
     assert response.status_code == 401
 
 
-async def test_oversized_batches_are_rejected(db: aiosqlite.Connection) -> None:
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=learning_path_tenant(),
-    )
-    login(harness)
-
-    response = harness.client.post(
-        "/api/events/batch",
-        json={
-            "learning_path_id": 12,
-            "events": [event_body(f"event-{index}") for index in range(101)],
-        },
-        headers=csrf_headers(harness),
-    )
+async def test_oversized_batches_are_rejected(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        response = await harness.client.post(
+            "/api/events/batch",
+            json={
+                "learning_path_id": 12,
+                "events": [event_body(f"event-{index}") for index in range(101)],
+            },
+            headers=harness.csrf_headers(),
+        )
+        async with harness.seed() as session:
+            stored = await session.scalar(select(func.count()).select_from(learning_events))
 
     assert response.status_code == 422
-    cursor = await db.execute("SELECT COUNT(*) FROM learning_events")
-    assert await cursor.fetchone() == (0,)
+    assert stored == 0
 
 
-async def test_future_timestamps_are_clamped_to_arrival(db: aiosqlite.Connection) -> None:
+async def test_future_timestamps_are_clamped_to_arrival(db: AsyncSession) -> None:
     """A postdated event cannot be used to claim work that has not happened."""
     far_future = datetime.now(UTC) + timedelta(days=30)
     await ingest_events(
@@ -174,7 +143,7 @@ async def test_future_timestamps_are_clamped_to_arrival(db: aiosqlite.Connection
     assert trace[0].occurred_at < far_future
 
 
-async def test_expired_events_are_purged(db: aiosqlite.Connection) -> None:
+async def test_expired_events_are_purged(db: AsyncSession) -> None:
     await ingest_events(
         db,
         [
@@ -190,10 +159,10 @@ async def test_expired_events_are_purged(db: aiosqlite.Connection) -> None:
         max_future_skew_seconds=60,
     )
     await db.execute(
-        "UPDATE learning_events SET received_at = ? WHERE event_id = 'event-1'",
-        ((datetime.now(UTC) - timedelta(days=400)).isoformat(),),
+        update(learning_events)
+        .where(learning_events.c.event_id == "event-1")
+        .values(received_at=datetime.now(UTC) - timedelta(days=400))
     )
-    await db.commit()
 
     purged = await purge_expired_events(db, retention_days=180)
 

@@ -5,29 +5,22 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiosqlite
 import pytest
 
 from sophia.adapters.lecture_downloader import detect_silence
 from sophia.domain.models import DownloadStatus
-from sophia.infra.persistence import run_migrations
+
+from .._sql import exec_sql
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
-
-
-@pytest.fixture
-async def db():
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
 
 
 # ------------------------------------------------------------------
@@ -167,10 +160,16 @@ def test_skipped_to_queued_transition_allowed() -> None:
 # ------------------------------------------------------------------
 
 
-async def test_migration_adds_skip_reason_column(db: aiosqlite.Connection) -> None:
-    cursor = await db.execute("PRAGMA table_info(lecture_downloads)")
-    columns = {row[1] for row in await cursor.fetchall()}
-    assert "skip_reason" in columns
+async def test_migration_adds_skip_reason_column(db: AsyncSession) -> None:
+    """The migrated database, not just the declared schema, carries the column."""
+    columns = (
+        await exec_sql(
+            db,
+            "SELECT column_name FROM information_schema.columns"
+            " WHERE table_name = 'lecture_downloads'",
+        )
+    ).scalars()
+    assert "skip_reason" in set(columns)
 
 
 # ------------------------------------------------------------------
@@ -179,7 +178,7 @@ async def test_migration_adds_skip_reason_column(db: aiosqlite.Connection) -> No
 
 
 @pytest.fixture
-def app(db: aiosqlite.Connection, tmp_path: Path) -> MagicMock:
+def app(db: AsyncSession, tmp_path: Path) -> MagicMock:
     mock = MagicMock()
     mock.db = db
     mock.settings.data_dir = tmp_path
@@ -189,7 +188,7 @@ def app(db: aiosqlite.Connection, tmp_path: Path) -> MagicMock:
 
 
 async def test_download_marks_silent_episode_as_skipped(
-    app: MagicMock, db: aiosqlite.Connection, tmp_path: Path
+    app: MagicMock, db: AsyncSession, tmp_path: Path
 ) -> None:
     from sophia.domain.models import Lecture, LectureTrack
     from sophia.services.hermes_download import _download_episode
@@ -214,21 +213,21 @@ async def test_download_marks_silent_episode_as_skipped(
     app.lecture_downloader.download_track = MagicMock(return_value=_fake_download())
 
     with patch("sophia.services.hermes_download.detect_silence", return_value=True):
-        result = await _download_episode(app, 42, "ep-silent", "Empty Room", None)
+        result = await _download_episode(app, db, 42, "ep-silent", "Empty Room", None)
 
     assert result.status == "skipped"
 
-    cursor = await db.execute(
-        "SELECT status, skip_reason FROM lecture_downloads WHERE episode_id = 'ep-silent'"
+    cursor = await exec_sql(
+        db, "SELECT status, skip_reason FROM lecture_downloads WHERE episode_id = 'ep-silent'"
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == "skipped"
     assert row[1] == "silent_recording"
 
 
 async def test_download_proceeds_normally_when_not_silent(
-    app: MagicMock, db: aiosqlite.Connection, tmp_path: Path
+    app: MagicMock, db: AsyncSession, tmp_path: Path
 ) -> None:
     from sophia.domain.models import Lecture, LectureTrack
     from sophia.services.hermes_download import _download_episode
@@ -253,6 +252,6 @@ async def test_download_proceeds_normally_when_not_silent(
     app.lecture_downloader.download_track = MagicMock(return_value=_fake_download())
 
     with patch("sophia.services.hermes_download.detect_silence", return_value=False):
-        result = await _download_episode(app, 42, "ep-normal", "Real Lecture", None)
+        result = await _download_episode(app, db, 42, "ep-normal", "Real Lecture", None)
 
     assert result.status == "completed"

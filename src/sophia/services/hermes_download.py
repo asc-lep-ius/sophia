@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.adapters.lecture_downloader import (
     detect_silence,
@@ -14,12 +17,13 @@ from sophia.adapters.lecture_downloader import (
     select_best_track,
 )
 from sophia.domain.errors import LectureDownloadError
+from sophia.infra.schema import lecture_downloads
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import DownloadProgressEvent
     from sophia.infra.di import AppContainer
@@ -40,6 +44,7 @@ class LectureDownloadResult:
 
 async def download_lectures(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     *,
     on_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
@@ -53,7 +58,7 @@ async def download_lectures(
     if not episodes:
         return []
 
-    skip_ids = await _get_skip_ids(app.db, module_id)
+    skip_ids = await _get_skip_ids(session, module_id)
     results: list[LectureDownloadResult] = []
 
     for ep in episodes:
@@ -72,25 +77,31 @@ async def download_lectures(
             )
             continue
 
-        result = await _download_episode(app, module_id, ep.episode_id, ep.title, on_progress)
+        result = await _download_episode(
+            app,
+            session,
+            module_id,
+            ep.episode_id,
+            ep.title,
+            on_progress,
+        )
         results.append(result)
 
     return results
 
 
-async def _get_skip_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
+async def _get_skip_ids(session: AsyncSession, module_id: int) -> set[str]:
     """Return episode IDs that should be skipped (completed, skipped, or discarded)."""
-    cursor = await db.execute(
-        "SELECT episode_id FROM lecture_downloads"
-        " WHERE module_id = ? AND status IN ('completed', 'skipped', 'discarded')",
-        (module_id,),
+    query = select(lecture_downloads.c.episode_id).where(
+        lecture_downloads.c.module_id == module_id,
+        lecture_downloads.c.status.in_(("completed", "skipped", "discarded")),
     )
-    rows = await cursor.fetchall()
-    return {row[0] for row in rows}
+    return set((await session.scalars(query)).all())
 
 
 async def _download_episode(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     episode_id: str,
     title: str,
@@ -123,7 +134,7 @@ async def _download_episode(
     dest: Path = app.settings.data_dir / "lectures" / safe_series / f"{safe_episode}{ext}"
 
     await _upsert_downloading(
-        app.db,
+        session,
         episode_id,
         module_id,
         lecture.series_id,
@@ -145,13 +156,13 @@ async def _download_episode(
 
         if await detect_silence(final_path):
             log.info("silent recording detected, skipping", episode_id=episode_id)
-            await _mark_skipped(app.db, episode_id, "silent_recording")
+            await _mark_skipped(session, episode_id, "silent_recording")
             return LectureDownloadResult(
                 episode_id=episode_id, title=title, file_path=final_path, status="skipped"
             )
 
         file_size = final_path.stat().st_size if final_path.exists() else 0
-        await _mark_completed(app.db, episode_id, str(final_path), file_size)
+        await _mark_completed(session, episode_id, str(final_path), file_size)
 
         return LectureDownloadResult(
             episode_id=episode_id, title=title, file_path=final_path, status="completed"
@@ -159,14 +170,14 @@ async def _download_episode(
 
     except (LectureDownloadError, OSError) as exc:
         log.warning("lecture download failed", episode_id=episode_id, error=str(exc))
-        await _mark_failed(app.db, episode_id, str(exc))
+        await _mark_failed(session, episode_id, str(exc))
         return LectureDownloadResult(
             episode_id=episode_id, title=title, file_path=None, status="failed", error=str(exc)
         )
 
 
 async def _upsert_downloading(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     episode_id: str,
     module_id: int,
     series_id: str,
@@ -174,40 +185,72 @@ async def _upsert_downloading(
     track_url: str,
     track_mimetype: str,
 ) -> None:
-    await db.execute(
-        """INSERT OR REPLACE INTO lecture_downloads
-           (episode_id, module_id, series_id, title, track_url, track_mimetype, status, started_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'downloading', datetime('now'))""",
-        (episode_id, module_id, series_id, title, track_url, track_mimetype),
+    values = {
+        "module_id": module_id,
+        "series_id": series_id,
+        "title": title,
+        "track_url": track_url,
+        "track_mimetype": track_mimetype,
+        "status": "downloading",
+        "started_at": datetime.now(UTC),
+    }
+    statement = pg_insert(lecture_downloads).values(episode_id=episode_id, **values)
+    # A retry starts from no result, so the previous attempt's outcome has to go
+    # with it: the SQLite original spelled this INSERT OR REPLACE, which deleted
+    # the row. Otherwise a failed retry shows status='failed' beside the
+    # completed_at and file_path of the run before it.
+    #
+    # Catalogue metadata is deliberately kept, unlike the REPLACE: lecture_number
+    # and missed_at describe the lecture, not the attempt, and are assigned
+    # elsewhere. Wiping them on every re-download was a bug worth not porting.
+    cleared = dict.fromkeys(
+        ("file_path", "file_size_bytes", "error", "completed_at", "skip_reason")
     )
-    await db.commit()
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[lecture_downloads.c.episode_id],
+            set_={key: statement.excluded[key] for key in values} | cleared,
+        )
+    )
+
+
+async def _set_download_state(
+    session: AsyncSession,
+    episode_id: str,
+    values: dict[str, object],
+) -> None:
+    await session.execute(
+        update(lecture_downloads)
+        .where(lecture_downloads.c.episode_id == episode_id)
+        .values(**values)
+    )
 
 
 async def _mark_completed(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     episode_id: str,
     file_path: str,
     file_size_bytes: int,
 ) -> None:
-    await db.execute(
-        "UPDATE lecture_downloads SET status='completed', file_path=?, "
-        "file_size_bytes=?, completed_at=datetime('now') WHERE episode_id=?",
-        (file_path, file_size_bytes, episode_id),
+    await _set_download_state(
+        session,
+        episode_id,
+        {
+            "status": "completed",
+            "file_path": file_path,
+            "file_size_bytes": file_size_bytes,
+            "completed_at": datetime.now(UTC),
+        },
     )
-    await db.commit()
 
 
-async def _mark_failed(db: aiosqlite.Connection, episode_id: str, error: str) -> None:
-    await db.execute(
-        "UPDATE lecture_downloads SET status='failed', error=? WHERE episode_id=?",
-        (error, episode_id),
+async def _mark_failed(session: AsyncSession, episode_id: str, error: str) -> None:
+    await _set_download_state(session, episode_id, {"status": "failed", "error": error})
+
+
+async def _mark_skipped(session: AsyncSession, episode_id: str, skip_reason: str) -> None:
+    await _set_download_state(
+        session,
+        episode_id,
+        {"status": "skipped", "skip_reason": skip_reason},
     )
-    await db.commit()
-
-
-async def _mark_skipped(db: aiosqlite.Connection, episode_id: str, skip_reason: str) -> None:
-    await db.execute(
-        "UPDATE lecture_downloads SET status='skipped', skip_reason=? WHERE episode_id=?",
-        (skip_reason, episode_id),
-    )
-    await db.commit()

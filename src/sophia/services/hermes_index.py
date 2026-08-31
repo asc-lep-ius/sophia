@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.adapters.embedder import SentenceTransformerEmbedder
 from sophia.adapters.knowledge_store import ChromaKnowledgeStore
@@ -17,12 +20,19 @@ from sophia.domain.models import (
     LectureSearchResult,
     TranscriptSegment,
 )
+from sophia.infra.schema import (
+    course_materials,
+    knowledge_index,
+    lecture_downloads,
+    transcript_segments,
+    transcriptions,
+)
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -85,39 +95,61 @@ def _create_store(app: AppContainer) -> ChromaKnowledgeStore:
     return ChromaKnowledgeStore(app.settings.data_dir / "knowledge")
 
 
-async def _get_transcriptions(db: aiosqlite.Connection, module_id: int) -> list[tuple[str, str]]:
+async def _get_transcriptions(session: AsyncSession, module_id: int) -> list[tuple[str, str]]:
     """Return (episode_id, title) for completed transcriptions in a module."""
-    cursor = await db.execute(
-        "SELECT t.episode_id, d.title "
-        "FROM transcriptions t "
-        "JOIN lecture_downloads d ON t.episode_id = d.episode_id "
-        "WHERE t.module_id = ? AND t.status = 'completed'",
-        (module_id,),
+    rows = (
+        await session.execute(
+            select(transcriptions.c.episode_id, lecture_downloads.c.title)
+            .join(
+                lecture_downloads,
+                transcriptions.c.episode_id == lecture_downloads.c.episode_id,
+            )
+            .where(
+                transcriptions.c.module_id == module_id,
+                transcriptions.c.status == "completed",
+            )
+        )
+    ).all()
+    return [(row.episode_id, row.title) for row in rows]
+
+
+async def _get_indexed_ids(session: AsyncSession, module_id: int) -> set[str]:
+    query = select(knowledge_index.c.episode_id).where(
+        knowledge_index.c.module_id == module_id,
+        knowledge_index.c.status == "completed",
     )
-    return await cursor.fetchall()  # type: ignore[return-value]
+    return set((await session.scalars(query)).all())
 
 
-async def _get_indexed_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
-    cursor = await db.execute(
-        "SELECT episode_id FROM knowledge_index WHERE module_id = ? AND status = 'completed'",
-        (module_id,),
+async def _load_segments(session: AsyncSession, episode_id: str) -> list[TranscriptSegment]:
+    rows = (
+        await session.execute(
+            select(
+                transcript_segments.c.start_time,
+                transcript_segments.c.end_time,
+                transcript_segments.c.text,
+            )
+            .where(transcript_segments.c.episode_id == episode_id)
+            .order_by(transcript_segments.c.segment_index)
+        )
+    ).all()
+    return [
+        TranscriptSegment(start=row.start_time, end=row.end_time, text=row.text) for row in rows
+    ]
+
+
+async def _set_index_state(
+    session: AsyncSession,
+    episode_id: str,
+    values: dict[str, object],
+) -> None:
+    await session.execute(
+        update(knowledge_index).where(knowledge_index.c.episode_id == episode_id).values(**values)
     )
-    rows = await cursor.fetchall()
-    return {row[0] for row in rows}
-
-
-async def _load_segments(db: aiosqlite.Connection, episode_id: str) -> list[TranscriptSegment]:
-    cursor = await db.execute(
-        "SELECT start_time, end_time, text FROM transcript_segments "
-        "WHERE episode_id = ? ORDER BY segment_index",
-        (episode_id,),
-    )
-    rows = await cursor.fetchall()
-    return [TranscriptSegment(start=r[0], end=r[1], text=r[2]) for r in rows]
 
 
 async def _index_episode(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     embedder: SentenceTransformerEmbedder,
     store: ChromaKnowledgeStore,
     episode_id: str,
@@ -131,23 +163,38 @@ async def _index_episode(
     if on_start:
         on_start(episode_id, title)
 
-    await db.execute(
-        "INSERT OR REPLACE INTO knowledge_index "
-        "(episode_id, module_id, status, created_at) "
-        "VALUES (?, ?, 'processing', datetime('now'))",
-        (episode_id, module_id),
+    statement = pg_insert(knowledge_index).values(
+        episode_id=episode_id,
+        module_id=module_id,
+        status="processing",
+        created_at=datetime.now(UTC),
     )
-    await db.commit()
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[knowledge_index.c.episode_id],
+            set_={
+                "module_id": statement.excluded.module_id,
+                "status": statement.excluded.status,
+                "created_at": statement.excluded.created_at,
+                # Re-indexing starts from no result. The SQLite original was an
+                # INSERT OR REPLACE, which deleted the row and took these with
+                # it; a DO UPDATE that named only the columns above would leave
+                # a stale chunk_count and error beside status='processing'.
+                "chunk_count": 0,
+                "error": None,
+                "indexed_at": None,
+            },
+        )
+    )
 
     try:
-        segments = await _load_segments(db, episode_id)
+        segments = await _load_segments(session, episode_id)
         if not segments:
-            await db.execute(
-                "UPDATE knowledge_index SET status='completed', chunk_count=0, "
-                "indexed_at=datetime('now') WHERE episode_id=?",
-                (episode_id,),
+            await _set_index_state(
+                session,
+                episode_id,
+                {"status": "completed", "chunk_count": 0, "indexed_at": datetime.now(UTC)},
             )
-            await db.commit()
             return IndexingResult(
                 episode_id=episode_id, title=title, chunk_count=0, status="completed"
             )
@@ -158,12 +205,15 @@ async def _index_episode(
         )
         await asyncio.to_thread(store.add_chunks, chunks, embeddings)
 
-        await db.execute(
-            "UPDATE knowledge_index SET status='completed', chunk_count=?, "
-            "indexed_at=datetime('now') WHERE episode_id=?",
-            (len(chunks), episode_id),
+        await _set_index_state(
+            session,
+            episode_id,
+            {
+                "status": "completed",
+                "chunk_count": len(chunks),
+                "indexed_at": datetime.now(UTC),
+            },
         )
-        await db.commit()
 
         if on_complete:
             on_complete(episode_id, len(chunks))
@@ -174,11 +224,7 @@ async def _index_episode(
         )
 
     except (EmbeddingError, OSError) as exc:
-        await db.execute(
-            "UPDATE knowledge_index SET status='failed', error=? WHERE episode_id=?",
-            (str(exc), episode_id),
-        )
-        await db.commit()
+        await _set_index_state(session, episode_id, {"status": "failed", "error": str(exc)})
 
         log.error("indexing_failed", episode_id=episode_id, error=str(exc))
         return IndexingResult(
@@ -192,6 +238,7 @@ async def _index_episode(
 
 async def index_lectures(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     *,
     on_start: Callable[[str, str], None] | None = None,
@@ -203,11 +250,11 @@ async def index_lectures(
     Queries transcriptions for completed episodes, skips already-indexed ones,
     then chunks, embeds, and stores each episode's segments.
     """
-    transcriptions = await _get_transcriptions(app.db, module_id)
+    transcriptions = await _get_transcriptions(session, module_id)
     if not transcriptions:
         return []
 
-    indexed_ids = await _get_indexed_ids(app.db, module_id)
+    indexed_ids = await _get_indexed_ids(session, module_id)
     results: list[IndexingResult] = []
     embedder: SentenceTransformerEmbedder | None = None
     store: ChromaKnowledgeStore | None = None
@@ -229,7 +276,7 @@ async def index_lectures(
 
         assert store is not None
         result = await _index_episode(
-            app.db,
+            session,
             embedder,
             store,
             episode_id,
@@ -245,6 +292,7 @@ async def index_lectures(
 
 async def search_lectures(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     query: str,
     *,
@@ -255,34 +303,32 @@ async def search_lectures(
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
+    episode_query = select(
+        lecture_downloads.c.episode_id,
+        lecture_downloads.c.title,
+    ).where(lecture_downloads.c.module_id == module_id)
     if missed_only:
-        cursor = await app.db.execute(
-            "SELECT episode_id, title FROM lecture_downloads"
-            " WHERE module_id = ? AND missed_at IS NOT NULL",
-            (module_id,),
-        )
-    else:
-        cursor = await app.db.execute(
-            "SELECT episode_id, title FROM lecture_downloads WHERE module_id = ?",
-            (module_id,),
-        )
-    rows = await cursor.fetchall()
+        episode_query = episode_query.where(lecture_downloads.c.missed_at.is_not(None))
+
+    rows = (await session.execute(episode_query)).all()
     if not rows:
         return []
-    title_map = {row[0]: row[1] for row in rows}
+    title_map = {row.episode_id: row.title for row in rows}
     episode_ids = list(title_map.keys())
 
     # Include material episode IDs when filtering for PDFs or all sources
     if source_filter != "lecture" and course_id is not None:
-        mat_cursor = await app.db.execute(
-            "SELECT id, name FROM course_materials WHERE course_id = ?",
-            (course_id,),
-        )
-        mat_rows = await mat_cursor.fetchall()
+        mat_rows = (
+            await session.execute(
+                select(course_materials.c.id, course_materials.c.name).where(
+                    course_materials.c.course_id == course_id,
+                )
+            )
+        ).all()
         for mat_row in mat_rows:
-            mat_ep_id = f"mat-{mat_row[0]}"
+            mat_ep_id = f"mat-{mat_row.id}"
             episode_ids.append(mat_ep_id)
-            title_map[mat_ep_id] = mat_row[1]
+            title_map[mat_ep_id] = mat_row.name
 
     embedder = _create_embedder(app)
     store = _create_store(app)

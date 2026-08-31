@@ -7,12 +7,12 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-import aiosqlite
 import pytest
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
     from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from sophia.domain.models import JobStatus
 from sophia.infra.scheduler import (
@@ -25,26 +25,13 @@ from sophia.infra.scheduler import (
 
 
 @pytest.fixture
-async def mock_db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    """In-memory SQLite via aiosqlite for testing."""
-    db = await aiosqlite.connect(":memory:")
-    await db.execute("""
-        CREATE TABLE scheduled_jobs (
-            job_id TEXT PRIMARY KEY,
-            command TEXT NOT NULL,
-            scheduled_for TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending',
-            description TEXT NOT NULL DEFAULT ''
-        )
-    """)
-    await db.commit()
-    yield db
-    await db.close()
+def mock_db(db: AsyncSession) -> AsyncSession:
+    """The scheduler persists jobs, so it gets a real session."""
+    return db
 
 
 class TestScheduler:
-    async def test_schedule_creates_job(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_schedule_creates_job(self, mock_db: AsyncSession) -> None:
         with patch("subprocess.run") as mock_run:
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
             future = datetime.now(UTC) + timedelta(hours=1)
@@ -60,13 +47,13 @@ class TestScheduler:
         assert job.job_id.startswith("sophia-")
         mock_run.assert_called_once()
 
-    async def test_schedule_past_time_raises(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_schedule_past_time_raises(self, mock_db: AsyncSession) -> None:
         scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
         past = datetime.now(UTC) - timedelta(hours=1)
         with pytest.raises(SchedulerError, match="past"):
             await scheduler.schedule("register go 186.813", past)
 
-    async def test_list_jobs_returns_persisted(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_list_jobs_returns_persisted(self, mock_db: AsyncSession) -> None:
         with patch("subprocess.run"):
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
             future = datetime.now(UTC) + timedelta(hours=1)
@@ -77,7 +64,7 @@ class TestScheduler:
         assert len(jobs) == 2
         assert jobs[0].command == "register go 186.813"
 
-    async def test_cancel_updates_status(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_cancel_updates_status(self, mock_db: AsyncSession) -> None:
         with patch("subprocess.run"):
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
             future = datetime.now(UTC) + timedelta(hours=1)
@@ -87,7 +74,7 @@ class TestScheduler:
         jobs = await scheduler.list_jobs()
         assert jobs[0].status == JobStatus.CANCELLED
 
-    async def test_systemd_run_failure_raises(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_systemd_run_failure_raises(self, mock_db: AsyncSession) -> None:
         with patch(
             "subprocess.run",
             side_effect=sp.CalledProcessError(1, "systemd-run", stderr="fail"),
@@ -102,7 +89,7 @@ class TestScheduler:
         assert len(jobs) == 1
         assert jobs[0].status == JobStatus.FAILED
 
-    async def test_update_status(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_update_status(self, mock_db: AsyncSession) -> None:
         with patch("subprocess.run"):
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
             future = datetime.now(UTC) + timedelta(hours=1)
@@ -114,22 +101,22 @@ class TestScheduler:
 
 
 class TestCreateScheduler:
-    def test_linux(self, mock_db: aiosqlite.Connection) -> None:
+    def test_linux(self, mock_db: AsyncSession) -> None:
         with patch("platform.system", return_value="Linux"):
             s = create_scheduler(mock_db)
         assert isinstance(s, _LinuxScheduler)  # pyright: ignore[reportPrivateUsage]
 
-    def test_darwin(self, mock_db: aiosqlite.Connection) -> None:
+    def test_darwin(self, mock_db: AsyncSession) -> None:
         with patch("platform.system", return_value="Darwin"):
             s = create_scheduler(mock_db)
         assert isinstance(s, _MacOSScheduler)  # pyright: ignore[reportPrivateUsage]
 
-    def test_windows(self, mock_db: aiosqlite.Connection) -> None:
+    def test_windows(self, mock_db: AsyncSession) -> None:
         with patch("platform.system", return_value="Windows"):
             s = create_scheduler(mock_db)
         assert isinstance(s, _WindowsScheduler)  # pyright: ignore[reportPrivateUsage]
 
-    def test_unsupported_platform(self, mock_db: aiosqlite.Connection) -> None:
+    def test_unsupported_platform(self, mock_db: AsyncSession) -> None:
         with (
             patch("platform.system", return_value="FreeBSD"),
             pytest.raises(SchedulerError, match="Unsupported"),
@@ -138,7 +125,7 @@ class TestCreateScheduler:
 
 
 class TestLinuxSchedulerErrors:
-    async def test_systemd_not_found_raises(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_systemd_not_found_raises(self, mock_db: AsyncSession) -> None:
         """FileNotFoundError from subprocess → SchedulerError about systemd."""
         with patch("subprocess.run", side_effect=FileNotFoundError):
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
@@ -146,7 +133,7 @@ class TestLinuxSchedulerErrors:
             with pytest.raises(SchedulerError, match="systemd-run not found"):
                 await scheduler.schedule("register go 186.813", future)
 
-    async def test_get_job_exists(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_get_job_exists(self, mock_db: AsyncSession) -> None:
         with patch("subprocess.run"):
             scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
             future = datetime.now(UTC) + timedelta(hours=1)
@@ -156,14 +143,14 @@ class TestLinuxSchedulerErrors:
         assert job is not None
         assert job.command == "register go 186.813"
 
-    async def test_get_job_missing(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_get_job_missing(self, mock_db: AsyncSession) -> None:
         scheduler = _LinuxScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
         job = await scheduler.get_job("nonexistent-id")
         assert job is None
 
 
 class TestMacOSScheduler:
-    async def test_create_and_cancel(self, mock_db: aiosqlite.Connection, tmp_path: Path) -> None:
+    async def test_create_and_cancel(self, mock_db: AsyncSession, tmp_path: Path) -> None:
         """macOS scheduler writes plist and calls launchctl."""
         scheduler = _MacOSScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
         scheduler._AGENTS_DIR = tmp_path  # pyright: ignore[reportPrivateUsage]
@@ -180,7 +167,7 @@ class TestMacOSScheduler:
             await scheduler.cancel(job.job_id)
         assert not plist.exists()
 
-    async def test_launchctl_failure(self, mock_db: aiosqlite.Connection, tmp_path: Path) -> None:
+    async def test_launchctl_failure(self, mock_db: AsyncSession, tmp_path: Path) -> None:
         """CalledProcessError from launchctl → SchedulerError and plist cleaned up."""
         scheduler = _MacOSScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
         scheduler._AGENTS_DIR = tmp_path  # pyright: ignore[reportPrivateUsage]
@@ -197,7 +184,7 @@ class TestMacOSScheduler:
 
 
 class TestWindowsScheduler:
-    async def test_create_os_job(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_create_os_job(self, mock_db: AsyncSession) -> None:
         """Windows scheduler calls schtasks with expected arguments."""
         scheduler = _WindowsScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
 
@@ -210,7 +197,7 @@ class TestWindowsScheduler:
         assert len(schtasks_calls) >= 1
         assert job.status == JobStatus.PENDING
 
-    async def test_schtasks_not_found(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_schtasks_not_found(self, mock_db: AsyncSession) -> None:
         """FileNotFoundError from schtasks → SchedulerError."""
         with patch("subprocess.run", side_effect=FileNotFoundError):
             scheduler = _WindowsScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]
@@ -218,7 +205,7 @@ class TestWindowsScheduler:
             with pytest.raises(SchedulerError, match="schtasks not found"):
                 await scheduler.schedule("register go 186.813", future)
 
-    async def test_schtasks_failure(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_schtasks_failure(self, mock_db: AsyncSession) -> None:
         """CalledProcessError from schtasks → SchedulerError."""
         with patch(
             "subprocess.run",
@@ -229,7 +216,7 @@ class TestWindowsScheduler:
             with pytest.raises(SchedulerError, match="schtasks failed"):
                 await scheduler.schedule("register go 186.813", future)
 
-    async def test_cancel(self, mock_db: aiosqlite.Connection) -> None:
+    async def test_cancel(self, mock_db: AsyncSession) -> None:
         """Windows cancel calls schtasks /Delete."""
         with patch("subprocess.run"):
             scheduler = _WindowsScheduler(mock_db)  # pyright: ignore[reportPrivateUsage]

@@ -12,8 +12,10 @@ from rich.console import Console
 from sophia.domain.models import ConfidenceRating, ReviewSchedule, TopicMapping, TopicSource
 from sophia.services.athena_session import _run_quiz, _run_quiz_no_skip, _run_reflection
 
+from .._sql import exec_sql
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ---------------------------------------------------------------------------
 # _run_quiz (with skip option)
@@ -137,7 +139,7 @@ class TestRunQuizNoSkip:
 
 class TestSessionWiring:
     @pytest.mark.asyncio
-    async def test_pretest_uses_no_skip_quiz(self) -> None:
+    async def test_pretest_uses_no_skip_quiz(self, db: AsyncSession) -> None:
         """_run_pretest calls _run_quiz_no_skip instead of _run_quiz."""
         mock_gen = AsyncMock(return_value=["Q1", "Q2", "Q3"])
         mock_ratings = AsyncMock(return_value=[])
@@ -165,13 +167,13 @@ class TestSessionWiring:
             app.db = MagicMock()
             console = MagicMock()
 
-            await _run_pretest(app, 42, "Algebra", console)
+            await _run_pretest(app, db, 42, "Algebra", console)
 
         mock_no_skip.assert_called_once()
         mock_skip.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_posttest_still_allows_skip(self) -> None:
+    async def test_posttest_still_allows_skip(self, db: AsyncSession) -> None:
         """_run_posttest uses the original _run_quiz (with skip)."""
         mock_gen = AsyncMock(return_value=["Q1", "Q2", "Q3"])
         mock_ratings = AsyncMock(return_value=[])
@@ -199,7 +201,7 @@ class TestSessionWiring:
             app.db = MagicMock()
             console = MagicMock()
 
-            await _run_posttest(app, 42, "Algebra", console, ["Q1"])
+            await _run_posttest(app, db, 42, "Algebra", console, ["Q1"])
 
         mock_skip.assert_called_once()
         mock_no_skip.assert_not_called()
@@ -249,7 +251,7 @@ class TestRunReflection:
 
 class TestFeedbackDelayPassthrough:
     @pytest.mark.asyncio
-    async def test_feedback_delay_passed_through_session(self) -> None:
+    async def test_feedback_delay_passed_through_session(self, db: AsyncSession) -> None:
         """run_interactive_session accepts and forwards feedback_delay."""
         with (
             patch(
@@ -291,7 +293,7 @@ class TestFeedbackDelayPassthrough:
             app.db = MagicMock()
             console = MagicMock()
 
-            await run_interactive_session(app, 42, "Algebra", console, feedback_delay=10)
+            await run_interactive_session(app, db, 42, "Algebra", console, feedback_delay=10)
 
         mock_reflect.assert_awaited_once_with(console, 10)
 
@@ -321,7 +323,7 @@ def _make_topic(topic: str) -> TopicMapping:
 
 class TestSelectInterleaveTopics:
     @pytest.mark.asyncio
-    async def test_uses_blind_spots(self) -> None:
+    async def test_uses_blind_spots(self, db: AsyncSession) -> None:
         """Blind-spot topics are selected first."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -349,12 +351,12 @@ class TestSelectInterleaveTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == ["Algebra", "Calculus"]
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_due(self) -> None:
+    async def test_falls_back_to_due(self, db: AsyncSession) -> None:
         """When no blind spots, due reviews are used."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -382,12 +384,12 @@ class TestSelectInterleaveTopics:
                 return_value=[_make_topic("Stats"), _make_topic("Logic"), _make_topic("Algebra")],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == ["Stats", "Logic"]
 
     @pytest.mark.asyncio
-    async def test_max_3(self) -> None:
+    async def test_max_3(self, db: AsyncSession) -> None:
         """At most max_topics (default 3) are returned."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -416,12 +418,12 @@ class TestSelectInterleaveTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert len(topics) <= 3
 
     @pytest.mark.asyncio
-    async def test_includes_missed_lecture_topics(self) -> None:
+    async def test_includes_missed_lecture_topics(self, db: AsyncSession) -> None:
         """Missed-lecture topics fill tier 2 between blind spots and due reviews."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -449,12 +451,12 @@ class TestSelectInterleaveTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == ["Algebra", "TopicA", "TopicB"]
 
     @pytest.mark.asyncio
-    async def test_missed_deduped_with_blind_spots(self) -> None:
+    async def test_missed_deduped_with_blind_spots(self, db: AsyncSession) -> None:
         """Missed topics already in blind spots are not duplicated."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -482,12 +484,12 @@ class TestSelectInterleaveTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == ["Algebra", "TopicA", "Stats"]
 
     @pytest.mark.asyncio
-    async def test_missed_no_topics(self) -> None:
+    async def test_missed_no_topics(self, db: AsyncSession) -> None:
         """When no missed topics, falls through to due reviews unchanged."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -515,7 +517,7 @@ class TestSelectInterleaveTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == ["Stats", "Logic"]
 
@@ -527,7 +529,7 @@ class TestSelectInterleaveTopics:
 
 class TestInterleavedSession:
     @pytest.mark.asyncio
-    async def test_runs_multiple_topics(self) -> None:
+    async def test_runs_multiple_topics(self, db: AsyncSession) -> None:
         """Interleaved session generates questions for each topic."""
         from sophia.services.athena_session import run_interleaved_session
 
@@ -536,7 +538,13 @@ class TestInterleavedSession:
         console = MagicMock()
         gen_calls: list[str] = []
 
-        async def fake_gen(_app: object, _cid: int, topic: str, **kw: object) -> list[str]:
+        async def fake_gen(
+            _app: object,
+            _session: object,
+            _cid: int,
+            topic: str,
+            **kw: object,
+        ) -> list[str]:
             gen_calls.append(topic)
             return [f"Q on {topic}"]
 
@@ -586,7 +594,7 @@ class TestInterleavedSession:
                 new_callable=AsyncMock,
             ),
         ):
-            await run_interleaved_session(app, 1, console=console)
+            await run_interleaved_session(app, db, 1, console=console)
 
         # Questions generated for each of the 3 topics (pre + post = 6 calls)
         assert set(gen_calls) == {"Algebra", "Calculus", "Stats"}
@@ -599,7 +607,7 @@ class TestInterleavedSession:
 
 class TestInterleaveTip:
     @pytest.mark.asyncio
-    async def test_tip_shown_after_single_topic(self) -> None:
+    async def test_tip_shown_after_single_topic(self, db: AsyncSession) -> None:
         """Single-topic session ends with interleave tip."""
         with (
             patch(
@@ -641,7 +649,7 @@ class TestInterleaveTip:
             app.db = MagicMock()
             console = MagicMock()
 
-            await run_interactive_session(app, 42, "Algebra", console, feedback_delay=0)
+            await run_interactive_session(app, db, 42, "Algebra", console, feedback_delay=0)
 
         printed = " ".join(str(c) for c in console.print.call_args_list)
         assert "--interleave" in printed
@@ -654,7 +662,7 @@ class TestInterleaveTip:
 
 class TestInterleaveFlag:
     @pytest.mark.asyncio
-    async def test_dispatches_correctly(self) -> None:
+    async def test_dispatches_correctly(self, db: AsyncSession) -> None:
         """CLI session command dispatches to run_interleaved_session when flag set."""
         mock_interleaved = AsyncMock()
 
@@ -702,7 +710,7 @@ class TestInterleaveFlag:
 
 class TestPretestFallback:
     @pytest.mark.asyncio
-    async def test_topic_extraction_error_uses_fallback_questions(self) -> None:
+    async def test_topic_extraction_error_uses_fallback_questions(self, db: AsyncSession) -> None:
         """TopicExtractionError in generate_study_questions triggers fallback."""
         from sophia.domain.errors import TopicExtractionError
         from sophia.services.athena_session import _run_pretest
@@ -727,7 +735,7 @@ class TestPretestFallback:
         ):
             app = MagicMock()
             console = MagicMock()
-            _score, qs = await _run_pretest(app, 42, "Algebra", console)
+            _score, qs = await _run_pretest(app, db, 42, "Algebra", console)
 
         # Fallback questions should have been generated
         assert len(qs) == 3
@@ -742,7 +750,7 @@ class TestPretestFallback:
 
 class TestStudyPhaseNoContent:
     @pytest.mark.asyncio
-    async def test_no_content_shows_warning(self) -> None:
+    async def test_no_content_shows_warning(self, db: AsyncSession) -> None:
         """When get_lecture_context returns empty string, a warning is printed."""
         from sophia.services.athena_session import _run_study_phase
 
@@ -753,13 +761,13 @@ class TestStudyPhaseNoContent:
         ):
             app = MagicMock()
             console = MagicMock()
-            await _run_study_phase(app, 42, "Algebra", console)
+            await _run_study_phase(app, db, 42, "Algebra", console)
 
         printed = " ".join(str(c) for c in console.print.call_args_list)
         assert "No lecture content" in printed
 
     @pytest.mark.asyncio
-    async def test_with_content_shows_panel(self) -> None:
+    async def test_with_content_shows_panel(self, db: AsyncSession) -> None:
         """When lecture content exists, a panel is printed (not the warning)."""
         from sophia.services.athena_session import _run_study_phase
 
@@ -770,7 +778,7 @@ class TestStudyPhaseNoContent:
         ):
             app = MagicMock()
             console = MagicMock()
-            await _run_study_phase(app, 42, "Sorting", console)
+            await _run_study_phase(app, db, 42, "Sorting", console)
 
         printed = " ".join(str(c) for c in console.print.call_args_list)
         assert "No lecture content" not in printed
@@ -783,7 +791,7 @@ class TestStudyPhaseNoContent:
 
 class TestSelectInterleaveTopicsFallbackAllTopics:
     @pytest.mark.asyncio
-    async def test_falls_back_to_all_course_topics(self) -> None:
+    async def test_falls_back_to_all_course_topics(self, db: AsyncSession) -> None:
         """When blind spots and due reviews give <2 topics, falls back to get_course_topics."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -815,14 +823,14 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
                 ],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         # Should include Algebra (blind spot) + Calculus and/or Stats from all-topics
         assert len(topics) >= 2
         assert "Algebra" in topics
 
     @pytest.mark.asyncio
-    async def test_no_topics_at_all_returns_empty(self) -> None:
+    async def test_no_topics_at_all_returns_empty(self, db: AsyncSession) -> None:
         """When all sources return nothing, returns empty list."""
         from sophia.services.athena_session import _select_interleave_topics
 
@@ -850,7 +858,7 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
                 return_value=[],
             ),
         ):
-            topics = await _select_interleave_topics(app, 1)
+            topics = await _select_interleave_topics(app, db, 1)
 
         assert topics == []
 
@@ -858,19 +866,6 @@ class TestSelectInterleaveTopicsFallbackAllTopics:
 # ---------------------------------------------------------------------------
 # _get_missed_lecture_topics — in-memory DB tests
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-async def db():
-    import aiosqlite
-
-    from sophia.infra.persistence import run_migrations
-
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
 
 
 async def _insert_download(
@@ -882,16 +877,16 @@ async def _insert_download(
     status: str = "completed",
     missed_at: str | None = None,
 ) -> None:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-    assert isinstance(db, aiosqlite.Connection)
-    await db.execute(
+    assert isinstance(db, AsyncSession)
+    await exec_sql(
+        db,
         """INSERT INTO lecture_downloads
            (episode_id, module_id, title, track_url, track_mimetype, status, missed_at)
            VALUES (?, ?, ?, '', '', ?, ?)""",
         (episode_id, module_id, title, status, missed_at),
     )
-    await db.commit()
 
 
 async def _insert_topic_link(
@@ -900,22 +895,22 @@ async def _insert_topic_link(
     course_id: int,
     episode_id: str,
 ) -> None:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
-    assert isinstance(db, aiosqlite.Connection)
+    assert isinstance(db, AsyncSession)
     chunk_id = f"chunk-{episode_id}-{topic}"
-    await db.execute(
+    await exec_sql(
+        db,
         """INSERT INTO topic_lecture_links
            (topic, course_id, chunk_id, episode_id, score)
            VALUES (?, ?, ?, ?, 1.0)""",
         (topic, course_id, chunk_id, episode_id),
     )
-    await db.commit()
 
 
 class TestGetMissedLectureTopics:
     @pytest.mark.asyncio
-    async def test_zero_exposure_topics_returned(self, db: aiosqlite.Connection) -> None:
+    async def test_zero_exposure_topics_returned(self, db: AsyncSession) -> None:
         """Topics only covered in missed lectures are returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -928,7 +923,7 @@ class TestGetMissedLectureTopics:
         assert set(result) == {"TopicA", "TopicB"}
 
     @pytest.mark.asyncio
-    async def test_partial_exposure_excluded(self, db: aiosqlite.Connection) -> None:
+    async def test_partial_exposure_excluded(self, db: AsyncSession) -> None:
         """Topics covered in both missed and attended lectures are not returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -945,7 +940,7 @@ class TestGetMissedLectureTopics:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_ignores_other_courses(self, db: aiosqlite.Connection) -> None:
+    async def test_ignores_other_courses(self, db: AsyncSession) -> None:
         """Topics from missed lectures in other courses are not returned."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -957,7 +952,7 @@ class TestGetMissedLectureTopics:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_empty_when_no_missed(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_when_no_missed(self, db: AsyncSession) -> None:
         """Returns empty when no lectures are missed."""
         from sophia.services.athena_session import _get_missed_lecture_topics
 
@@ -976,7 +971,7 @@ class TestGetMissedLectureTopics:
 
 class TestRunInteractiveSessionSkipStudy:
     @pytest.mark.asyncio
-    async def test_skip_study_phase_saves_pretest_only(self) -> None:
+    async def test_skip_study_phase_saves_pretest_only(self, db: AsyncSession) -> None:
         """If user declines to continue after pre-test, session saves with pre-test score only."""
         from sophia.services.athena_session import run_interactive_session
 
@@ -1003,7 +998,7 @@ class TestRunInteractiveSessionSkipStudy:
         ):
             app = MagicMock()
             console = MagicMock()
-            await run_interactive_session(app, 42, "Algebra", console)
+            await run_interactive_session(app, db, 42, "Algebra", console)
 
         mock_study.assert_not_awaited()
-        mock_complete.assert_awaited_once_with(app.db, 7, 0.33, 0.33)
+        mock_complete.assert_awaited_once_with(db, 7, 0.33, 0.33)

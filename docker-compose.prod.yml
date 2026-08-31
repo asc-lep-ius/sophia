@@ -72,6 +72,7 @@ services:
       SOPHIA_SECRET_KEY_PREVIOUS: ${SOPHIA_SECRET_KEY_PREVIOUS:-}
       SOPHIA_DOCKER: "1"
       SOPHIA_REDIS_URL: redis://redis:6379/0
+      SOPHIA_DATABASE_URL: postgresql+asyncpg://${SOPHIA_POSTGRES_USER}:${SOPHIA_POSTGRES_PASSWORD}@postgres:5432/${SOPHIA_POSTGRES_DB}
     volumes:
       - sophia-data:/data
       - sophia-config:/config
@@ -79,6 +80,8 @@ services:
       - "8000"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - app
@@ -104,6 +107,7 @@ services:
       SOPHIA_GUI_PORT: "8080"
       SOPHIA_DOCKER: "1"
       SOPHIA_REDIS_URL: redis://redis:6379/0
+      SOPHIA_DATABASE_URL: postgresql+asyncpg://${SOPHIA_POSTGRES_USER}:${SOPHIA_POSTGRES_PASSWORD}@postgres:5432/${SOPHIA_POSTGRES_DB}
       HF_HOME: /home/sophia/.cache/huggingface
     volumes:
       - sophia-data:/data
@@ -111,6 +115,9 @@ services:
       - model-cache:/home/sophia/.cache/huggingface
     expose:
       - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - app
       - data
@@ -130,7 +137,7 @@ services:
       POSTGRES_DB: ${SOPHIA_POSTGRES_DB:?set SOPHIA_POSTGRES_DB}
       POSTGRES_INITDB_ARGS: "--data-checksums"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
     expose:
       - "5432"
     networks:
@@ -207,41 +214,6 @@ services:
       retries: 5
       start_period: 5s
 
-  litestream:
-    image: litestream/litestream:0.5.11
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        test -n "$$LITESTREAM_REPLICA_URL" &&
-        test -n "$$LITESTREAM_ACCESS_KEY_ID" &&
-        test -n "$$LITESTREAM_SECRET_ACCESS_KEY" &&
-        exec litestream replicate /data/sophia.db "$$LITESTREAM_REPLICA_URL"
-    environment:
-      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
-      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
-      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
-      LITESTREAM_REGION: ${LITESTREAM_REGION:-auto}
-      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
-    volumes:
-      - sophia-data:/data:ro
-      - litestream-state:/var/lib/litestream
-    depends_on:
-      api:
-        condition: service_healthy
-    networks:
-      - data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "test -n \"$$LITESTREAM_REPLICA_URL\" && litestream snapshots \"$$LITESTREAM_REPLICA_URL\" >/dev/null",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
 volumes:
   postgres-data:
   postgres-backups:
@@ -251,7 +223,6 @@ volumes:
   redis-data:
   caddy-data:
   caddy-config:
-  litestream-state:
 
 networks:
   public:

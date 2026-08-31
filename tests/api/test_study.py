@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import study as study_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
@@ -17,29 +16,18 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
-
-
-class FakeStudySessionCursor:
-    def __init__(self, row: tuple[int] | None) -> None:
-        self._row = row
-
-    async def fetchone(self) -> tuple[int] | None:
-        return self._row
-
-
 class FakeStudySessionDb:
+    """Answers the one scalar lookup the route makes: session id -> course id."""
+
     def __init__(self, session_courses: dict[int, int]) -> None:
         self._session_courses = session_courses
 
-    async def execute(self, _query: str, parameters: tuple[int]) -> FakeStudySessionCursor:
-        course_id = self._session_courses.get(parameters[0])
-        return FakeStudySessionCursor(None if course_id is None else (course_id,))
+    async def scalar(self, statement: object) -> int | None:
+        session_id = statement.whereclause.right.value  # pyright: ignore[reportAttributeAccessIssue]
+        return self._session_courses.get(session_id)
 
 
-async def noop_record_provenance(_db: object, _provenance: object, *, commit: bool = True) -> None:
+async def noop_record_provenance(_db: object, _provenance: object) -> None:
     """The flashcard route tests exercise the route, not provenance persistence."""
 
 

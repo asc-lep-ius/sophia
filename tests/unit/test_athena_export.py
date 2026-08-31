@@ -6,15 +6,16 @@ import zipfile
 from typing import TYPE_CHECKING, Any
 from unittest.mock import patch
 
-import aiosqlite
 import pytest
-
-from sophia.infra.persistence import run_migrations
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 import importlib.util
+
+from .._sql import exec_sql
 
 _requires_genanki = pytest.mark.skipif(
     importlib.util.find_spec("genanki") is None,
@@ -22,17 +23,8 @@ _requires_genanki = pytest.mark.skipif(
 )
 
 
-@pytest.fixture
-async def db():
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
-
-
 async def _insert_flashcard(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     course_id: int = 42,
     topic: str = "Sorting",
@@ -40,18 +32,18 @@ async def _insert_flashcard(
     back: str = "A divide-and-conquer sorting algorithm",
     source: str = "study",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO student_flashcards (course_id, topic, front, back, source) "
         "VALUES (?, ?, ?, ?, ?)",
         (course_id, topic, front, back, source),
     )
-    await db.commit()
 
 
 @_requires_genanki
 class TestExportCreatesApkgFile:
     @pytest.mark.asyncio
-    async def test_export_creates_apkg_file(self, db: aiosqlite.Connection, tmp_path: Path) -> None:
+    async def test_export_creates_apkg_file(self, db: AsyncSession, tmp_path: Path) -> None:
         await _insert_flashcard(db, topic="Sorting", front="Q1", back="A1")
         await _insert_flashcard(db, topic="Hashing", front="Q2", back="A2")
 
@@ -70,9 +62,7 @@ class TestExportCreatesApkgFile:
 @_requires_genanki
 class TestExportNoCardsReturnsZero:
     @pytest.mark.asyncio
-    async def test_export_no_cards_returns_zero(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_no_cards_returns_zero(self, db: AsyncSession, tmp_path: Path) -> None:
         from sophia.services.athena_export import export_anki_deck
 
         output = tmp_path / "empty.apkg"
@@ -85,9 +75,7 @@ class TestExportNoCardsReturnsZero:
 @_requires_genanki
 class TestExportInterleavedShuffles:
     @pytest.mark.asyncio
-    async def test_export_interleaved_shuffles(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_interleaved_shuffles(self, db: AsyncSession, tmp_path: Path) -> None:
         """With multiple topics, interleaved export should not group all cards by topic."""
         for i in range(10):
             await _insert_flashcard(db, topic="Sorting", front=f"Sort-Q{i}", back=f"Sort-A{i}")
@@ -108,9 +96,7 @@ class TestExportInterleavedShuffles:
 @_requires_genanki
 class TestExportBlockedGroupsByTopic:
     @pytest.mark.asyncio
-    async def test_export_blocked_groups_by_topic(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_blocked_groups_by_topic(self, db: AsyncSession, tmp_path: Path) -> None:
         for i in range(5):
             await _insert_flashcard(db, topic="Sorting", front=f"Sort-Q{i}", back=f"Sort-A{i}")
         for i in range(5):
@@ -129,9 +115,7 @@ class TestExportBlockedGroupsByTopic:
 @_requires_genanki
 class TestExportCardsHaveTopicTags:
     @pytest.mark.asyncio
-    async def test_export_cards_have_topic_tags(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_cards_have_topic_tags(self, db: AsyncSession, tmp_path: Path) -> None:
         """Exported notes should carry topic and source as tags."""
         await _insert_flashcard(
             db, topic="Sorting Algorithms", front="Q1", back="A1", source="study"
@@ -150,9 +134,7 @@ class TestExportCardsHaveTopicTags:
 
 class TestExportMissingGenankiRaises:
     @pytest.mark.asyncio
-    async def test_export_missing_genanki_raises(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_missing_genanki_raises(self, db: AsyncSession, tmp_path: Path) -> None:
         import builtins
 
         real_import = builtins.__import__
@@ -177,7 +159,7 @@ class TestExportMissingGenankiRaises:
 @_requires_genanki
 class TestExportCustomDeckName:
     @pytest.mark.asyncio
-    async def test_export_custom_deck_name(self, db: aiosqlite.Connection, tmp_path: Path) -> None:
+    async def test_export_custom_deck_name(self, db: AsyncSession, tmp_path: Path) -> None:
         await _insert_flashcard(db, topic="Sorting", front="Q1", back="A1")
 
         from sophia.services.athena_export import export_anki_deck
@@ -198,27 +180,26 @@ class TestExportCustomDeckName:
 
 
 async def _link_topic_to_episode(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     topic: str,
     course_id: int,
     episode_id: str,
     chunk_id: str = "chunk-1",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT OR IGNORE INTO topic_lecture_links (topic, course_id, chunk_id, episode_id) "
         "VALUES (?, ?, ?, ?)",
         (topic, course_id, chunk_id, episode_id),
+        conflict="topic, course_id, chunk_id",
     )
-    await db.commit()
 
 
 @_requires_genanki
 class TestExportLectureScopedDeck:
     @pytest.mark.asyncio
-    async def test_export_lecture_scoped_deck(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_lecture_scoped_deck(self, db: AsyncSession, tmp_path: Path) -> None:
         """Only flashcards whose topics are linked to the given episode appear."""
         course = 42
         # Flashcards for two topics
@@ -240,7 +221,7 @@ class TestExportLectureScopedDeck:
 
     @pytest.mark.asyncio
     async def test_export_lecture_scoped_no_duplicates(
-        self, db: aiosqlite.Connection, tmp_path: Path
+        self, db: AsyncSession, tmp_path: Path
     ) -> None:
         """A topic linked via multiple chunks to the same episode yields each card once."""
         course = 42
@@ -264,9 +245,7 @@ class TestExportLectureScopedDeck:
 @_requires_genanki
 class TestExportLectureScopedEmpty:
     @pytest.mark.asyncio
-    async def test_export_lecture_scoped_empty(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_lecture_scoped_empty(self, db: AsyncSession, tmp_path: Path) -> None:
         """Episode with no linked flashcards returns 0."""
         course = 42
         await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")
@@ -284,9 +263,7 @@ class TestExportLectureScopedEmpty:
 @_requires_genanki
 class TestExportDefaultStillCourseWide:
     @pytest.mark.asyncio
-    async def test_export_default_still_course_wide(
-        self, db: aiosqlite.Connection, tmp_path: Path
-    ) -> None:
+    async def test_export_default_still_course_wide(self, db: AsyncSession, tmp_path: Path) -> None:
         """Without episode_id, all flashcards for the course are exported (backward compat)."""
         course = 42
         await _insert_flashcard(db, course_id=course, topic="Sorting", front="Q1", back="A1")

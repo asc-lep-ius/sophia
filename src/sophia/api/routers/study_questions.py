@@ -12,7 +12,12 @@ from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
-from sophia.api.deps import get_app_container, get_settings, require_csrf_learning_path_scope
+from sophia.api.deps import (
+    get_app_container,
+    get_settings,
+    request_session,
+    require_csrf_learning_path_scope,
+)
 from sophia.api.provenance import api_provenance
 from sophia.api.schemas.content import ContentLanguage
 from sophia.api.schemas.engagement import ElaborationPolicy, LearningEventType
@@ -25,6 +30,7 @@ from sophia.api.schemas.study import (
     StudyQuestionListResponse,
     StudyQuestionRequest,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.errors import AthenaError, EngagementPolicyUnmet
 from sophia.domain.learning import ContentKind
 from sophia.domain.learning import ContentLanguage as DomainContentLanguage
@@ -42,12 +48,12 @@ from sophia.services.study_questions import (
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.learning import ContentProvenance, GeneratedQuestion, QuestionAttempt
     from sophia.domain.learning import ElaborationPolicy as DomainElaborationPolicy
 
-router = APIRouter(tags=["study"])
+router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
 LanguageOverrideQuery = Annotated[ContentLanguage | None, Query(alias="lang")]
 
@@ -65,16 +71,18 @@ async def generate_questions(
 ) -> StudyQuestionListResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     app_container = get_app_container(request)
+    db = await request_session(request)
     settings = get_settings(request)
 
     resolved = await resolve_content_language(
-        app_container.db,
+        db,
         payload.learning_path_id,
         override=None if lang is None else DomainContentLanguage(lang.value),
         default_language=DomainContentLanguage(settings.default_content_language),
     )
     questions = await generate_and_store_questions(
         app_container,
+        db,
         payload.learning_path_id,
         payload.topic,
         count=payload.count,
@@ -85,7 +93,7 @@ async def generate_questions(
         ),
     )
     provenance = await get_provenance_map(
-        app_container.db,
+        db,
         ContentKind.QUESTION,
         [question.id for question in questions],
     )
@@ -115,7 +123,7 @@ async def submit_attempt(
     request: Request,
 ) -> StudyAttemptResponse:
     session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
-    db = get_app_container(request).db
+    db = await request_session(request)
 
     question = await get_question(db, payload.question_id)
     if question is None or question.course_id != payload.learning_path_id:
@@ -134,7 +142,7 @@ async def submit_attempt(
 
 
 async def _enforce_engagement_policy(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     question: GeneratedQuestion,
     user_id: str,
 ) -> None:

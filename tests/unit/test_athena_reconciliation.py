@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 
-from sophia.infra.persistence import run_migrations
 from sophia.services.athena_reconciliation import (
     FUZZY_MATCH_THRESHOLD,
     ReconciliationResult,
@@ -15,33 +13,26 @@ from sophia.services.athena_reconciliation import (
     reconcile_manual_topics,
 )
 
+from .._sql import exec_sql
+
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ── Fixtures & helpers ─────────────────────────────────────────────────────
 
 
-@pytest.fixture
-async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(conn)
-    yield conn
-    await conn.close()
-
-
 async def _insert_topic(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     topic: str,
     course_id: int,
     source: str = "lecture",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id, source) VALUES (?, ?, ?)",
         (topic, course_id, source),
     )
-    await db.commit()
 
 
 COURSE = 42
@@ -51,7 +42,7 @@ COURSE = 42
 
 
 @pytest.mark.asyncio
-async def test_exact_match(db: aiosqlite.Connection) -> None:
+async def test_exact_match(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
@@ -67,7 +58,7 @@ async def test_exact_match(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fuzzy_match(db: aiosqlite.Connection) -> None:
+async def test_fuzzy_match(db: AsyncSession) -> None:
     await _insert_topic(db, "Lin Algebra", COURSE, "manual")
     await _insert_topic(db, "Linear Algebra", COURSE, "lecture")
 
@@ -79,7 +70,7 @@ async def test_fuzzy_match(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_case_insensitive(db: aiosqlite.Connection) -> None:
+async def test_case_insensitive(db: AsyncSession) -> None:
     await _insert_topic(db, "algebra", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
@@ -90,7 +81,7 @@ async def test_case_insensitive(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_match_below_threshold(db: aiosqlite.Connection) -> None:
+async def test_no_match_below_threshold(db: AsyncSession) -> None:
     await _insert_topic(db, "Philosophy", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
@@ -102,7 +93,7 @@ async def test_no_match_below_threshold(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_new_moodle_topics(db: aiosqlite.Connection) -> None:
+async def test_new_moodle_topics(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
     await _insert_topic(db, "Calculus", COURSE, "lecture")
@@ -117,7 +108,7 @@ async def test_new_moodle_topics(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_manual_topics_is_noop(db: aiosqlite.Connection) -> None:
+async def test_no_manual_topics_is_noop(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
     result = await reconcile_manual_topics(db, COURSE)
@@ -126,7 +117,7 @@ async def test_no_manual_topics_is_noop(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_moodle_topics(db: aiosqlite.Connection) -> None:
+async def test_no_moodle_topics(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "manual")
     await _insert_topic(db, "Calculus", COURSE, "manual")
 
@@ -137,34 +128,36 @@ async def test_no_moodle_topics(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_idempotent(db: aiosqlite.Connection) -> None:
+async def test_idempotent(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
     await reconcile_manual_topics(db, COURSE)
     await reconcile_manual_topics(db, COURSE)
 
-    cursor = await db.execute(
+    cursor = await exec_sql(
+        db,
         "SELECT COUNT(*) FROM topic_reconciliations WHERE course_id = ?",
         (COURSE,),
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == 1
 
 
 @pytest.mark.asyncio
-async def test_manual_topics_preserved(db: aiosqlite.Connection) -> None:
+async def test_manual_topics_preserved(db: AsyncSession) -> None:
     await _insert_topic(db, "Algebra", COURSE, "manual")
     await _insert_topic(db, "Algebra", COURSE, "lecture")
 
     await reconcile_manual_topics(db, COURSE)
 
-    cursor = await db.execute(
+    cursor = await exec_sql(
+        db,
         "SELECT COUNT(*) FROM topic_mappings WHERE course_id = ? AND source = 'manual'",
         (COURSE,),
     )
-    row = await cursor.fetchone()
+    row = cursor.fetchone()
     assert row is not None
     assert row[0] == 1
 
@@ -208,7 +201,7 @@ def test_format_reconciliation_message_empty() -> None:
 
 
 @pytest.mark.asyncio
-async def test_reconciliation_runs_after_topic_extraction(db: aiosqlite.Connection) -> None:
+async def test_reconciliation_runs_after_topic_extraction(db: AsyncSession) -> None:
     """After extract_topics_from_lectures commits Moodle topics, reconcile_manual_topics runs."""
     # Pre-populate manual predictions
     await _insert_topic(db, "Algebra", COURSE, "manual")
@@ -226,11 +219,12 @@ async def test_reconciliation_runs_after_topic_extraction(db: aiosqlite.Connecti
     assert "Statistics" in result.new_moodle
 
     # Verify persisted to topic_reconciliations table
-    cursor = await db.execute(
+    cursor = await exec_sql(
+        db,
         "SELECT manual_topic, moodle_topic FROM topic_reconciliations WHERE course_id = ?",
         (COURSE,),
     )
-    rows = list(await cursor.fetchall())
+    rows = list(cursor.fetchall())
     assert len(rows) == 1
     assert rows[0][0] == "Algebra"
 

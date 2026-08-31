@@ -55,7 +55,8 @@ async def get_topic_confidence(
     topic: str,
 ) -> ConfidenceRating | None:
     """Get the latest confidence rating for a specific topic."""
-    ratings = await _get_confidence_ratings(app.db, course_id)
+    async with app.session() as db:
+        ratings = await _get_confidence_ratings(db, course_id)
     return next((r for r in ratings if r.topic == topic), None)
 
 
@@ -88,13 +89,14 @@ async def export_anki_deck(
 
     with tempfile.TemporaryDirectory() as tmpdir:
         output_path = Path(tmpdir) / "deck.apkg"
-        count = await _export_anki_deck(
-            app.db,
-            course_id,
-            output_path,
-            episode_id=episode_id,
-            interleaved=interleaved,
-        )
+        async with app.session() as db:
+            count = await _export_anki_deck(
+                db,
+                course_id,
+                output_path,
+                episode_id=episode_id,
+                interleaved=interleaved,
+            )
         if count == 0:
             return None
         return output_path.read_bytes()

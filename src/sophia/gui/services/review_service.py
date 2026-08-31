@@ -14,7 +14,7 @@ from sophia.services import athena_review
 from sophia.services.athena_review import compute_fsrs_interval
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import ReviewSchedule
 
@@ -73,7 +73,7 @@ def compute_interval_previews(difficulty: float, stability: float) -> dict[int, 
 
 
 async def get_due_review_items(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     course_id: int | None = None,
 ) -> list[ReviewSchedule]:
@@ -82,7 +82,7 @@ async def get_due_review_items(
 
 
 async def complete_review_item(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     topic: str,
     course_id: int,
     score: float,
@@ -92,7 +92,7 @@ async def complete_review_item(
 
 
 async def get_upcoming_review_items(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     course_id: int | None = None,
     days_ahead: int = 3,

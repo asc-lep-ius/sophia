@@ -99,6 +99,9 @@ def _print_report(report: TransferReport, mode: str) -> None:
         )
 
     print(f"\n{mode}: {len(report.tables)} tables, {report.total_rows} source rows")
+    if report.dry_run:
+        print("dry-run wrote nothing, so the 'ok' above is a read of the source only.")
+        print("Run --mode import, then --mode verify, to prove the transfer.")
     if report.failures:
         names = ", ".join(table.table for table in report.failures)
         print(f"MISMATCH in: {names}", file=sys.stderr)

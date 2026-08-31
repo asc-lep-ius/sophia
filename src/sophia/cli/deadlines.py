@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated
 
 import cyclopts
+from sqlalchemy import select
+
+from sophia.infra.schema import deadline_cache
 
 if TYPE_CHECKING:
     from sophia.domain.models import Deadline
@@ -43,14 +46,14 @@ async def deadlines_sync() -> None:
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             with Status("Syncing deadlines from all courses…", console=console):
-                deadlines = await sync_deadlines(container)
+                deadlines = await sync_deadlines(container, db)
             console.print(f"[green]✓ Synced {len(deadlines)} deadline(s)[/green]")
 
             from sophia.services.athena_chronos import compress_all_courses
 
-            compressed = await compress_all_courses(container.db)
+            compressed = await compress_all_courses(db)
             if compressed:
                 total = sum(compressed.values())
                 console.print(f"[dim]Compressed {total} review(s) for upcoming exams.[/dim]")
@@ -83,13 +86,18 @@ async def deadlines_list(
 
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
-    from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
+    from sophia.services.chronos import (
+        compute_priority_score,
+        get_deadlines,
+        get_tracked_time,
+        latest_estimate,
+    )
 
     console = Console()
 
     try:
-        async with create_app() as container:
-            deadlines = await get_deadlines(container.db, horizon_days=horizon)
+        async with create_app() as container, container.session() as db:
+            deadlines = await get_deadlines(db, horizon_days=horizon)
 
             if course:
                 needle = course.lower()
@@ -102,15 +110,9 @@ async def deadlines_list(
             # Pre-fetch estimates and tracked time for sort + display
             deadline_data: list[tuple[Deadline, float | None, float]] = []
             for d in deadlines:
-                est_cursor = await container.db.execute(
-                    "SELECT predicted_hours FROM effort_estimates "
-                    "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-                    (d.id,),
-                )
-                est_row = await est_cursor.fetchone()
-                est_hours = float(est_row[0]) if est_row else None
+                est_hours = await latest_estimate(db, d.id)
 
-                tracked = await get_tracked_time(container.db, d.id)
+                tracked = await get_tracked_time(db, d.id)
                 deadline_data.append((d, est_hours, tracked))
 
             # Apply sort
@@ -198,27 +200,30 @@ async def deadlines_estimate(
     console = Console()
 
     try:
-        async with create_app() as container:
-            db = container.db
-
-            # Look up the deadline
-            cursor = await db.execute(
-                "SELECT name, course_id, deadline_type, course_name "
-                "FROM deadline_cache WHERE id = ?",
-                (deadline_id,),
-            )
-            row = await cursor.fetchone()
-            if not row:
+        async with create_app() as container, container.session() as db:
+            row = (
+                await db.execute(
+                    select(
+                        deadline_cache.c.name,
+                        deadline_cache.c.course_id,
+                        deadline_cache.c.deadline_type,
+                        deadline_cache.c.course_name,
+                    ).where(deadline_cache.c.id == deadline_id)
+                )
+            ).one_or_none()
+            if row is None:
                 console.print(
                     f"[red]Deadline '{deadline_id}' not found. "
                     "Run 'sophia deadlines sync' first.[/red]"
                 )
                 raise SystemExit(1)
 
-            name, course_id, dtype_str, course_name = row
-            deadline_type = DeadlineType(dtype_str)
+            course_id = row.course_id
+            deadline_type = DeadlineType(row.deadline_type)
 
-            console.print(Panel(f"[bold]{name}[/bold]\n{course_name}", title="Estimating Effort"))
+            console.print(
+                Panel(f"[bold]{row.name}[/bold]\n{row.course_name}", title="Estimating Effort")
+            )
 
             scaffold = await get_scaffold_level(db, deadline_type, course_id=course_id)
 
@@ -259,7 +264,7 @@ async def deadlines_estimate(
                 intention = input("When and where do you plan to work on this? ").strip() or None
 
             est = await record_estimate(
-                container,
+                db,
                 deadline_id=deadline_id,
                 course_id=course_id,
                 predicted_hours=predicted_hours,
@@ -291,8 +296,8 @@ async def deadlines_track(
 
     console = Console()
 
-    async with create_app() as container:
-        await record_time(container.db, deadline_id, hours, note=note)
+    async with create_app() as container, container.session() as db:
+        await record_time(db, deadline_id, hours, note=note)
         console.print(
             f"[green]📝 Logged {hours:.1f}h.[/green] "
             "Quick and easy, but recall estimates tend to be ~30% low."
@@ -312,9 +317,9 @@ async def timer_start(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         try:
-            await start_timer(container.db, deadline_id)
+            await start_timer(db, deadline_id)
             console.print(
                 "[green]⏱ Timer started.[/green] More accurate, but remember to stop it when done."
             )
@@ -336,9 +341,9 @@ async def timer_stop(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         try:
-            hours = await stop_timer(container.db, deadline_id)
+            hours = await stop_timer(db, deadline_id)
             console.print(f"[green]⏱ Timer stopped — {hours:.2f}h recorded.[/green]")
         except ChronosError as exc:
             console.print(f"[red]{exc}[/red]")
@@ -358,14 +363,14 @@ async def deadlines_done(
 
     console = Console()
 
-    async with create_app() as container:
-        predicted, actual, feedback = await complete_deadline(container, deadline_id)
+    async with create_app() as container, container.session() as db:
+        predicted, actual, feedback = await complete_deadline(db, deadline_id)
         console.print(Panel(feedback, title="Estimation Feedback"))
 
         reflection_text = input("Quick reflection (or Enter to skip): ").strip()
         if reflection_text:
             await record_reflection(
-                container.db,
+                db,
                 deadline_id,
                 predicted_hours=predicted,
                 actual_hours=actual,
@@ -384,21 +389,13 @@ async def deadlines_reflect(
     from rich.console import Console
 
     from sophia.infra.di import create_app
-    from sophia.services.chronos import get_tracked_time, record_reflection
+    from sophia.services.chronos import get_tracked_time, latest_estimate, record_reflection
 
     console = Console()
 
-    async with create_app() as container:
-        db = container.db
-
+    async with create_app() as container, container.session() as db:
         # Get predicted hours
-        cursor = await db.execute(
-            "SELECT predicted_hours FROM effort_estimates "
-            "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-            (deadline_id,),
-        )
-        est_row = await cursor.fetchone()
-        predicted = float(est_row[0]) if est_row else None
+        predicted = await latest_estimate(db, deadline_id)
 
         actual = await get_tracked_time(db, deadline_id)
 
@@ -438,8 +435,8 @@ async def deadlines_stress(
     console = Console()
 
     try:
-        async with create_app() as container:
-            forecast = await get_workload_forecast(container.db, horizon_days=horizon)
+        async with create_app() as container, container.session() as db:
+            forecast = await get_workload_forecast(db, horizon_days=horizon)
 
             count = forecast["deadline_count"]
             est = forecast["total_estimated_hours"]
@@ -490,14 +487,14 @@ async def deadlines_stress(
             from sophia.services.athena_chronos import get_course_confidence
             from sophia.services.chronos import get_deadlines as _get_stress_deadlines
 
-            stress_deadlines = await _get_stress_deadlines(container.db, horizon_days=horizon)
+            stress_deadlines = await _get_stress_deadlines(db, horizon_days=horizon)
             low_conf_courses: list[tuple[str, float]] = []
             seen_course_ids: set[int] = set()
             for d in stress_deadlines:
                 if d.course_id in seen_course_ids:
                     continue
                 seen_course_ids.add(d.course_id)
-                conf = await get_course_confidence(container.db, d.course_id)
+                conf = await get_course_confidence(db, d.course_id)
                 if conf is not None and conf < 0.6:
                     low_conf_courses.append((d.course_name, conf))
 
@@ -524,13 +521,18 @@ async def deadlines_next() -> None:
         confidence_priority_multiplier,
         get_course_confidence,
     )
-    from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
+    from sophia.services.chronos import (
+        compute_priority_score,
+        get_deadlines,
+        get_tracked_time,
+        latest_estimate,
+    )
 
     console = Console()
 
     try:
-        async with create_app() as container:
-            deadlines = await get_deadlines(container.db, horizon_days=14)
+        async with create_app() as container, container.session() as db:
+            deadlines = await get_deadlines(db, horizon_days=14)
 
             if not deadlines:
                 console.print("[yellow]No upcoming deadlines.[/yellow]")
@@ -538,16 +540,10 @@ async def deadlines_next() -> None:
 
             scored: list[tuple[Deadline, dict[str, float], float | None, float]] = []
             for d in deadlines:
-                est_cursor = await container.db.execute(
-                    "SELECT predicted_hours FROM effort_estimates "
-                    "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-                    (d.id,),
-                )
-                est_row = await est_cursor.fetchone()
-                est_hours = float(est_row[0]) if est_row else None
+                est_hours = await latest_estimate(db, d.id)
 
-                tracked = await get_tracked_time(container.db, d.id)
-                confidence = await get_course_confidence(container.db, d.course_id)
+                tracked = await get_tracked_time(db, d.id)
+                confidence = await get_course_confidence(db, d.course_id)
                 conf_mult = confidence_priority_multiplier(confidence)
                 ps = compute_priority_score(d, est_hours, tracked, confidence_multiplier=conf_mult)
                 scored.append((d, ps, est_hours, tracked))
@@ -556,7 +552,7 @@ async def deadlines_next() -> None:
             top, ps, est_hours, tracked = scored[0]
 
             est_str = f"{est_hours:.1f}h" if est_hours is not None else "no estimate"
-            confidence = await get_course_confidence(container.db, top.course_id)
+            confidence = await get_course_confidence(db, top.course_id)
             conf_str = f"{confidence * 5:.1f}/5" if confidence is not None else "no ratings"
 
             lines = [
@@ -576,7 +572,7 @@ async def deadlines_next() -> None:
 
             from sophia.services.athena_review import get_due_reviews
 
-            course_reviews = await get_due_reviews(container.db, course_id=top.course_id)
+            course_reviews = await get_due_reviews(db, course_id=top.course_id)
             if course_reviews:
                 lines.append("")
                 lines.append(f"[dim]{len(course_reviews)} review(s) due in this course[/dim]")
@@ -599,8 +595,8 @@ async def deadlines_calibration() -> None:
 
     console = Console()
     try:
-        async with create_app() as container:
-            metrics = await get_calibration_metrics(container.db)
+        async with create_app() as container, container.session() as db:
+            metrics = await get_calibration_metrics(db)
 
             if not metrics:
                 console.print("[dim]No calibration data yet — complete ≥3 estimates first.[/dim]")
@@ -646,8 +642,8 @@ async def deadlines_export_ics(
 
     console = Console()
     try:
-        async with create_app() as container:
-            ics_str = await export_deadlines_ics(container.db, horizon_days=horizon)
+        async with create_app() as container, container.session() as db:
+            ics_str = await export_deadlines_ics(db, horizon_days=horizon)
             out_path = Path(output or "sophia_deadlines.ics")
             out_path.write_text(ics_str)
             console.print(f"[green]Exported to {out_path}[/green]")
@@ -677,8 +673,8 @@ async def deadlines_graveyard(
     console = Console()
 
     try:
-        async with create_app() as container:
-            missed = await get_missed_deadlines(container.db, course_id=course, limit=limit)
+        async with create_app() as container, container.session() as db:
+            missed = await get_missed_deadlines(db, course_id=course, limit=limit)
 
             if not missed:
                 console.print("[dim]No missed deadlines on record.[/dim]")

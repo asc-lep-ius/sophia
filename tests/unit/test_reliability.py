@@ -382,14 +382,14 @@ async def test_create_app_timeout() -> None:
         created_at="2025-01-01T00:00:00+00:00",
     )
 
-    async def _hanging_db(*args: Any, **kwargs: Any) -> None:
+    async def _hanging_migration(*args: Any, **kwargs: Any) -> None:
         await asyncio.sleep(9999)
 
     mock_http = _async_cm(AsyncMock(spec=httpx.AsyncClient))
     with (
         patch("sophia.infra.di.load_session", return_value=fake_creds),
         patch("sophia.infra.di.http_session", return_value=mock_http),
-        patch("sophia.infra.di.connect_db", side_effect=_hanging_db),
+        patch("sophia.infra.di.upgrade_async", side_effect=_hanging_migration),
         patch("sophia.infra.di._DI_INIT_TIMEOUT_S", 0.05),
         pytest.raises(RuntimeError, match="startup timed out"),
     ):

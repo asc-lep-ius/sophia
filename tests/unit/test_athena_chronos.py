@@ -3,25 +3,20 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 
-from sophia.infra.persistence import run_migrations
+from .._sql import exec_sql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@pytest.fixture
-async def db():
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
-
-
-async def _insert_exam(db: aiosqlite.Connection, course_id: int, due_at: datetime) -> None:
+async def _insert_exam(db: AsyncSession, course_id: int, due_at: datetime) -> None:
     """Helper to insert an exam deadline."""
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO deadline_cache "
         "(id, name, course_id, course_name, deadline_type, due_at) "
         "VALUES (?, ?, ?, ?, 'exam', ?)",
@@ -33,21 +28,20 @@ async def _insert_exam(db: aiosqlite.Connection, course_id: int, due_at: datetim
             due_at.isoformat(),
         ),
     )
-    await db.commit()
 
 
 async def _insert_review(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     topic: str,
     course_id: int,
     next_review_at: datetime,
 ) -> None:
     """Helper to insert a review schedule entry."""
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO review_schedule (topic, course_id, next_review_at) VALUES (?, ?, ?)",
         (topic, course_id, next_review_at.isoformat()),
     )
-    await db.commit()
 
 
 class TestCapReviewForExam:
@@ -106,7 +100,7 @@ class TestCapReviewForExam:
 
 class TestCompressReviewsForExam:
     @pytest.mark.asyncio
-    async def test_compresses_reviews_past_exam(self, db: aiosqlite.Connection) -> None:
+    async def test_compresses_reviews_past_exam(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_reviews_for_exam
 
         now = datetime.now(UTC)
@@ -116,19 +110,18 @@ class TestCompressReviewsForExam:
         count = await compress_reviews_for_exam(db, 42, exam)
         assert count == 1
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT next_review_at FROM review_schedule WHERE topic = ? AND course_id = ?",
             ("Sorting", 42),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
-        new_date = datetime.fromisoformat(row[0])
+        new_date = row[0]
         assert new_date <= exam
 
     @pytest.mark.asyncio
-    async def test_no_compression_when_all_reviews_before_exam(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_no_compression_when_all_reviews_before_exam(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_reviews_for_exam
 
         now = datetime.now(UTC)
@@ -139,7 +132,7 @@ class TestCompressReviewsForExam:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_no_compression_when_exam_is_tomorrow(self, db: aiosqlite.Connection) -> None:
+    async def test_no_compression_when_exam_is_tomorrow(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_reviews_for_exam
 
         now = datetime.now(UTC)
@@ -150,7 +143,7 @@ class TestCompressReviewsForExam:
         assert count == 0
 
     @pytest.mark.asyncio
-    async def test_returns_compressed_count(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_compressed_count(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_reviews_for_exam
 
         now = datetime.now(UTC)
@@ -162,7 +155,7 @@ class TestCompressReviewsForExam:
         assert count == 2
 
     @pytest.mark.asyncio
-    async def test_does_not_touch_other_courses(self, db: aiosqlite.Connection) -> None:
+    async def test_does_not_touch_other_courses(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_reviews_for_exam
 
         now = datetime.now(UTC)
@@ -173,17 +166,18 @@ class TestCompressReviewsForExam:
         count = await compress_reviews_for_exam(db, 42, exam)
         assert count == 0
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT next_review_at FROM review_schedule WHERE course_id = 99",
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
-        assert datetime.fromisoformat(row[0]) == original_date
+        assert row[0] == original_date
 
 
 class TestCompressAllCourses:
     @pytest.mark.asyncio
-    async def test_compresses_multiple_courses(self, db: aiosqlite.Connection) -> None:
+    async def test_compresses_multiple_courses(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_all_courses
 
         now = datetime.now(UTC)
@@ -197,7 +191,7 @@ class TestCompressAllCourses:
         assert 99 in results
 
     @pytest.mark.asyncio
-    async def test_no_exams_returns_empty(self, db: aiosqlite.Connection) -> None:
+    async def test_no_exams_returns_empty(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import compress_all_courses
 
         results = await compress_all_courses(db)
@@ -206,33 +200,33 @@ class TestCompressAllCourses:
 
 class TestGetExamForCourse:
     @pytest.mark.asyncio
-    async def test_returns_nearest_future_exam(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_nearest_future_exam(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import get_exam_for_course
 
         now = datetime.now(UTC)
         near = now + timedelta(days=5)
         far = now + timedelta(days=30)
         await _insert_exam(db, 42, near)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('exam:42:2', 'Exam 2', 42, 'Course 42', 'exam', ?)",
             (far.isoformat(),),
         )
-        await db.commit()
 
         result = await get_exam_for_course(db, 42)
         assert result is not None
         assert abs((result - near).total_seconds()) < 5
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_exams(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_none_when_no_exams(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import get_exam_for_course
 
         result = await get_exam_for_course(db, 42)
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_ignores_past_exams(self, db: aiosqlite.Connection) -> None:
+    async def test_ignores_past_exams(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import get_exam_for_course
 
         past = datetime.now(UTC) - timedelta(days=5)
@@ -247,91 +241,96 @@ class TestGetExamForCourse:
 
 class TestLogConfidencePrediction:
     @pytest.mark.asyncio
-    async def test_writes_to_metacognition_log(self, db: aiosqlite.Connection) -> None:
+    async def test_writes_to_metacognition_log(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import log_confidence_prediction
 
         await log_confidence_prediction(db, 42, "Sorting", 0.5)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT domain, item_id, predicted FROM metacognition_log "
             "WHERE domain = 'confidence:42'",
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "confidence:42"
         assert row[1] == "Sorting"
         assert row[2] == pytest.approx(0.5)
 
     @pytest.mark.asyncio
-    async def test_normalizes_rating_to_zero_one(self, db: aiosqlite.Connection) -> None:
+    async def test_normalizes_rating_to_zero_one(self, db: AsyncSession) -> None:
         """The confidence_rating passed in should already be 0-1."""
         from sophia.services.athena_chronos import log_confidence_prediction
 
         await log_confidence_prediction(db, 42, "Sorting", 0.75)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT predicted FROM metacognition_log WHERE domain = 'confidence:42'",
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(0.75)
 
     @pytest.mark.asyncio
-    async def test_replaces_on_duplicate(self, db: aiosqlite.Connection) -> None:
+    async def test_replaces_on_duplicate(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import log_confidence_prediction
 
         await log_confidence_prediction(db, 42, "Sorting", 0.3)
         await log_confidence_prediction(db, 42, "Sorting", 0.8)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT predicted FROM metacognition_log "
             "WHERE domain = 'confidence:42' AND item_id = 'Sorting'",
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(0.8)
 
 
 class TestLogConfidenceActual:
     @pytest.mark.asyncio
-    async def test_updates_actual_score(self, db: aiosqlite.Connection) -> None:
+    async def test_updates_actual_score(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import log_confidence_actual, log_confidence_prediction
 
         await log_confidence_prediction(db, 42, "Sorting", 0.5)
         await log_confidence_actual(db, 42, "Sorting", 0.7)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT actual FROM metacognition_log "
             "WHERE domain = 'confidence:42' AND item_id = 'Sorting'",
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(0.7)
 
 
 class TestGetCourseConfidence:
     @pytest.mark.asyncio
-    async def test_returns_average_normalized(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_average_normalized(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import get_course_confidence
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Sorting", 42, 0.5, datetime.now(UTC).isoformat()),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Graphs", 42, 0.75, datetime.now(UTC).isoformat()),
         )
-        await db.commit()
 
         result = await get_course_confidence(db, 42)
         assert result is not None
         assert result == pytest.approx(0.625)  # (0.5 + 0.75) / 2
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_ratings(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_none_when_no_ratings(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import get_course_confidence
 
         result = await get_course_confidence(db, 42)
@@ -377,9 +376,7 @@ class TestConfidencePriorityMultiplier:
 
 class TestBuildPlanItems:
     @pytest.mark.asyncio
-    async def test_returns_deadlines_reviews_and_gaps_sorted(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_deadlines_reviews_and_gaps_sorted(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import build_plan_items
 
         now = datetime.now(UTC)
@@ -388,12 +385,12 @@ class TestBuildPlanItems:
         # Insert a due review
         await _insert_review(db, "Sorting", 42, now - timedelta(days=1))
         # Insert a low-confidence rating
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Graphs", 42, 0.2, now.isoformat()),
         )
-        await db.commit()
 
         items = await build_plan_items(db, horizon_days=14)
         assert len(items) >= 2  # At least deadline + review (gap may or may not appear)
@@ -402,14 +399,14 @@ class TestBuildPlanItems:
         assert scores == sorted(scores, reverse=True)
 
     @pytest.mark.asyncio
-    async def test_empty_when_no_data(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_when_no_data(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import build_plan_items
 
         items = await build_plan_items(db)
         assert items == []
 
     @pytest.mark.asyncio
-    async def test_respects_horizon(self, db: aiosqlite.Connection) -> None:
+    async def test_respects_horizon(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import build_plan_items
 
         now = datetime.now(UTC)
@@ -423,38 +420,39 @@ class TestBuildPlanItems:
 
 class TestDeadlineItems:
     @pytest.mark.asyncio
-    async def test_includes_effort_and_tracking_info(self, db: aiosqlite.Connection) -> None:
+    async def test_includes_effort_and_tracking_info(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _deadline_items
 
         now = datetime.now(UTC)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at, grade_weight) "
             "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?, 0.3)",
             ((now + timedelta(days=5)).isoformat(),),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES ('a:1', 42, 5.0, 'full')",
         )
-        await db.commit()
 
         items = await _deadline_items(db, horizon_days=14)
         assert len(items) == 1
         assert "5.0h est" in items[0].detail
 
     @pytest.mark.asyncio
-    async def test_handles_no_estimate(self, db: aiosqlite.Connection) -> None:
+    async def test_handles_no_estimate(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _deadline_items
 
         now = datetime.now(UTC)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?)",
             ((now + timedelta(days=5)).isoformat(),),
         )
-        await db.commit()
 
         items = await _deadline_items(db, horizon_days=14)
         assert len(items) == 1
@@ -463,19 +461,19 @@ class TestDeadlineItems:
 
 class TestReviewItems:
     @pytest.mark.asyncio
-    async def test_overdue_reviews_score_higher(self, db: aiosqlite.Connection) -> None:
+    async def test_overdue_reviews_score_higher(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _review_items
 
         now = datetime.now(UTC)
         await _insert_review(db, "Recent", 42, now - timedelta(hours=1))
         await _insert_review(db, "Old", 42, now - timedelta(days=5))
         # Need course name in deadline_cache
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW', 42, 'Algo', 'assignment', ?)",
             ((now + timedelta(days=30)).isoformat(),),
         )
-        await db.commit()
 
         items = await _review_items(db)
         assert len(items) == 2
@@ -484,7 +482,7 @@ class TestReviewItems:
         assert old_item.score > recent_item.score
 
     @pytest.mark.asyncio
-    async def test_exam_proximity_boosts_review_score(self, db: aiosqlite.Connection) -> None:
+    async def test_exam_proximity_boosts_review_score(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _review_items
 
         now = datetime.now(UTC)
@@ -493,12 +491,12 @@ class TestReviewItems:
         # Exam for course 42 in 5 days
         await _insert_exam(db, 42, now + timedelta(days=5))
         # Course names
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:99', 'HW', 99, 'DB', 'assignment', ?)",
             ((now + timedelta(days=30)).isoformat(),),
         )
-        await db.commit()
 
         items = await _review_items(db)
         item_42 = next(i for i in items if i.course_id == 42)
@@ -509,44 +507,44 @@ class TestReviewItems:
 # --- Phase 4 Tests ---
 
 
-async def _make_athena_open(db: aiosqlite.Connection, course_id: int) -> None:
+async def _make_athena_open(db: AsyncSession, course_id: int) -> None:
     """Insert enough flashcards + explanations to reach athena scaffold level 0 (open)."""
     for i in range(25):
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO student_flashcards (course_id, topic, front, back, source) "
             "VALUES (?, 'Sorting', ?, ?, 'study')",
             (course_id, f"Q{i}", f"A{i}"),
         )
-    cursor = await db.execute(
+    cursor = await exec_sql(
+        db,
         "SELECT id FROM student_flashcards WHERE course_id = ?",
         (course_id,),
     )
-    card_ids = [row[0] for row in await cursor.fetchall()]
+    card_ids = [row[0] for row in cursor.fetchall()]
     for card_id in card_ids:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO self_explanations (flashcard_id, student_explanation, scaffold_level) "
             "VALUES (?, 'test explanation', 0)",
             (card_id,),
         )
-    await db.commit()
 
 
-async def _make_chronos_open(db: aiosqlite.Connection, course_id: int = 42) -> None:
+async def _make_chronos_open(db: AsyncSession, course_id: int = 42) -> None:
     """Insert well-calibrated metacognition entries to reach chronos scaffold 'open'."""
     for i in range(10):
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO metacognition_log (domain, item_id, predicted, actual, course_id) "
             "VALUES ('effort:exam', ?, ?, ?, ?)",
             (f"item_{i}", 5.0, 5.0, course_id),
         )
-    await db.commit()
 
 
 class TestGetScaffoldHint:
     @pytest.mark.asyncio
-    async def test_returns_hint_when_athena_open_chronos_not(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_hint_when_athena_open_chronos_not(self, db: AsyncSession) -> None:
         """Mature study habits but not estimation → hint about estimation."""
         from sophia.services.athena_chronos import get_scaffold_hint
 
@@ -557,9 +555,7 @@ class TestGetScaffoldHint:
         assert "effort estimates" in hint
 
     @pytest.mark.asyncio
-    async def test_returns_hint_when_chronos_open_athena_not(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_returns_hint_when_chronos_open_athena_not(self, db: AsyncSession) -> None:
         """Mature estimation but not study → hint about study practice."""
         from sophia.services.athena_chronos import get_scaffold_hint
 
@@ -570,7 +566,7 @@ class TestGetScaffoldHint:
         assert "study practice" in hint
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_both_open(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_none_when_both_open(self, db: AsyncSession) -> None:
         """Both systems mature → no hint needed."""
         from sophia.services.athena_chronos import get_scaffold_hint
 
@@ -581,7 +577,7 @@ class TestGetScaffoldHint:
         assert hint is None
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_data(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_none_when_no_data(self, db: AsyncSession) -> None:
         """No data at all → both at full scaffold → no contrast."""
         from sophia.services.athena_chronos import get_scaffold_hint
 
@@ -589,7 +585,7 @@ class TestGetScaffoldHint:
         assert hint is None
 
     @pytest.mark.asyncio
-    async def test_ignores_calibration_from_another_course(self, db: aiosqlite.Connection) -> None:
+    async def test_ignores_calibration_from_another_course(self, db: AsyncSession) -> None:
         """Estimation maturity is per course, not global."""
         from sophia.services.athena_chronos import get_scaffold_hint
 
@@ -601,21 +597,22 @@ class TestGetScaffoldHint:
 
 class TestConfidenceGapItems:
     @pytest.mark.asyncio
-    async def test_low_ratings_become_gap_items(self, db: aiosqlite.Connection) -> None:
+    async def test_low_ratings_become_gap_items(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _confidence_gap_items
 
         now = datetime.now(UTC)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Graphs", 42, 0.2, now.isoformat()),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW', 42, 'Algo', 'assignment', ?)",
             ((now + timedelta(days=30)).isoformat(),),
         )
-        await db.commit()
 
         items = await _confidence_gap_items(db)
         assert len(items) == 1
@@ -623,23 +620,23 @@ class TestConfidenceGapItems:
         assert "Graphs" in items[0].title
 
     @pytest.mark.asyncio
-    async def test_no_gaps_when_all_confident(self, db: aiosqlite.Connection) -> None:
+    async def test_no_gaps_when_all_confident(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _confidence_gap_items
 
         now = datetime.now(UTC)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, rated_at) "
             "VALUES (?, ?, ?, ?)",
             ("Sorting", 42, 0.8, now.isoformat()),
         )
-        await db.commit()
 
         items = await _confidence_gap_items(db)
         assert items == []
 
 
 async def _insert_download(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     episode_id: str,
     module_id: int,
     *,
@@ -647,34 +644,34 @@ async def _insert_download(
     status: str = "completed",
     missed_at: str | None = None,
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         """INSERT INTO lecture_downloads
            (episode_id, module_id, title, track_url, track_mimetype, status, missed_at)
            VALUES (?, ?, ?, '', '', ?, ?)""",
         (episode_id, module_id, title, status, missed_at),
     )
-    await db.commit()
 
 
 async def _insert_topic_link(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     topic: str,
     course_id: int,
     episode_id: str,
 ) -> None:
     chunk_id = f"chunk-{episode_id}-{topic}"
-    await db.execute(
+    await exec_sql(
+        db,
         """INSERT INTO topic_lecture_links
            (topic, course_id, chunk_id, episode_id, score)
            VALUES (?, ?, ?, ?, 1.0)""",
         (topic, course_id, chunk_id, episode_id),
     )
-    await db.commit()
 
 
 class TestMissedTopicItems:
     @pytest.mark.asyncio
-    async def test_missed_topics_become_plan_items(self, db: aiosqlite.Connection) -> None:
+    async def test_missed_topics_become_plan_items(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _missed_topic_items
 
         now = datetime.now(UTC)
@@ -683,12 +680,12 @@ class TestMissedTopicItems:
         await _insert_topic_link(db, "Graphs", 42, "ep-1")
         await _insert_topic_link(db, "Trees", 42, "ep-1")
         await _insert_topic_link(db, "Trees", 42, "ep-2")
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW', 42, 'Algorithms', 'assignment', ?)",
             ((now + timedelta(days=30)).isoformat(),),
         )
-        await db.commit()
 
         items = await _missed_topic_items(db)
         assert len(items) == 1
@@ -697,7 +694,7 @@ class TestMissedTopicItems:
         assert items[0].score == pytest.approx(0.4)
 
     @pytest.mark.asyncio
-    async def test_no_missed_returns_empty(self, db: aiosqlite.Connection) -> None:
+    async def test_no_missed_returns_empty(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _missed_topic_items
 
         await _insert_download(db, "ep-1", 100, title="Lecture 1")
@@ -705,7 +702,7 @@ class TestMissedTopicItems:
         assert items == []
 
     @pytest.mark.asyncio
-    async def test_exam_boost_doubles_score(self, db: aiosqlite.Connection) -> None:
+    async def test_exam_boost_doubles_score(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import _missed_topic_items
 
         now = datetime.now(UTC)
@@ -719,18 +716,18 @@ class TestMissedTopicItems:
         assert items[0].components["exam_boost"] == 2.0
 
     @pytest.mark.asyncio
-    async def test_build_plan_items_includes_missed(self, db: aiosqlite.Connection) -> None:
+    async def test_build_plan_items_includes_missed(self, db: AsyncSession) -> None:
         from sophia.services.athena_chronos import build_plan_items
 
         now = datetime.now(UTC)
         await _insert_download(db, "ep-1", 100, title="Lecture 1", missed_at=now.isoformat())
         await _insert_topic_link(db, "Hashing", 42, "ep-1")
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW', 42, 'DB', 'assignment', ?)",
             ((now + timedelta(days=30)).isoformat(),),
         )
-        await db.commit()
 
         items = await build_plan_items(db)
         missed_items = [i for i in items if i.item_type.value == "missed_topic"]

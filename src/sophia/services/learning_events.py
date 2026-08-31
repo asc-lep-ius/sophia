@@ -16,13 +16,18 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 import structlog
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.learning import EventPayloadValue, LearningEvent, LearningEventType
+from sophia.infra.engine import affected_rows
+from sophia.infra.schema import learning_events
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import aiosqlite
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
@@ -36,64 +41,68 @@ class IngestionResult:
 
 
 async def ingest_events(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     events: Sequence[LearningEvent],
     *,
     max_future_skew_seconds: int,
 ) -> IngestionResult:
     """Record a batch of learner-process events idempotently."""
+    if not events:
+        return IngestionResult(accepted=0, duplicate=0)
+
     received_at = datetime.now(UTC)
     latest_acceptable = received_at + timedelta(seconds=max_future_skew_seconds)
 
-    accepted = 0
-    for event in events:
-        occurred_at = min(event.occurred_at, latest_acceptable)
-        cursor = await db.execute(
-            "INSERT INTO learning_events ("
-            "event_id, course_id, user_id, event_type, occurred_at, received_at, "
-            "session_id, question_id, payload) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(event_id) DO NOTHING",
-            (
-                event.event_id,
-                event.course_id,
-                event.user_id,
-                event.event_type.value,
-                occurred_at.isoformat(),
-                received_at.isoformat(),
-                event.session_id,
-                event.question_id,
-                json.dumps(event.payload, sort_keys=True),
-            ),
+    statement = pg_insert(learning_events).values(
+        [
+            {
+                "event_id": event.event_id,
+                "course_id": event.course_id,
+                "user_id": event.user_id,
+                "event_type": event.event_type.value,
+                "occurred_at": min(event.occurred_at, latest_acceptable),
+                "received_at": received_at,
+                "session_id": event.session_id,
+                "question_id": event.question_id,
+                "payload": json.dumps(event.payload, sort_keys=True),
+            }
+            for event in events
+        ]
+    )
+    result = await session.execute(
+        statement.on_conflict_do_nothing(index_elements=[learning_events.c.event_id]).returning(
+            learning_events.c.event_id,
         )
-        accepted += cursor.rowcount if cursor.rowcount > 0 else 0
-    await db.commit()
-
+    )
+    accepted = len(result.all())
     duplicate = len(events) - accepted
     log.info("learning_events_ingested", accepted=accepted, duplicate=duplicate)
     return IngestionResult(accepted=accepted, duplicate=duplicate)
 
 
 async def get_question_trace(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     question_id: str,
     user_id: str,
 ) -> list[LearningEvent]:
     """Load one learner's recorded events for a single question, oldest first."""
-    cursor = await db.execute(
-        "SELECT event_id, course_id, user_id, event_type, occurred_at, session_id, "
-        "question_id, payload FROM learning_events "
-        "WHERE course_id = ? AND question_id = ? AND user_id = ? "
-        "ORDER BY occurred_at",
-        (course_id, question_id, user_id),
-    )
-    rows = cast("Sequence[tuple[object, ...]]", await cursor.fetchall())
+    rows = (
+        await session.execute(
+            select(learning_events)
+            .where(
+                learning_events.c.course_id == course_id,
+                learning_events.c.question_id == question_id,
+                learning_events.c.user_id == user_id,
+            )
+            .order_by(learning_events.c.occurred_at)
+        )
+    ).all()
     return [_row_to_event(row) for row in rows]
 
 
 async def purge_expired_events(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     retention_days: int,
 ) -> int:
@@ -103,26 +112,34 @@ async def purge_expired_events(
     a bounded window rather than indefinitely.
     """
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-    cursor = await db.execute(
-        "DELETE FROM learning_events WHERE received_at < ?",
-        (cutoff.isoformat(),),
+    result = await session.execute(
+        delete(learning_events).where(learning_events.c.received_at < cutoff)
     )
-    await db.commit()
-    purged = max(cursor.rowcount, 0)
+    purged = affected_rows(result)
     log.info("learning_events_purged", purged=purged, retention_days=retention_days)
     return purged
 
 
-def _row_to_event(row: tuple[object, ...]) -> LearningEvent:
+async def count_events(session: AsyncSession, course_id: int) -> int:
+    """Count recorded events for a learning path."""
+    total = await session.scalar(
+        select(func.count())
+        .select_from(learning_events)
+        .where(learning_events.c.course_id == course_id)
+    )
+    return total or 0
+
+
+def _row_to_event(row: Row[tuple[object, ...]]) -> LearningEvent:
     return LearningEvent(
-        event_id=str(row[0]),
-        course_id=int(cast("int", row[1])),
-        user_id=str(row[2]),
-        event_type=LearningEventType(str(row[3])),
-        occurred_at=datetime.fromisoformat(str(row[4])),
-        session_id=None if row[5] is None else int(cast("int", row[5])),
-        question_id=None if row[6] is None else str(row[6]),
-        payload=_decode_payload(row[7]),
+        event_id=row.event_id,
+        course_id=row.course_id,
+        user_id=row.user_id,
+        event_type=LearningEventType(row.event_type),
+        occurred_at=row.occurred_at,
+        session_id=row.session_id,
+        question_id=row.question_id,
+        payload=_decode_payload(row.payload),
     )
 
 

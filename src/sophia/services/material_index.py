@@ -6,15 +6,17 @@ import asyncio
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from sqlalchemy import insert, select, update
 
 from sophia.adapters.embedder import SentenceTransformerEmbedder
 from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 from sophia.adapters.moodle import extract_full_pdf_text
 from sophia.domain.models import CourseMaterial, HermesConfig, KnowledgeChunk
+from sophia.infra.schema import course_materials
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -52,15 +54,21 @@ async def _download_pdf(app: AppContainer, url: str) -> bytes:
     return response.content
 
 
-async def _url_exists(db: aiosqlite.Connection, course_id: int, url: str) -> bool:
-    cursor = await db.execute(
-        "SELECT 1 FROM course_materials WHERE course_id = ? AND url = ?",
-        (course_id, url),
+async def _url_exists(session: AsyncSession, course_id: int, url: str) -> bool:
+    existing = await session.scalar(
+        select(course_materials.c.id).where(
+            course_materials.c.course_id == course_id,
+            course_materials.c.url == url,
+        )
     )
-    return await cursor.fetchone() is not None
+    return existing is not None
 
 
-async def scrape_course_materials(app: AppContainer, course_id: int) -> list[CourseMaterial]:
+async def scrape_course_materials(
+    app: AppContainer,
+    session: AsyncSession,
+    course_id: int,
+) -> list[CourseMaterial]:
     """Scrape TUWEL course for PDF resources and persist to course_materials."""
     modules = await app.moodle.get_course_resources([course_id])
 
@@ -70,7 +78,7 @@ async def scrape_course_materials(app: AppContainer, course_id: int) -> list[Cou
         if not is_pdf or not file_url:
             continue
 
-        if await _url_exists(app.db, course_id, file_url):
+        if await _url_exists(session, course_id, file_url):
             continue
 
         try:
@@ -80,21 +88,23 @@ async def scrape_course_materials(app: AppContainer, course_id: int) -> list[Cou
             log.warning("pdf_extraction_failed", module_id=module.id, url=file_url)
             pdf_text = ""
 
-        await app.db.execute(
-            "INSERT INTO course_materials"
-            " (course_id, module_id, name, url, mimetype, file_size_bytes, pdf_text, status)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')",
-            (course_id, module.id, module.name, file_url, mimetype, file_size, pdf_text),
-        )
-        await app.db.commit()
-
-        cursor = await app.db.execute(
-            "SELECT id, created_at FROM course_materials WHERE course_id = ? AND url = ?",
-            (course_id, file_url),
-        )
-        row = await cursor.fetchone()
-        assert row is not None
-        mat_id, created_at = row
+        inserted = (
+            await session.execute(
+                insert(course_materials)
+                .values(
+                    course_id=course_id,
+                    module_id=module.id,
+                    name=module.name,
+                    url=file_url,
+                    mimetype=mimetype,
+                    file_size_bytes=file_size,
+                    pdf_text=pdf_text,
+                    status="pending",
+                )
+                .returning(course_materials.c.id, course_materials.c.created_at)
+            )
+        ).one()
+        mat_id, created_at = inserted.id, inserted.created_at
 
         new_materials.append(
             CourseMaterial(
@@ -159,26 +169,26 @@ def chunk_pdf_text(text: str, material_id: int) -> list[KnowledgeChunk]:
     return chunks
 
 
-async def index_materials(app: AppContainer, course_id: int) -> int:
+async def index_materials(app: AppContainer, session: AsyncSession, course_id: int) -> int:
     """Embed and index all unindexed materials for a course. Returns chunk count."""
-    cursor = await app.db.execute(
-        "SELECT id, pdf_text FROM course_materials"
-        " WHERE course_id = ? AND status = 'pending' AND chunk_count = 0",
-        (course_id,),
-    )
-    rows = await cursor.fetchall()
+    rows = (
+        await session.execute(
+            select(course_materials.c.id, course_materials.c.pdf_text).where(
+                course_materials.c.course_id == course_id,
+                course_materials.c.status == "pending",
+                course_materials.c.chunk_count == 0,
+            )
+        )
+    ).all()
 
     total_chunks = 0
     embedder: SentenceTransformerEmbedder | None = None
     store: ChromaKnowledgeStore | None = None
 
-    for mat_id, pdf_text in rows:
+    for row in rows:
+        mat_id, pdf_text = row.id, row.pdf_text
         if not pdf_text or not pdf_text.strip():
-            await app.db.execute(
-                "UPDATE course_materials SET status = 'completed', chunk_count = 0 WHERE id = ?",
-                (mat_id,),
-            )
-            await app.db.commit()
+            await _set_material_state(session, mat_id, chunk_count=0)
             continue
 
         chunks = chunk_pdf_text(pdf_text, mat_id)
@@ -195,13 +205,17 @@ async def index_materials(app: AppContainer, course_id: int) -> int:
         )
         await asyncio.to_thread(store.add_chunks, chunks, embeddings)
 
-        await app.db.execute(
-            "UPDATE course_materials SET status = 'completed', chunk_count = ? WHERE id = ?",
-            (len(chunks), mat_id),
-        )
-        await app.db.commit()
+        await _set_material_state(session, mat_id, chunk_count=len(chunks))
 
         total_chunks += len(chunks)
         log.info("material_indexed", material_id=mat_id, chunks=len(chunks))
 
     return total_chunks
+
+
+async def _set_material_state(session: AsyncSession, material_id: int, *, chunk_count: int) -> None:
+    await session.execute(
+        update(course_materials)
+        .where(course_materials.c.id == material_id)
+        .values(status="completed", chunk_count=chunk_count)
+    )

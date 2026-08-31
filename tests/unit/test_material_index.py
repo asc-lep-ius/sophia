@@ -5,11 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import ContentInfo, ModuleInfo
-from sophia.infra.persistence import run_migrations
 from sophia.services.material_index import (
     _CHUNK_OVERLAP,
     _CHUNK_SIZE,
@@ -20,25 +18,18 @@ from sophia.services.material_index import (
     scrape_course_materials,
 )
 
+from .._sql import exec_sql
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
-@pytest.fixture
-async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(conn)
-    yield conn
-    await conn.close()
-
-
-def _make_app(db: aiosqlite.Connection, *, moodle: MagicMock | None = None) -> MagicMock:
+def _make_app(db: AsyncSession, *, moodle: MagicMock | None = None) -> MagicMock:
     """Build a minimal mock AppContainer with a real DB."""
     app = MagicMock()
     app.db = db
@@ -134,7 +125,7 @@ class TestChunkPdfText:
 
 class TestScrapCourseMaterials:
     @pytest.mark.asyncio
-    async def test_scrape_inserts_materials(self, db: aiosqlite.Connection) -> None:
+    async def test_scrape_inserts_materials(self, db: AsyncSession) -> None:
         moodle = MagicMock()
         moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=100)])
         app = _make_app(db, moodle=moodle)
@@ -151,7 +142,7 @@ class TestScrapCourseMaterials:
                 return_value=pdf_bytes,
             ),
         ):
-            materials = await scrape_course_materials(app, course_id=42)
+            materials = await scrape_course_materials(app, db, course_id=42)
 
         assert len(materials) == 1
         assert materials[0].name == "Lecture Slides"
@@ -160,13 +151,13 @@ class TestScrapCourseMaterials:
         mock_extract.assert_called_once_with(pdf_bytes)
 
         # Verify DB persistence
-        cursor = await db.execute("SELECT COUNT(*) FROM course_materials WHERE course_id=42")
-        row = await cursor.fetchone()
+        cursor = await exec_sql(db, "SELECT COUNT(*) FROM course_materials WHERE course_id=42")
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == 1
 
     @pytest.mark.asyncio
-    async def test_scrape_idempotent(self, db: aiosqlite.Connection) -> None:
+    async def test_scrape_idempotent(self, db: AsyncSession) -> None:
         moodle = MagicMock()
         moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=100)])
         app = _make_app(db, moodle=moodle)
@@ -183,19 +174,19 @@ class TestScrapCourseMaterials:
                 return_value=pdf_bytes,
             ),
         ):
-            first = await scrape_course_materials(app, course_id=42)
-            second = await scrape_course_materials(app, course_id=42)
+            first = await scrape_course_materials(app, db, course_id=42)
+            second = await scrape_course_materials(app, db, course_id=42)
 
         assert len(first) == 1
         assert len(second) == 0  # already scraped, skipped
 
-        cursor = await db.execute("SELECT COUNT(*) FROM course_materials WHERE course_id=42")
-        row = await cursor.fetchone()
+        cursor = await exec_sql(db, "SELECT COUNT(*) FROM course_materials WHERE course_id=42")
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == 1
 
     @pytest.mark.asyncio
-    async def test_scrape_skips_non_pdf(self, db: aiosqlite.Connection) -> None:
+    async def test_scrape_skips_non_pdf(self, db: AsyncSession) -> None:
         moodle = MagicMock()
         non_pdf = ModuleInfo(
             id=200,
@@ -214,7 +205,7 @@ class TestScrapCourseMaterials:
         moodle.get_course_resources = AsyncMock(return_value=[non_pdf])
         app = _make_app(db, moodle=moodle)
 
-        materials = await scrape_course_materials(app, course_id=42)
+        materials = await scrape_course_materials(app, db, course_id=42)
         assert len(materials) == 0
 
 
@@ -225,15 +216,15 @@ class TestScrapCourseMaterials:
 
 class TestIndexMaterials:
     @pytest.mark.asyncio
-    async def test_index_pending_materials(self, db: aiosqlite.Connection) -> None:
+    async def test_index_pending_materials(self, db: AsyncSession) -> None:
         # Seed a pending material with pdf_text
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (course_id, module_id, name, url, mimetype, pdf_text, status)"
             " VALUES (42, 100, 'Slides', 'https://x.com/s.pdf', 'application/pdf',"
             "  'This is the extracted PDF content for testing.', 'pending')",
         )
-        await db.commit()
 
         app = _make_app(db)
         mock_embedder = MagicMock()
@@ -244,7 +235,7 @@ class TestIndexMaterials:
             patch("sophia.services.material_index._create_embedder", return_value=mock_embedder),
             patch("sophia.services.material_index._create_store", return_value=mock_store),
         ):
-            total = await index_materials(app, course_id=42)
+            total = await index_materials(app, db, course_id=42)
 
         assert total >= 1
         mock_store.add_chunks.assert_called_once()
@@ -254,50 +245,50 @@ class TestIndexMaterials:
         assert all(c.source == "pdf" for c in stored_chunks)
 
         # Verify DB updated
-        cursor = await db.execute(
-            "SELECT status, chunk_count FROM course_materials WHERE course_id=42"
+        cursor = await exec_sql(
+            db, "SELECT status, chunk_count FROM course_materials WHERE course_id=42"
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "completed"
         assert row[1] >= 1
 
     @pytest.mark.asyncio
-    async def test_index_skips_completed(self, db: aiosqlite.Connection) -> None:
-        await db.execute(
+    async def test_index_skips_completed(self, db: AsyncSession) -> None:
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (course_id, module_id, name, url, mimetype, pdf_text, chunk_count, status)"
             " VALUES (42, 100, 'Slides', 'https://x.com/s.pdf', 'application/pdf',"
             "  'Already indexed.', 5, 'completed')",
         )
-        await db.commit()
 
         app = _make_app(db)
         with (
             patch("sophia.services.material_index._create_embedder") as mock_emb,
             patch("sophia.services.material_index._create_store"),
         ):
-            total = await index_materials(app, course_id=42)
+            total = await index_materials(app, db, course_id=42)
 
         assert total == 0
         mock_emb.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_index_skips_empty_text(self, db: aiosqlite.Connection) -> None:
-        await db.execute(
+    async def test_index_skips_empty_text(self, db: AsyncSession) -> None:
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (course_id, module_id, name, url, mimetype, pdf_text, status)"
             " VALUES (42, 100, 'Empty', 'https://x.com/e.pdf', 'application/pdf',"
             "  '', 'pending')",
         )
-        await db.commit()
 
         app = _make_app(db)
         with (
             patch("sophia.services.material_index._create_embedder") as mock_emb,
             patch("sophia.services.material_index._create_store"),
         ):
-            total = await index_materials(app, course_id=42)
+            total = await index_materials(app, db, course_id=42)
 
         assert total == 0
         mock_emb.assert_not_called()
@@ -343,7 +334,7 @@ class TestCreateStore:
 
 class TestScrapePdfExtractionFailure:
     @pytest.mark.asyncio
-    async def test_pdf_failure_inserts_with_empty_text(self, db: aiosqlite.Connection) -> None:
+    async def test_pdf_failure_inserts_with_empty_text(self, db: AsyncSession) -> None:
         """When PDF download/extraction raises, the material is still saved with empty text."""
         moodle = MagicMock()
         moodle.get_course_resources = AsyncMock(return_value=[_make_resource_module(module_id=300)])
@@ -354,14 +345,14 @@ class TestScrapePdfExtractionFailure:
             new_callable=AsyncMock,
             side_effect=RuntimeError("network error"),
         ):
-            materials = await scrape_course_materials(app, course_id=42)
+            materials = await scrape_course_materials(app, db, course_id=42)
 
         assert len(materials) == 1
 
-        cursor = await db.execute(
-            "SELECT pdf_text, status FROM course_materials WHERE course_id = 42"
+        cursor = await exec_sql(
+            db, "SELECT pdf_text, status FROM course_materials WHERE course_id = 42"
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == ""
         assert row[1] == "pending"
@@ -374,19 +365,17 @@ class TestScrapePdfExtractionFailure:
 
 class TestIndexMaterialsEmbedderInit:
     @pytest.mark.asyncio
-    async def test_index_initialises_embedder_for_valid_text(
-        self, db: aiosqlite.Connection
-    ) -> None:
+    async def test_index_initialises_embedder_for_valid_text(self, db: AsyncSession) -> None:
         """Materials with real pdf_text trigger embedder/store creation and indexing."""
         long_text = "Hello world " * 100
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO course_materials"
             " (course_id, module_id, name, url, mimetype, pdf_text, status)"
             " VALUES (42, 100, 'Big PDF', 'https://x.com/big.pdf', 'application/pdf',"
             "  ?, 'pending')",
             (long_text,),
         )
-        await db.commit()
 
         app = _make_app(db)
         mock_embedder = MagicMock()
@@ -403,7 +392,7 @@ class TestIndexMaterialsEmbedderInit:
                 return_value=mock_store,
             ) as create_st,
         ):
-            total = await index_materials(app, course_id=42)
+            total = await index_materials(app, db, course_id=42)
 
         assert total > 0
         create_emb.assert_called_once_with(app)

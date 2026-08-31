@@ -18,9 +18,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import insert, select, update
+
+from sophia.infra.schema import scheduled_jobs
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from sophia.domain.models import JobStatus, ScheduledJob
 
@@ -34,8 +38,8 @@ class SchedulerError(Exception):
 class Scheduler(abc.ABC):
     """Abstract scheduler interface — one implementation per platform."""
 
-    def __init__(self, db: aiosqlite.Connection) -> None:
-        self._db = db
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
 
     async def schedule(
         self,
@@ -89,22 +93,12 @@ class Scheduler(abc.ABC):
 
     async def list_jobs(self) -> list[ScheduledJob]:
         """Return all tracked jobs ordered by scheduled time."""
-        cursor = await self._db.execute(
-            "SELECT job_id, command, scheduled_for, created_at, status, description "
-            "FROM scheduled_jobs ORDER BY scheduled_for"
-        )
-        rows = await cursor.fetchall()
-        return [
-            ScheduledJob(
-                job_id=r[0],
-                command=r[1],
-                scheduled_for=r[2],
-                created_at=r[3],
-                status=JobStatus(r[4]),
-                description=r[5],
+        rows = (
+            await self._session.execute(
+                select(scheduled_jobs).order_by(scheduled_jobs.c.scheduled_for)
             )
-            for r in rows
-        ]
+        ).all()
+        return [_row_to_job(row) for row in rows]
 
     async def update_status(self, job_id: str, status: JobStatus) -> None:
         """Update a job's status (called by the job runner)."""
@@ -112,22 +106,12 @@ class Scheduler(abc.ABC):
 
     async def get_job(self, job_id: str) -> ScheduledJob | None:
         """Look up a single job by ID."""
-        cursor = await self._db.execute(
-            "SELECT job_id, command, scheduled_for, created_at, status, description "
-            "FROM scheduled_jobs WHERE job_id = ?",
-            (job_id,),
-        )
-        row = await cursor.fetchone()
-        if row is None:
-            return None
-        return ScheduledJob(
-            job_id=row[0],
-            command=row[1],
-            scheduled_for=row[2],
-            created_at=row[3],
-            status=JobStatus(row[4]),
-            description=row[5],
-        )
+        row = (
+            await self._session.execute(
+                select(scheduled_jobs).where(scheduled_jobs.c.job_id == job_id)
+            )
+        ).one_or_none()
+        return None if row is None else _row_to_job(row)
 
     @abc.abstractmethod
     def _create_os_job(self, job_id: str, command: str, scheduled_for: datetime) -> None:
@@ -141,27 +125,23 @@ class Scheduler(abc.ABC):
         return f"sophia-{uuid.uuid4().hex[:8]}"
 
     async def _persist_job(self, job: ScheduledJob) -> None:
-        await self._db.execute(
-            "INSERT INTO scheduled_jobs "
-            "(job_id, command, scheduled_for, created_at, status, description) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                job.job_id,
-                job.command,
-                job.scheduled_for,
-                job.created_at,
-                job.status.value,
-                job.description,
-            ),
+        await self._session.execute(
+            insert(scheduled_jobs).values(
+                job_id=job.job_id,
+                command=job.command,
+                scheduled_for=job.scheduled_for,
+                created_at=job.created_at,
+                status=job.status.value,
+                description=job.description,
+            )
         )
-        await self._db.commit()
 
     async def _update_status(self, job_id: str, status: JobStatus) -> None:
-        await self._db.execute(
-            "UPDATE scheduled_jobs SET status = ? WHERE job_id = ?",
-            (status.value, job_id),
+        await self._session.execute(
+            update(scheduled_jobs)
+            .where(scheduled_jobs.c.job_id == job_id)
+            .values(status=status.value)
         )
-        await self._db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -296,15 +276,26 @@ class _WindowsScheduler(Scheduler):
 # ---------------------------------------------------------------------------
 
 
-def create_scheduler(db: aiosqlite.Connection) -> Scheduler:
+def _row_to_job(row: Row[tuple[object, ...]]) -> ScheduledJob:
+    return ScheduledJob(
+        job_id=row.job_id,
+        command=row.command,
+        scheduled_for=row.scheduled_for,
+        created_at=row.created_at,
+        status=JobStatus(row.status),
+        description=row.description,
+    )
+
+
+def create_scheduler(session: AsyncSession) -> Scheduler:
     """Create the appropriate scheduler for the current platform."""
     import platform
 
     system = platform.system()
     if system == "Linux":
-        return _LinuxScheduler(db)
+        return _LinuxScheduler(session)
     if system == "Darwin":
-        return _MacOSScheduler(db)
+        return _MacOSScheduler(session)
     if system == "Windows":
-        return _WindowsScheduler(db)
+        return _WindowsScheduler(session)
     raise SchedulerError(f"Unsupported platform: {system}")

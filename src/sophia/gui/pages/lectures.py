@@ -179,14 +179,14 @@ async def _render_batch_actions() -> None:
     if not container:
         return
 
-    db = container.db
-    modules = await get_lecture_modules(db)
     all_episodes: list[EpisodeStatus] = []
     module_ids: list[int] = []
-    for mod in modules:
-        episodes = await get_module_lectures(db, mod.module_id)
-        all_episodes.extend(episodes)
-        module_ids.append(mod.module_id)
+    async with container.session() as db:
+        modules = await get_lecture_modules(db)
+        for mod in modules:
+            episodes = await get_module_lectures(db, mod.module_id)
+            all_episodes.extend(episodes)
+            module_ids.append(mod.module_id)
 
     unprocessed = get_unprocessed(all_episodes)
     n_unprocessed = len(unprocessed)
@@ -274,8 +274,11 @@ async def _lecture_list() -> None:
     if not container:
         return
 
-    db = container.db
-    modules = await get_lecture_modules(db)
+    async with container.session() as db:
+        modules = await get_lecture_modules(db)
+        episodes_by_module = {
+            mod.module_id: await get_module_lectures(db, mod.module_id) for mod in modules
+        }
 
     if not modules:
         _render_empty_state()
@@ -286,7 +289,7 @@ async def _lecture_list() -> None:
     any_visible = False
 
     for mod in modules:
-        episodes = await get_module_lectures(db, mod.module_id)
+        episodes = episodes_by_module[mod.module_id]
         filtered = filter_episodes(episodes, status_filter=status_filter, search_query=search_query)
         if not filtered:
             continue

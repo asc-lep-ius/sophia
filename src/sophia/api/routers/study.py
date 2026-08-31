@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
+from sqlalchemy import select
 
 from sophia.api.deps import (
     ensure_learning_path_scope,
-    get_app_container,
+    request_session,
     require_csrf,
     require_csrf_learning_path_scope,
     require_learning_path_scope,
@@ -27,8 +28,10 @@ from sophia.api.schemas.study import (
     StudySessionResponse,
     StudySessionStartRequest,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.learning import ContentKind
 from sophia.domain.models import FlashcardSource
+from sophia.infra.schema import study_sessions
 from sophia.services.athena_session import (
     complete_study_session,
     get_study_sessions,
@@ -38,12 +41,12 @@ from sophia.services.athena_session import (
 from sophia.services.provenance import learner_authored, record_provenance
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.api.schemas.provenance import Provenance
     from sophia.domain.models import StudentFlashcard, StudySession
 
-router = APIRouter(tags=["study"])
+router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
 ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     "complete_study_session": {"operation_id": "completeStudySession"},
@@ -84,7 +87,7 @@ async def list_study_sessions(
     topic: TopicFilterQuery = None,
 ) -> StudySessionListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    sessions = await get_study_sessions(get_app_container(request).db, learning_path_id, topic)
+    sessions = await get_study_sessions(await request_session(request), learning_path_id, topic)
     if topic is not None and not sessions:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return StudySessionListResponse(
@@ -105,7 +108,7 @@ async def create_study_session(
 ) -> StudySessionResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     session = await start_study_session(
-        get_app_container(request).db,
+        await request_session(request),
         payload.learning_path_id,
         payload.topic,
     )
@@ -123,14 +126,14 @@ async def mark_study_session_complete(
     payload: StudySessionCompleteRequest,
     request: Request,
 ) -> StudySessionCompletionResponse:
-    session = await require_csrf(request)
-    app_container = get_app_container(request)
-    learning_path_id = await _study_session_learning_path_id(app_container.db, session_id)
+    auth_session = await require_csrf(request)
+    db = await request_session(request)
+    learning_path_id = await _study_session_learning_path_id(db, session_id)
     if learning_path_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_learning_path_scope(session, learning_path_id)
+    ensure_learning_path_scope(auth_session, learning_path_id)
     await complete_study_session(
-        app_container.db,
+        db,
         session_id,
         payload.pre_test_score,
         payload.post_test_score,
@@ -149,7 +152,7 @@ async def create_study_flashcard(
     request: Request,
 ) -> StudyFlashcardResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
-    db = get_app_container(request).db
+    db = await request_session(request)
     flashcard = await save_flashcard(
         db,
         payload.learning_path_id,
@@ -171,14 +174,14 @@ async def create_study_flashcard(
 
 
 async def _study_session_learning_path_id(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     session_id: int,
 ) -> int | None:
-    cursor = await db.execute("SELECT course_id FROM study_sessions WHERE id = ?", (session_id,))
-    row = cast("tuple[object, ...] | None", await cursor.fetchone())
-    if row is None:
+    course_id = await db.scalar(
+        select(study_sessions.c.course_id).where(study_sessions.c.id == session_id)
+    )
+    if course_id is None:
         return None
-    course_id = row[0]
     if isinstance(course_id, int):
         return course_id
     if isinstance(course_id, str):

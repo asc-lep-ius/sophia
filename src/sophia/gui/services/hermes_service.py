@@ -6,11 +6,15 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from sophia.gui.services.error_service import gui_error_handler
+from sophia.infra.schema import lecture_downloads, lecture_modules
 from sophia.services.hermes_manage import get_pipeline_status as _get_pipeline_status
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
@@ -97,19 +101,35 @@ def filter_episodes(
 
 
 @gui_error_handler(operation="get_lecture_modules", fallback=[])
-async def get_lecture_modules(db: aiosqlite.Connection) -> list[ModuleInfo]:
+async def get_lecture_modules(db: AsyncSession) -> list[ModuleInfo]:
     """Query distinct modules that have lecture downloads."""
-    cursor = await db.execute(
-        "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
-        "FROM lecture_downloads ld "
-        "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id",
-    )
-    rows = await cursor.fetchall()
-    return [ModuleInfo(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
+    rows = (
+        await db.execute(
+            select(
+                lecture_downloads.c.module_id,
+                lecture_downloads.c.series_id,
+                func.coalesce(lecture_modules.c.course_name, "").label("course_name"),
+            )
+            .select_from(lecture_downloads)
+            .outerjoin(
+                lecture_modules,
+                lecture_downloads.c.module_id == lecture_modules.c.module_id,
+            )
+            .distinct()
+        )
+    ).all()
+    return [
+        ModuleInfo(
+            module_id=row.module_id,
+            series_id=row.series_id,
+            course_name=row.course_name,
+        )
+        for row in rows
+    ]
 
 
 @gui_error_handler(operation="get_module_lectures", fallback=[])
-async def get_module_lectures(db: aiosqlite.Connection, module_id: int) -> list[EpisodeStatus]:
+async def get_module_lectures(db: AsyncSession, module_id: int) -> list[EpisodeStatus]:
     """Fetch pipeline status for all episodes in a module."""
     return await _get_pipeline_status(db, module_id)
 
@@ -143,13 +163,22 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
     if not opencast_modules:
         return []
 
-    for shortname, fullname, mid, _name in opencast_modules:
-        await container.db.execute(
-            "INSERT OR REPLACE INTO lecture_modules (module_id, course_name, course_shortname) "
-            "VALUES (?, ?, ?)",
-            (mid, fullname, shortname),
-        )
-    await container.db.commit()
+    async with container.session() as db:
+        for shortname, fullname, mid, _name in opencast_modules:
+            statement = pg_insert(lecture_modules).values(
+                module_id=mid,
+                course_name=fullname,
+                course_shortname=shortname,
+            )
+            await db.execute(
+                statement.on_conflict_do_update(
+                    index_elements=[lecture_modules.c.module_id],
+                    set_={
+                        "course_name": statement.excluded.course_name,
+                        "course_shortname": statement.excluded.course_shortname,
+                    },
+                )
+            )
 
     episode_lists = await asyncio.gather(
         *(container.opencast.get_series_episodes(mid) for _, _, mid, _ in opencast_modules),

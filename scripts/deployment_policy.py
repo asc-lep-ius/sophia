@@ -17,11 +17,15 @@ PROXY_DOCKERFILE = Path("proxy/Dockerfile")
 GITLAB_CI_FILE = Path(".gitlab-ci.yml")
 DEPLOYMENT_DOC_FILE = Path("DEPLOYMENT.md")
 APPLICATION_SERVICES = frozenset({"api", "frontend", "sophia-gui"})
+# The services that open a database session. "frontend" is excluded: it is a
+# Node app that reaches the data only through the API.
+DATABASE_CLIENT_SERVICES = frozenset({"api", "sophia-gui"})
+DATABASE_URL_ENV_VAR = "SOPHIA_DATABASE_URL"
 DEPLOYABLE_IMAGE_SERVICES = APPLICATION_SERVICES | frozenset({"proxy"})
 REQUIRED_DEPENDENCIES = {
     "proxy": frozenset({"api", "frontend", "sophia-gui"}),
-    "api": frozenset({"redis"}),
-    "litestream": frozenset({"api"}),
+    "api": frozenset({"redis", "postgres"}),
+    "sophia-gui": frozenset({"postgres"}),
     "postgres-backup": frozenset({"postgres"}),
 }
 # Postgres is pinned by digest rather than by tag: 18.4 can be re-pushed, and a
@@ -47,13 +51,6 @@ DEFAULT_BRANCH_CONDITION_PATTERN = re.compile(
 )
 UNSAFE_IMAGE_TOKENS = ("phase0-local", ":latest", "${image_tag:-latest}")
 PATH_LIKE_PREFIXES = (".", "/", "~", "$", "..")
-REQUIRED_LITESTREAM_ENV_VARS = frozenset(
-    {
-        "LITESTREAM_REPLICA_URL",
-        "LITESTREAM_ACCESS_KEY_ID",
-        "LITESTREAM_SECRET_ACCESS_KEY",
-    }
-)
 REQUIRED_BACKUP_DOC_TERMS = {
     "restore-learning-progress": (
         "study_sessions",
@@ -77,11 +74,11 @@ REQUIRED_BACKUP_DOC_TERMS = {
     ),
     "backup-metrics": (
         "/api/metrics",
-        "litestream snapshots",
+        "ls -t /backups",
     ),
-    "stopped-replication-alert": (
-        "stopped replication",
-        "litestream service is unhealthy",
+    "stopped-backup-alert": (
+        "stopped backups",
+        "postgres-backup service is unhealthy",
     ),
     "restore-cadence": (
         "weekly",
@@ -89,8 +86,8 @@ REQUIRED_BACKUP_DOC_TERMS = {
         "after every schema migration",
     ),
     "restore-validation": (
-        "pragma integrity_check",
-        "sqlite3",
+        "pg_restore --list",
+        "psql",
         "curl -f https://sophia.example.com/api/ready",
     ),
     "postgres-backup-policy": (
@@ -108,7 +105,12 @@ REQUIRED_BACKUP_DOC_TERMS = {
         "stop writes",
         "sqlite_to_postgres",
         "--mode verify",
-        "read-only sqlite fallback",
+        "archive the sqlite file",
+        # The host tooling defaults to localhost:5432, which is not the
+        # production database. Without this the playbook silently migrates
+        # nothing, so the doc must say how the host reaches Postgres.
+        "sophia_database_url",
+        "127.0.0.1:5432:5432",
     ),
 }
 
@@ -275,9 +277,9 @@ def _scan_deployment_docs(root: Path) -> list[DeploymentPolicyViolation]:
         return [
             _violation(
                 DEPLOYMENT_DOC_FILE,
-                "litestream",
+                "postgres-backup",
                 "restore-drill-docs",
-                "DEPLOYMENT.md must document Litestream restore drills",
+                "DEPLOYMENT.md must document Postgres restore drills",
             )
         ]
 
@@ -289,7 +291,7 @@ def _scan_deployment_docs(root: Path) -> list[DeploymentPolicyViolation]:
             violations.append(
                 _violation(
                     DEPLOYMENT_DOC_FILE,
-                    "litestream",
+                    "postgres-backup",
                     check,
                     "restore drill docs must include: " + ", ".join(missing_terms),
                 )
@@ -420,8 +422,54 @@ def _scan_service(
     violations.extend(_scan_healthcheck(path, service_name, service))
     violations.extend(_scan_volumes(path, service_name, service, volumes))
     violations.extend(_scan_dependencies(path, service_name, service, services))
-    violations.extend(_scan_litestream_backup(path, service_name, service))
+    violations.extend(_scan_database_url(path, service_name, service))
     return violations
+
+
+def _scan_database_url(
+    path: Path,
+    service_name: str,
+    service: Mapping[str, Any],
+) -> list[DeploymentPolicyViolation]:
+    """Every service that opens a session must be told where the database is.
+
+    Settings defaults ``database_url`` to localhost, which inside a container
+    reaches nothing. The failure is a crash loop at startup rather than a
+    misconfiguration warning, so it is worth catching here.
+    """
+    if service_name not in DATABASE_CLIENT_SERVICES:
+        return []
+
+    environment = _environment_mapping(service.get("environment"))
+    database_url = environment.get(DATABASE_URL_ENV_VAR, "")
+    if not database_url:
+        return [
+            _violation(
+                path,
+                service_name,
+                "database-url",
+                f"{DATABASE_URL_ENV_VAR} must be set — the default points at localhost",
+            )
+        ]
+    if "+asyncpg" not in database_url:
+        return [
+            _violation(
+                path,
+                service_name,
+                "database-url",
+                f"{DATABASE_URL_ENV_VAR} must use the asyncpg driver",
+            )
+        ]
+    if "@postgres:" not in database_url:
+        return [
+            _violation(
+                path,
+                service_name,
+                "database-url",
+                f"{DATABASE_URL_ENV_VAR} must point at the postgres service",
+            )
+        ]
+    return []
 
 
 def _scan_ports(
@@ -487,15 +535,6 @@ def _scan_image(
     elif service_name in POSTGRES_DIGEST_SERVICES and not image.startswith("postgres@"):
         violations.append(
             _violation(path, service_name, "image", "postgres baseline must be the postgres image")
-        )
-    elif service_name == "litestream" and image != "litestream/litestream:0.5.11":
-        violations.append(
-            _violation(
-                path,
-                service_name,
-                "image",
-                "litestream baseline must be litestream/litestream:0.5.11",
-            )
         )
     return violations
 
@@ -597,69 +636,6 @@ def _scan_dependencies(
     return violations
 
 
-def _scan_litestream_backup(
-    path: Path,
-    service_name: str,
-    service: Mapping[str, Any],
-) -> list[DeploymentPolicyViolation]:
-    if service_name != "litestream":
-        return []
-
-    violations: list[DeploymentPolicyViolation] = []
-    command = "\n".join(_script_lines(service.get("command")))
-    required_command_parts = (
-        "litestream replicate",
-        "/data/sophia.db",
-        "$$LITESTREAM_REPLICA_URL",
-    )
-    missing_command_parts = [part for part in required_command_parts if part not in command]
-    if missing_command_parts:
-        violations.append(
-            _violation(
-                path,
-                service_name,
-                "replication-command",
-                "litestream must replicate /data/sophia.db to LITESTREAM_REPLICA_URL",
-            )
-        )
-
-    environment = _environment_mapping(service.get("environment"))
-    missing_env_vars = REQUIRED_LITESTREAM_ENV_VARS.difference(environment.keys())
-    if missing_env_vars:
-        violations.append(
-            _violation(
-                path,
-                service_name,
-                "replica-env",
-                "missing replica environment: " + ", ".join(sorted(missing_env_vars)),
-            )
-        )
-
-    healthcheck = _mapping(service.get("healthcheck"))
-    healthcheck_command = " ".join(_script_lines(healthcheck.get("test")))
-    if "litestream snapshots" not in healthcheck_command:
-        violations.append(
-            _violation(
-                path,
-                service_name,
-                "replica-healthcheck",
-                "litestream healthcheck must validate replica snapshots",
-            )
-        )
-
-    if not _has_read_only_litestream_data_volume(service.get("volumes")):
-        violations.append(
-            _violation(
-                path,
-                service_name,
-                "data-volume",
-                "litestream must mount sophia-data at /data read-only",
-            )
-        )
-
-    return violations
-
-
 def _load_yaml(path: Path) -> object:
     return cast("object", yaml.safe_load(path.read_text(encoding="utf-8")))
 
@@ -725,26 +701,6 @@ def _environment_mapping(value: object) -> Mapping[str, Any]:
         name, separator, setting = line.partition("=")
         environment[name] = setting if separator else ""
     return environment
-
-
-def _has_read_only_litestream_data_volume(value: object) -> bool:
-    service_volumes = _list_or_none(value)
-    if service_volumes is None:
-        return False
-
-    for volume in service_volumes:
-        if isinstance(volume, str) and volume == "sophia-data:/data:ro":
-            return True
-        volume_mapping = _mapping_or_none(volume)
-        if volume_mapping is None:
-            continue
-        if (
-            volume_mapping.get("source") == "sophia-data"
-            and volume_mapping.get("target") == "/data"
-            and volume_mapping.get("read_only") is True
-        ):
-            return True
-    return False
 
 
 def _volume_source(volume: object) -> str | None:

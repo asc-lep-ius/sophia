@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import calibration as calibration_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ConfidenceRating
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -142,12 +136,12 @@ def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -
     login(harness)
 
     async def fake_rate_confidence(
-        app: AppContainer,
+        db: object,
         topic: str,
         course_id: int,
         rating: int,
     ) -> ConfidenceRating:
-        assert app is fake_app
+        assert db is fake_app.db
         assert topic == "Graphs"
         assert course_id == 12
         assert rating == 4

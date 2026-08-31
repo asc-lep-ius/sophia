@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.learning import (
     ContentKind,
@@ -19,11 +22,12 @@ from sophia.domain.learning import (
     LearningPathSettings,
     StoredContentOrigin,
 )
+from sophia.infra.schema import content_translations, learning_path_settings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import Course
 
@@ -42,7 +46,7 @@ DEFAULT = "default"
 
 
 async def resolve_content_language(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     *,
     override: ContentLanguage | None,
@@ -52,7 +56,7 @@ async def resolve_content_language(
     if override is not None:
         return ResolvedContentLanguage(language=override, resolved_from=OVERRIDE)
 
-    settings = await get_learning_path_settings(db, course_id)
+    settings = await get_learning_path_settings(session, course_id)
     if settings is not None:
         return ResolvedContentLanguage(
             language=settings.exam_language,
@@ -62,50 +66,52 @@ async def resolve_content_language(
 
 
 async def get_learning_path_settings(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> LearningPathSettings | None:
     """Load the persisted pedagogy settings for one learning path."""
-    cursor = await db.execute(
-        "SELECT course_id, exam_language, content_origin FROM learning_path_settings "
-        "WHERE course_id = ?",
-        (course_id,),
-    )
-    row = cast("tuple[object, ...] | None", await cursor.fetchone())
+    row = (
+        await session.execute(
+            select(learning_path_settings).where(
+                learning_path_settings.c.course_id == course_id,
+            )
+        )
+    ).one_or_none()
     if row is None:
         return None
     return LearningPathSettings(
-        course_id=int(cast("int", row[0])),
-        exam_language=ContentLanguage(str(row[1])),
-        content_origin=StoredContentOrigin(str(row[2])),
+        course_id=row.course_id,
+        exam_language=ContentLanguage(row.exam_language),
+        content_origin=StoredContentOrigin(row.content_origin),
     )
 
 
 async def save_learning_path_settings(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     settings: LearningPathSettings,
 ) -> LearningPathSettings:
     """Upsert the exam language and origin a learning path was ingested from."""
-    await db.execute(
-        "INSERT INTO learning_path_settings (course_id, exam_language, content_origin, updated_at) "
-        "VALUES (?, ?, ?, ?) "
-        "ON CONFLICT(course_id) DO UPDATE SET "
-        "exam_language = excluded.exam_language, "
-        "content_origin = excluded.content_origin, "
-        "updated_at = excluded.updated_at",
-        (
-            settings.course_id,
-            settings.exam_language.value,
-            settings.content_origin.value,
-            datetime.now(UTC).isoformat(),
-        ),
+    statement = pg_insert(learning_path_settings).values(
+        course_id=settings.course_id,
+        exam_language=settings.exam_language.value,
+        content_origin=settings.content_origin.value,
+        updated_at=datetime.now(UTC),
     )
-    await db.commit()
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[learning_path_settings.c.course_id],
+            set_={
+                "exam_language": statement.excluded.exam_language,
+                "content_origin": statement.excluded.content_origin,
+                "updated_at": statement.excluded.updated_at,
+            },
+        )
+    )
     return settings
 
 
 async def get_translations(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> list[ContentTranslation]:
     """Load recorded translations for a learning path.
@@ -114,25 +120,26 @@ async def get_translations(
     pipeline ships, so this returns an empty list in practice. It exists so the
     API shape is stable before the feature lands.
     """
-    cursor = await db.execute(
-        "SELECT content_kind, content_id, language, translated_at FROM content_translations "
-        "WHERE course_id = ? ORDER BY translated_at DESC",
-        (course_id,),
-    )
-    rows = cast("Sequence[tuple[object, ...]]", await cursor.fetchall())
+    rows = (
+        await session.execute(
+            select(content_translations)
+            .where(content_translations.c.course_id == course_id)
+            .order_by(content_translations.c.translated_at.desc())
+        )
+    ).all()
     return [
         ContentTranslation(
-            content_kind=ContentKind(str(row[0])),
-            content_id=str(row[1]),
-            language=ContentLanguage(str(row[2])),
-            translated_at=str(row[3] or ""),
+            content_kind=ContentKind(row.content_kind),
+            content_id=row.content_id,
+            language=ContentLanguage(row.language),
+            translated_at=row.translated_at.isoformat() if row.translated_at else "",
         )
         for row in rows
     ]
 
 
 async def sync_learning_path_settings(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     courses: Sequence[Course],
 ) -> int:
     """Persist the exam language the upstream source reports for each course.
@@ -146,7 +153,7 @@ async def sync_learning_path_settings(
         if course.exam_language is None:
             continue
         await save_learning_path_settings(
-            db,
+            session,
             LearningPathSettings(
                 course_id=course.id,
                 exam_language=ContentLanguage(course.exam_language),

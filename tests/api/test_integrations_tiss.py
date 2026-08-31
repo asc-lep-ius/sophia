@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import integrations_tiss as tiss_router
@@ -22,7 +21,7 @@ from sophia.services.tiss_registration import (
     StatusResult,
 )
 
-from ._session_helpers import ApiHarness, build_harness, csrf_headers, login
+from ._session_helpers import ApiHarness, FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
@@ -31,11 +30,6 @@ if TYPE_CHECKING:
 
 COURSE_NUMBER = "186.813"
 SEMESTER = "2026S"
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def _harness() -> ApiHarness:

@@ -130,10 +130,6 @@ docker-validate: docker-config docker-prod-config deployment-policy ## Validate 
 
 deploy-config: docker-prod-config ## Alias for deployment configuration validation
 
-docker-backup:                   ## Backup SQLite from Docker volume
-	docker compose cp sophia:/data/sophia.db ./sophia-backup-$$(date +%Y%m%d).db
-	@echo "Backup saved to sophia-backup-$$(date +%Y%m%d).db"
-
 test-gui:                        ## Run GUI unit tests
 	uv run pytest tests/unit/gui/ -v
 

@@ -29,6 +29,7 @@ x-gui-common: &gui-common
     - SOPHIA_DOCKER=1
     - HF_HOME=/home/sophia/.cache/huggingface
     - SOPHIA_REDIS_URL=redis://redis:6379/0
+    - SOPHIA_DATABASE_URL=postgresql+asyncpg://${SOPHIA_POSTGRES_USER:-sophia}:${SOPHIA_POSTGRES_PASSWORD:-sophia}@postgres:5432/${SOPHIA_POSTGRES_DB:-sophia}
   restart: unless-stopped
   networks:
     - backend
@@ -117,7 +118,7 @@ services:
       - POSTGRES_PASSWORD=${SOPHIA_POSTGRES_PASSWORD:-sophia}
       - POSTGRES_DB=${SOPHIA_POSTGRES_DB:-sophia}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./ci/postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "${SOPHIA_POSTGRES_PORT:-5432}:5432"
@@ -172,6 +173,7 @@ services:
       - SOPHIA_LOG_FORMAT=json
       - SOPHIA_DOCKER=1
       - SOPHIA_REDIS_URL=redis://redis:6379/0
+      - SOPHIA_DATABASE_URL=postgresql+asyncpg://${SOPHIA_POSTGRES_USER:-sophia}:${SOPHIA_POSTGRES_PASSWORD:-sophia}@postgres:5432/${SOPHIA_POSTGRES_DB:-sophia}
     volumes:
       - sophia-data:/data
       - ${SOPHIA_CONFIG_DIR:-~/.config/sophia}:/config
@@ -179,6 +181,8 @@ services:
       - "8000"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     networks:
       - backend
@@ -250,11 +254,6 @@ services:
         limits:
           memory: 512M
           cpus: "1.0"
-    healthcheck:
-      test: ["CMD", "python", "-c",
-             "import sqlite3; sqlite3.connect('/data/sophia.db').execute('SELECT 1')"]
-      interval: 30s
-      retries: 3
 
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest

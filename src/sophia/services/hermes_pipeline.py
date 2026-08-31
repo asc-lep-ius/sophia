@@ -16,6 +16,8 @@ from sophia.services.hermes_transcribe import TranscriptionResult, transcribe_le
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.domain.models import DownloadProgressEvent, TopicMapping
     from sophia.infra.di import AppContainer
 
@@ -36,6 +38,7 @@ class PipelineResult:
 
 async def run_pipeline(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     *,
     index_materials: bool = False,
@@ -64,10 +67,14 @@ async def run_pipeline(
         return result
 
     result.downloads = await download_lectures(
-        app, module_id, on_progress=on_download_progress, cancel_check=cancel_check
+        app,
+        session,
+        module_id,
+        on_progress=on_download_progress,
+        cancel_check=cancel_check,
     )
 
-    await assign_lecture_numbers(app.db, module_id)
+    await assign_lecture_numbers(session, module_id)
 
     if cancel_check and cancel_check():
         log.info("pipeline_cancelled", module_id=module_id, stage="after_download")
@@ -76,6 +83,7 @@ async def run_pipeline(
 
     result.transcriptions = await transcribe_lectures(
         app,
+        session,
         module_id,
         on_start=on_transcribe_start,
         on_complete=on_transcribe_complete,
@@ -89,6 +97,7 @@ async def run_pipeline(
 
     result.indexing = await index_lectures(
         app,
+        session,
         module_id,
         on_start=on_index_start,
         on_complete=on_index_complete,
@@ -101,13 +110,17 @@ async def run_pipeline(
         return result
 
     result.topics = await extract_topics_from_lectures(
-        app, module_id, on_progress=on_topic_progress, force=True
+        app,
+        session,
+        module_id,
+        on_progress=on_topic_progress,
+        force=True,
     )
 
     if index_materials and course_id is not None:
         from sophia.services.material_index import index_materials as _index_materials
 
-        result.material_chunks = await _index_materials(app, course_id)
+        result.material_chunks = await _index_materials(app, session, course_id)
 
     log.info(
         "pipeline_complete",

@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import topics as topics_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ConfidenceRating, TopicMapping, TopicSource
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -55,8 +49,8 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
     )
     login(harness)
 
-    async def fake_get_course_topics(app: AppContainer, course_id: int) -> list[TopicMapping]:
-        assert app is fake_app
+    async def fake_get_course_topics(db: object, course_id: int) -> list[TopicMapping]:
+        assert db is fake_app.db
         assert course_id == 12
         return [
             TopicMapping(
@@ -107,11 +101,12 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
 
     async def fake_extract_topics_from_lectures(
         app: AppContainer,
+        db: object,
         module_id: int,
         *,
         force: bool = False,
     ) -> list[TopicMapping]:
-        assert app is fake_app
+        assert db is fake_app.db
         assert module_id == 12
         assert force is True
         return [TopicMapping(topic="Graphs", course_id=12, source=TopicSource.LECTURE)]
@@ -164,11 +159,11 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
     login(harness)
 
     async def fake_save_manual_topic(
-        app: AppContainer,
+        db: object,
         topic: str,
         course_id: int,
     ) -> TopicMapping | None:
-        assert app is fake_app
+        assert db is fake_app.db
         assert topic == "Amortized analysis"
         assert course_id == 12
         return TopicMapping(topic=topic, course_id=course_id, source=TopicSource.MANUAL)
@@ -217,12 +212,12 @@ def test_confidence_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         ]
 
     async def fake_rate_confidence(
-        app: AppContainer,
+        db: object,
         topic: str,
         course_id: int,
         rating: int,
     ) -> ConfidenceRating:
-        assert app is fake_app
+        assert db is fake_app.db
         assert topic == "Graphs"
         assert course_id == 12
         assert rating == 4

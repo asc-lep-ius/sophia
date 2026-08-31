@@ -7,6 +7,8 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from sqlalchemy import delete, func, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.errors import ChronosError
 from sophia.domain.models import (
@@ -15,9 +17,17 @@ from sophia.domain.models import (
     EffortEstimate,
     EstimationScaffold,
 )
+from sophia.infra.schema import (
+    active_timers,
+    deadline_cache,
+    deadline_reflections,
+    effort_estimates,
+    metacognition_log,
+    time_entries,
+)
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import AssignmentInfo, Course, TissExamDate
     from sophia.infra.di import AppContainer
@@ -173,7 +183,7 @@ def _calendar_event_to_deadline(event: dict[str, Any]) -> Deadline | None:
 # ---------------------------------------------------------------------------
 
 
-async def sync_deadlines(app: AppContainer) -> list[Deadline]:
+async def sync_deadlines(app: AppContainer, session: AsyncSession) -> list[Deadline]:
     """Fetch deadlines from all enrolled courses and upsert into cache."""
     courses = await app.moodle.get_enrolled_courses()
     all_deadlines: list[Deadline] = []
@@ -212,7 +222,7 @@ async def sync_deadlines(app: AppContainer) -> list[Deadline]:
             except Exception:
                 log.warning("tiss_exam_fetch_failed", course_number=course_number)
 
-    await _upsert_deadlines(app.db, all_deadlines)
+    await _upsert_deadlines(session, all_deadlines)
     log.info("deadlines_synced", count=len(all_deadlines))
     return all_deadlines
 
@@ -234,111 +244,114 @@ async def _sync_course_assignments(app: AppContainer, course: Course) -> list[De
     return deadlines
 
 
-async def _upsert_deadlines(db: aiosqlite.Connection, deadlines: list[Deadline]) -> None:
+async def _upsert_deadlines(session: AsyncSession, deadlines: list[Deadline]) -> None:
     """Upsert deadlines into the cache table."""
     for d in deadlines:
-        await db.execute(
-            "INSERT OR REPLACE INTO deadline_cache "
-            "(id, name, course_id, course_name, deadline_type, due_at, "
-            "grade_weight, submission_status, url, extra, synced_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                d.id,
-                d.name,
-                d.course_id,
-                d.course_name,
-                d.deadline_type.value,
-                d.due_at.isoformat(),
-                d.grade_weight,
-                d.submission_status,
-                d.url,
-                json.dumps(d.extra),
-                datetime.now(UTC).isoformat(),
-            ),
+        values = {
+            "name": d.name,
+            "course_id": d.course_id,
+            "course_name": d.course_name,
+            "deadline_type": d.deadline_type.value,
+            "due_at": d.due_at.isoformat(),
+            "grade_weight": d.grade_weight,
+            "submission_status": d.submission_status,
+            "url": d.url,
+            "extra": json.dumps(d.extra),
+            "synced_at": datetime.now(UTC).isoformat(),
+        }
+        statement = pg_insert(deadline_cache).values(id=d.id, **values)
+        await session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[deadline_cache.c.id],
+                set_={key: statement.excluded[key] for key in values},
+            )
         )
-    await db.commit()
 
 
 async def get_deadlines(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     horizon_days: int = 14,
 ) -> list[Deadline]:
     """Load upcoming deadlines from cache within the given horizon."""
-    now = datetime.now(UTC).isoformat()
-    horizon_end = (datetime.now(UTC) + timedelta(days=horizon_days)).isoformat()
-
+    now = datetime.now(UTC)
     query = (
-        "SELECT id, name, course_id, course_name, deadline_type, due_at, "
-        "grade_weight, submission_status, url, extra "
-        "FROM deadline_cache "
-        "WHERE due_at > ? AND due_at < ? "
+        select(deadline_cache)
+        .where(
+            deadline_cache.c.due_at > now.isoformat(),
+            deadline_cache.c.due_at < (now + timedelta(days=horizon_days)).isoformat(),
+        )
+        .order_by(deadline_cache.c.due_at.asc())
     )
-    params: list[str | int] = [now, horizon_end]
-
     if course_id is not None:
-        query += "AND course_id = ? "
-        params.append(course_id)
+        query = query.where(deadline_cache.c.course_id == course_id)
 
-    query += "ORDER BY due_at ASC"
-
-    cursor = await db.execute(query, params)
-    rows = list(await cursor.fetchall())
-
-    # Warn if cache is stale
-    stale_cursor = await db.execute("SELECT MAX(synced_at) FROM deadline_cache")
-    stale_row = await stale_cursor.fetchone()
-    if stale_row and stale_row[0]:
-        try:
-            last_sync = datetime.fromisoformat(stale_row[0])
-            if last_sync.tzinfo is None:
-                last_sync = last_sync.replace(tzinfo=UTC)
-            if datetime.now(UTC) - last_sync > timedelta(hours=CACHE_STALE_HOURS):
-                log.warning("deadline_cache_stale", last_sync=stale_row[0])
-        except ValueError:
-            pass
+    rows = (await session.execute(query)).all()
+    await _warn_if_stale(session)
 
     return [
         Deadline(
-            id=row[0],
-            name=row[1],
-            course_id=row[2],
-            course_name=row[3],
-            deadline_type=DeadlineType(row[4]),
-            due_at=datetime.fromisoformat(row[5]),
-            grade_weight=row[6],
-            submission_status=row[7],
-            url=row[8],
-            extra=json.loads(row[9]) if row[9] else {},
+            id=row.id,
+            name=row.name,
+            course_id=row.course_id,
+            course_name=row.course_name,
+            deadline_type=DeadlineType(row.deadline_type),
+            due_at=datetime.fromisoformat(row.due_at),
+            grade_weight=row.grade_weight,
+            submission_status=row.submission_status,
+            url=row.url,
+            extra=json.loads(row.extra) if row.extra else {},
         )
         for row in rows
     ]
 
 
+async def _warn_if_stale(session: AsyncSession) -> None:
+    """Log when the cache has not been synced recently."""
+    last_synced = await session.scalar(select(func.max(deadline_cache.c.synced_at)))
+    if not last_synced:
+        return
+    try:
+        last_sync = datetime.fromisoformat(last_synced)
+    except ValueError:
+        return
+    if last_sync.tzinfo is None:
+        last_sync = last_sync.replace(tzinfo=UTC)
+    if datetime.now(UTC) - last_sync > timedelta(hours=CACHE_STALE_HOURS):
+        log.warning("deadline_cache_stale", last_sync=last_synced)
+
+
+def _effort_log_query(deadline_type: DeadlineType, course_id: int | None):
+    """Base query over the effort rows of the metacognition log."""
+    query = select(metacognition_log).where(
+        metacognition_log.c.domain == f"effort:{deadline_type.value}",
+    )
+    if course_id is not None:
+        query = query.where(metacognition_log.c.course_id == str(course_id))
+    return query
+
+
 async def get_scaffold_level(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_type: DeadlineType,
     *,
     course_id: int | None = None,
 ) -> EstimationScaffold:
     """Determine scaffold level based on calibration accuracy or count fallback."""
-    domain = f"effort:{deadline_type.value}"
-
-    metacognition_query = (
-        "SELECT predicted, actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
-    )
-    metacognition_params: list[str] = [domain]
-    if course_id is not None:
-        metacognition_query += " AND course_id = ?"
-        metacognition_params.append(str(course_id))
-
-    cursor = await db.execute(metacognition_query, metacognition_params)
-    cal_rows = list(await cursor.fetchall())
+    cal_rows = (
+        await session.execute(
+            _effort_log_query(deadline_type, course_id).where(
+                metacognition_log.c.actual.is_not(None),
+            )
+        )
+    ).all()
 
     if len(cal_rows) >= CALIBRATION_THRESHOLD_ENTRIES:
         # Calibration-based scaffold
-        total_error = sum(abs(r[0] - r[1]) / max(r[1], 0.1) for r in cal_rows)
+        total_error = sum(
+            abs(row.predicted - row.actual) / max(row.actual, 0.1) for row in cal_rows
+        )
         mean_error = total_error / len(cal_rows)
 
         if mean_error > CALIBRATION_HIGH_ERROR:
@@ -348,15 +361,10 @@ async def get_scaffold_level(
         return EstimationScaffold.OPEN
 
     # Count-based fallback: how many estimates exist
-    count_query = "SELECT COUNT(*) FROM effort_estimates"
-    count_params: list[int] = []
+    count_query = select(func.count()).select_from(effort_estimates)
     if course_id is not None:
-        count_query += " WHERE course_id = ?"
-        count_params.append(course_id)
-
-    count_cursor = await db.execute(count_query, count_params)
-    count_row = await count_cursor.fetchone()
-    count = count_row[0] if count_row else 0
+        count_query = count_query.where(effort_estimates.c.course_id == course_id)
+    count = await session.scalar(count_query) or 0
 
     if count >= COUNT_THRESHOLD_OPEN:
         return EstimationScaffold.OPEN
@@ -366,7 +374,7 @@ async def get_scaffold_level(
 
 
 async def get_reference_class(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_type: DeadlineType,
     *,
     course_id: int | None = None,
@@ -375,38 +383,29 @@ async def get_reference_class(
 
     Returns list of (predicted, actual) tuples.
     """
-    domain = f"effort:{deadline_type.value}"
-    query = "SELECT predicted, actual FROM metacognition_log WHERE domain = ?"
-    params: list[str] = [domain]
-    if course_id is not None:
-        query += " AND course_id = ?"
-        params.append(str(course_id))
-
-    cursor = await db.execute(query, params)
-    return list(await cursor.fetchall())  # type: ignore[return-value]
+    rows = (await session.execute(_effort_log_query(deadline_type, course_id))).all()
+    return [(row.predicted, row.actual) for row in rows]
 
 
 async def format_reference_class_hint(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_type: DeadlineType,
     *,
     course_id: int | None = None,
 ) -> str | None:
     """Format past actual times for display. None if <3 historical entries."""
-    domain = f"effort:{deadline_type.value}"
-    query = "SELECT actual FROM metacognition_log WHERE domain = ? AND actual IS NOT NULL"
-    params: list[str] = [domain]
-    if course_id is not None:
-        query += " AND course_id = ?"
-        params.append(str(course_id))
-
-    cursor = await db.execute(query, params)
-    rows = list(await cursor.fetchall())
+    rows = (
+        await session.execute(
+            _effort_log_query(deadline_type, course_id).where(
+                metacognition_log.c.actual.is_not(None),
+            )
+        )
+    ).all()
 
     if len(rows) < REFERENCE_CLASS_MIN_ENTRIES:
         return None
 
-    actuals = [r[0] for r in rows]
+    actuals = [row.actual for row in rows]
     avg = sum(actuals) / len(actuals)
     low = min(actuals)
     high = max(actuals)
@@ -418,7 +417,7 @@ async def format_reference_class_hint(
 
 
 async def record_estimate(
-    app: AppContainer,
+    session: AsyncSession,
     *,
     deadline_id: str,
     course_id: int,
@@ -427,44 +426,51 @@ async def record_estimate(
     intention: str | None = None,
 ) -> EffortEstimate:
     """Store an effort estimate and write to metacognition_log."""
-    db = app.db
-
     # Look up deadline type from cache
-    cursor = await db.execute(
-        "SELECT deadline_type FROM deadline_cache WHERE id = ?",
-        (deadline_id,),
+    stored_type = await session.scalar(
+        select(deadline_cache.c.deadline_type).where(deadline_cache.c.id == deadline_id)
     )
-    row = await cursor.fetchone()
-    deadline_type = DeadlineType(row[0]) if row else DeadlineType.ASSIGNMENT
+    deadline_type = DeadlineType(stored_type) if stored_type else DeadlineType.ASSIGNMENT
 
-    scaffold = await get_scaffold_level(db, deadline_type, course_id=course_id)
+    scaffold = await get_scaffold_level(session, deadline_type, course_id=course_id)
     now = datetime.now(UTC).isoformat()
 
-    await db.execute(
-        "INSERT INTO effort_estimates "
-        "(deadline_id, course_id, predicted_hours, breakdown, "
-        "implementation_intention, scaffold_level, estimated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            deadline_id,
-            course_id,
-            predicted_hours,
-            json.dumps(breakdown) if breakdown else None,
-            intention,
-            scaffold.value,
-            now,
-        ),
+    await session.execute(
+        insert(effort_estimates).values(
+            deadline_id=deadline_id,
+            course_id=course_id,
+            predicted_hours=predicted_hours,
+            breakdown=json.dumps(breakdown) if breakdown else None,
+            implementation_intention=intention,
+            scaffold_level=scaffold.value,
+            estimated_at=now,
+        )
     )
 
     # Write to metacognition_log for calibration tracking
-    domain = f"effort:{deadline_type.value}"
-    await db.execute(
-        "INSERT OR REPLACE INTO metacognition_log "
-        "(domain, item_id, predicted, predicted_at, course_id) VALUES (?, ?, ?, ?, ?)",
-        (domain, deadline_id, predicted_hours, now, course_id),
+    statement = pg_insert(metacognition_log).values(
+        domain=f"effort:{deadline_type.value}",
+        item_id=deadline_id,
+        predicted=predicted_hours,
+        predicted_at=datetime.now(UTC),
+        course_id=str(course_id),
+    )
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[metacognition_log.c.domain, metacognition_log.c.item_id],
+            set_={
+                "predicted": statement.excluded.predicted,
+                "predicted_at": statement.excluded.predicted_at,
+                "course_id": statement.excluded.course_id,
+                # A new prediction voids the old outcome. Keeping it would pair
+                # this estimate with an actual measured against a different one,
+                # and get_calibration_metrics would score that as real data.
+                "actual": None,
+                "actual_at": None,
+            },
+        )
     )
 
-    await db.commit()
     log.info(
         "effort_estimated",
         deadline_id=deadline_id,
@@ -492,46 +498,46 @@ UNDERESTIMATE_RATIO_MAJOR = 2.0
 OVERESTIMATE_RATIO = 0.75
 
 
-async def start_timer(db: aiosqlite.Connection, deadline_id: str) -> None:
+async def start_timer(session: AsyncSession, deadline_id: str) -> None:
     """Start a timer for a deadline. Raises ChronosError if already running."""
-    cursor = await db.execute("SELECT 1 FROM active_timers WHERE deadline_id = ?", (deadline_id,))
-    if await cursor.fetchone():
+    running = await session.scalar(
+        select(active_timers.c.deadline_id).where(active_timers.c.deadline_id == deadline_id)
+    )
+    if running is not None:
         raise ChronosError(f"Timer already running for {deadline_id}")
 
-    await db.execute(
-        "INSERT INTO active_timers (deadline_id, started_at) VALUES (?, ?)",
-        (deadline_id, datetime.now(UTC).isoformat()),
+    await session.execute(
+        insert(active_timers).values(
+            deadline_id=deadline_id,
+            started_at=datetime.now(UTC).isoformat(),
+        )
     )
-    await db.commit()
     log.info("timer_started", deadline_id=deadline_id)
 
 
-async def stop_timer(db: aiosqlite.Connection, deadline_id: str) -> float:
+async def stop_timer(session: AsyncSession, deadline_id: str) -> float:
     """Stop running timer, record elapsed hours as a time entry. Returns hours."""
-    cursor = await db.execute(
-        "SELECT started_at FROM active_timers WHERE deadline_id = ?", (deadline_id,)
+    started_at = await session.scalar(
+        select(active_timers.c.started_at).where(active_timers.c.deadline_id == deadline_id)
     )
-    row = await cursor.fetchone()
-    if not row:
+    if not started_at:
         raise ChronosError(f"No timer running for {deadline_id}")
 
-    started = datetime.fromisoformat(row[0])
+    started = datetime.fromisoformat(started_at)
     if started.tzinfo is None:
         started = started.replace(tzinfo=UTC)
     elapsed = (datetime.now(UTC) - started).total_seconds() / 3600.0
 
-    await db.execute("DELETE FROM active_timers WHERE deadline_id = ?", (deadline_id,))
-    await db.execute(
-        "INSERT INTO time_entries (deadline_id, hours, source) VALUES (?, ?, ?)",
-        (deadline_id, elapsed, "timer"),
+    await session.execute(delete(active_timers).where(active_timers.c.deadline_id == deadline_id))
+    await session.execute(
+        insert(time_entries).values(deadline_id=deadline_id, hours=elapsed, source="timer")
     )
-    await db.commit()
     log.info("timer_stopped", deadline_id=deadline_id, hours=round(elapsed, 2))
     return elapsed
 
 
 async def record_time(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_id: str,
     hours: float,
     note: str | None = None,
@@ -539,24 +545,37 @@ async def record_time(
     recorded_at: str | None = None,
 ) -> None:
     """Record a manual time entry."""
-    ts = recorded_at or datetime.now(UTC).isoformat()
-    sql = (
-        "INSERT INTO time_entries (deadline_id, hours, source, note, recorded_at)"
-        " VALUES (?, ?, ?, ?, ?)"
+    await session.execute(
+        insert(time_entries).values(
+            deadline_id=deadline_id,
+            hours=hours,
+            source="manual",
+            note=note,
+            recorded_at=recorded_at or datetime.now(UTC).isoformat(),
+        )
     )
-    await db.execute(sql, (deadline_id, hours, "manual", note, ts))
-    await db.commit()
     log.info("time_recorded", deadline_id=deadline_id, hours=hours)
 
 
-async def get_tracked_time(db: aiosqlite.Connection, deadline_id: str) -> float:
-    """Sum all time entries (timer + manual) for a deadline."""
-    cursor = await db.execute(
-        "SELECT COALESCE(SUM(hours), 0) FROM time_entries WHERE deadline_id = ?",
-        (deadline_id,),
+async def latest_estimate(session: AsyncSession, deadline_id: str) -> float | None:
+    """Most recent predicted hours for a deadline, or None when never estimated."""
+    predicted = await session.scalar(
+        select(effort_estimates.c.predicted_hours)
+        .where(effort_estimates.c.deadline_id == deadline_id)
+        .order_by(effort_estimates.c.estimated_at.desc())
+        .limit(1)
     )
-    row = await cursor.fetchone()
-    return float(row[0]) if row else 0.0
+    return None if predicted is None else float(predicted)
+
+
+async def get_tracked_time(session: AsyncSession, deadline_id: str) -> float:
+    """Sum all time entries (timer + manual) for a deadline."""
+    total = await session.scalar(
+        select(func.coalesce(func.sum(time_entries.c.hours), 0.0)).where(
+            time_entries.c.deadline_id == deadline_id,
+        )
+    )
+    return float(total or 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -565,7 +584,7 @@ async def get_tracked_time(db: aiosqlite.Connection, deadline_id: str) -> float:
 
 
 async def record_reflection(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_id: str,
     *,
     predicted_hours: float | None,
@@ -573,60 +592,59 @@ async def record_reflection(
     reflection_text: str,
 ) -> None:
     """Store post-deadline reflection text."""
-    await db.execute(
-        "INSERT INTO deadline_reflections "
-        "(deadline_id, predicted_hours, actual_hours, reflection_text) "
-        "VALUES (?, ?, ?, ?)",
-        (deadline_id, predicted_hours, actual_hours, reflection_text),
+    await session.execute(
+        insert(deadline_reflections).values(
+            deadline_id=deadline_id,
+            predicted_hours=predicted_hours,
+            actual_hours=actual_hours,
+            reflection_text=reflection_text,
+        )
     )
-    await db.commit()
     log.info("reflection_recorded", deadline_id=deadline_id)
 
 
 async def complete_deadline(
-    app: AppContainer,
+    session: AsyncSession,
     deadline_id: str,
 ) -> tuple[float | None, float, str]:
     """Mark deadline done: get predicted & actual hours, update metacognition_log.
 
     Returns (predicted_hours, actual_hours, formatted_feedback).
     """
-    db = app.db
-    actual_hours = await get_tracked_time(db, deadline_id)
+    actual_hours = await get_tracked_time(session, deadline_id)
 
     # Look up deadline_type for metacognition domain
-    cursor = await db.execute(
-        "SELECT deadline_type, course_id FROM deadline_cache WHERE id = ?", (deadline_id,)
-    )
-    row = await cursor.fetchone()
-    deadline_type = DeadlineType(row[0]) if row else DeadlineType.ASSIGNMENT
-    course_id = int(row[1]) if row and row[1] is not None else None
+    cached = (
+        await session.execute(
+            select(deadline_cache.c.deadline_type, deadline_cache.c.course_id).where(
+                deadline_cache.c.id == deadline_id,
+            )
+        )
+    ).one_or_none()
+    deadline_type = DeadlineType(cached.deadline_type) if cached else DeadlineType.ASSIGNMENT
+    course_id = int(cached.course_id) if cached and cached.course_id is not None else None
 
     # Get predicted from effort_estimates
-    cursor = await db.execute(
-        "SELECT predicted_hours FROM effort_estimates WHERE deadline_id = ? "
-        "ORDER BY estimated_at DESC LIMIT 1",
-        (deadline_id,),
+    predicted = await session.scalar(
+        select(effort_estimates.c.predicted_hours)
+        .where(effort_estimates.c.deadline_id == deadline_id)
+        .order_by(effort_estimates.c.estimated_at.desc())
+        .limit(1)
     )
-    est_row = await cursor.fetchone()
-    predicted_hours = float(est_row[0]) if est_row else None
+    predicted_hours = float(predicted) if predicted is not None else None
 
     # Update metacognition_log with actual
-    domain = f"effort:{deadline_type.value}"
-    actual_at = datetime.now(UTC).isoformat()
-    if course_id is None:
-        await db.execute(
-            "UPDATE metacognition_log SET actual = ?, actual_at = ? "
-            "WHERE domain = ? AND item_id = ?",
-            (actual_hours, actual_at, domain, deadline_id),
+    values: dict[str, object] = {"actual": actual_hours, "actual_at": datetime.now(UTC)}
+    if course_id is not None:
+        values["course_id"] = str(course_id)
+    await session.execute(
+        update(metacognition_log)
+        .where(
+            metacognition_log.c.domain == f"effort:{deadline_type.value}",
+            metacognition_log.c.item_id == deadline_id,
         )
-    else:
-        await db.execute(
-            "UPDATE metacognition_log SET actual = ?, actual_at = ?, course_id = ? "
-            "WHERE domain = ? AND item_id = ?",
-            (actual_hours, actual_at, course_id, domain, deadline_id),
-        )
-    await db.commit()
+        .values(**values)
+    )
 
     feedback = format_estimation_feedback(predicted_hours, actual_hours)
     log.info(
@@ -711,7 +729,7 @@ def compute_priority_score(
 
 
 async def get_workload_forecast(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     horizon_days: int = 7,
@@ -720,36 +738,40 @@ async def get_workload_forecast(
     now = datetime.now(UTC)
     horizon_end = now + timedelta(days=horizon_days)
 
-    query = (
-        "SELECT dc.id, dc.name, dc.due_at, "
-        "  (SELECT e.predicted_hours FROM effort_estimates e "
-        "   WHERE e.deadline_id = dc.id ORDER BY e.estimated_at DESC LIMIT 1) AS est_hours "
-        "FROM deadline_cache dc "
-        "WHERE dc.due_at > ? AND dc.due_at < ? "
+    latest_estimate = (
+        select(effort_estimates.c.predicted_hours)
+        .where(effort_estimates.c.deadline_id == deadline_cache.c.id)
+        .order_by(effort_estimates.c.estimated_at.desc())
+        .limit(1)
+        .scalar_subquery()
     )
-    params: list[str | int] = [now.isoformat(), horizon_end.isoformat()]
+    query = (
+        select(
+            deadline_cache.c.id,
+            deadline_cache.c.name,
+            deadline_cache.c.due_at,
+            latest_estimate.label("est_hours"),
+        )
+        .where(
+            deadline_cache.c.due_at > now.isoformat(),
+            deadline_cache.c.due_at < horizon_end.isoformat(),
+        )
+        .order_by(deadline_cache.c.due_at.asc())
+    )
     if course_id is not None:
-        query += "AND dc.course_id = ? "
-        params.append(course_id)
-    query += "ORDER BY dc.due_at ASC"
+        query = query.where(deadline_cache.c.course_id == course_id)
 
-    cursor = await db.execute(query, params)
-    rows = list(await cursor.fetchall())
+    rows = (await session.execute(query)).all()
 
     total_estimated = 0.0
     total_tracked = 0.0
     per_day: dict[str, list[tuple[str, float]]] = {}
 
     for row in rows:
-        deadline_id, name, due_at_str, est_hours = row
-        est = float(est_hours) if est_hours is not None else 0.0
+        deadline_id, name, due_at_str = row.id, row.name, row.due_at
+        est = float(row.est_hours) if row.est_hours is not None else 0.0
 
-        tracked_cursor = await db.execute(
-            "SELECT COALESCE(SUM(hours), 0) FROM time_entries WHERE deadline_id = ?",
-            (deadline_id,),
-        )
-        tracked_row = await tracked_cursor.fetchone()
-        tracked = float(tracked_row[0]) if tracked_row else 0.0
+        tracked = await get_tracked_time(session, deadline_id)
 
         total_estimated += est
         total_tracked += tracked

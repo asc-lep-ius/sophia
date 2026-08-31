@@ -15,6 +15,8 @@ from sophia.domain.models import (
     TopicSource,
 )
 
+from .._fakes import fake_result, fake_row, with_session
+
 
 class TestStudyAppRegistration:
     """The study app must be registered on the root CLI."""
@@ -38,6 +40,7 @@ class TestStudyTopicsCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.fixture
@@ -86,18 +89,15 @@ class TestStudyTopicsCommand:
         """Topics command should call extract then link, and not raise."""
         from sophia.cli.study import study_topics
 
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[("ep1", "Lecture 1")])
-
-        # study_topics now makes additional DB calls:
-        # 1. episode title lookup (fetchall)
-        # 2. series title lookup (fetchone → single row)
-        # 3. get_course_references query (fetchall → empty)
-        series_cursor = AsyncMock()
-        series_cursor.fetchone = AsyncMock(return_value=("Lecture 1",))
-        refs_cursor = AsyncMock()
-        refs_cursor.fetchall = AsyncMock(return_value=[])
-        mock_container.db.execute = AsyncMock(side_effect=[mock_cursor, series_cursor, refs_cursor])
+        # study_topics queries episode titles, then the series title, then the
+        # references the reading table is built from.
+        mock_container.db.execute = AsyncMock(
+            side_effect=[
+                fake_result([fake_row(episode_id="ep1", title="Lecture 1")]),
+                fake_result([]),
+            ]
+        )
+        mock_container.db.scalar = AsyncMock(return_value="Lecture 1")
 
         with (
             patch("sophia.infra.di.create_app") as mock_create,
@@ -115,9 +115,10 @@ class TestStudyTopicsCommand:
 
             await study_topics(module_id="42")
 
-            mock_extract.assert_called_once_with(mock_container, 42)
+            mock_extract.assert_called_once_with(mock_container, mock_container.db, 42)
             mock_link.assert_called_once_with(
                 mock_container,
+                mock_container.db,
                 42,
                 42,
                 ["Sorting", "Hashing"],
@@ -188,6 +189,7 @@ class TestStudyConfidenceCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.fixture
@@ -283,7 +285,7 @@ class TestStudyConfidenceCommand:
 
             await study_confidence(module_id="42")
 
-            mock_rate.assert_called_once_with(mock_container, "Sorting", 42, 4)
+            mock_rate.assert_called_once_with(mock_container.db, "Sorting", 42, 4)
 
 
 class TestStudyReviewCommand:
@@ -293,6 +295,7 @@ class TestStudyReviewCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.fixture
@@ -411,6 +414,7 @@ class TestStudyExplainCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.fixture
@@ -544,6 +548,7 @@ class TestStudyExportCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.mark.asyncio
@@ -596,6 +601,7 @@ class TestStudyDueCommand:
     def mock_container(self) -> MagicMock:
         container = MagicMock()
         container.db = AsyncMock()
+        container = with_session(container)
         return container
 
     @pytest.mark.asyncio

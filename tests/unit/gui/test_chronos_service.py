@@ -16,8 +16,13 @@ from sophia.domain.models import (
     EffortEstimate,
     EstimationScaffold,
 )
+from tests._fakes import fake_result
+
+from ..._sql import exec_sql
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.infra.di import AppContainer
 
 COURSE_ID = 42
@@ -56,7 +61,9 @@ def _make_estimate(**overrides: Any) -> EffortEstimate:
 
 class TestGetUpcomingDeadlines:
     @pytest.mark.asyncio
-    async def test_returns_deadlines(self, mock_container: AppContainer) -> None:
+    async def test_returns_deadlines(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_upcoming_deadlines
 
         expected = [_make_deadline()]
@@ -68,10 +75,12 @@ class TestGetUpcomingDeadlines:
             result = await get_upcoming_deadlines(mock_container)
 
         assert result == expected
-        mock_fn.assert_awaited_once_with(mock_container.db, course_id=None, horizon_days=14)
+        mock_fn.assert_awaited_once_with(mock_db_session, course_id=None, horizon_days=14)
 
     @pytest.mark.asyncio
-    async def test_passes_optional_params(self, mock_container: AppContainer) -> None:
+    async def test_passes_optional_params(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_upcoming_deadlines
 
         with patch(
@@ -81,7 +90,7 @@ class TestGetUpcomingDeadlines:
         ) as mock_fn:
             await get_upcoming_deadlines(mock_container, course_id=COURSE_ID, horizon_days=7)
 
-        mock_fn.assert_awaited_once_with(mock_container.db, course_id=COURSE_ID, horizon_days=7)
+        mock_fn.assert_awaited_once_with(mock_db_session, course_id=COURSE_ID, horizon_days=7)
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:
@@ -200,7 +209,9 @@ class TestEstimateEffort:
 
 class TestStartDeadlineTimer:
     @pytest.mark.asyncio
-    async def test_calls_start_timer(self, mock_container: AppContainer) -> None:
+    async def test_calls_start_timer(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import start_deadline_timer
 
         with patch(
@@ -209,7 +220,7 @@ class TestStartDeadlineTimer:
         ) as mock_fn:
             await start_deadline_timer(mock_container, DEADLINE_ID)
 
-        mock_fn.assert_awaited_once_with(mock_container.db, DEADLINE_ID)
+        mock_fn.assert_awaited_once_with(mock_db_session, DEADLINE_ID)
 
     @pytest.mark.asyncio
     async def test_swallows_error(self, mock_container: AppContainer) -> None:
@@ -290,7 +301,9 @@ class TestGetDeadlineTrackedTime:
 
 class TestReflectOnDeadline:
     @pytest.mark.asyncio
-    async def test_calls_record_reflection(self, mock_container: AppContainer) -> None:
+    async def test_calls_record_reflection(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import reflect_on_deadline
 
         with patch(
@@ -306,7 +319,7 @@ class TestReflectOnDeadline:
             )
 
         mock_fn.assert_awaited_once_with(
-            mock_container.db,
+            mock_db_session,
             DEADLINE_ID,
             predicted_hours=3.0,
             actual_hours=5.0,
@@ -336,7 +349,9 @@ class TestReflectOnDeadline:
 
 class TestGetDeadlineScaffold:
     @pytest.mark.asyncio
-    async def test_returns_scaffold(self, mock_container: AppContainer) -> None:
+    async def test_returns_scaffold(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_deadline_scaffold
 
         with patch(
@@ -347,7 +362,7 @@ class TestGetDeadlineScaffold:
             result = await get_deadline_scaffold(mock_container, DeadlineType.ASSIGNMENT)
 
         assert result is EstimationScaffold.MINIMAL
-        mock_fn.assert_awaited_once_with(mock_container.db, DeadlineType.ASSIGNMENT, course_id=None)
+        mock_fn.assert_awaited_once_with(mock_db_session, DeadlineType.ASSIGNMENT, course_id=None)
 
     @pytest.mark.asyncio
     async def test_returns_full_on_error(self, mock_container: AppContainer) -> None:
@@ -906,12 +921,12 @@ class TestGetEffortDistributionData:
                 new_callable=AsyncMock,
                 return_value=2.0,
             ),
+            patch(
+                f"{_PATCH_BASE}._latest_estimate",
+                new_callable=AsyncMock,
+                return_value=5.0,
+            ),
         ):
-            # Mock the estimate fetch
-            cursor = AsyncMock()
-            cursor.fetchone = AsyncMock(return_value=(5.0,))
-            mock_container.db.execute = AsyncMock(return_value=cursor)
-
             result = await get_effort_distribution_data(mock_container)
 
         assert len(result) > 0
@@ -932,7 +947,9 @@ class TestGetEffortDistributionData:
 
 class TestRecordManualTimeEntry:
     @pytest.mark.asyncio
-    async def test_delegates_to_core(self, mock_container: AppContainer) -> None:
+    async def test_delegates_to_core(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import record_manual_time_entry
 
         with patch(
@@ -942,7 +959,7 @@ class TestRecordManualTimeEntry:
             await record_manual_time_entry(mock_container, "dl-1", 2.5, note="Offline study")
 
         mock_fn.assert_awaited_once_with(
-            mock_container.db,
+            mock_db_session,
             "dl-1",
             2.5,
             "Offline study",
@@ -966,29 +983,39 @@ class TestRecordManualTimeEntry:
 
 class TestGetTimeEntries:
     @pytest.mark.asyncio
-    async def test_returns_entries(self, mock_container: AppContainer) -> None:
+    async def test_returns_entries(
+        self,
+        real_db_container: AppContainer,
+        db: AsyncSession,
+    ) -> None:
         from sophia.gui.services.chronos_service import get_time_entries
 
-        cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(
-            return_value=[
-                (1.0, "timer", None, "2026-03-28T10:00:00"),
-                (0.5, "manual", "Reading", "2026-03-28T12:00:00"),
-            ]
+        await exec_sql(
+            db,
+            "INSERT INTO time_entries (deadline_id, hours, source, note, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("dl-1", 1.0, "timer", None, "2026-03-28T10:00:00"),
         )
-        mock_container.db.execute = AsyncMock(return_value=cursor)
+        await exec_sql(
+            db,
+            "INSERT INTO time_entries (deadline_id, hours, source, note, recorded_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("dl-1", 0.5, "manual", "Reading", "2026-03-28T12:00:00"),
+        )
 
-        result = await get_time_entries(mock_container, "dl-1")
+        result = await get_time_entries(real_db_container, "dl-1")
 
         assert len(result) == 2
         assert result[0]["source"] == "timer"
         assert result[1]["hours"] == 0.5
 
     @pytest.mark.asyncio
-    async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:
+    async def test_returns_empty_on_error(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_time_entries
 
-        mock_container.db.execute = AsyncMock(side_effect=Exception("db error"))
+        mock_db_session.execute = AsyncMock(side_effect=Exception("db error"))
 
         result = await get_time_entries(mock_container, "dl-1")
 
@@ -1000,7 +1027,9 @@ class TestGetTimeEntries:
 
 class TestGetPastDeadlines:
     @pytest.mark.asyncio
-    async def test_returns_deadlines(self, mock_container: AppContainer) -> None:
+    async def test_returns_deadlines(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_past_deadlines
 
         expected = [_make_deadline()]
@@ -1012,10 +1041,12 @@ class TestGetPastDeadlines:
             result = await get_past_deadlines(mock_container)
 
         assert result == expected
-        mock_fn.assert_awaited_once_with(mock_container.db, course_id=None, limit=50)
+        mock_fn.assert_awaited_once_with(mock_db_session, course_id=None, limit=50)
 
     @pytest.mark.asyncio
-    async def test_passes_course_filter(self, mock_container: AppContainer) -> None:
+    async def test_passes_course_filter(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_past_deadlines
 
         with patch(
@@ -1025,7 +1056,7 @@ class TestGetPastDeadlines:
         ) as mock_fn:
             await get_past_deadlines(mock_container, course_id=COURSE_ID)
 
-        mock_fn.assert_awaited_once_with(mock_container.db, course_id=COURSE_ID, limit=50)
+        mock_fn.assert_awaited_once_with(mock_db_session, course_id=COURSE_ID, limit=50)
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:
@@ -1046,14 +1077,22 @@ class TestGetPastDeadlines:
 
 class TestGetDeadlineReflection:
     @pytest.mark.asyncio
-    async def test_returns_reflection_data(self, mock_container: AppContainer) -> None:
+    async def test_returns_reflection_data(
+        self,
+        real_db_container: AppContainer,
+        db: AsyncSession,
+    ) -> None:
         from sophia.gui.services.chronos_service import get_deadline_reflection
 
-        cursor = AsyncMock()
-        cursor.fetchone = AsyncMock(return_value=(3.0, 5.0, "Took longer than expected"))
-        mock_container.db.execute = AsyncMock(return_value=cursor)
+        await exec_sql(
+            db,
+            "INSERT INTO deadline_reflections "
+            "(deadline_id, predicted_hours, actual_hours, reflection_text) "
+            "VALUES (?, ?, ?, ?)",
+            (DEADLINE_ID, 3.0, 5.0, "Took longer than expected"),
+        )
 
-        result = await get_deadline_reflection(mock_container, DEADLINE_ID)
+        result = await get_deadline_reflection(real_db_container, DEADLINE_ID)
 
         assert result is not None
         assert result["predicted_hours"] == 3.0
@@ -1061,22 +1100,24 @@ class TestGetDeadlineReflection:
         assert result["reflection_text"] == "Took longer than expected"
 
     @pytest.mark.asyncio
-    async def test_returns_none_when_no_reflection(self, mock_container: AppContainer) -> None:
+    async def test_returns_none_when_no_reflection(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_deadline_reflection
 
-        cursor = AsyncMock()
-        cursor.fetchone = AsyncMock(return_value=None)
-        mock_container.db.execute = AsyncMock(return_value=cursor)
+        mock_db_session.execute = AsyncMock(return_value=fake_result([]))
 
         result = await get_deadline_reflection(mock_container, DEADLINE_ID)
 
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_error(self, mock_container: AppContainer) -> None:
+    async def test_returns_none_on_error(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import get_deadline_reflection
 
-        mock_container.db.execute = AsyncMock(side_effect=Exception("db error"))
+        mock_db_session.execute = AsyncMock(side_effect=Exception("db error"))
 
         result = await get_deadline_reflection(mock_container, DEADLINE_ID)
 
@@ -1088,7 +1129,9 @@ class TestGetDeadlineReflection:
 
 class TestExportDeadlinesIcs:
     @pytest.mark.asyncio
-    async def test_returns_ics_string(self, mock_container: AppContainer) -> None:
+    async def test_returns_ics_string(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import export_deadlines_ics
 
         ics_content = "BEGIN:VCALENDAR\nEND:VCALENDAR"
@@ -1100,10 +1143,12 @@ class TestExportDeadlinesIcs:
             result = await export_deadlines_ics(mock_container)
 
         assert result == ics_content
-        mock_fn.assert_awaited_once_with(mock_container.db, horizon_days=30)
+        mock_fn.assert_awaited_once_with(mock_db_session, horizon_days=30)
 
     @pytest.mark.asyncio
-    async def test_passes_horizon_days(self, mock_container: AppContainer) -> None:
+    async def test_passes_horizon_days(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.chronos_service import export_deadlines_ics
 
         with patch(
@@ -1113,7 +1158,7 @@ class TestExportDeadlinesIcs:
         ) as mock_fn:
             await export_deadlines_ics(mock_container, horizon_days=7)
 
-        mock_fn.assert_awaited_once_with(mock_container.db, horizon_days=7)
+        mock_fn.assert_awaited_once_with(mock_db_session, horizon_days=7)
 
     @pytest.mark.asyncio
     async def test_returns_none_on_error(self, mock_container: AppContainer) -> None:

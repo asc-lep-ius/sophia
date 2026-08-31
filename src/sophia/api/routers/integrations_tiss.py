@@ -31,6 +31,7 @@ from sophia.api.schemas.integrations_tiss import (
     TissRegistrationStatusResponse,
     TissRegistrationTargetResponse,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.errors import TissError
 from sophia.services.tiss_registration import (
     STATUS_AUTH_EXPIRED,
@@ -53,7 +54,7 @@ if TYPE_CHECKING:
         TissExamDate,
     )
 
-router = APIRouter(tags=["integrations-tiss"])
+router = APIRouter(tags=["integrations-tiss"], route_class=TransactionalRoute)
 
 # Course numbers are NNN.XXX, matching _FULLNAME_COURSE_PREFIX_RE in the TISS
 # adapter, which already feeds alphanumeric numbers like 104.A32 upstream.

@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Annotated
 
 import cyclopts
+from sqlalchemy import select
+
+from sophia.infra.schema import lecture_downloads
 
 app = cyclopts.App(
     name="study",
@@ -47,11 +50,11 @@ async def study_topics(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             with Status("Extracting topics from lectures…", console=console):
-                topics = await extract_topics_from_lectures(container, resolved_id)
+                topics = await extract_topics_from_lectures(container, db, resolved_id)
 
             if not topics:
                 console.print(
@@ -66,6 +69,7 @@ async def study_topics(
             with Status("Cross-referencing with lecture content…", console=console):
                 links = await link_topics_to_lectures(
                     container,
+                    db,
                     resolved_id,
                     resolved_id,
                     topic_labels,
@@ -79,14 +83,15 @@ async def study_topics(
 
             title_map: dict[str, str] = {}
             if episode_ids:
-                placeholders = ",".join("?" for _ in episode_ids)
-                cursor = await container.db.execute(
-                    f"SELECT episode_id, title FROM lecture_downloads"  # noqa: S608
-                    f" WHERE episode_id IN ({placeholders})",
-                    tuple(episode_ids),
-                )
-                for row in await cursor.fetchall():
-                    title_map[row[0]] = row[1]
+                rows = (
+                    await db.execute(
+                        select(
+                            lecture_downloads.c.episode_id,
+                            lecture_downloads.c.title,
+                        ).where(lecture_downloads.c.episode_id.in_(episode_ids))
+                    )
+                ).all()
+                title_map = {row.episode_id: row.title for row in rows}
 
             table = Table(title="Topic Analysis")
             table.add_column("Topic", style="cyan")
@@ -108,18 +113,17 @@ async def study_topics(
             from sophia.services.pipeline import get_course_references
 
             series_title = ""
-            cursor = await container.db.execute(
-                "SELECT DISTINCT title FROM lecture_downloads WHERE module_id = ? LIMIT 1",
-                (resolved_id,),
+            title = await db.scalar(
+                select(lecture_downloads.c.title)
+                .where(lecture_downloads.c.module_id == resolved_id)
+                .distinct()
+                .limit(1)
             )
-            row = await cursor.fetchone()
-            if row:
-                series_title = row[0].split(" - ")[0].split(" – ")[0].strip() if row[0] else ""
+            if title:
+                series_title = title.split(" - ")[0].split(" – ")[0].strip()
 
             reading = (
-                await get_course_references(container.db, course_name=series_title)
-                if series_title
-                else []
+                await get_course_references(db, course_name=series_title) if series_title else []
             )
             if reading:
                 reading_table = Table(title="Recommended Reading")
@@ -178,10 +182,10 @@ async def study_confidence(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            topics = await get_course_topics(container, resolved_id)
+            topics = await get_course_topics(db, resolved_id)
 
             if not topics:
                 console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
@@ -203,11 +207,11 @@ async def study_confidence(
                     default=3,
                     console=console,
                 )
-                await rate_confidence(container, tm.topic, resolved_id, rating)
+                await rate_confidence(db, tm.topic, resolved_id, rating)
 
             console.print()
 
-            all_ratings = await get_confidence_ratings(container.db, resolved_id)
+            all_ratings = await get_confidence_ratings(db, resolved_id)
 
             table = Table(title="Confidence Assessment")
             table.add_column("Topic", style="cyan")
@@ -296,10 +300,10 @@ async def study_session(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            topics = await get_course_topics(container, resolved_id)
+            topics = await get_course_topics(db, resolved_id)
 
             if not topics:
                 console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
@@ -309,7 +313,7 @@ async def study_session(
                 try:
                     from sophia.services.athena_confidence import get_blind_spots
 
-                    blind_spots = await get_blind_spots(container.db, resolved_id)
+                    blind_spots = await get_blind_spots(db, resolved_id)
                     if blind_spots:
                         topic = blind_spots[0].topic
                         console.print(f"[dim]Auto-selected blind spot:[/dim] [bold]{topic}[/bold]")
@@ -323,6 +327,7 @@ async def study_session(
                 console.print("\n[bold]📚 Interleaved Study Session[/bold]\n")
                 await run_interleaved_session(
                     container,
+                    db,
                     resolved_id,
                     console=console,
                     feedback_delay=feedback_delay,
@@ -331,6 +336,7 @@ async def study_session(
                 console.print(f"\n[bold]📚 Study Session: {topic}[/bold]\n")
                 await run_interactive_session(
                     container,
+                    db,
                     resolved_id,
                     topic,
                     console,
@@ -386,11 +392,11 @@ async def study_review(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             review_topic = None if interleave else topic
-            cards = await get_due_cards(container.db, resolved_id, topic=review_topic, limit=count)
+            cards = await get_due_cards(db, resolved_id, topic=review_topic, limit=count)
 
             if not cards:
                 console.print(
@@ -413,13 +419,13 @@ async def study_review(
                 if success:
                     correct += 1
 
-                await save_review_attempt(container.db, flashcard_id=card.id, success=success)
+                await save_review_attempt(db, flashcard_id=card.id, success=success)
                 reviewed_topics.add(card.topic)
                 console.print()
 
             # Calibrate all reviewed topics
             for t in reviewed_topics:
-                await update_topic_calibration(container.db, course_id=resolved_id, topic=t)
+                await update_topic_calibration(db, course_id=resolved_id, topic=t)
 
             # Summary
             accuracy = correct / len(cards) if cards else 0.0
@@ -433,7 +439,7 @@ async def study_review(
             table.add_column("Rate", justify="right")
 
             for t in sorted(reviewed_topics):
-                stats = await get_review_stats(container.db, resolved_id, topic=t)
+                stats = await get_review_stats(db, resolved_id, topic=t)
                 table.add_row(
                     t,
                     str(stats["total_reviews"]),
@@ -486,11 +492,11 @@ async def study_explain(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             cards = await get_failed_review_cards(
-                container.db,
+                db,
                 resolved_id,
                 topic=topic,
                 limit=count,
@@ -503,7 +509,7 @@ async def study_explain(
                 )
                 return
 
-            exp_count = await get_explanation_count(container.db, resolved_id)
+            exp_count = await get_explanation_count(db, resolved_id)
             level = get_scaffold_level(exp_count)
             prompts = get_scaffold_prompts(level)
 
@@ -531,7 +537,7 @@ async def study_explain(
                 explanation_text = "\n".join(parts)
 
                 await save_self_explanation(
-                    container.db,
+                    db,
                     flashcard_id=card.id,
                     student_explanation=explanation_text,
                     scaffold_level=level,
@@ -539,7 +545,7 @@ async def study_explain(
                 saved += 1
 
                 # Show lecture context
-                context = await get_lecture_context(container, resolved_id, card.topic)
+                context = await get_lecture_context(container, db, resolved_id, card.topic)
                 if context:
                     console.print(Panel(context, title="Lecture Context", style="dim"))
                 console.print()
@@ -581,12 +587,12 @@ async def study_export(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             out_path = Path(output or f"sophia-{resolved_id}.apkg")
             count = await export_anki_deck(
-                container.db,
+                db,
                 resolved_id,
                 out_path,
                 interleaved=not blocked,
@@ -631,14 +637,14 @@ async def study_due(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         if module_id:
             async with handle_resolve_error():
                 course_id = await resolve_module_id(module_id, container.moodle)
         else:
             course_id = None
-        due = await get_due_reviews(container.db, course_id=course_id)
-        upcoming = await get_upcoming_reviews(container.db, course_id=course_id, days_ahead=3)
+        due = await get_due_reviews(db, course_id=course_id)
+        upcoming = await get_upcoming_reviews(db, course_id=course_id, days_ahead=3)
 
         if not due and not upcoming:
             console.print(
@@ -666,7 +672,7 @@ async def study_due(
                 else:
                     status = f"[red]{score:.0%} reset![/red]"
 
-                exam_date = await get_exam_for_course(container.db, sched.course_id)
+                exam_date = await get_exam_for_course(db, sched.course_id)
                 if exam_date:
                     days_to_exam = (exam_date - datetime.now(UTC)).days
                     exam_str = (

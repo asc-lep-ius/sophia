@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated, cast
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
+from sqlalchemy import select
 
 from sophia.api.deps import (
     current_session_record,
     ensure_learning_path_scope,
-    get_app_container,
+    request_session,
     require_effective_learning_path_id,
 )
 from sophia.api.schemas.common import JsonPrimitive  # noqa: TC001
@@ -25,7 +26,9 @@ from sophia.api.schemas.deadline_history import (
 )
 from sophia.api.schemas.deadlines import DeadlineResponse, EffortCalibrationMetricResponse
 from sophia.api.schemas.errors import ErrorEnvelope
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.models import Deadline  # noqa: TC001
+from sophia.infra.schema import deadline_cache
 from sophia.services.chronos_export import get_calibration_metrics
 from sophia.services.chronos_history import (
     DayEffort,
@@ -38,12 +41,11 @@ from sophia.services.chronos_history import (
 )
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import CalibrationMetrics
-    from sophia.infra.di import AppContainer
 
-router = APIRouter(tags=["deadline-history"])
+router = APIRouter(tags=["deadline-history"], route_class=TransactionalRoute)
 
 LearningPathIdQuery = Annotated[int | None, Query(gt=0)]
 DeadlineIdPath = Annotated[str, Path(min_length=1)]
@@ -65,7 +67,7 @@ async def list_past_deadlines(
 ) -> PastDeadlineListResponse:
     effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     deadlines = await get_past_deadlines(
-        get_app_container(request).db,
+        await request_session(request),
         course_id=effective_learning_path_id,
         limit=limit,
     )
@@ -86,8 +88,8 @@ async def get_deadline_reflection_detail(
     deadline_id: DeadlineIdPath,
     request: Request,
 ) -> DeadlineReflectionDetailResponse:
-    app_container, _course_id = await _require_deadline_scope(request, deadline_id)
-    reflection = await get_deadline_reflection(app_container.db, deadline_id)
+    db, _course_id = await _require_deadline_scope(request, deadline_id)
+    reflection = await get_deadline_reflection(db, deadline_id)
     if reflection is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return DeadlineReflectionDetailResponse(
@@ -106,8 +108,8 @@ async def list_deadline_time_entries(
     deadline_id: DeadlineIdPath,
     request: Request,
 ) -> DeadlineTimeEntryListResponse:
-    app_container, _course_id = await _require_deadline_scope(request, deadline_id)
-    entries = await get_time_entries(app_container.db, deadline_id)
+    db, _course_id = await _require_deadline_scope(request, deadline_id)
+    entries = await get_time_entries(db, deadline_id)
     return DeadlineTimeEntryListResponse(
         deadline_id=deadline_id,
         entries=[_time_entry_response(entry) for entry in entries],
@@ -126,7 +128,7 @@ async def get_effort_distribution_route(
 ) -> EffortDistributionResponse:
     effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     days = await get_effort_distribution(
-        get_app_container(request).db,
+        await request_session(request),
         course_id=effective_learning_path_id,
         horizon_days=horizon_days,
     )
@@ -148,7 +150,7 @@ async def get_effort_calibration(
 ) -> EffortCalibrationResponse:
     effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     metrics = await get_calibration_metrics(
-        get_app_container(request).db,
+        await request_session(request),
         course_id=effective_learning_path_id,
     )
     return EffortCalibrationResponse(
@@ -160,22 +162,23 @@ async def get_effort_calibration(
 async def _require_deadline_scope(
     request: Request,
     deadline_id: str,
-) -> tuple[AppContainer, int]:
-    session = await current_session_record(request)
-    app_container = get_app_container(request)
-    course_id = await _deadline_course_id(app_container.db, deadline_id)
+) -> tuple[AsyncSession, int]:
+    """Resolve the request's database session, checking the deadline is in scope."""
+    auth_session = await current_session_record(request)
+    db = await request_session(request)
+    course_id = await _deadline_course_id(db, deadline_id)
     if course_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_learning_path_scope(session, course_id)
-    return app_container, course_id
+    ensure_learning_path_scope(auth_session, course_id)
+    return db, course_id
 
 
-async def _deadline_course_id(db: aiosqlite.Connection, deadline_id: str) -> int | None:
-    cursor = await db.execute("SELECT course_id FROM deadline_cache WHERE id = ?", (deadline_id,))
-    row = cast("DbRow | None", await cursor.fetchone())
-    if row is None:
+async def _deadline_course_id(db: AsyncSession, deadline_id: str) -> int | None:
+    course_id = await db.scalar(
+        select(deadline_cache.c.course_id).where(deadline_cache.c.id == deadline_id)
+    )
+    if course_id is None:
         return None
-    course_id = row[0]
     if isinstance(course_id, int):
         return course_id
     if isinstance(course_id, str):

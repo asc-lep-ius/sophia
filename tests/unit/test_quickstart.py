@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 
 from sophia.cli.quickstart import (
@@ -13,32 +12,25 @@ from sophia.cli.quickstart import (
     _has_topics,
     _is_pipeline_complete,
 )
-from sophia.infra.persistence import run_migrations
+
+from .._sql import exec_sql
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
-
-@pytest.fixture
-async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(conn)
-    yield conn
-    await conn.close()
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 # ── Insert helpers ─────────────────────────────────────────────────────────
 
 
 async def _insert_episode(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     episode_id: str,
     module_id: int,
     status: str = "completed",
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO lecture_downloads"
         " (episode_id, module_id, series_id, title, track_url, track_mimetype,"
         "  file_path, status)"
@@ -46,71 +38,70 @@ async def _insert_episode(
         "         'audio/mpeg', '/tmp/audio.mp3', ?)",
         (episode_id, module_id, status),
     )
-    await db.commit()
 
 
 async def _insert_transcription(
-    db: aiosqlite.Connection, *, episode_id: str, module_id: int, status: str = "completed"
+    db: AsyncSession, *, episode_id: str, module_id: int, status: str = "completed"
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO transcriptions (episode_id, module_id, status) VALUES (?, ?, ?)",
         (episode_id, module_id, status),
     )
-    await db.commit()
 
 
 async def _insert_knowledge_index(
-    db: aiosqlite.Connection, *, episode_id: str, module_id: int, status: str = "completed"
+    db: AsyncSession, *, episode_id: str, module_id: int, status: str = "completed"
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO knowledge_index (episode_id, module_id, status) VALUES (?, ?, ?)",
         (episode_id, module_id, status),
     )
-    await db.commit()
 
 
-async def _insert_topic(db: aiosqlite.Connection, *, topic: str, course_id: int) -> None:
-    await db.execute(
+async def _insert_topic(db: AsyncSession, *, topic: str, course_id: int) -> None:
+    await exec_sql(
+        db,
         "INSERT INTO topic_mappings (topic, course_id) VALUES (?, ?)",
         (topic, course_id),
     )
-    await db.commit()
 
 
 async def _insert_confidence(
-    db: aiosqlite.Connection, *, topic: str, course_id: int, predicted: float = 0.5
+    db: AsyncSession, *, topic: str, course_id: int, predicted: float = 0.5
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
         (topic, course_id, predicted),
     )
-    await db.commit()
 
 
 async def _insert_study_session(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     course_id: int,
     topic: str,
     post_test_score: float | None = None,
 ) -> None:
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO study_sessions (course_id, topic, post_test_score) VALUES (?, ?, ?)",
         (course_id, topic, post_test_score),
     )
-    await db.commit()
 
 
 # ── _is_pipeline_complete ─────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_pipeline_complete_empty_db(db: aiosqlite.Connection) -> None:
+async def test_pipeline_complete_empty_db(db: AsyncSession) -> None:
     assert await _is_pipeline_complete(db, 42) is False
 
 
 @pytest.mark.asyncio
-async def test_pipeline_complete_all_done(db: aiosqlite.Connection) -> None:
+async def test_pipeline_complete_all_done(db: AsyncSession) -> None:
     await _insert_episode(db, episode_id="ep-1", module_id=42)
     await _insert_transcription(db, episode_id="ep-1", module_id=42)
     await _insert_knowledge_index(db, episode_id="ep-1", module_id=42)
@@ -119,7 +110,7 @@ async def test_pipeline_complete_all_done(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_complete_partial(db: aiosqlite.Connection) -> None:
+async def test_pipeline_complete_partial(db: AsyncSession) -> None:
     await _insert_episode(db, episode_id="ep-1", module_id=42)
     await _insert_transcription(db, episode_id="ep-1", module_id=42)
 
@@ -130,12 +121,12 @@ async def test_pipeline_complete_partial(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_has_topics_empty(db: aiosqlite.Connection) -> None:
+async def test_has_topics_empty(db: AsyncSession) -> None:
     assert await _has_topics(db, 42) is False
 
 
 @pytest.mark.asyncio
-async def test_has_topics_present(db: aiosqlite.Connection) -> None:
+async def test_has_topics_present(db: AsyncSession) -> None:
     await _insert_topic(db, topic="Algebra", course_id=42)
 
     assert await _has_topics(db, 42) is True
@@ -145,12 +136,12 @@ async def test_has_topics_present(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_has_confidence_empty(db: aiosqlite.Connection) -> None:
+async def test_has_confidence_empty(db: AsyncSession) -> None:
     assert await _has_confidence(db, 42) is False
 
 
 @pytest.mark.asyncio
-async def test_has_confidence_present(db: aiosqlite.Connection) -> None:
+async def test_has_confidence_present(db: AsyncSession) -> None:
     await _insert_confidence(db, topic="Algebra", course_id=42)
 
     assert await _has_confidence(db, 42) is True
@@ -160,19 +151,19 @@ async def test_has_confidence_present(db: aiosqlite.Connection) -> None:
 
 
 @pytest.mark.asyncio
-async def test_has_completed_session_empty(db: aiosqlite.Connection) -> None:
+async def test_has_completed_session_empty(db: AsyncSession) -> None:
     assert await _has_completed_session(db, 42) is False
 
 
 @pytest.mark.asyncio
-async def test_has_completed_session_complete(db: aiosqlite.Connection) -> None:
+async def test_has_completed_session_complete(db: AsyncSession) -> None:
     await _insert_study_session(db, course_id=42, topic="Algebra", post_test_score=0.8)
 
     assert await _has_completed_session(db, 42) is True
 
 
 @pytest.mark.asyncio
-async def test_has_completed_session_incomplete(db: aiosqlite.Connection) -> None:
+async def test_has_completed_session_incomplete(db: AsyncSession) -> None:
     """Session exists but post_test_score is NULL (session started, not finished)."""
     await _insert_study_session(db, course_id=42, topic="Algebra", post_test_score=None)
 

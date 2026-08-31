@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from fastapi.testclient import TestClient
 
 from sophia.api import create_api_app, create_standalone_api_app
 
+from ._session_helpers import FakeAppContainer
+
 if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def test_api_events_emits_ready_sse_smoke_event() -> None:

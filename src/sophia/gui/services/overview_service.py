@@ -7,9 +7,17 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
 import structlog
+from sqlalchemy import case, distinct, func, select
+
+from sophia.infra.schema import (
+    confidence_ratings,
+    deadline_cache,
+    study_sessions,
+    topic_mappings,
+)
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
@@ -132,21 +140,25 @@ def compute_workload_insights(summaries: list[CourseSummary]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-async def get_course_summaries(db: aiosqlite.Connection) -> list[CourseSummary]:
+async def get_course_summaries(db: AsyncSession) -> list[CourseSummary]:
     """Aggregate course data from local cache tables. No MoodleAPI calls."""
     now = datetime.now(UTC)
     week_ago = (now - timedelta(days=7)).isoformat()
     now_iso = now.isoformat()
 
-    cursor = await db.execute(
-        "SELECT DISTINCT course_id, course_name FROM deadline_cache ORDER BY course_name"
-    )
-    courses = await cursor.fetchall()
+    courses = (
+        await db.execute(
+            select(deadline_cache.c.course_id, deadline_cache.c.course_name)
+            .distinct()
+            .order_by(deadline_cache.c.course_name)
+        )
+    ).all()
     if not courses:
         return []
 
     summaries: list[CourseSummary] = []
-    for course_id, course_name in courses:
+    for course in courses:
+        course_id, course_name = course.course_id, course.course_name
         upcoming, overdue = await _fetch_deadline_counts(db, course_id, now_iso)
         days_until_nearest = await _fetch_nearest_deadline(db, course_id, now_iso, now)
         blind_spot_count, avg_cal = await _fetch_calibration_data(db, course_id)
@@ -179,51 +191,51 @@ async def get_course_summaries(db: aiosqlite.Connection) -> list[CourseSummary]:
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_deadline_counts(
-    db: aiosqlite.Connection, course_id: int, now_iso: str
-) -> tuple[int, int]:
-    cursor = await db.execute(
-        "SELECT "
-        "  SUM(CASE WHEN due_at >= ? THEN 1 ELSE 0 END), "
-        "  SUM(CASE WHEN due_at < ? THEN 1 ELSE 0 END) "
-        "FROM deadline_cache WHERE course_id = ?",
-        (now_iso, now_iso, course_id),
-    )
-    row = await cursor.fetchone()
-    upcoming = int(row[0] or 0) if row else 0
-    overdue = int(row[1] or 0) if row else 0
-    return upcoming, overdue
+async def _fetch_deadline_counts(db: AsyncSession, course_id: int, now_iso: str) -> tuple[int, int]:
+    row = (
+        await db.execute(
+            select(
+                func.sum(case((deadline_cache.c.due_at >= now_iso, 1), else_=0)).label("upcoming"),
+                func.sum(case((deadline_cache.c.due_at < now_iso, 1), else_=0)).label("overdue"),
+            ).where(deadline_cache.c.course_id == course_id)
+        )
+    ).one()
+    return int(row.upcoming or 0), int(row.overdue or 0)
 
 
 async def _fetch_nearest_deadline(
-    db: aiosqlite.Connection, course_id: int, now_iso: str, now: datetime
+    db: AsyncSession,
+    course_id: int,
+    now_iso: str,
+    now: datetime,
 ) -> int | None:
-    cursor = await db.execute(
-        "SELECT MIN(due_at) FROM deadline_cache WHERE course_id = ? AND due_at >= ?",
-        (course_id, now_iso),
+    nearest = await db.scalar(
+        select(func.min(deadline_cache.c.due_at)).where(
+            deadline_cache.c.course_id == course_id,
+            deadline_cache.c.due_at >= now_iso,
+        )
     )
-    row = await cursor.fetchone()
-    if not row or not row[0]:
+    if not nearest:
         return None
-    nearest_dt = datetime.fromisoformat(row[0])
+    nearest_dt = datetime.fromisoformat(nearest)
     if nearest_dt.tzinfo is None:
         nearest_dt = nearest_dt.replace(tzinfo=UTC)
     return (nearest_dt - now).days
 
 
-async def _fetch_calibration_data(
-    db: aiosqlite.Connection, course_id: int
-) -> tuple[int, float | None]:
-    cursor = await db.execute(
-        "SELECT predicted, actual FROM confidence_ratings "
-        "WHERE course_id = ? AND actual IS NOT NULL",
-        (course_id,),
-    )
-    ratings = await cursor.fetchall()
+async def _fetch_calibration_data(db: AsyncSession, course_id: int) -> tuple[int, float | None]:
+    ratings = (
+        await db.execute(
+            select(confidence_ratings.c.predicted, confidence_ratings.c.actual).where(
+                confidence_ratings.c.course_id == course_id,
+                confidence_ratings.c.actual.is_not(None),
+            )
+        )
+    ).all()
     blind_spot_count = 0
     cal_errors: list[float] = []
-    for predicted, actual in ratings:
-        error = predicted - actual
+    for rating in ratings:
+        error = rating.predicted - rating.actual
         cal_errors.append(error)
         if error > _BLIND_SPOT_ERROR_THRESHOLD:
             blind_spot_count += 1
@@ -231,34 +243,33 @@ async def _fetch_calibration_data(
     return blind_spot_count, avg_cal
 
 
-async def _fetch_topic_counts(db: aiosqlite.Connection, course_id: int) -> tuple[int, int]:
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM topic_mappings WHERE course_id = ?",
-        (course_id,),
+async def _fetch_topic_counts(db: AsyncSession, course_id: int) -> tuple[int, int]:
+    topics_total = await db.scalar(
+        select(func.count())
+        .select_from(topic_mappings)
+        .where(topic_mappings.c.course_id == course_id)
     )
-    topics_total = (await cursor.fetchone())[0] or 0  # type: ignore[index]
-
-    cursor = await db.execute(
-        "SELECT COUNT(DISTINCT topic) FROM confidence_ratings WHERE course_id = ?",
-        (course_id,),
+    topics_rated = await db.scalar(
+        select(func.count(distinct(confidence_ratings.c.topic))).where(
+            confidence_ratings.c.course_id == course_id,
+        )
     )
-    topics_rated = (await cursor.fetchone())[0] or 0  # type: ignore[index]
-    return topics_total, topics_rated
+    return topics_total or 0, topics_rated or 0
 
 
-async def _fetch_weekly_hours(db: aiosqlite.Connection, course_id: int, week_ago: str) -> float:
-    cursor = await db.execute(
-        "SELECT started_at, completed_at FROM study_sessions "
-        "WHERE course_id = ? AND started_at >= ? AND completed_at IS NOT NULL",
-        (course_id, week_ago),
-    )
-    sessions = await cursor.fetchall()
+async def _fetch_weekly_hours(db: AsyncSession, course_id: int, week_ago: str) -> float:
+    sessions = (
+        await db.execute(
+            select(study_sessions.c.started_at, study_sessions.c.completed_at).where(
+                study_sessions.c.course_id == course_id,
+                study_sessions.c.started_at >= datetime.fromisoformat(week_ago),
+                study_sessions.c.completed_at.is_not(None),
+            )
+        )
+    ).all()
     hours = 0.0
-    for started_at, completed_at in sessions:
-        try:
-            start = datetime.fromisoformat(started_at)
-            end = datetime.fromisoformat(completed_at)
-            hours += (end - start).total_seconds() / 3600
-        except (ValueError, TypeError):
+    for row in sessions:
+        if row.started_at is None or row.completed_at is None:
             continue
+        hours += (row.completed_at - row.started_at).total_seconds() / 3600
     return hours

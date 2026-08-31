@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import random
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 from sqlalchemy import text
 
-from sophia.infra.persistence import run_migrations
 from sophia.infra.schema import metadata
 from sophia.infra.sqlite_import import (
     align_sequences,
     canonical,
+    checksum,
     coerce_value,
     missing_tables,
     open_sqlite,
@@ -25,8 +26,7 @@ from sophia.infra.sqlite_import import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-    from pathlib import Path
+    from collections.abc import Iterator
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -49,17 +49,41 @@ SEED_STATEMENTS = (
     " VALUES ('e1', 12, 'learner', 'prompt_shown', '2026-05-26 14:00:00', '{\"dwell_ms\": 9000}')",
     "INSERT INTO review_schedule (topic, course_id, next_review_at, difficulty, stability)"
     " VALUES ('Graphs', 12, '2026-09-01T10:00:00+00:00', 0.31, 2.5)",
+    # Mixed-case, space-bearing topics on a text primary key: SQLite orders
+    # these by BINARY and Postgres by the cluster collation, and the two
+    # disagree. See test_checksums_survive_a_text_key_the_engines_collate_differently.
+    "INSERT INTO review_schedule (topic, course_id, next_review_at)"
+    " VALUES ('Zebra theory', 12, '2026-09-02T10:00:00+00:00')",
+    "INSERT INTO review_schedule (topic, course_id, next_review_at)"
+    " VALUES ('apple lemmas', 12, '2026-09-03T10:00:00+00:00')",
+    "INSERT INTO review_schedule (topic, course_id, next_review_at)"
+    " VALUES ('a b', 12, '2026-09-04T10:00:00+00:00')",
+    "INSERT INTO review_schedule (topic, course_id, next_review_at)"
+    " VALUES ('ab', 12, '2026-09-05T10:00:00+00:00')",
 )
 
 
+LEGACY_SCHEMA = Path(__file__).parents[1] / "fixtures" / "legacy" / "schema.sql"
+
+
 @pytest.fixture
-async def fixture_sqlite(tmp_path: Path) -> AsyncIterator[sqlite3.Connection]:
+def fixture_sqlite(tmp_path: Path) -> Iterator[sqlite3.Connection]:
+    """A legacy SQLite database, built from the frozen pre-cutover schema.
+
+    The numbered migrations that used to build this are gone with the SQLite
+    layer, so the schema is a committed snapshot instead. It describes databases
+    that already exist in the field, which is exactly what the migration script
+    has to read.
+    """
     database_path = tmp_path / "fixture.db"
-    async with aiosqlite.connect(database_path) as db:
-        await run_migrations(db)
+    builder = sqlite3.connect(database_path)
+    try:
+        builder.executescript(LEGACY_SCHEMA.read_text())
         for statement in SEED_STATEMENTS:
-            await db.execute(statement)
-        await db.commit()
+            builder.execute(statement)
+        builder.commit()
+    finally:
+        builder.close()
 
     connection = open_sqlite(database_path)
     try:
@@ -247,10 +271,36 @@ def test_coercion_maps_sqlite_storage_to_declared_types() -> None:
     )
 
 
-async def test_rows_are_read_in_primary_key_order(
+async def test_checksums_survive_a_text_key_the_engines_collate_differently(
     fixture_sqlite: sqlite3.Connection,
+    clean_engine: AsyncEngine,
 ) -> None:
-    """Both sides must order identically or the checksums compare noise."""
-    rows = read_rows(fixture_sqlite, metadata.tables["downloads"])
+    """A correct transfer must not report MISMATCH on mixed-case text keys.
 
-    assert [row["md5"] for row in rows] == ["m1", "m2"]
+    SQLite orders text by BINARY (uppercase first); the Postgres image runs
+    en_US.utf8 (case-insensitive-ish, punctuation-folding). Ordering in SQL
+    would make these four topics hash differently on each side even though
+    every row transferred intact.
+    """
+    report = await transfer(fixture_sqlite, clean_engine, dry_run=False)
+
+    schedule = next(table for table in report.tables if table.table == "review_schedule")
+    assert schedule.rows_match
+    assert schedule.checksums_match
+    assert (await verify(fixture_sqlite, clean_engine)).ok
+
+
+async def test_checksum_ignores_row_order(fixture_sqlite: sqlite3.Connection) -> None:
+    """A table is a multiset — the same rows in another order are the same table."""
+    schedule = metadata.tables["review_schedule"]
+    rows = read_rows(fixture_sqlite, schedule)
+    assert len(rows) > 2, "needs enough rows that a shuffle is not just a swap"
+
+    expected = checksum(rows, schedule)
+    shuffled = list(rows)
+    random.Random(20260831).shuffle(shuffled)
+
+    assert shuffled != rows
+    assert checksum(shuffled, schedule) == expected
+    # A genuinely different multiset must still differ.
+    assert checksum(rows[:-1], schedule) != expected
