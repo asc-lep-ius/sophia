@@ -11,12 +11,17 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Request, status
 
-from sophia.api.deps import get_app_container, get_settings, require_csrf_learning_path_scope
+from sophia.api.deps import (
+    get_settings,
+    request_session,
+    require_csrf_learning_path_scope,
+)
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.learning_events import (
     LearningEventBatchRequest,
     LearningEventBatchResponse,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.learning import LearningEvent
 from sophia.domain.learning import LearningEventType as DomainLearningEventType
 from sophia.services.learning_events import ingest_events
@@ -24,7 +29,7 @@ from sophia.services.learning_events import ingest_events
 if TYPE_CHECKING:
     from sophia.api.schemas.learning_events import LearningEventInput
 
-router = APIRouter(tags=["events"])
+router = APIRouter(tags=["events"], route_class=TransactionalRoute)
 
 
 @router.post(
@@ -43,7 +48,7 @@ async def ingest_learning_event_batch(
     session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
     settings = get_settings(request)
     result = await ingest_events(
-        get_app_container(request).db,
+        await request_session(request),
         [
             _domain_event(event, payload.learning_path_id, session.user.id)
             for event in payload.events

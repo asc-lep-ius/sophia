@@ -16,7 +16,5 @@ ENV SOPHIA_DATA_DIR=/data
 RUN useradd --create-home --uid 1000 sophia
 RUN mkdir -p /data && chown sophia:sophia /data
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s CMD ["python", "-c", \
-    "import sqlite3; sqlite3.connect('/data/sophia.db').execute('SELECT 1')"]
 USER sophia
 ENTRYPOINT ["/app/.venv/bin/python", "-m", "sophia"]

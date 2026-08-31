@@ -8,14 +8,18 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.adapters.tiss import resolve_course_info
 from sophia.domain.events import ExtractionReport
 from sophia.domain.models import BookReference, CourseSection, ModuleInfo, ReferenceSource
+from sophia.infra.engine import affected_rows
+from sophia.infra.schema import discovered_references
 from sophia.services.resource_classifier import classify_modules, is_book_resource
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.ports import (
         CourseMetadataProvider,
@@ -425,43 +429,54 @@ def _deduplicate_by_title(refs: list[BookReference]) -> list[BookReference]:
 
 
 async def persist_references(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     refs: list[BookReference],
 ) -> int:
-    """Persist discovered references to SQLite. Returns count of new/updated rows."""
+    """Persist discovered references. Returns count of new/updated rows."""
     import json
 
     count = 0
     for ref in refs:
-        result = await db.execute(
-            "INSERT INTO discovered_references"
-            " (title, authors, isbn, source, course_id, course_name, confidence)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)"
-            " ON CONFLICT(title, course_id, source) DO UPDATE SET"
-            " authors = excluded.authors,"
-            " isbn = COALESCE(excluded.isbn, discovered_references.isbn),"
-            " confidence = MAX(excluded.confidence, discovered_references.confidence),"
-            " course_name = COALESCE("
-            "   NULLIF(excluded.course_name, ''), discovered_references.course_name),"
-            " discovered_at = CURRENT_TIMESTAMP",
-            (
-                ref.title,
-                json.dumps(ref.authors),
-                ref.isbn,
-                ref.source.value,
-                ref.course_id,
-                ref.course_name,
-                ref.confidence,
-            ),
+        statement = pg_insert(discovered_references).values(
+            title=ref.title,
+            authors=json.dumps(ref.authors),
+            isbn=ref.isbn,
+            source=ref.source.value,
+            course_id=ref.course_id,
+            course_name=ref.course_name,
+            confidence=ref.confidence,
         )
-        if result.rowcount:
-            count += result.rowcount
-    await db.commit()
+        result = await session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[
+                    discovered_references.c.title,
+                    discovered_references.c.course_id,
+                    discovered_references.c.source,
+                ],
+                set_={
+                    "authors": statement.excluded.authors,
+                    "isbn": func.coalesce(
+                        statement.excluded.isbn,
+                        discovered_references.c.isbn,
+                    ),
+                    "confidence": func.greatest(
+                        statement.excluded.confidence,
+                        discovered_references.c.confidence,
+                    ),
+                    "course_name": func.coalesce(
+                        func.nullif(statement.excluded.course_name, ""),
+                        discovered_references.c.course_name,
+                    ),
+                    "discovered_at": func.current_timestamp(),
+                },
+            )
+        )
+        count += affected_rows(result)
     return count
 
 
 async def get_course_references(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     course_name: str | None = None,
@@ -469,30 +484,24 @@ async def get_course_references(
     """Load persisted references filtered by course_id or course_name."""
     import json
 
-    query = (
-        "SELECT title, authors, isbn, source, course_id, course_name, confidence "
-        "FROM discovered_references"
-    )
-    params: tuple[int | str, ...] = ()
-
+    query = select(discovered_references)
     if course_id is not None:
-        query += " WHERE course_id = ?"
-        params = (course_id,)
+        query = query.where(discovered_references.c.course_id == course_id)
     elif course_name is not None:
-        query += " WHERE course_name LIKE ?"
-        params = (f"%{course_name}%",)
+        # ilike, not like: SQLite's LIKE folds ASCII case and Postgres's does not,
+        # so a plain port would stop matching "Linear Algebra" for "linear algebra".
+        query = query.where(discovered_references.c.course_name.ilike(f"%{course_name}%"))
 
-    cursor = await db.execute(query, params)
-    rows = await cursor.fetchall()
+    rows = (await session.execute(query)).all()
     return [
         BookReference(
-            title=row[0],
-            authors=json.loads(row[1]),
-            isbn=row[2],
-            source=ReferenceSource(row[3]),
-            course_id=row[4],
-            course_name=row[5],
-            confidence=row[6],
+            title=row.title,
+            authors=json.loads(row.authors),
+            isbn=row.isbn,
+            source=ReferenceSource(row.source),
+            course_id=row.course_id,
+            course_name=row.course_name,
+            confidence=row.confidence,
         )
         for row in rows
     ]

@@ -15,8 +15,9 @@ from typing import Any, NoReturn
 from fastapi import APIRouter, HTTPException
 
 from sophia.api.schemas.errors import FeatureNotImplementedEnvelope
+from sophia.api.transactions import TransactionalRoute
 
-router = APIRouter()
+router = APIRouter(route_class=TransactionalRoute)
 
 _RESERVED_RESPONSES: dict[int | str, dict[str, Any]] = {
     HTTPStatus.NOT_IMPLEMENTED: {"model": FeatureNotImplementedEnvelope},

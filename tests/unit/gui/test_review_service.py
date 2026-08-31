@@ -119,20 +119,24 @@ class TestConstants:
 
 class TestGetDueReviewItems:
     @pytest.mark.asyncio
-    async def test_delegates_to_service(self, mock_container: AsyncMock) -> None:
+    async def test_delegates_to_service(
+        self, mock_container: AsyncMock, mock_db_session: AsyncMock
+    ) -> None:
         sentinel = [object()]
         with patch(f"{_PATCH_BASE}.athena_review") as mock_mod:
             mock_mod.get_due_reviews = AsyncMock(return_value=sentinel)
-            result = await get_due_review_items(mock_container.db)
-        mock_mod.get_due_reviews.assert_awaited_once_with(mock_container.db, course_id=None)
+            result = await get_due_review_items(mock_db_session)
+        mock_mod.get_due_reviews.assert_awaited_once_with(mock_db_session, course_id=None)
         assert result is sentinel
 
     @pytest.mark.asyncio
-    async def test_passes_course_id(self, mock_container: AsyncMock) -> None:
+    async def test_passes_course_id(
+        self, mock_container: AsyncMock, mock_db_session: AsyncMock
+    ) -> None:
         with patch(f"{_PATCH_BASE}.athena_review") as mock_mod:
             mock_mod.get_due_reviews = AsyncMock(return_value=[])
-            await get_due_review_items(mock_container.db, course_id=42)
-        mock_mod.get_due_reviews.assert_awaited_once_with(mock_container.db, course_id=42)
+            await get_due_review_items(mock_db_session, course_id=42)
+        mock_mod.get_due_reviews.assert_awaited_once_with(mock_db_session, course_id=42)
 
 
 # ---------------------------------------------------------------------------
@@ -142,14 +146,16 @@ class TestGetDueReviewItems:
 
 class TestCompleteReviewItem:
     @pytest.mark.asyncio
-    async def test_delegates_to_service(self, mock_container: AsyncMock) -> None:
+    async def test_delegates_to_service(
+        self, mock_container: AsyncMock, mock_db_session: AsyncMock
+    ) -> None:
         sentinel = object()
         with patch(f"{_PATCH_BASE}.athena_review") as mock_mod:
             mock_mod.complete_review = AsyncMock(return_value=sentinel)
             result = await complete_review_item(
-                mock_container.db, topic="Trees", course_id=1, score=0.7
+                mock_db_session, topic="Trees", course_id=1, score=0.7
             )
-        mock_mod.complete_review.assert_awaited_once_with(mock_container.db, "Trees", 1, 0.7)
+        mock_mod.complete_review.assert_awaited_once_with(mock_db_session, "Trees", 1, 0.7)
         assert result is sentinel
 
 
@@ -160,21 +166,25 @@ class TestCompleteReviewItem:
 
 class TestGetUpcomingReviewItems:
     @pytest.mark.asyncio
-    async def test_delegates_to_service(self, mock_container: AsyncMock) -> None:
+    async def test_delegates_to_service(
+        self, mock_container: AsyncMock, mock_db_session: AsyncMock
+    ) -> None:
         sentinel = [object()]
         with patch(f"{_PATCH_BASE}.athena_review") as mock_mod:
             mock_mod.get_upcoming_reviews = AsyncMock(return_value=sentinel)
-            result = await get_upcoming_review_items(mock_container.db)
+            result = await get_upcoming_review_items(mock_db_session)
         mock_mod.get_upcoming_reviews.assert_awaited_once_with(
-            mock_container.db, course_id=None, days_ahead=3
+            mock_db_session, course_id=None, days_ahead=3
         )
         assert result is sentinel
 
     @pytest.mark.asyncio
-    async def test_passes_all_kwargs(self, mock_container: AsyncMock) -> None:
+    async def test_passes_all_kwargs(
+        self, mock_container: AsyncMock, mock_db_session: AsyncMock
+    ) -> None:
         with patch(f"{_PATCH_BASE}.athena_review") as mock_mod:
             mock_mod.get_upcoming_reviews = AsyncMock(return_value=[])
-            await get_upcoming_review_items(mock_container.db, course_id=5, days_ahead=7)
+            await get_upcoming_review_items(mock_db_session, course_id=5, days_ahead=7)
         mock_mod.get_upcoming_reviews.assert_awaited_once_with(
-            mock_container.db, course_id=5, days_ahead=7
+            mock_db_session, course_id=5, days_ahead=7
         )

@@ -58,23 +58,30 @@ VALID_GITLAB_CI = (
     "      when: manual\n"
     "    - when: never\n"
 )
+DATABASE_URL = "postgresql+asyncpg://sophia:pw@postgres:5432/sophia"
+POSTGRES_IMAGE = "postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636"
 VALID_DEPLOYMENT_DOC = """
 # Deployment
 
-## Litestream Backups And Restore Drills
+## Postgres Backups And Restore Drills
 
-Use litestream/litestream:0.5.11. Every drill validates study_sessions,
-student_flashcards, self_explanations, review_schedule, deadline_cache,
-card_review_attempts, score_at_last_review, last_reviewed_at, review_count,
-reviewed_at, next_review_at, and due_at.
+Every drill validates study_sessions, student_flashcards, self_explanations,
+review_schedule, deadline_cache, card_review_attempts, score_at_last_review,
+last_reviewed_at, review_count, reviewed_at, next_review_at, and due_at.
 
-The smoke check uses litestream snapshots and /api/metrics. Alert when the
-litestream service is unhealthy because that is stopped replication. Run the
-snapshot check weekly, a full restore monthly, and a restore after every schema
+The smoke check uses ls -t /backups and /api/metrics. Alert when the
+postgres-backup service is unhealthy because that is stopped backups. Run the
+smoke check weekly, a full restore monthly, and a restore after every schema
 migration.
 
-Validate with sqlite3, PRAGMA integrity_check, and
+Validate with psql, pg_restore --list, and
 curl -f https://sophia.example.com/api/ready.
+
+Back up with pg_dump --format=custom and ship dumps encrypted off-host.
+The drill runs pg_restore via make db.restore and records rto and rpo.
+
+Cutover: stop writes, archive the sqlite file, export SOPHIA_DATABASE_URL after
+publishing 127.0.0.1:5432:5432, then run sqlite_to_postgres with --mode verify.
 """
 
 
@@ -224,12 +231,12 @@ def test_deployment_policy_rejects_source_bind_mounts(tmp_path: Path) -> None:
 
 def test_deployment_policy_requires_healthchecks(tmp_path: Path) -> None:
     compose = _valid_compose()
-    del compose["services"]["litestream"]["healthcheck"]
+    del compose["services"]["redis"]["healthcheck"]
 
     result = _run_policy_for_compose(tmp_path, compose)
 
     assert result.returncode == 1
-    assert "litestream" in result.stderr
+    assert "redis" in result.stderr
     assert "healthcheck is required" in result.stderr
 
 
@@ -248,35 +255,70 @@ def test_deployment_policy_requires_healthy_dependencies(tmp_path: Path) -> None
 def test_deployment_policy_checks_runtime_baselines(tmp_path: Path) -> None:
     compose = _valid_compose()
     compose["services"]["redis"]["image"] = "redis:7.4-alpine"
-    compose["services"]["litestream"]["image"] = "litestream/litestream:0.3.13"
 
     result = _run_policy_for_compose(tmp_path, compose)
 
     assert result.returncode == 1
     assert "redis:8.6.3" in result.stderr
-    assert "litestream/litestream:0.5.11" in result.stderr
 
 
-def test_deployment_policy_requires_litestream_replica_environment(tmp_path: Path) -> None:
+def test_deployment_policy_requires_a_database_url_for_session_openers(tmp_path: Path) -> None:
+    """The Settings default points at localhost, which reaches nothing in a container."""
     compose = _valid_compose()
-    del compose["services"]["litestream"]["environment"]["LITESTREAM_REPLICA_URL"]
+    del compose["services"]["api"]["environment"]["SOPHIA_DATABASE_URL"]
 
     result = _run_policy_for_compose(tmp_path, compose)
 
     assert result.returncode == 1
-    assert "litestream" in result.stderr
-    assert "LITESTREAM_REPLICA_URL" in result.stderr
+    assert "api" in result.stderr
+    assert "SOPHIA_DATABASE_URL" in result.stderr
 
 
-def test_deployment_policy_requires_litestream_replica_healthcheck(tmp_path: Path) -> None:
+def test_deployment_policy_rejects_a_sync_driver_database_url(tmp_path: Path) -> None:
     compose = _valid_compose()
-    compose["services"]["litestream"]["healthcheck"] = {"test": ["CMD", "litestream", "version"]}
+    compose["services"]["api"]["environment"]["SOPHIA_DATABASE_URL"] = (
+        "postgresql://sophia:pw@postgres:5432/sophia"
+    )
 
     result = _run_policy_for_compose(tmp_path, compose)
 
     assert result.returncode == 1
-    assert "litestream" in result.stderr
-    assert "replica snapshots" in result.stderr
+    assert "asyncpg" in result.stderr
+
+
+def test_deployment_policy_requires_api_to_depend_on_postgres(tmp_path: Path) -> None:
+    """upgrade_async runs at startup, so an unhealthy database races the API up."""
+    compose = _valid_compose()
+    del compose["services"]["api"]["depends_on"]["postgres"]
+
+    result = _run_policy_for_compose(tmp_path, compose)
+
+    assert result.returncode == 1
+    assert "api" in result.stderr
+    assert "postgres" in result.stderr
+
+
+def test_deployment_policy_requires_postgres_images_pinned_by_digest(tmp_path: Path) -> None:
+    """A re-pushable tag can change the storage engine under a running cluster."""
+    compose = _valid_compose()
+    compose["services"]["postgres"]["image"] = "postgres:18.4"
+
+    result = _run_policy_for_compose(tmp_path, compose)
+
+    assert result.returncode == 1
+    assert "postgres" in result.stderr
+    assert "sha256 digest" in result.stderr
+
+
+def test_deployment_policy_requires_backup_to_depend_on_postgres(tmp_path: Path) -> None:
+    compose = _valid_compose()
+    del compose["services"]["postgres-backup"]["depends_on"]
+
+    result = _run_policy_for_compose(tmp_path, compose)
+
+    assert result.returncode == 1
+    assert "postgres-backup" in result.stderr
+    assert "postgres" in result.stderr
 
 
 def test_deployment_policy_requires_restore_drill_learning_proofs(tmp_path: Path) -> None:
@@ -345,7 +387,11 @@ def _valid_compose() -> dict[str, Any]:
             f"registry.example/sophia/api:{COMMIT_SHA}",
             expose=["8000"],
             volumes=["sophia-data:/data", "sophia-config:/config"],
-            depends_on={"redis": {"condition": "service_healthy"}},
+            depends_on={
+                "redis": {"condition": "service_healthy"},
+                "postgres": {"condition": "service_healthy"},
+            },
+            environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
         ),
         "sophia-gui": _service(
             f"registry.example/sophia/nicegui:{COMMIT_SHA}",
@@ -355,48 +401,36 @@ def _valid_compose() -> dict[str, Any]:
                 "sophia-config:/config",
                 "model-cache:/home/sophia/.cache/huggingface",
             ],
+            depends_on={"postgres": {"condition": "service_healthy"}},
+            environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
         ),
         "redis": _service(
             "redis:8.6.3-alpine",
             expose=["6379"],
             volumes=["redis-data:/data"],
         ),
-        "litestream": _service(
-            "litestream/litestream:0.5.11",
-            volumes=["sophia-data:/data:ro", "litestream-state:/var/lib/litestream"],
-            depends_on={"api": {"condition": "service_healthy"}},
-            command=[
-                'test -n "$$LITESTREAM_REPLICA_URL" && '
-                'test -n "$$LITESTREAM_ACCESS_KEY_ID" && '
-                'test -n "$$LITESTREAM_SECRET_ACCESS_KEY" && '
-                'exec litestream replicate /data/sophia.db "$$LITESTREAM_REPLICA_URL"'
-            ],
-            environment={
-                "LITESTREAM_REPLICA_URL": "${LITESTREAM_REPLICA_URL:-}",
-                "LITESTREAM_ACCESS_KEY_ID": "${LITESTREAM_ACCESS_KEY_ID:-}",
-                "LITESTREAM_SECRET_ACCESS_KEY": "${LITESTREAM_SECRET_ACCESS_KEY:-}",
-                "LITESTREAM_REGION": "${LITESTREAM_REGION:-auto}",
-                "LITESTREAM_ENDPOINT": "${LITESTREAM_ENDPOINT:-}",
-            },
-            healthcheck={
-                "test": [
-                    "CMD-SHELL",
-                    'test -n "$$LITESTREAM_REPLICA_URL" && '
-                    'litestream snapshots "$$LITESTREAM_REPLICA_URL" >/dev/null',
-                ]
-            },
+        "postgres": _service(
+            POSTGRES_IMAGE,
+            expose=["5432"],
+            volumes=["postgres-data:/var/lib/postgresql"],
+        ),
+        "postgres-backup": _service(
+            POSTGRES_IMAGE,
+            volumes=["postgres-backups:/backups"],
+            depends_on={"postgres": {"condition": "service_healthy"}},
         ),
     }
     return {
         "services": services,
         "volumes": {
+            "postgres-data": None,
+            "postgres-backups": None,
             "sophia-data": None,
             "sophia-config": None,
             "model-cache": None,
             "redis-data": None,
             "caddy-data": None,
             "caddy-config": None,
-            "litestream-state": None,
         },
     }
 

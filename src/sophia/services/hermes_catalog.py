@@ -6,8 +6,13 @@ import asyncio
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from sophia.infra.schema import lecture_downloads, lecture_modules
+
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -32,19 +37,39 @@ class DiscoveredLectureModule:
     episode_count: int
 
 
-async def get_lecture_modules(db: aiosqlite.Connection) -> list[LectureModule]:
+async def get_lecture_modules(session: AsyncSession) -> list[LectureModule]:
     """Query distinct modules that have local lecture download records."""
-    cursor = await db.execute(
-        "SELECT DISTINCT ld.module_id, ld.series_id, COALESCE(lm.course_name, '') "
-        "FROM lecture_downloads ld "
-        "LEFT JOIN lecture_modules lm ON ld.module_id = lm.module_id "
-        "ORDER BY COALESCE(lm.course_name, ''), ld.module_id",
-    )
-    rows = await cursor.fetchall()
-    return [LectureModule(module_id=row[0], series_id=row[1], course_name=row[2]) for row in rows]
+    course_name = func.coalesce(lecture_modules.c.course_name, "")
+    rows = (
+        await session.execute(
+            select(
+                lecture_downloads.c.module_id,
+                lecture_downloads.c.series_id,
+                course_name.label("course_name"),
+            )
+            .select_from(lecture_downloads)
+            .outerjoin(
+                lecture_modules,
+                lecture_downloads.c.module_id == lecture_modules.c.module_id,
+            )
+            .distinct()
+            .order_by(course_name, lecture_downloads.c.module_id)
+        )
+    ).all()
+    return [
+        LectureModule(
+            module_id=row.module_id,
+            series_id=row.series_id,
+            course_name=row.course_name,
+        )
+        for row in rows
+    ]
 
 
-async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredLectureModule]:
+async def discover_lecture_modules(
+    container: AppContainer,
+    session: AsyncSession,
+) -> list[DiscoveredLectureModule]:
     """Find Opencast lecture modules from enrolled Moodle courses and persist mappings."""
     courses = await container.moodle.get_enrolled_courses()
     if not courses:
@@ -67,12 +92,20 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredLe
         return []
 
     for shortname, fullname, module_id, _module_name in opencast_modules:
-        await container.db.execute(
-            "INSERT OR REPLACE INTO lecture_modules "
-            "(module_id, course_name, course_shortname) VALUES (?, ?, ?)",
-            (module_id, fullname, shortname),
+        statement = pg_insert(lecture_modules).values(
+            module_id=module_id,
+            course_name=fullname,
+            course_shortname=shortname,
         )
-    await container.db.commit()
+        await session.execute(
+            statement.on_conflict_do_update(
+                index_elements=[lecture_modules.c.module_id],
+                set_={
+                    "course_name": statement.excluded.course_name,
+                    "course_shortname": statement.excluded.course_shortname,
+                },
+            )
+        )
 
     episode_lists = await asyncio.gather(
         *(

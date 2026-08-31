@@ -430,7 +430,9 @@ class TestStartSession:
     """Tests for start_session wrapper."""
 
     @pytest.mark.asyncio
-    async def test_delegates_to_start_study_session(self, mock_container: AppContainer) -> None:
+    async def test_delegates_to_start_study_session(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.study_service import start_session
 
         expected = StudySession(id=7, course_id=COURSE_ID, topic=TOPIC, started_at="2026-01-01")
@@ -442,7 +444,7 @@ class TestStartSession:
             result = await start_session(mock_container, COURSE_ID, TOPIC)
 
         assert result == expected
-        mock_start.assert_awaited_once_with(mock_container.db, COURSE_ID, TOPIC)
+        mock_start.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC)
 
 
 # -- complete_session --------------------------------------------------------
@@ -452,7 +454,9 @@ class TestCompleteSession:
     """Tests for complete_session wrapper."""
 
     @pytest.mark.asyncio
-    async def test_delegates_to_complete_study_session(self, mock_container: AppContainer) -> None:
+    async def test_delegates_to_complete_study_session(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.study_service import complete_session
 
         with patch(
@@ -461,7 +465,7 @@ class TestCompleteSession:
         ) as mock_complete:
             await complete_session(mock_container, session_id=7, pre_score=0.4, post_score=0.8)
 
-        mock_complete.assert_awaited_once_with(mock_container.db, 7, 0.4, 0.8)
+        mock_complete.assert_awaited_once_with(mock_db_session, 7, 0.4, 0.8)
 
 
 # -- save_study_flashcard ----------------------------------------------------
@@ -471,7 +475,9 @@ class TestSaveStudyFlashcard:
     """Tests for save_study_flashcard wrapper."""
 
     @pytest.mark.asyncio
-    async def test_delegates_to_save_flashcard(self, mock_container: AppContainer) -> None:
+    async def test_delegates_to_save_flashcard(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.study_service import save_study_flashcard
 
         expected = StudentFlashcard(id=1, course_id=COURSE_ID, topic=TOPIC, front="Q?", back="A.")
@@ -483,7 +489,7 @@ class TestSaveStudyFlashcard:
             result = await save_study_flashcard(mock_container, COURSE_ID, TOPIC, "Q?", "A.")
 
         assert result == expected
-        mock_save.assert_awaited_once_with(mock_container.db, COURSE_ID, TOPIC, "Q?", "A.")
+        mock_save.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC, "Q?", "A.")
 
 
 # -- finalize_calibration ---------------------------------------------------
@@ -493,7 +499,9 @@ class TestFinalizeCalibration:
     """Tests for finalize_calibration."""
 
     @pytest.mark.asyncio
-    async def test_updates_actual_score_and_calibration(self, mock_container: AppContainer) -> None:
+    async def test_updates_actual_score_and_calibration(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.study_service import finalize_calibration
 
         with (
@@ -502,8 +510,8 @@ class TestFinalizeCalibration:
         ):
             await finalize_calibration(mock_container, COURSE_ID, TOPIC, 0.75)
 
-        mock_actual.assert_awaited_once_with(mock_container.db, TOPIC, COURSE_ID, 0.75)
-        mock_calib.assert_awaited_once_with(mock_container.db, COURSE_ID, TOPIC)
+        mock_actual.assert_awaited_once_with(mock_db_session, TOPIC, COURSE_ID, 0.75)
+        mock_calib.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC)
 
 
 # -- compute_score -----------------------------------------------------------

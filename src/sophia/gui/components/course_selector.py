@@ -35,7 +35,8 @@ async def render_course_selector() -> None:
         return
 
     try:
-        summaries = await get_course_summaries(container.db)
+        async with container.session() as db:
+            summaries = await get_course_summaries(db)
     except Exception:
         log.exception("course_selector_fetch_failed")
         ui.label("Could not load courses").classes("text-red-400 text-sm px-6 py-2")

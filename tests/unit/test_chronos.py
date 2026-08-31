@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import (
@@ -20,29 +19,18 @@ from sophia.domain.models import (
     TissExamDate,
 )
 
+from .._sql import exec_sql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture
-async def db():
-    """In-memory SQLite with initial + chronos migrations applied."""
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
-    await conn.executescript(Path("src/sophia/infra/migrations/017_chronos.sql").read_text())
-    await conn.executescript(Path("src/sophia/infra/migrations/018_chronos_time.sql").read_text())
-    await conn.execute(
-        "ALTER TABLE metacognition_log ADD COLUMN course_id TEXT NOT NULL DEFAULT 'default'"
-    )
-    await conn.commit()
-    yield conn
-    await conn.close()
-
-
-@pytest.fixture
-def app_container(db: aiosqlite.Connection) -> MagicMock:
+def app_container(db: AsyncSession) -> MagicMock:
     """Minimal AppContainer mock wired to the in-memory DB."""
     container = MagicMock()
     container.db = db
@@ -69,7 +57,7 @@ def _iso(dt: datetime) -> str:
 
 
 async def _insert_deadline(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     id: str = "assign:1",
     name: str = "HW1",
@@ -81,13 +69,13 @@ async def _insert_deadline(
 ) -> None:
     due = due_at or _iso(FUTURE)
     synced = synced_at or datetime.now(UTC).isoformat()
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT INTO deadline_cache "
         "(id, name, course_id, course_name, deadline_type, due_at, synced_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (id, name, course_id, course_name, deadline_type, due, synced),
     )
-    await db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +273,7 @@ class TestExamToDeadlines:
 
 
 class TestSyncDeadlines:
-    async def test_syncs_assignments(self, app_container: MagicMock) -> None:
+    async def test_syncs_assignments(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -307,7 +295,7 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
 
         assert len(result) == 1
         assert result[0].id == "assign:1"
@@ -315,12 +303,12 @@ class TestSyncDeadlines:
         assert result[0].deadline_type == DeadlineType.ASSIGNMENT
 
         # Verify DB persistence
-        cursor = await app_container.db.execute("SELECT id, name FROM deadline_cache")
-        rows = await cursor.fetchall()
+        cursor = await exec_sql(db, "SELECT id, name FROM deadline_cache")
+        rows = cursor.fetchall()
         assert len(rows) == 1
         assert rows[0][0] == "assign:1"
 
-    async def test_syncs_tiss_exams(self, app_container: MagicMock) -> None:
+    async def test_syncs_tiss_exams(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -339,13 +327,15 @@ class TestSyncDeadlines:
             ]
         )
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
 
         exam_ids = {d.id for d in result}
         assert "exam:E1" in exam_ids
         assert "examreg:E1" in exam_ids
 
-    async def test_skips_events_without_timestart(self, app_container: MagicMock) -> None:
+    async def test_skips_events_without_timestart(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -364,10 +354,12 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
         assert len(result) == 0
 
-    async def test_continues_on_tiss_course_error(self, app_container: MagicMock) -> None:
+    async def test_continues_on_tiss_course_error(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         """One TISS course failing doesn't break the whole sync."""
         from sophia.services.chronos import sync_deadlines
 
@@ -399,11 +391,13 @@ class TestSyncDeadlines:
 
         app_container.tiss.get_exam_dates = AsyncMock(side_effect=tiss_side_effect)
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
         assert len(result) == 1
         assert result[0].course_id == 99
 
-    async def test_upserts_existing_deadline(self, app_container: MagicMock) -> None:
+    async def test_upserts_existing_deadline(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -428,18 +422,18 @@ class TestSyncDeadlines:
         # Insert existing
         await _insert_deadline(app_container.db, id="assign:1", name="HW1")
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
         assert result[0].name == "HW1 Updated"
 
-        cursor = await app_container.db.execute(
-            "SELECT COUNT(*) FROM deadline_cache WHERE id = 'assign:1'"
-        )
-        row = await cursor.fetchone()
+        cursor = await exec_sql(db, "SELECT COUNT(*) FROM deadline_cache WHERE id = 'assign:1'")
+        row = cursor.fetchone()
         assert row is not None
         count = row[0]
         assert count == 1
 
-    async def test_syncs_checkmarks_from_calendar(self, app_container: MagicMock) -> None:
+    async def test_syncs_checkmarks_from_calendar(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -461,7 +455,7 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
 
         assert len(result) == 1
         assert result[0].id == "checkmark:555"
@@ -469,7 +463,9 @@ class TestSyncDeadlines:
         assert result[0].name == "E3Do (Thursday)"
         assert result[0].extra.get("item_count") == 6
 
-    async def test_calendar_captures_multiple_module_types(self, app_container: MagicMock) -> None:
+    async def test_calendar_captures_multiple_module_types(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -511,7 +507,7 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
 
         types = {d.deadline_type for d in result}
         assert DeadlineType.ASSIGNMENT in types
@@ -519,7 +515,9 @@ class TestSyncDeadlines:
         assert DeadlineType.QUIZ in types
         assert len(result) == 3
 
-    async def test_calendar_event_unknown_module_skipped(self, app_container: MagicMock) -> None:
+    async def test_calendar_event_unknown_module_skipped(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -540,10 +538,12 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
         assert len(result) == 0
 
-    async def test_calendar_failure_falls_back_to_scraping(self, app_container: MagicMock) -> None:
+    async def test_calendar_failure_falls_back_to_scraping(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import sync_deadlines
 
         app_container.moodle.get_enrolled_courses = AsyncMock(
@@ -564,7 +564,7 @@ class TestSyncDeadlines:
         )
         app_container.tiss.get_exam_dates = AsyncMock(return_value=[])
 
-        result = await sync_deadlines(app_container)
+        result = await sync_deadlines(app_container, db)
 
         assert len(result) == 1
         assert result[0].id == "assign:1"
@@ -577,7 +577,7 @@ class TestSyncDeadlines:
 
 
 class TestGetDeadlines:
-    async def test_returns_future_deadlines(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_future_deadlines(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_deadlines
 
         await _insert_deadline(db, due_at=_iso(FUTURE))
@@ -587,7 +587,7 @@ class TestGetDeadlines:
         assert len(result) == 1
         assert result[0].id == "assign:1"
 
-    async def test_horizon_filtering(self, db: aiosqlite.Connection) -> None:
+    async def test_horizon_filtering(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_deadlines
 
         await _insert_deadline(db, due_at=_iso(FUTURE))  # 5 days
@@ -597,7 +597,7 @@ class TestGetDeadlines:
         assert len(result) == 1
         assert result[0].id == "assign:1"
 
-    async def test_course_filter(self, db: aiosqlite.Connection) -> None:
+    async def test_course_filter(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_deadlines
 
         await _insert_deadline(db, course_id=42, course_name="Algorithms")
@@ -607,13 +607,13 @@ class TestGetDeadlines:
         assert len(result) == 1
         assert result[0].course_id == 42
 
-    async def test_empty_cache(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_cache(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_deadlines
 
         result = await get_deadlines(db)
         assert result == []
 
-    async def test_sorted_by_due_date(self, db: aiosqlite.Connection) -> None:
+    async def test_sorted_by_due_date(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_deadlines
 
         later = FUTURE + timedelta(days=1)
@@ -631,67 +631,97 @@ class TestGetDeadlines:
 
 
 class TestRecordEstimate:
-    async def test_stores_estimate(self, app_container: MagicMock) -> None:
+    async def test_stores_estimate(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.chronos import record_estimate
 
         await _insert_deadline(app_container.db)
 
-        est = await record_estimate(
-            app_container, deadline_id="assign:1", course_id=42, predicted_hours=5.0
-        )
+        est = await record_estimate(db, deadline_id="assign:1", course_id=42, predicted_hours=5.0)
 
         assert est.predicted_hours == 5.0
         assert est.scaffold_level == EstimationScaffold.FULL
 
-        cursor = await app_container.db.execute(
-            "SELECT predicted_hours FROM effort_estimates WHERE deadline_id = 'assign:1'"
-        )
-        row = await cursor.fetchone()
-        assert row[0] == 5.0
+        predicted = (
+            await exec_sql(
+                db, "SELECT predicted_hours FROM effort_estimates WHERE deadline_id = 'assign:1'"
+            )
+        ).scalar_one()
+        assert predicted == 5.0
 
-    async def test_writes_metacognition_log(self, app_container: MagicMock) -> None:
+    async def test_writes_metacognition_log(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import record_estimate
 
         await _insert_deadline(app_container.db)
 
-        await record_estimate(
-            app_container, deadline_id="assign:1", course_id=42, predicted_hours=3.0
-        )
+        await record_estimate(db, deadline_id="assign:1", course_id=42, predicted_hours=3.0)
 
-        cursor = await app_container.db.execute(
-            "SELECT domain, item_id, predicted FROM metacognition_log"
-        )
-        row = await cursor.fetchone()
+        cursor = await exec_sql(db, "SELECT domain, item_id, predicted FROM metacognition_log")
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "effort:assignment"
         assert row[1] == "assign:1"
         assert row[2] == pytest.approx(3.0)  # pyright: ignore[reportUnknownMemberType]
 
-    async def test_writes_metacognition_course_scope(self, app_container: MagicMock) -> None:
+    async def test_a_new_estimate_voids_the_previous_outcome(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
+        """Re-estimating clears actual, so calibration never pairs mismatched halves.
+
+        get_calibration_metrics selects rows where actual IS NOT NULL. Keeping a
+        stale actual beside a fresh prediction would feed it a bias measurement
+        for a prediction that was never scored.
+        """
+        from sophia.services.chronos import record_estimate
+
+        await _insert_deadline(app_container.db)
+        await record_estimate(db, deadline_id="assign:1", course_id=42, predicted_hours=3.0)
+        await exec_sql(
+            db,
+            "UPDATE metacognition_log SET actual = 8.0,"
+            " actual_at = '2026-01-01T00:00:00+00:00' WHERE item_id = 'assign:1'",
+        )
+
+        await record_estimate(db, deadline_id="assign:1", course_id=42, predicted_hours=5.0)
+
+        row = (
+            await exec_sql(
+                db,
+                "SELECT predicted, actual, actual_at FROM metacognition_log"
+                " WHERE item_id = 'assign:1'",
+            )
+        ).one()
+        assert row.predicted == pytest.approx(5.0)  # pyright: ignore[reportUnknownMemberType]
+        assert row.actual is None
+        assert row.actual_at is None
+
+    async def test_writes_metacognition_course_scope(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import record_estimate
 
         await _insert_deadline(app_container.db)
 
-        await record_estimate(
-            app_container, deadline_id="assign:1", course_id=42, predicted_hours=3.0
-        )
+        await record_estimate(db, deadline_id="assign:1", course_id=42, predicted_hours=3.0)
 
-        cursor = await app_container.db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT course_id FROM metacognition_log WHERE domain = ? AND item_id = ?",
             ("effort:assignment", "assign:1"),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "42"
 
-    async def test_stores_breakdown(self, app_container: MagicMock) -> None:
+    async def test_stores_breakdown(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.chronos import record_estimate
 
         await _insert_deadline(app_container.db)
         breakdown = {"reading": 2.0, "coding": 1.0}
 
         est = await record_estimate(
-            app_container,
+            db,
             deadline_id="assign:1",
             course_id=42,
             predicted_hours=3.0,
@@ -699,19 +729,22 @@ class TestRecordEstimate:
         )
 
         assert est.breakdown == breakdown
-        cursor = await app_container.db.execute(
-            "SELECT breakdown FROM effort_estimates WHERE deadline_id = 'assign:1'"
-        )
-        row = await cursor.fetchone()
-        assert json.loads(row[0]) == breakdown
+        stored = (
+            await exec_sql(
+                db, "SELECT breakdown FROM effort_estimates WHERE deadline_id = 'assign:1'"
+            )
+        ).scalar_one()
+        assert json.loads(stored) == breakdown
 
-    async def test_stores_implementation_intention(self, app_container: MagicMock) -> None:
+    async def test_stores_implementation_intention(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import record_estimate
 
         await _insert_deadline(app_container.db)
 
         est = await record_estimate(
-            app_container,
+            db,
             deadline_id="assign:1",
             course_id=42,
             predicted_hours=2.0,
@@ -727,120 +760,124 @@ class TestRecordEstimate:
 
 
 class TestGetScaffoldLevel:
-    async def test_full_scaffold_no_history(self, db: aiosqlite.Connection) -> None:
+    async def test_full_scaffold_no_history(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_scaffold_level
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.FULL
 
-    async def test_count_fallback_minimal(self, db: aiosqlite.Connection) -> None:
+    async def test_count_fallback_minimal(self, db: AsyncSession) -> None:
         """10-25 estimates → MINIMAL scaffold."""
         from sophia.services.chronos import get_scaffold_level
 
         for i in range(15):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT INTO effort_estimates "
                 "(deadline_id, course_id, predicted_hours, scaffold_level) "
                 "VALUES (?, ?, ?, ?)",
                 (f"assign:{i}", 42, 2.0, "full"),
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.MINIMAL
 
-    async def test_count_fallback_open(self, db: aiosqlite.Connection) -> None:
+    async def test_count_fallback_open(self, db: AsyncSession) -> None:
         """Over 25 estimates → OPEN scaffold."""
         from sophia.services.chronos import get_scaffold_level
 
         for i in range(30):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT INTO effort_estimates "
                 "(deadline_id, course_id, predicted_hours, scaffold_level) "
                 "VALUES (?, ?, ?, ?)",
                 (f"assign:{i}", 42, 2.0, "full"),
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.OPEN
 
-    async def test_calibration_based_high_error(self, db: aiosqlite.Connection) -> None:
+    async def test_calibration_based_high_error(self, db: AsyncSession) -> None:
         """≥5 metacognition entries with high error → FULL scaffold."""
         from sophia.services.chronos import get_scaffold_level
 
         for i in range(5):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 5.0, 2.0, "42"),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.FULL
 
-    async def test_calibration_based_low_error(self, db: aiosqlite.Connection) -> None:
+    async def test_calibration_based_low_error(self, db: AsyncSession) -> None:
         """≥5 entries with low error → OPEN scaffold."""
         from sophia.services.chronos import get_scaffold_level
 
         for i in range(5):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 3.0, 3.1, "42"),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.OPEN
 
-    async def test_calibration_based_medium_error(self, db: aiosqlite.Connection) -> None:
+    async def test_calibration_based_medium_error(self, db: AsyncSession) -> None:
         """≥5 entries with medium error → MINIMAL scaffold."""
         from sophia.services.chronos import get_scaffold_level
 
         for i in range(5):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 3.0, 3.5, "42"),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.MINIMAL
 
     async def test_scaffold_level_filters_calibration_rows_by_course(
         self,
-        db: aiosqlite.Connection,
+        db: AsyncSession,
     ) -> None:
         from sophia.services.chronos import get_scaffold_level
 
         for index in range(5):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{index}", 3.0, 3.05, "99"),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.FULL
 
     async def test_scaffold_level_filters_count_fallback_by_course(
         self,
-        db: aiosqlite.Connection,
+        db: AsyncSession,
     ) -> None:
         from sophia.services.chronos import get_scaffold_level
 
         for index in range(30):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT INTO effort_estimates "
                 "(deadline_id, course_id, predicted_hours, scaffold_level) "
                 "VALUES (?, ?, ?, ?)",
                 (f"assign:{index}", 99, 2.0, "full"),
             )
-        await db.commit()
 
         level = await get_scaffold_level(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert level == EstimationScaffold.FULL
@@ -852,53 +889,56 @@ class TestGetScaffoldLevel:
 
 
 class TestFormatReferenceClassHint:
-    async def test_no_hint_when_insufficient_data(self, db: aiosqlite.Connection) -> None:
+    async def test_no_hint_when_insufficient_data(self, db: AsyncSession) -> None:
         from sophia.services.chronos import format_reference_class_hint
 
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
         assert hint is None
 
-    async def test_two_entries_returns_none(self, db: aiosqlite.Connection) -> None:
+    async def test_two_entries_returns_none(self, db: AsyncSession) -> None:
         """Exactly 2 entries (below REFERENCE_CLASS_MIN_ENTRIES=3) → None."""
         from sophia.services.chronos import format_reference_class_hint
 
         for i in range(2):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
         assert hint is None
 
-    async def test_hint_with_sufficient_data(self, db: aiosqlite.Connection) -> None:
+    async def test_hint_with_sufficient_data(self, db: AsyncSession) -> None:
         from sophia.services.chronos import format_reference_class_hint
 
         for i in range(3):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
         assert hint is not None
         assert "hour" in hint.lower()
 
-    async def test_hint_filters_by_course(self, db: aiosqlite.Connection) -> None:
+    async def test_hint_filters_by_course(self, db: AsyncSession) -> None:
         """When course_id is given, only matching course entries build the hint."""
         from sophia.services.chronos import format_reference_class_hint
 
         for index in range(5):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{index}", 3.0, float(2 + index), "99"),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT)
         scoped_hint = await format_reference_class_hint(db, DeadlineType.ASSIGNMENT, course_id=42)
@@ -913,40 +953,44 @@ class TestFormatReferenceClassHint:
 
 
 class TestGetReferenceClass:
-    async def test_returns_past_estimates(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_past_estimates(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_reference_class
 
         for i in range(3):
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT OR REPLACE INTO metacognition_log "
                 "(domain, item_id, predicted, actual) VALUES (?, ?, ?, ?)",
                 ("effort:assignment", f"assign:{i}", 3.0, float(2 + i)),
+                conflict="domain, item_id",
             )
-        await db.commit()
 
         refs = await get_reference_class(db, DeadlineType.ASSIGNMENT)
         assert len(refs) == 3
 
-    async def test_empty_for_unknown_type(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_for_unknown_type(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_reference_class
 
         refs = await get_reference_class(db, DeadlineType.QUIZ)
         assert refs == []
 
-    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+    async def test_filters_by_course(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_reference_class
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR REPLACE INTO metacognition_log "
             "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
             ("effort:assignment", "assign:target", 3.0, 4.0, "42"),
+            conflict="domain, item_id",
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR REPLACE INTO metacognition_log "
             "(domain, item_id, predicted, actual, course_id) VALUES (?, ?, ?, ?, ?)",
             ("effort:assignment", "assign:other", 8.0, 9.0, "99"),
+            conflict="domain, item_id",
         )
-        await db.commit()
 
         refs = await get_reference_class(db, DeadlineType.ASSIGNMENT, course_id=42)
         assert refs == [(3.0, 4.0)]
@@ -958,20 +1002,21 @@ class TestGetReferenceClass:
 
 
 class TestStartTimer:
-    async def test_starts_timer(self, db: aiosqlite.Connection) -> None:
+    async def test_starts_timer(self, db: AsyncSession) -> None:
         from sophia.services.chronos import start_timer
 
         await start_timer(db, "assign:1")
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT deadline_id, started_at FROM active_timers WHERE deadline_id = ?",
             ("assign:1",),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "assign:1"
 
-    async def test_error_if_already_running(self, db: aiosqlite.Connection) -> None:
+    async def test_error_if_already_running(self, db: AsyncSession) -> None:
         from sophia.domain.errors import ChronosError
         from sophia.services.chronos import start_timer
 
@@ -981,41 +1026,41 @@ class TestStartTimer:
 
 
 class TestStopTimer:
-    async def test_stops_and_records_time(self, db: aiosqlite.Connection) -> None:
+    async def test_stops_and_records_time(self, db: AsyncSession) -> None:
         from sophia.services.chronos import start_timer, stop_timer
 
         await start_timer(db, "assign:1")
         # Backdate the timer start so elapsed > 0
-        await db.execute(
+        await exec_sql(
+            db,
             "UPDATE active_timers SET started_at = ? WHERE deadline_id = ?",
             (
                 (datetime.now(UTC) - timedelta(hours=1, minutes=30)).isoformat(),
                 "assign:1",
             ),
         )
-        await db.commit()
 
         hours = await stop_timer(db, "assign:1")
         assert hours == pytest.approx(1.5, abs=0.05)
 
         # Timer row should be gone
-        cursor = await db.execute(
-            "SELECT COUNT(*) FROM active_timers WHERE deadline_id = ?", ("assign:1",)
+        cursor = await exec_sql(
+            db, "SELECT COUNT(*) FROM active_timers WHERE deadline_id = ?", ("assign:1",)
         )
-        row2 = await cursor.fetchone()
+        row2 = cursor.fetchone()
         assert row2 is not None
         assert row2[0] == 0
 
         # Time entry should exist
-        cursor = await db.execute(
-            "SELECT hours, source FROM time_entries WHERE deadline_id = ?", ("assign:1",)
+        cursor = await exec_sql(
+            db, "SELECT hours, source FROM time_entries WHERE deadline_id = ?", ("assign:1",)
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(1.5, abs=0.05)
         assert row[1] == "timer"
 
-    async def test_error_if_not_running(self, db: aiosqlite.Connection) -> None:
+    async def test_error_if_not_running(self, db: AsyncSession) -> None:
         from sophia.domain.errors import ChronosError
         from sophia.services.chronos import stop_timer
 
@@ -1024,36 +1069,37 @@ class TestStopTimer:
 
 
 class TestRecordTime:
-    async def test_manual_entry(self, db: aiosqlite.Connection) -> None:
+    async def test_manual_entry(self, db: AsyncSession) -> None:
         from sophia.services.chronos import record_time
 
         await record_time(db, "assign:1", 2.5)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT hours, source, note FROM time_entries WHERE deadline_id = ?",
             ("assign:1",),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(2.5)
         assert row[1] == "manual"
         assert row[2] is None
 
-    async def test_with_note(self, db: aiosqlite.Connection) -> None:
+    async def test_with_note(self, db: AsyncSession) -> None:
         from sophia.services.chronos import record_time
 
         await record_time(db, "assign:1", 1.0, note="Researched the topic")
 
-        cursor = await db.execute(
-            "SELECT note FROM time_entries WHERE deadline_id = ?", ("assign:1",)
+        cursor = await exec_sql(
+            db, "SELECT note FROM time_entries WHERE deadline_id = ?", ("assign:1",)
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "Researched the topic"
 
 
 class TestGetTrackedTime:
-    async def test_sums_all_entries(self, db: aiosqlite.Connection) -> None:
+    async def test_sums_all_entries(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_tracked_time, record_time
 
         await record_time(db, "assign:1", 2.0)
@@ -1062,7 +1108,7 @@ class TestGetTrackedTime:
         total = await get_tracked_time(db, "assign:1")
         assert total == pytest.approx(3.5)
 
-    async def test_zero_when_no_entries(self, db: aiosqlite.Connection) -> None:
+    async def test_zero_when_no_entries(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_tracked_time
 
         total = await get_tracked_time(db, "assign:1")
@@ -1070,7 +1116,7 @@ class TestGetTrackedTime:
 
 
 class TestRecordReflection:
-    async def test_stores_reflection(self, db: aiosqlite.Connection) -> None:
+    async def test_stores_reflection(self, db: AsyncSession) -> None:
         from sophia.services.chronos import record_reflection
 
         await record_reflection(
@@ -1081,12 +1127,13 @@ class TestRecordReflection:
             reflection_text="Underestimated the reading phase.",
         )
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT deadline_id, predicted_hours, actual_hours, reflection_text "
             "FROM deadline_reflections WHERE deadline_id = ?",
             ("assign:1",),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == "assign:1"
         assert row[1] == pytest.approx(3.0)
@@ -1095,66 +1142,73 @@ class TestRecordReflection:
 
 
 class TestCompleteDeadline:
-    async def test_updates_metacognition_log(self, app_container: MagicMock) -> None:
+    async def test_updates_metacognition_log(
+        self, app_container: MagicMock, db: AsyncSession
+    ) -> None:
         from sophia.services.chronos import complete_deadline, record_time
 
         db = app_container.db
         await _insert_deadline(db)
 
         # Record an estimate (creates metacognition_log predicted entry)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:1", 42, 4.0, "full"),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR REPLACE INTO metacognition_log "
             "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
             ("effort:assignment", "assign:1", 4.0, datetime.now(UTC).isoformat()),
+            conflict="domain, item_id",
         )
-        await db.commit()
 
         # Track some time
         await record_time(db, "assign:1", 3.0)
         await record_time(db, "assign:1", 2.0)
 
-        predicted, actual, _ = await complete_deadline(app_container, "assign:1")
+        predicted, actual, _ = await complete_deadline(db, "assign:1")
 
         assert predicted == pytest.approx(4.0)
         assert actual == pytest.approx(5.0)
 
         # metacognition_log should have actual updated
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT actual FROM metacognition_log WHERE domain = ? AND item_id = ?",
             ("effort:assignment", "assign:1"),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         assert row[0] == pytest.approx(5.0)
 
-    async def test_returns_feedback(self, app_container: MagicMock) -> None:
+    async def test_returns_feedback(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.chronos import complete_deadline, record_time
 
         db = app_container.db
         await _insert_deadline(db)
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:1", 42, 4.0, "full"),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR REPLACE INTO metacognition_log "
             "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
             ("effort:assignment", "assign:1", 4.0, datetime.now(UTC).isoformat()),
+            conflict="domain, item_id",
         )
-        await db.commit()
 
         await record_time(db, "assign:1", 4.2)
 
-        _, _, feedback = await complete_deadline(app_container, "assign:1")
+        _, _, feedback = await complete_deadline(db, "assign:1")
         assert "✅" in feedback  # well calibrated
 
 
@@ -1316,7 +1370,7 @@ class TestComputePriorityScore:
 
 
 class TestGetWorkloadForecast:
-    async def test_empty_forecast(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_forecast(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_workload_forecast
 
         result = await get_workload_forecast(db, horizon_days=7)
@@ -1326,7 +1380,7 @@ class TestGetWorkloadForecast:
         assert result["remaining_hours"] == pytest.approx(0.0)
         assert result["deadline_count"] == 0
 
-    async def test_forecast_with_estimates(self, db: aiosqlite.Connection) -> None:
+    async def test_forecast_with_estimates(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_workload_forecast, record_time
 
         due_in_3 = datetime.now(UTC) + timedelta(days=3)
@@ -1336,19 +1390,20 @@ class TestGetWorkloadForecast:
         await _insert_deadline(db, id="assign:2", name="HW2", due_at=_iso(due_in_5))
 
         # Add estimates
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:1", 42, 4.0, "full"),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:2", 42, 6.0, "full"),
         )
-        await db.commit()
 
         await record_time(db, "assign:1", 1.5)
 
@@ -1360,7 +1415,7 @@ class TestGetWorkloadForecast:
         assert result["deadline_count"] == 2
         assert isinstance(result["per_day"], dict)
 
-    async def test_forecast_only_includes_horizon(self, db: aiosqlite.Connection) -> None:
+    async def test_forecast_only_includes_horizon(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_workload_forecast
 
         in_range = datetime.now(UTC) + timedelta(days=3)
@@ -1369,19 +1424,20 @@ class TestGetWorkloadForecast:
         await _insert_deadline(db, id="assign:1", name="Near", due_at=_iso(in_range))
         await _insert_deadline(db, id="assign:2", name="Far", due_at=_iso(out_of_range))
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:1", 42, 3.0, "full"),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, scaffold_level) "
             "VALUES (?, ?, ?, ?)",
             ("assign:2", 42, 8.0, "full"),
         )
-        await db.commit()
 
         result = await get_workload_forecast(db, horizon_days=7)
 
@@ -1515,7 +1571,7 @@ class TestSortOrder:
 
 
 async def _insert_metacognition(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     domain: str,
     item_id: str,
     predicted: float,
@@ -1524,17 +1580,18 @@ async def _insert_metacognition(
 ) -> None:
     """Helper to insert a metacognition log entry."""
     ts = predicted_at or datetime.now(UTC).isoformat()
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT OR REPLACE INTO metacognition_log "
         "(domain, item_id, predicted, actual, predicted_at, actual_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
         (domain, item_id, predicted, actual, ts, ts if actual else None),
+        conflict="domain, item_id",
     )
-    await db.commit()
 
 
 async def _insert_deadline_cache(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     *,
     deadline_id: str = "assign:1",
     name: str = "Test Deadline",
@@ -1547,7 +1604,8 @@ async def _insert_deadline_cache(
     """Helper to insert a deadline into the cache."""
     if due_at is None:
         due_at = (datetime.now(UTC) + timedelta(days=5)).isoformat()
-    await db.execute(
+    await exec_sql(
+        db,
         "INSERT OR REPLACE INTO deadline_cache "
         "(id, name, course_id, course_name, deadline_type, due_at, "
         "grade_weight, submission_status, url, extra, synced_at) "
@@ -1565,14 +1623,15 @@ async def _insert_deadline_cache(
             "{}",
             datetime.now(UTC).isoformat(),
         ),
+        conflict="id",
     )
-    await db.commit()
 
 
 class TestCalibrationMetrics:
     async def test_course_metrics_include_chronos_effort_flow(
         self,
         app_container: MagicMock,
+        db: AsyncSession,
     ) -> None:
         from sophia.services.chronos import (
             complete_deadline,
@@ -1583,25 +1642,25 @@ class TestCalibrationMetrics:
 
         for index in range(3):
             deadline_id = f"assign:{index}"
-            await _insert_deadline(app_container.db, id=deadline_id, course_id=42)
+            await _insert_deadline(db, id=deadline_id, course_id=42)
             await record_estimate(
-                app_container,
+                db,
                 deadline_id=deadline_id,
                 course_id=42,
                 predicted_hours=2.0,
             )
             await record_time(app_container.db, deadline_id, 3.0)
-            await complete_deadline(app_container, deadline_id)
+            await complete_deadline(db, deadline_id)
 
         await _insert_deadline(app_container.db, id="assign:other", course_id=99)
         await record_estimate(
-            app_container,
+            db,
             deadline_id="assign:other",
             course_id=99,
             predicted_hours=1.0,
         )
         await record_time(app_container.db, "assign:other", 9.0)
-        await complete_deadline(app_container, "assign:other")
+        await complete_deadline(db, "assign:other")
 
         metrics = await get_calibration_metrics(app_container.db, course_id=42)
 
@@ -1610,7 +1669,7 @@ class TestCalibrationMetrics:
         assert metrics[0].sample_count == 3
         assert metrics[0].mean_error == pytest.approx(1.0)
 
-    async def test_returns_metrics_for_completed_domains(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_metrics_for_completed_domains(self, db: AsyncSession) -> None:
         """Insert 3+ completed effort entries → metrics returned."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1625,7 +1684,7 @@ class TestCalibrationMetrics:
         assert m.mean_error == pytest.approx(1.0)  # actual - predicted = 6-5=1
         assert m.mean_absolute_error == pytest.approx(1.0)
 
-    async def test_empty_when_insufficient_data(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_when_insufficient_data(self, db: AsyncSession) -> None:
         """<3 entries → no metrics."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1635,7 +1694,7 @@ class TestCalibrationMetrics:
         metrics = await get_calibration_metrics(db)
         assert len(metrics) == 0
 
-    async def test_trend_improving(self, db: aiosqlite.Connection) -> None:
+    async def test_trend_improving(self, db: AsyncSession) -> None:
         """Recent errors smaller than older → improving."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1653,7 +1712,7 @@ class TestCalibrationMetrics:
         assert len(metrics) == 1
         assert metrics[0].trend == "improving"
 
-    async def test_trend_declining(self, db: aiosqlite.Connection) -> None:
+    async def test_trend_declining(self, db: AsyncSession) -> None:
         """Recent errors larger than older → declining."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1671,7 +1730,7 @@ class TestCalibrationMetrics:
         assert len(metrics) == 1
         assert metrics[0].trend == "declining"
 
-    async def test_trend_stable(self, db: aiosqlite.Connection) -> None:
+    async def test_trend_stable(self, db: AsyncSession) -> None:
         """Similar errors → stable."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1684,7 +1743,7 @@ class TestCalibrationMetrics:
         assert len(metrics) == 1
         assert metrics[0].trend == "stable"
 
-    async def test_filters_by_deadline_type(self, db: aiosqlite.Connection) -> None:
+    async def test_filters_by_deadline_type(self, db: AsyncSession) -> None:
         """Only returns metrics for specified type."""
         from sophia.services.chronos import get_calibration_metrics
 
@@ -1698,7 +1757,7 @@ class TestCalibrationMetrics:
 
 
 class TestGetUpcomingExams:
-    async def test_returns_exam_deadlines(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_exam_deadlines(self, db: AsyncSession) -> None:
         """Insert exam + assignment, only exam returned."""
         from sophia.services.chronos import get_upcoming_exams
 
@@ -1720,7 +1779,7 @@ class TestGetUpcomingExams:
         assert exams[0].name == "Final Exam"
         assert exams[0].deadline_type == DeadlineType.EXAM
 
-    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+    async def test_filters_by_course(self, db: AsyncSession) -> None:
         """Only returns exams for specified course."""
         from sophia.services.chronos import get_upcoming_exams
 
@@ -1743,7 +1802,7 @@ class TestGetUpcomingExams:
         assert len(exams) == 1
         assert exams[0].name == "Algo Exam"
 
-    async def test_excludes_past_exams(self, db: aiosqlite.Connection) -> None:
+    async def test_excludes_past_exams(self, db: AsyncSession) -> None:
         """Past exams not returned."""
         from sophia.services.chronos import get_upcoming_exams
 
@@ -1768,7 +1827,7 @@ class TestGetUpcomingExams:
 
 
 class TestExportIcs:
-    async def test_exports_valid_ics(self, db: aiosqlite.Connection) -> None:
+    async def test_exports_valid_ics(self, db: AsyncSession) -> None:
         """Insert deadlines, export ICS, verify parseable by icalendar."""
         from icalendar import Calendar as ICalendar
 
@@ -1782,7 +1841,7 @@ class TestExportIcs:
         events = [c for c in cal.walk() if c.name == "VEVENT"]
         assert len(events) == 2
 
-    async def test_includes_deadline_details(self, db: aiosqlite.Connection) -> None:
+    async def test_includes_deadline_details(self, db: AsyncSession) -> None:
         """Verify SUMMARY, DESCRIPTION, UID in exported events."""
         from icalendar import Calendar as ICalendar
 
@@ -1805,7 +1864,7 @@ class TestExportIcs:
         assert "Math" in str(ev["DESCRIPTION"])
         assert str(ev["UID"]) == "a:1"
 
-    async def test_exports_only_the_requested_course(self, db: aiosqlite.Connection) -> None:
+    async def test_exports_only_the_requested_course(self, db: AsyncSession) -> None:
         """The calendar a learner downloads must not leak another course's deadlines."""
         from icalendar import Calendar as ICalendar
 
@@ -1820,7 +1879,7 @@ class TestExportIcs:
         summaries = [str(c["SUMMARY"]) for c in cal.walk() if c.name == "VEVENT"]
         assert summaries == ["Mine"]
 
-    async def test_empty_when_no_deadlines(self, db: aiosqlite.Connection) -> None:
+    async def test_empty_when_no_deadlines(self, db: AsyncSession) -> None:
         """No deadlines → valid but empty calendar."""
         from icalendar import Calendar as ICalendar
 
@@ -1886,91 +1945,92 @@ class TestComputePriorityScoreConfidence:
 
 class TestGetMissedDeadlines:
     @pytest.mark.asyncio
-    async def test_returns_past_due_deadlines(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_past_due_deadlines(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_missed_deadlines
 
         past = datetime.now(UTC) - timedelta(days=3)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'Old HW', 42, 'Algo', 'assignment', ?)",
             (past.isoformat(),),
         )
-        await db.commit()
 
         result = await get_missed_deadlines(db)
         assert len(result) == 1
         assert result[0].name == "Old HW"
 
     @pytest.mark.asyncio
-    async def test_filters_by_course(self, db: aiosqlite.Connection) -> None:
+    async def test_filters_by_course(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_missed_deadlines
 
         past = datetime.now(UTC) - timedelta(days=3)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'HW1', 42, 'Algo', 'assignment', ?)",
             (past.isoformat(),),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:2', 'HW2', 99, 'DB', 'assignment', ?)",
             (past.isoformat(),),
         )
-        await db.commit()
 
         result = await get_missed_deadlines(db, course_id=42)
         assert len(result) == 1
         assert result[0].course_id == 42
 
     @pytest.mark.asyncio
-    async def test_respects_limit(self, db: aiosqlite.Connection) -> None:
+    async def test_respects_limit(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_missed_deadlines
 
         for i in range(5):
             past = datetime.now(UTC) - timedelta(days=i + 1)
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT INTO deadline_cache "
                 "(id, name, course_id, course_name, deadline_type, due_at) "
                 "VALUES (?, ?, 42, 'Algo', 'assignment', ?)",
                 (f"a:{i}", f"HW{i}", past.isoformat()),
             )
-        await db.commit()
 
         result = await get_missed_deadlines(db, limit=3)
         assert len(result) == 3
 
     @pytest.mark.asyncio
-    async def test_returns_empty_when_none_missed(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_empty_when_none_missed(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_missed_deadlines
 
         future = datetime.now(UTC) + timedelta(days=5)
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at) "
             "VALUES ('a:1', 'Future HW', 42, 'Algo', 'assignment', ?)",
             (future.isoformat(),),
         )
-        await db.commit()
 
         result = await get_missed_deadlines(db)
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_most_recent_first(self, db: aiosqlite.Connection) -> None:
+    async def test_most_recent_first(self, db: AsyncSession) -> None:
         from sophia.services.chronos import get_missed_deadlines
 
         for i in range(3):
             past = datetime.now(UTC) - timedelta(days=(i + 1) * 2)
-            await db.execute(
+            await exec_sql(
+                db,
                 "INSERT INTO deadline_cache "
                 "(id, name, course_id, course_name, deadline_type, due_at) "
                 "VALUES (?, ?, 42, 'Algo', 'assignment', ?)",
                 (f"a:{i}", f"HW{i}", past.isoformat()),
             )
-        await db.commit()
 
         result = await get_missed_deadlines(db)
         # Most recent (least days ago) should be first

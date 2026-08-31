@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy import Table, case, distinct, func, select
+
+from sophia.infra.schema import (
+    knowledge_index,
+    lecture_downloads,
+    review_schedule,
+    student_flashcards,
+    topic_mappings,
+    transcriptions,
+)
+
 if TYPE_CHECKING:
-    import aiosqlite
     import cyclopts
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql.elements import Case, ColumnElement
+    from sqlalchemy.sql.selectable import ScalarSelect
 
 
 def register_status(app: cyclopts.App) -> None:
@@ -22,8 +35,8 @@ def register_status(app: cyclopts.App) -> None:
         from sophia.infra.di import create_app
 
         try:
-            async with create_app() as container:
-                data = await _fetch_course_stats(container.db)
+            async with create_app() as container, container.session() as db:
+                data = await _fetch_course_stats(db)
         except AuthError:
             from rich.console import Console
 
@@ -80,48 +93,73 @@ def _frac_cell(count: int, total: int) -> str:
     return f"[yellow]{count}/{total}[/yellow]"
 
 
-async def _fetch_course_stats(db: aiosqlite.Connection) -> list[dict[str, int | str | None]]:
+async def _fetch_course_stats(db: AsyncSession) -> list[dict[str, int | str | None]]:
     """Aggregate per-module stats from the DB in two queries."""
-    cursor = await db.execute(
-        "SELECT"
-        "  ld.module_id,"
-        "  COUNT(DISTINCT ld.episode_id) AS total_lectures,"
-        "  SUM(CASE WHEN ld.status  = 'completed' THEN 1 ELSE 0 END) AS downloaded,"
-        "  SUM(CASE WHEN t.status   = 'completed' THEN 1 ELSE 0 END) AS transcribed,"
-        "  SUM(CASE WHEN ki.status  = 'completed' THEN 1 ELSE 0 END) AS indexed,"
-        "  (SELECT COUNT(*) FROM topic_mappings"
-        "     WHERE course_id = ld.module_id) AS topics,"
-        "  (SELECT COUNT(*) FROM student_flashcards"
-        "     WHERE course_id = ld.module_id) AS flashcards"
-        " FROM lecture_downloads ld"
-        " LEFT JOIN transcriptions  t  ON ld.episode_id = t.episode_id"
-        " LEFT JOIN knowledge_index ki ON ld.episode_id = ki.episode_id"
-        " GROUP BY ld.module_id"
-        " ORDER BY ld.module_id"
-    )
-    primary_rows = await cursor.fetchall()
-    cols = [col[0] for col in cursor.description]
+
+    def completed(column: ColumnElement[str | None]) -> Case[int]:
+        return case((column == "completed", 1), else_=0)
+
+    def scoped_count(table: Table) -> ScalarSelect[int]:
+        return (
+            select(func.count())
+            .select_from(table)
+            .where(table.c.course_id == lecture_downloads.c.module_id)
+            .scalar_subquery()
+        )
+
+    primary_rows = (
+        await db.execute(
+            select(
+                lecture_downloads.c.module_id,
+                func.count(distinct(lecture_downloads.c.episode_id)).label("total_lectures"),
+                func.sum(completed(lecture_downloads.c.status)).label("downloaded"),
+                func.sum(completed(transcriptions.c.status)).label("transcribed"),
+                func.sum(completed(knowledge_index.c.status)).label("indexed"),
+                scoped_count(topic_mappings).label("topics"),
+                scoped_count(student_flashcards).label("flashcards"),
+            )
+            .select_from(lecture_downloads)
+            .outerjoin(
+                transcriptions,
+                lecture_downloads.c.episode_id == transcriptions.c.episode_id,
+            )
+            .outerjoin(
+                knowledge_index,
+                lecture_downloads.c.episode_id == knowledge_index.c.episode_id,
+            )
+            .group_by(lecture_downloads.c.module_id)
+            .order_by(lecture_downloads.c.module_id)
+        )
+    ).all()
 
     if not primary_rows:
         return []
 
-    cursor = await db.execute(
-        "SELECT"
-        "  course_id,"
-        "  SUM(CASE WHEN next_review_at <= datetime('now') THEN 1 ELSE 0 END)"
-        "    AS due_today,"
-        "  MIN(CASE WHEN next_review_at  > datetime('now') THEN next_review_at END)"
-        "    AS next_review"
-        " FROM review_schedule"
-        " GROUP BY course_id"
-    )
+    now = func.now()
+    review_rows = (
+        await db.execute(
+            select(
+                review_schedule.c.course_id,
+                func.sum(case((review_schedule.c.next_review_at <= now, 1), else_=0)).label(
+                    "due_today"
+                ),
+                func.min(
+                    case((review_schedule.c.next_review_at > now, review_schedule.c.next_review_at))
+                ).label("next_review"),
+            ).group_by(review_schedule.c.course_id)
+        )
+    ).all()
     review_map: dict[int, tuple[int, str | None]] = {
-        int(row[0]): (int(row[1]), row[2]) for row in await cursor.fetchall()
+        int(row.course_id): (
+            int(row.due_today or 0),
+            row.next_review.isoformat() if row.next_review else None,
+        )
+        for row in review_rows
     }
 
     result: list[dict[str, int | str | None]] = []
-    for raw in primary_rows:
-        record: dict[str, int | str | None] = dict(zip(cols, raw, strict=True))
+    for row in primary_rows:
+        record: dict[str, int | str | None] = dict(row._mapping)  # noqa: SLF001 — Row mapping view
         module_id = int(record["module_id"])  # type: ignore[arg-type]
         due, next_rev = review_map.get(module_id, (0, None))
         record["due_today"] = due

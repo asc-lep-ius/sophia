@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import aiosqlite
 import pytest
 
 from sophia.domain.events import ExtractionReport
@@ -19,6 +18,9 @@ from sophia.domain.models import (
     TissExamDate,
 )
 from sophia.services.pipeline import discover_books
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # --- Fake implementations of the Protocol interfaces ---
 
@@ -680,19 +682,9 @@ async def test_enriched_pdf_description_uses_pdf_source() -> None:
 
 
 class TestPersistReferences:
-    """Tests for reference persistence to SQLite."""
+    """Tests for reference persistence."""
 
-    @pytest.fixture
-    async def db(self):  # type: ignore[override]
-        from sophia.infra.persistence import run_migrations
-
-        db_conn = await aiosqlite.connect(":memory:")
-        await db_conn.execute("PRAGMA foreign_keys=ON")
-        await run_migrations(db_conn)
-        yield db_conn
-        await db_conn.close()
-
-    async def test_persist_and_retrieve(self, db: aiosqlite.Connection):
+    async def test_persist_and_retrieve(self, db: AsyncSession):
         from sophia.services.pipeline import get_course_references, persist_references
 
         refs = [
@@ -714,7 +706,33 @@ class TestPersistReferences:
         assert loaded[0].authors == ["Cormen", "Leiserson"]
         assert loaded[0].isbn == "978-0262033848"
 
-    async def test_persist_upsert_updates_existing(self, db: aiosqlite.Connection):
+    async def test_course_name_lookup_ignores_case(self, db: AsyncSession):
+        """`sophia books list --course "linear algebra"` must find "Linear Algebra".
+
+        SQLite's LIKE folds ASCII case; Postgres's does not. A literal port of
+        the old query would have silently stopped matching.
+        """
+        from sophia.services.pipeline import get_course_references, persist_references
+
+        await persist_references(
+            db,
+            [
+                BookReference(
+                    title="Linear Algebra Done Right",
+                    authors=["Axler"],
+                    isbn="978-3319110790",
+                    source=ReferenceSource.DESCRIPTION,
+                    course_id=321,
+                    course_name="Linear Algebra 2026S",
+                ),
+            ],
+        )
+
+        loaded = await get_course_references(db, course_name="linear algebra")
+
+        assert [ref.title for ref in loaded] == ["Linear Algebra Done Right"]
+
+    async def test_persist_upsert_updates_existing(self, db: AsyncSession):
         from sophia.services.pipeline import get_course_references, persist_references
 
         ref1 = BookReference(
@@ -745,13 +763,13 @@ class TestPersistReferences:
         assert loaded[0].confidence == 0.8
         assert loaded[0].authors == ["Author A", "Author B"]
 
-    async def test_persist_empty_list(self, db: aiosqlite.Connection):
+    async def test_persist_empty_list(self, db: AsyncSession):
         from sophia.services.pipeline import persist_references
 
         saved = await persist_references(db, [])
         assert saved == 0
 
-    async def test_get_by_course_name(self, db: aiosqlite.Connection):
+    async def test_get_by_course_name(self, db: AsyncSession):
         from sophia.services.pipeline import get_course_references, persist_references
 
         refs = [
@@ -778,7 +796,7 @@ class TestPersistReferences:
         assert len(results) == 1
         assert results[0].title == "Book A"
 
-    async def test_get_all_references(self, db: aiosqlite.Connection):
+    async def test_get_all_references(self, db: AsyncSession):
         from sophia.services.pipeline import get_course_references, persist_references
 
         refs = [

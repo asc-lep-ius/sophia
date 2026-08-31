@@ -9,14 +9,18 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from sqlalchemy import select
+
 from sophia.domain.models import CalibrationMetrics, Deadline, DeadlineType
+from sophia.infra.schema import deadline_cache, metacognition_log
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def export_deadlines_ics(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     horizon_days: int = 30,
@@ -28,7 +32,7 @@ async def export_deadlines_ics(
     # module-level import would make that cycle depend on import order.
     from sophia.services.chronos import get_deadlines
 
-    deadlines = await get_deadlines(db, course_id=course_id, horizon_days=horizon_days)
+    deadlines = await get_deadlines(session, course_id=course_id, horizon_days=horizon_days)
 
     cal = Calendar()
     cal.add("prodid", "-//Sophia//Chronos//EN")  # type: ignore[reportUnknownMemberType]
@@ -47,82 +51,59 @@ async def export_deadlines_ics(
     return cal.to_ical().decode()
 
 
+def _row_to_deadline(row: Row[tuple[object, ...]]) -> Deadline:
+    return Deadline(
+        id=row.id,
+        name=row.name,
+        course_id=row.course_id,
+        course_name=row.course_name,
+        deadline_type=DeadlineType(row.deadline_type),
+        due_at=datetime.fromisoformat(row.due_at),
+        grade_weight=row.grade_weight,
+        submission_status=row.submission_status,
+        url=row.url,
+        extra=json.loads(row.extra) if row.extra else {},
+    )
+
+
 async def get_missed_deadlines(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     limit: int = 50,
 ) -> list[Deadline]:
     """Return past-due deadlines, most recent first."""
-    now = datetime.now(UTC).isoformat()
     query = (
-        "SELECT id, name, course_id, course_name, deadline_type, due_at, "
-        "grade_weight, submission_status, url, extra "
-        "FROM deadline_cache "
-        "WHERE due_at < ? "
+        select(deadline_cache)
+        .where(deadline_cache.c.due_at < datetime.now(UTC).isoformat())
+        .order_by(deadline_cache.c.due_at.desc())
+        .limit(limit)
     )
-    params: list[str | int] = [now]
     if course_id is not None:
-        query += "AND course_id = ? "
-        params.append(course_id)
-    query += "ORDER BY due_at DESC LIMIT ?"
-    params.append(limit)
-
-    cursor = await db.execute(query, params)
-    return [
-        Deadline(
-            id=row[0],
-            name=row[1],
-            course_id=row[2],
-            course_name=row[3],
-            deadline_type=DeadlineType(row[4]),
-            due_at=datetime.fromisoformat(row[5]),
-            grade_weight=row[6],
-            submission_status=row[7],
-            url=row[8],
-            extra=json.loads(row[9]) if row[9] else {},
-        )
-        for row in await cursor.fetchall()
-    ]
+        query = query.where(deadline_cache.c.course_id == course_id)
+    return [_row_to_deadline(row) for row in (await session.execute(query)).all()]
 
 
 async def get_upcoming_exams(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     horizon_days: int = 30,
 ) -> list[Deadline]:
     """Return exam deadlines from cache. Athena integration point."""
-    now = datetime.now(UTC).isoformat()
-    horizon_end = datetime.fromisoformat(now) + timedelta(days=horizon_days)
+    now = datetime.now(UTC)
     query = (
-        "SELECT id, name, course_id, course_name, deadline_type, due_at, "
-        "grade_weight, submission_status, url, extra "
-        "FROM deadline_cache "
-        "WHERE deadline_type = 'exam' AND due_at > ? AND due_at < ? "
-    )
-    params: list[str | int] = [now, horizon_end.isoformat()]
-    if course_id is not None:
-        query += "AND course_id = ? "
-        params.append(course_id)
-    query += "ORDER BY due_at ASC"
-
-    cursor = await db.execute(query, params)
-    return [
-        Deadline(
-            id=row[0],
-            name=row[1],
-            course_id=row[2],
-            course_name=row[3],
-            deadline_type=DeadlineType(row[4]),
-            due_at=datetime.fromisoformat(row[5]),
-            grade_weight=row[6],
-            submission_status=row[7],
-            url=row[8],
-            extra=json.loads(row[9]) if row[9] else {},
+        select(deadline_cache)
+        .where(
+            deadline_cache.c.deadline_type == "exam",
+            deadline_cache.c.due_at > now.isoformat(),
+            deadline_cache.c.due_at < (now + timedelta(days=horizon_days)).isoformat(),
         )
-        for row in await cursor.fetchall()
-    ]
+        .order_by(deadline_cache.c.due_at.asc())
+    )
+    if course_id is not None:
+        query = query.where(deadline_cache.c.course_id == course_id)
+    return [_row_to_deadline(row) for row in (await session.execute(query)).all()]
 
 
 # ---------------------------------------------------------------------------
@@ -135,31 +116,29 @@ _TREND_THRESHOLD = 0.10
 
 
 async def get_calibration_metrics(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_type: DeadlineType | None = None,
     *,
     course_id: int | None = None,
 ) -> list[CalibrationMetrics]:
     """Per-domain estimation accuracy: bias, MAE, trend."""
     query = (
-        "SELECT domain, predicted, actual, predicted_at "
-        "FROM metacognition_log "
-        "WHERE domain LIKE 'effort:%' AND actual IS NOT NULL "
+        select(metacognition_log)
+        .where(
+            metacognition_log.c.domain.like("effort:%"),
+            metacognition_log.c.actual.is_not(None),
+        )
+        .order_by(metacognition_log.c.predicted_at.asc())
     )
-    params: list[str | int] = []
     if deadline_type is not None:
-        query += "AND domain = ? "
-        params.append(f"effort:{deadline_type.value}")
+        query = query.where(metacognition_log.c.domain == f"effort:{deadline_type.value}")
     if course_id is not None:
-        query += "AND course_id = ? "
-        params.append(course_id)
-    query += "ORDER BY predicted_at ASC"
+        query = query.where(metacognition_log.c.course_id == str(course_id))
 
-    cursor = await db.execute(query, params)
-    rows = list(await cursor.fetchall())
+    rows = (await session.execute(query)).all()
     grouped: dict[str, list[tuple[float, float]]] = {}
-    for domain, predicted, actual, _ts in rows:
-        grouped.setdefault(domain, []).append((float(predicted), float(actual)))
+    for row in rows:
+        grouped.setdefault(row.domain, []).append((float(row.predicted), float(row.actual)))
 
     results: list[CalibrationMetrics] = []
     for domain, entries in grouped.items():

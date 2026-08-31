@@ -6,49 +6,57 @@ import hashlib
 import random
 from typing import TYPE_CHECKING, Any
 
+from sqlalchemy import select
+
 from sophia.domain.errors import AthenaError
 from sophia.domain.models import FlashcardSource, StudentFlashcard
+from sophia.infra.schema import student_flashcards, topic_lecture_links
 from sophia.services.athena_study import get_flashcards
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def _get_flashcards_for_episode(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     episode_id: str,
 ) -> list[StudentFlashcard]:
     """Load flashcards whose topics are linked to *episode_id*."""
-    cursor = await db.execute(
-        "SELECT DISTINCT f.id, f.course_id, f.topic, f.front, f.back, "
-        "f.source, f.created_at "
-        "FROM student_flashcards f "
-        "JOIN topic_lecture_links tll "
-        "  ON f.topic = tll.topic AND f.course_id = tll.course_id "
-        "WHERE tll.episode_id = ? AND f.course_id = ? "
-        "ORDER BY f.created_at DESC",
-        (episode_id, course_id),
-    )
-    rows = await cursor.fetchall()
+    rows = (
+        await session.execute(
+            select(student_flashcards)
+            .join(
+                topic_lecture_links,
+                (student_flashcards.c.topic == topic_lecture_links.c.topic)
+                & (student_flashcards.c.course_id == topic_lecture_links.c.course_id),
+            )
+            .where(
+                topic_lecture_links.c.episode_id == episode_id,
+                student_flashcards.c.course_id == course_id,
+            )
+            .distinct()
+            .order_by(student_flashcards.c.created_at.desc())
+        )
+    ).all()
     return [
         StudentFlashcard(
-            id=row[0],
-            course_id=row[1],
-            topic=row[2],
-            front=row[3],
-            back=row[4],
-            source=FlashcardSource(row[5]),
-            created_at=row[6] or "",
+            id=row.id,
+            course_id=row.course_id,
+            topic=row.topic,
+            front=row.front,
+            back=row.back,
+            source=FlashcardSource(row.source),
+            created_at=row.created_at.isoformat() if row.created_at else "",
         )
         for row in rows
     ]
 
 
 async def export_anki_deck(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     output_path: Path,
     *,
@@ -72,9 +80,9 @@ async def export_anki_deck(
         ) from e
 
     if episode_id is not None:
-        cards = await _get_flashcards_for_episode(db, course_id, episode_id)
+        cards = await _get_flashcards_for_episode(session, course_id, episode_id)
     else:
-        cards = await get_flashcards(db, course_id)
+        cards = await get_flashcards(session, course_id)
     if not cards:
         return 0
 

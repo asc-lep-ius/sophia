@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
-    get_app_container,
+    request_session,
     require_csrf_learning_path_scope,
     require_learning_path_scope,
 )
@@ -21,6 +21,7 @@ from sophia.api.schemas.review import (
     ReviewScheduleResponse,
     UpcomingReviewListResponse,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.services.athena_review import (
     complete_review,
     get_all_schedules,
@@ -32,7 +33,7 @@ from sophia.services.athena_review import (
 if TYPE_CHECKING:
     from sophia.domain.models import ReviewSchedule
 
-router = APIRouter(tags=["review"])
+router = APIRouter(tags=["review"], route_class=TransactionalRoute)
 
 LearningPathIdQuery = Annotated[int, Query(gt=0)]
 DaysAheadQuery = Annotated[int, Query(ge=1, le=365)]
@@ -49,7 +50,7 @@ async def list_due_reviews(
     request: Request,
 ) -> DueReviewListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    reviews = await get_due_reviews(get_app_container(request).db, learning_path_id)
+    reviews = await get_due_reviews(await request_session(request), learning_path_id)
     return DueReviewListResponse(
         learning_path_id=learning_path_id,
         reviews=[_review_schedule_response(review) for review in reviews],
@@ -68,7 +69,7 @@ async def list_upcoming_reviews(
 ) -> UpcomingReviewListResponse:
     await require_learning_path_scope(request, learning_path_id)
     reviews = await get_upcoming_reviews(
-        get_app_container(request).db,
+        await request_session(request),
         learning_path_id,
         days_ahead=days_ahead,
     )
@@ -91,7 +92,7 @@ async def list_review_schedules(
     topic: TopicFilterQuery = None,
 ) -> ReviewScheduleListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    schedules = await get_all_schedules(get_app_container(request).db, learning_path_id)
+    schedules = await get_all_schedules(await request_session(request), learning_path_id)
     if topic is not None:
         schedules = [schedule for schedule in schedules if schedule.topic == topic]
         if not schedules:
@@ -114,7 +115,7 @@ async def create_review_schedule(
 ) -> ReviewScheduleResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     schedule = await schedule_review(
-        get_app_container(request).db,
+        await request_session(request),
         payload.topic,
         payload.learning_path_id,
     )
@@ -133,7 +134,7 @@ async def complete_review_schedule(
 ) -> ReviewScheduleResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     schedule = await complete_review(
-        get_app_container(request).db,
+        await request_session(request),
         payload.topic,
         payload.learning_path_id,
         payload.score,

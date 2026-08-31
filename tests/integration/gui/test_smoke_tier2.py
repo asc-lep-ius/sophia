@@ -1,6 +1,6 @@
 """Smoke tests for Tier 2 Core GUI features (#29-#36).
 
-These tests start a real NiceGUI server with a seeded in-memory SQLite
+These tests start a real NiceGUI server against a seeded Postgres test
 database and use Playwright to navigate pages and verify that all
 acceptance criteria UI elements render correctly.
 
@@ -22,15 +22,18 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Final
 from unittest.mock import MagicMock
 
-import aiosqlite
 import httpx
 import pytest
 from playwright.sync_api import expect
+
+from ..._sql import exec_sql
+from ...conftest import TEST_ORG_ID, test_database_url, truncate_all
 
 if TYPE_CHECKING:
     from collections.abc import Generator
 
     from playwright.sync_api import Page
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 pytestmark = pytest.mark.e2e
 
@@ -131,17 +134,31 @@ _WAIT_MS: Final = 5_000
 # ---------------------------------------------------------------------------
 
 
-async def _seed_db(db: aiosqlite.Connection) -> None:
+async def _truncate(database_url: str) -> None:
+    """Empty every table through an engine owned by the calling thread's loop."""
+    from sophia.infra.engine import create_engine
+
+    engine = create_engine(database_url, pool_size=1, max_overflow=0)
+    try:
+        await truncate_all(engine)
+    finally:
+        await engine.dispose()
+
+
+async def _seed_db(db: AsyncSession) -> None:
     """Insert test data into the migrated database."""
     for dl in _DEADLINES:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR IGNORE INTO deadline_cache "
             "(id, name, course_id, course_name, deadline_type, due_at, grade_weight, "
             "submission_status, url, extra) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             dl,
+            conflict="id",
         )
     for est in _EFFORT_ESTIMATES:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO effort_estimates "
             "(deadline_id, course_id, predicted_hours, "
             "breakdown, implementation_intention, scaffold_level) "
@@ -149,14 +166,16 @@ async def _seed_db(db: aiosqlite.Connection) -> None:
             est,
         )
     for te in _TIME_ENTRIES:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO time_entries "
             "(deadline_id, hours, source, note, recorded_at) "
             "VALUES (?, ?, ?, ?, ?)",
             te,
         )
     for ref in _REFLECTIONS:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO deadline_reflections "
             "(deadline_id, predicted_hours, actual_hours, "
             "reflection_text, reflected_at) "
@@ -164,13 +183,14 @@ async def _seed_db(db: aiosqlite.Connection) -> None:
             ref,
         )
     for t in _TOPICS:
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT OR IGNORE INTO topic_mappings "
             "(topic, course_id, source, frequency) "
             "VALUES (?, ?, ?, ?)",
             t,
+            conflict="topic, course_id, source",
         )
-    await db.commit()
 
 
 @pytest.fixture(scope="module")
@@ -178,7 +198,8 @@ def seeded_base_url() -> Generator[str, None, None]:
     """Start NiceGUI with a seeded in-memory DB — no real TUWEL auth needed.
 
     Strategy:
-    1. Create in-memory SQLite with migrations + seed data (separate thread).
+    1. Seed the Postgres test database from a separate thread, through an engine
+       created and disposed inside that thread's own event loop.
     2. Start the NiceGUI server in a daemon thread (``_startup`` will fail
        auth — that's OK).
     3. Once the server is healthy, inject a mock container with the real DB
@@ -190,27 +211,42 @@ def seeded_base_url() -> Generator[str, None, None]:
 
     from sophia.config import Settings
     from sophia.gui.middleware.health import set_container
-    from sophia.infra.persistence import run_migrations
+    from sophia.infra.alembic_runner import upgrade
+    from sophia.infra.engine import create_engine, create_session_factory, session_scope
 
-    async def _create_db() -> aiosqlite.Connection:
-        db = await aiosqlite.connect(":memory:")
-        await db.execute("PRAGMA journal_mode=WAL")
-        await db.execute("PRAGMA foreign_keys=ON")
-        await run_migrations(db)
-        await _seed_db(db)
-        return db
+    database_url = test_database_url()
+    upgrade(database_url)
 
-    db: aiosqlite.Connection | None = None
+    async def _seed() -> None:
+        """Seed through a throwaway engine.
+
+        asyncpg binds a connection to the loop that opened it, and this runs in
+        a setup thread with its own loop, so the seeding engine must be disposed
+        here rather than handed to the server thread.
+        """
+        seed_engine = create_engine(database_url, pool_size=1, max_overflow=0)
+        try:
+            factory = create_session_factory(seed_engine)
+            async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+                await _seed_db(session)
+        finally:
+            await seed_engine.dispose()
 
     def _setup_db() -> None:
-        nonlocal db
         loop = asyncio.new_event_loop()
-        db = loop.run_until_complete(_create_db())
+        try:
+            loop.run_until_complete(_seed())
+        finally:
+            loop.close()
 
     setup_thread = threading.Thread(target=_setup_db)
     setup_thread.start()
     setup_thread.join()
-    assert db is not None
+
+    # Never connected here: the pool opens its first connection inside the
+    # server thread's loop, which is the only loop allowed to use it.
+    engine = create_engine(database_url, pool_size=2, max_overflow=0)
+    session_factory = create_session_factory(engine)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
@@ -237,8 +273,7 @@ def seeded_base_url() -> Generator[str, None, None]:
             nicegui_app.storage.user["current_course"] = course_id
             ui.label(f"Course set to {course_id}")
 
-        assert db is not None  # guaranteed by setup_thread.join() above
-        nicegui_app.on_shutdown(db.close)
+        nicegui_app.on_shutdown(engine.dispose)
 
         ui.run(
             host="127.0.0.1",
@@ -265,10 +300,25 @@ def seeded_base_url() -> Generator[str, None, None]:
         raise TimeoutError(msg)
 
     container = MagicMock(
-        spec_set=["settings", "http", "db", "moodle", "tiss", "opencast", "lecture_downloader"],
+        spec_set=[
+            "settings",
+            "http",
+            "engine",
+            "session_factory",
+            "session",
+            "moodle",
+            "tiss",
+            "opencast",
+            "lecture_downloader",
+        ],
     )
     container.settings = settings
-    container.db = db
+    container.engine = engine
+    container.session_factory = session_factory
+    container.session = lambda **kwargs: session_scope(
+        session_factory,
+        org_id=kwargs.get("org_id", TEST_ORG_ID),
+    )
     container.http = MagicMock()
     container.moodle = MagicMock()
     container.tiss = MagicMock()
@@ -278,12 +328,25 @@ def seeded_base_url() -> Generator[str, None, None]:
 
     yield base_url
 
-    # Teardown — signal uvicorn to stop (triggers app.on_shutdown → db.close)
+    # Teardown — signal uvicorn to stop (triggers app.on_shutdown → engine.dispose)
     from nicegui.server import Server
 
     if hasattr(Server, "instance"):
         Server.instance.should_exit = True
     server_thread.join(timeout=30)
+
+    # The seed rows live in the shared test database, so they have to go or the
+    # next test to run sees this module's deadlines and topics.
+    def _clear() -> None:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_truncate(database_url))
+        finally:
+            loop.close()
+
+    cleanup_thread = threading.Thread(target=_clear)
+    cleanup_thread.start()
+    cleanup_thread.join()
 
 
 def _goto(pg: Page, url: str) -> None:

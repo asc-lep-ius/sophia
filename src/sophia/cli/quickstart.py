@@ -6,12 +6,24 @@ from typing import TYPE_CHECKING, Annotated
 
 import cyclopts
 import structlog
+from sqlalchemy import case, func, select
+
+from sophia.infra.schema import (
+    confidence_ratings,
+    knowledge_index,
+    lecture_downloads,
+    study_sessions,
+    topic_mappings,
+    transcriptions,
+)
 
 log = structlog.get_logger()
 
 if TYPE_CHECKING:
-    import aiosqlite
     from rich.console import Console
+    from sqlalchemy import Select
+    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.sql.elements import Case, ColumnElement
 
     from sophia.infra.di import AppContainer
 
@@ -47,7 +59,7 @@ async def quickstart(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
 
@@ -64,17 +76,17 @@ async def quickstart(
 
             # ── Step 1: Pipeline ──────────────────────────────────────────
             with console.status("[cyan][1/5] Checking pipeline status…[/cyan]"):
-                pipeline_done = await _is_pipeline_complete(container.db, resolved_id)
+                pipeline_done = await _is_pipeline_complete(db, resolved_id)
 
             if pipeline_done:
                 console.print("[green]✓[/green] [1/5] Pipeline — already complete")
             else:
                 console.print("[cyan]→[/cyan] [1/5] Running pipeline…")
-                await _run_pipeline(container, resolved_id, console)
+                await _run_pipeline(container, db, resolved_id, console)
 
             # ── Step 2: Topics ────────────────────────────────────────────
             with console.status("[cyan][2/5] Checking topics…[/cyan]"):
-                topics_done = await _has_topics(container.db, resolved_id)
+                topics_done = await _has_topics(db, resolved_id)
 
             if topics_done:
                 console.print("[green]✓[/green] [2/5] Topics — already extracted")
@@ -84,7 +96,11 @@ async def quickstart(
 
                 try:
                     with Status("[cyan]Extracting topics…[/cyan]", console=console):
-                        topics_list = await extract_topics_from_lectures(container, resolved_id)
+                        topics_list = await extract_topics_from_lectures(
+                            container,
+                            db,
+                            resolved_id,
+                        )
                     console.print(f"  [green]✓[/green] {len(topics_list)} topics extracted")
                 except TopicExtractionError as exc:
                     console.print(f"  [yellow]Topic extraction failed:[/yellow] {exc}")
@@ -93,30 +109,30 @@ async def quickstart(
 
             # ── Step 3: Confidence ────────────────────────────────────────
             with console.status("[cyan][3/5] Checking confidence ratings…[/cyan]"):
-                confidence_done = await _has_confidence(container.db, resolved_id)
+                confidence_done = await _has_confidence(db, resolved_id)
 
             if confidence_done:
                 console.print("[green]✓[/green] [3/5] Confidence — already rated")
             else:
                 console.print("[cyan]→[/cyan] [3/5] Rate your confidence…")
-                await _run_confidence(container, resolved_id, console)
+                await _run_confidence(container, db, resolved_id, console)
 
             # ── Step 4: Study session ─────────────────────────────────────
             with console.status("[cyan][4/5] Checking study sessions…[/cyan]"):
-                session_done = await _has_completed_session(container.db, resolved_id)
+                session_done = await _has_completed_session(db, resolved_id)
 
             if session_done:
                 console.print("[green]✓[/green] [4/5] Session — already completed")
             else:
                 console.print("[cyan]→[/cyan] [4/5] Running study session…")
-                await _run_session(container, resolved_id, console)
+                await _run_session(container, db, resolved_id, console)
 
             # ── Step 5: Export ────────────────────────────────────────────
             console.print("[cyan]→[/cyan] [5/5] Exporting Anki deck…")
             out_path = Path(f"sophia-{resolved_id}.apkg")
             from sophia.services.athena_export import export_anki_deck
 
-            count = await export_anki_deck(container.db, resolved_id, out_path)
+            count = await export_anki_deck(db, resolved_id, out_path)
             if count:
                 console.print(
                     f"  [green]✓[/green] Exported {count} cards → [cyan]{out_path}[/cyan]"
@@ -142,62 +158,87 @@ async def quickstart(
 # ── Completion checks ──────────────────────────────────────────────────────
 
 
-async def _is_pipeline_complete(db: aiosqlite.Connection, module_id: int) -> bool:
-    cursor = await db.execute(
-        "SELECT"
-        "  COUNT(*) AS total,"
-        "  SUM(CASE WHEN ld.status  = 'completed' THEN 1 ELSE 0 END) AS dl,"
-        "  SUM(CASE WHEN t.status   = 'completed' THEN 1 ELSE 0 END) AS tr,"
-        "  SUM(CASE WHEN ki.status  = 'completed' THEN 1 ELSE 0 END) AS ix"
-        " FROM lecture_downloads ld"
-        " LEFT JOIN transcriptions  t  ON ld.episode_id = t.episode_id"
-        " LEFT JOIN knowledge_index ki ON ld.episode_id = ki.episode_id"
-        " WHERE ld.module_id = ?",
-        (module_id,),
-    )
-    row = await cursor.fetchone()
-    if not row or row[0] == 0:
+def _completed(column: ColumnElement[str | None]) -> Case[int]:
+    """1 when a pipeline stage reports completed, 0 otherwise."""
+    return case((column == "completed", 1), else_=0)
+
+
+async def _is_pipeline_complete(db: AsyncSession, module_id: int) -> bool:
+    row = (
+        await db.execute(
+            select(
+                func.count().label("total"),
+                func.sum(_completed(lecture_downloads.c.status)).label("dl"),
+                func.sum(_completed(transcriptions.c.status)).label("tr"),
+                func.sum(_completed(knowledge_index.c.status)).label("ix"),
+            )
+            .select_from(lecture_downloads)
+            .outerjoin(
+                transcriptions,
+                lecture_downloads.c.episode_id == transcriptions.c.episode_id,
+            )
+            .outerjoin(
+                knowledge_index,
+                lecture_downloads.c.episode_id == knowledge_index.c.episode_id,
+            )
+            .where(lecture_downloads.c.module_id == module_id)
+        )
+    ).one()
+    if row.total == 0:
         return False
-    total, dl, tr, ix = row
-    return bool(total and total == dl == tr == ix)
+    return bool(row.total == row.dl == row.tr == row.ix)
 
 
-async def _has_topics(db: aiosqlite.Connection, module_id: int) -> bool:
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM topic_mappings WHERE course_id = ?", (module_id,)
+async def _count_exists(db: AsyncSession, query: Select[tuple[int]]) -> bool:
+    return bool(await db.scalar(query))
+
+
+async def _has_topics(db: AsyncSession, module_id: int) -> bool:
+    return await _count_exists(
+        db,
+        select(func.count())
+        .select_from(topic_mappings)
+        .where(topic_mappings.c.course_id == module_id),
     )
-    row = await cursor.fetchone()
-    return bool(row and row[0])
 
 
-async def _has_confidence(db: aiosqlite.Connection, module_id: int) -> bool:
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM confidence_ratings WHERE course_id = ?", (module_id,)
+async def _has_confidence(db: AsyncSession, module_id: int) -> bool:
+    return await _count_exists(
+        db,
+        select(func.count())
+        .select_from(confidence_ratings)
+        .where(confidence_ratings.c.course_id == module_id),
     )
-    row = await cursor.fetchone()
-    return bool(row and row[0])
 
 
-async def _has_completed_session(db: aiosqlite.Connection, module_id: int) -> bool:
-    cursor = await db.execute(
-        "SELECT COUNT(*) FROM study_sessions WHERE course_id = ? AND post_test_score IS NOT NULL",
-        (module_id,),
+async def _has_completed_session(db: AsyncSession, module_id: int) -> bool:
+    return await _count_exists(
+        db,
+        select(func.count())
+        .select_from(study_sessions)
+        .where(
+            study_sessions.c.course_id == module_id,
+            study_sessions.c.post_test_score.is_not(None),
+        ),
     )
-    row = await cursor.fetchone()
-    return bool(row and row[0])
 
 
 # ── Step runners ───────────────────────────────────────────────────────────
 
 
-async def _run_pipeline(container: AppContainer, resolved_id: int, console: Console) -> None:
+async def _run_pipeline(
+    container: AppContainer,
+    db: AsyncSession,
+    resolved_id: int,
+    console: Console,
+) -> None:
     """Run the Hermes pipeline with a simple status spinner."""
     from rich.status import Status
 
     from sophia.services.hermes_pipeline import run_pipeline
 
     with Status("[cyan]Processing lectures…[/cyan]", console=console):
-        result = await run_pipeline(container, resolved_id)
+        result = await run_pipeline(container, db, resolved_id)
 
     dl = sum(1 for r in result.downloads if r.status == "completed")
     tr = sum(1 for r in result.transcriptions if r.status == "completed")
@@ -208,14 +249,19 @@ async def _run_pipeline(container: AppContainer, resolved_id: int, console: Cons
     )
 
 
-async def _run_confidence(container: AppContainer, resolved_id: int, console: Console) -> None:
+async def _run_confidence(
+    container: AppContainer,
+    db: AsyncSession,
+    resolved_id: int,
+    console: Console,
+) -> None:
     """Prompt the user to rate confidence for all unrated topics."""
     from rich.prompt import IntPrompt
 
     from sophia.services.athena_confidence import rate_confidence
     from sophia.services.athena_study import get_course_topics
 
-    topics = await get_course_topics(container, resolved_id)
+    topics = await get_course_topics(db, resolved_id)
     if not topics:
         console.print("  [yellow]No topics found — run study topics first.[/yellow]")
         return
@@ -235,18 +281,23 @@ async def _run_confidence(container: AppContainer, resolved_id: int, console: Co
             default=3,
             console=console,
         )
-        await rate_confidence(container, tm.topic, resolved_id, rating)
+        await rate_confidence(db, tm.topic, resolved_id, rating)
 
     console.print(f"  [green]✓[/green] {len(topics)} topics rated")
 
 
-async def _run_session(container: AppContainer, resolved_id: int, console: Console) -> None:
+async def _run_session(
+    container: AppContainer,
+    db: AsyncSession,
+    resolved_id: int,
+    console: Console,
+) -> None:
     """Run a single study session for the weakest topic."""
     from sophia.domain.errors import StudySessionError
     from sophia.services.athena_session import run_interactive_session
     from sophia.services.athena_study import get_course_topics
 
-    topics = await get_course_topics(container, resolved_id)
+    topics = await get_course_topics(db, resolved_id)
     if not topics:
         console.print("  [yellow]No topics — skipping session.[/yellow]")
         return
@@ -256,7 +307,7 @@ async def _run_session(container: AppContainer, resolved_id: int, console: Conso
     try:
         from sophia.services.athena_confidence import get_blind_spots
 
-        blind_spots = await get_blind_spots(container.db, resolved_id)
+        blind_spots = await get_blind_spots(db, resolved_id)
         if blind_spots:
             topic = blind_spots[0].topic
     except Exception:
@@ -265,6 +316,6 @@ async def _run_session(container: AppContainer, resolved_id: int, console: Conso
     console.print(f"  Topic: [bold]{topic}[/bold]")
 
     try:
-        await run_interactive_session(container, resolved_id, topic, console)
+        await run_interactive_session(container, db, resolved_id, topic, console)
     except StudySessionError as exc:
         console.print(f"  [red]Session error:[/red] {exc}")

@@ -14,17 +14,13 @@ async def jobs_list() -> None:
     from rich.table import Table
 
     from sophia.config import Settings
-    from sophia.infra.persistence import connect_db, run_migrations
+    from sophia.infra.di import create_app
     from sophia.infra.scheduler import create_scheduler
 
     settings = Settings()
-    db = await connect_db(settings.db_path)
-    try:
-        await run_migrations(db)
+    async with create_app(settings) as container, container.session() as db:
         scheduler = create_scheduler(db)
         jobs = await scheduler.list_jobs()
-    finally:
-        await db.close()
 
     console = Console()
     if not jobs:
@@ -63,14 +59,12 @@ async def cancel(job_id: str) -> None:
     from rich.console import Console
 
     from sophia.config import Settings
-    from sophia.infra.persistence import connect_db, run_migrations
+    from sophia.infra.di import create_app
     from sophia.infra.scheduler import SchedulerError, create_scheduler
 
     console = Console()
     settings = Settings()
-    db = await connect_db(settings.db_path)
-    try:
-        await run_migrations(db)
+    async with create_app(settings) as container, container.session() as db:
         scheduler = create_scheduler(db)
 
         job = await scheduler.get_job(job_id)
@@ -85,5 +79,3 @@ async def cancel(job_id: str) -> None:
             raise SystemExit(1) from None
 
         console.print(f"[green]Job {job_id} cancelled.[/green]")
-    finally:
-        await db.close()

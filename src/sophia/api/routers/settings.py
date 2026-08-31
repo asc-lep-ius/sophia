@@ -16,9 +16,10 @@ from sophia.api.deps import (
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.settings import SettingsPatchRequest, SettingsResponse
 from sophia.api.sessions import SessionRecord, SessionSettings
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.errors import AuthError
 
-router = APIRouter(tags=["settings"])
+router = APIRouter(tags=["settings"], route_class=TransactionalRoute)
 
 
 @router.get("/settings", response_model=SettingsResponse)

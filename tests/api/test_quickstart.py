@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -11,17 +10,12 @@ from sophia.api.sessions import SessionTenant
 from sophia.domain.models import Course, Deadline, DeadlineType, TopicMapping, TopicSource
 from sophia.services.quickstart import QuickstartOverview
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -86,6 +80,7 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
 
     async def fake_get_quickstart_overview(
         app: AppContainer,
+        db: object,
         *,
         course_id: int | None = None,
     ) -> QuickstartOverview:
@@ -99,22 +94,22 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         )
 
     async def fake_save_initial_confidence(
-        app: AppContainer,
+        db: object,
         *,
         course_id: int,
         ratings: dict[str, int],
     ) -> int:
-        assert app is fake_app
+        assert db is fake_app.db
         saved_confidence.append((course_id, ratings))
         return len(ratings)
 
     async def fake_save_manual_topics(
-        app: AppContainer,
+        db: object,
         *,
         course_id: int,
         topics: list[str],
     ) -> list[TopicMapping]:
-        assert app is fake_app
+        assert db is fake_app.db
         assert topics == ["Graphs", "Flows"]
         return [
             TopicMapping(topic="Graphs", course_id=course_id, source=TopicSource.MANUAL),
@@ -122,11 +117,11 @@ def test_quickstart_routes_return_response_shapes(monkeypatch: pytest.MonkeyPatc
         ]
 
     async def fake_get_completed_session_count(
-        app: AppContainer,
+        db: object,
         *,
         course_id: int | None = None,
     ) -> int:
-        assert app is fake_app
+        assert db is fake_app.db
         assert course_id == 12
         return 2
 
@@ -213,6 +208,7 @@ def test_quickstart_optional_routes_use_session_learning_path(
 
     async def fake_get_quickstart_overview(
         app: AppContainer,
+        db: object,
         *,
         course_id: int | None = None,
     ) -> QuickstartOverview:
@@ -233,11 +229,11 @@ def test_quickstart_optional_routes_use_session_learning_path(
         )
 
     async def fake_get_completed_session_count(
-        app: AppContainer,
+        db: object,
         *,
         course_id: int | None = None,
     ) -> int:
-        assert app is fake_app
+        assert db is fake_app.db
         course_ids.append(course_id)
         return 99 if course_id is None else 2
 
@@ -282,6 +278,7 @@ def test_quickstart_overview_missing_filtered_course_returns_404(
 
     async def fake_get_quickstart_overview(
         _app: AppContainer,
+        _db: object,
         *,
         course_id: int | None = None,
     ) -> QuickstartOverview:
@@ -357,6 +354,7 @@ def test_quickstart_routes_reject_out_of_scope_learning_path_ids(
 
     async def fake_get_quickstart_overview(
         _app: AppContainer,
+        _db: object,
         *,
         course_id: int | None = None,
     ) -> QuickstartOverview:

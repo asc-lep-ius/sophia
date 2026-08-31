@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,6 +11,9 @@ import pytest
 from sophia.services.hermes_download import LectureDownloadResult
 from sophia.services.hermes_index import IndexingResult
 from sophia.services.hermes_transcribe import TranscriptionResult
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _make_download(
@@ -77,7 +80,7 @@ def _make_topic(topic: str = "Linear Algebra", course_id: int = 42):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_calls_stages_in_order() -> None:
+async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
     """All four stages are called sequentially: download → transcribe → index → topics."""
     from unittest.mock import patch
 
@@ -110,7 +113,7 @@ async def test_pipeline_calls_stages_in_order() -> None:
         patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        await run_pipeline(container, module_id=42)
+        await run_pipeline(container, db, module_id=42)
 
     assert call_order == ["download", "transcribe", "index", "topics"]
 
@@ -121,7 +124,7 @@ async def test_pipeline_calls_stages_in_order() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_aggregates_results() -> None:
+async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
     """PipelineResult contains results from all four stages."""
     from unittest.mock import patch
 
@@ -153,7 +156,7 @@ async def test_pipeline_aggregates_results() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42)
+        result = await run_pipeline(container, db, module_id=42)
 
     assert result.downloads == downloads
     assert result.transcriptions == transcriptions
@@ -167,7 +170,7 @@ async def test_pipeline_aggregates_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_passes_module_id() -> None:
+async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
     """Each stage receives the correct module_id."""
     from unittest.mock import patch
 
@@ -187,19 +190,19 @@ async def test_pipeline_passes_module_id() -> None:
         patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", mock_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        await run_pipeline(container, module_id=99)
+        await run_pipeline(container, db, module_id=99)
 
     mock_download.assert_called_once()
-    assert mock_download.call_args[0] == (container, 99)
+    assert mock_download.call_args[0] == (container, db, 99)
 
     mock_transcribe.assert_called_once()
-    assert mock_transcribe.call_args[0] == (container, 99)
+    assert mock_transcribe.call_args[0] == (container, db, 99)
 
     mock_index.assert_called_once()
-    assert mock_index.call_args[0] == (container, 99)
+    assert mock_index.call_args[0] == (container, db, 99)
 
     mock_topics.assert_called_once()
-    assert mock_topics.call_args[0] == (container, 99)
+    assert mock_topics.call_args[0] == (container, db, 99)
 
 
 # ------------------------------------------------------------------
@@ -208,7 +211,7 @@ async def test_pipeline_passes_module_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stops_on_cancel_before_first_stage() -> None:
+async def test_pipeline_stops_on_cancel_before_first_stage(db: AsyncSession) -> None:
     """cancel_check returning True immediately → downloads never called."""
     from unittest.mock import patch
 
@@ -228,14 +231,14 @@ async def test_pipeline_stops_on_cancel_before_first_stage() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42, cancel_check=lambda: True)
+        result = await run_pipeline(container, db, module_id=42, cancel_check=lambda: True)
 
     mock_download.assert_not_called()
     assert result.cancelled is True
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stops_between_stages() -> None:
+async def test_pipeline_stops_between_stages(db: AsyncSession) -> None:
     """Cancel after download → transcribe not called."""
     from unittest.mock import patch
 
@@ -265,7 +268,9 @@ async def test_pipeline_stops_between_stages() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42, cancel_check=_cancel_after_download)
+        result = await run_pipeline(
+            container, db, module_id=42, cancel_check=_cancel_after_download
+        )
 
     assert result.downloads == [_make_download()]
     mock_transcribe.assert_not_called()
@@ -273,7 +278,7 @@ async def test_pipeline_stops_between_stages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_cancel_check_none_processes_all() -> None:
+async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> None:
     """Backward compatibility: cancel_check=None processes everything."""
     from unittest.mock import patch
 
@@ -306,14 +311,14 @@ async def test_pipeline_cancel_check_none_processes_all() -> None:
         patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42, cancel_check=None)
+        result = await run_pipeline(container, db, module_id=42, cancel_check=None)
 
     assert call_order == ["download", "transcribe", "index", "topics"]
     assert result.cancelled is False
 
 
 @pytest.mark.asyncio
-async def test_pipeline_result_cancelled_flag() -> None:
+async def test_pipeline_result_cancelled_flag(db: AsyncSession) -> None:
     """verify result.cancelled is True when cancelled."""
     from unittest.mock import patch
 
@@ -331,7 +336,7 @@ async def test_pipeline_result_cancelled_flag() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42, cancel_check=lambda: True)
+        result = await run_pipeline(container, db, module_id=42, cancel_check=lambda: True)
 
     assert result.cancelled is True
     assert result.downloads == []
@@ -341,7 +346,7 @@ async def test_pipeline_result_cancelled_flag() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cancel_check_forwarded_to_stages() -> None:
+async def test_cancel_check_forwarded_to_stages(db: AsyncSession) -> None:
     """Verify cancel_check is passed through to each stage function."""
     from unittest.mock import patch
 
@@ -364,7 +369,7 @@ async def test_cancel_check_forwarded_to_stages() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        await run_pipeline(container, module_id=42, cancel_check=cancel_fn)
+        await run_pipeline(container, db, module_id=42, cancel_check=cancel_fn)
 
     assert mock_download.call_args[1].get("cancel_check") is cancel_fn
     assert mock_transcribe.call_args[1].get("cancel_check") is cancel_fn
@@ -377,7 +382,7 @@ async def test_cancel_check_forwarded_to_stages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_empty_module() -> None:
+async def test_pipeline_empty_module(db: AsyncSession) -> None:
     """Pipeline handles modules with no episodes gracefully."""
     from unittest.mock import patch
 
@@ -395,7 +400,7 @@ async def test_pipeline_empty_module() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42)
+        result = await run_pipeline(container, db, module_id=42)
 
     assert result.downloads == []
     assert result.transcriptions == []
@@ -409,7 +414,7 @@ async def test_pipeline_empty_module() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_mixed_episode_results() -> None:
+async def test_pipeline_mixed_episode_results(db: AsyncSession) -> None:
     """A failure in one episode doesn't stop other episodes from being processed."""
     from unittest.mock import patch
 
@@ -448,7 +453,7 @@ async def test_pipeline_mixed_episode_results() -> None:
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
-        result = await run_pipeline(container, module_id=42)
+        result = await run_pipeline(container, db, module_id=42)
 
     assert len(result.downloads) == 3
     assert result.downloads[1].status == "failed"
@@ -463,7 +468,7 @@ async def test_pipeline_mixed_episode_results() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_forwards_callbacks() -> None:
+async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
     """Pipeline passes on_progress callbacks to each stage."""
     from unittest.mock import patch
 
@@ -492,6 +497,7 @@ async def test_pipeline_forwards_callbacks() -> None:
     ):
         await run_pipeline(
             container,
+            db,
             module_id=42,
             on_download_progress=on_download,
             on_transcribe_start=on_transcribe_start,
@@ -510,7 +516,7 @@ async def test_pipeline_forwards_callbacks() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_calls_assign_lecture_numbers() -> None:
+async def test_pipeline_calls_assign_lecture_numbers(db: AsyncSession) -> None:
     """Pipeline calls assign_lecture_numbers after downloading."""
     from unittest.mock import patch
 
@@ -531,6 +537,6 @@ async def test_pipeline_calls_assign_lecture_numbers() -> None:
             AsyncMock(),
         ) as mock_assign,
     ):
-        await run_pipeline(container, module_id=42)
+        await run_pipeline(container, db, module_id=42)
 
-    mock_assign.assert_called_once_with(container.db, 42)
+    mock_assign.assert_called_once_with(db, 42)

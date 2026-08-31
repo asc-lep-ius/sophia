@@ -1,110 +1,14 @@
-"""Tests for course material schema (migration 015) and domain models."""
+"""Tests for the course material domain models.
+
+The schema those models map to is verified against Postgres by the Alembic
+baseline tests; what is left here is the model behaviour itself.
+"""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import aiosqlite
 import pytest
 
 from sophia.domain.models import CourseMaterial, KnowledgeChunk, MaterialSource
-from sophia.infra.persistence import run_migrations
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator
-
-
-@pytest.fixture
-async def db() -> AsyncGenerator[aiosqlite.Connection, None]:
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(conn)
-    yield conn
-    await conn.close()
-
-
-# --- Schema tests ---
-
-
-class TestMigration015:
-    async def test_course_materials_table_exists(self, db: aiosqlite.Connection) -> None:
-        cursor = await db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='course_materials'"
-        )
-        row = await cursor.fetchone()
-        assert row is not None
-
-    async def test_course_materials_columns(self, db: aiosqlite.Connection) -> None:
-        cursor = await db.execute("PRAGMA table_info(course_materials)")
-        columns = {row[1] for row in await cursor.fetchall()}
-        expected = {
-            "id",
-            "course_id",
-            "module_id",
-            "name",
-            "url",
-            "mimetype",
-            "file_size_bytes",
-            "pdf_text",
-            "chunk_count",
-            "status",
-            "error",
-            "created_at",
-        }
-        assert expected <= columns
-
-    async def test_lecture_number_column_exists(self, db: aiosqlite.Connection) -> None:
-        cursor = await db.execute("PRAGMA table_info(lecture_downloads)")
-        columns = {row[1]: row[2] for row in await cursor.fetchall()}
-        assert "lecture_number" in columns
-        assert columns["lecture_number"] == "INTEGER"
-
-    async def test_lecture_number_is_nullable(self, db: aiosqlite.Connection) -> None:
-        """lecture_number should be NULL by default for existing rows."""
-        await db.execute(
-            "INSERT INTO lecture_downloads"
-            " (episode_id, module_id, series_id, title, track_url, track_mimetype, status)"
-            " VALUES ('ep1', 1, 's1', 'Lecture 1', 'https://x.com/a.mp3', 'audio/mpeg', 'queued')"
-        )
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT lecture_number FROM lecture_downloads WHERE episode_id='ep1'"
-        )
-        row = await cursor.fetchone()
-        assert row is not None
-        assert row[0] is None
-
-    async def test_unique_constraint_on_course_materials_url(
-        self, db: aiosqlite.Connection
-    ) -> None:
-        await db.execute(
-            "INSERT INTO course_materials (course_id, module_id, name, url)"
-            " VALUES (1, 10, 'Slides Week 1', 'https://example.com/slides.pdf')"
-        )
-        await db.commit()
-        with pytest.raises(aiosqlite.IntegrityError):
-            await db.execute(
-                "INSERT INTO course_materials (course_id, module_id, name, url)"
-                " VALUES (1, 11, 'Duplicate URL', 'https://example.com/slides.pdf')"
-            )
-
-    async def test_unique_constraint_allows_different_courses(
-        self,
-        db: aiosqlite.Connection,
-    ) -> None:
-        """Same URL in different courses is allowed."""
-        await db.execute(
-            "INSERT INTO course_materials (course_id, module_id, name, url)"
-            " VALUES (1, 10, 'Slides', 'https://example.com/slides.pdf')"
-        )
-        await db.execute(
-            "INSERT INTO course_materials (course_id, module_id, name, url)"
-            " VALUES (2, 20, 'Slides', 'https://example.com/slides.pdf')"
-        )
-        await db.commit()
-
-
-# --- Domain model tests ---
 
 
 class TestMaterialSource:

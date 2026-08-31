@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -22,6 +24,8 @@ from sophia.api.sessions import (
 from sophia.config import Settings
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from fastapi import FastAPI
 
     from sophia.api.routers.auth import LoginAuthenticator
@@ -189,3 +193,26 @@ def csrf_headers(harness: ApiHarness) -> dict[str, str]:
     csrf_cookie = harness.client.cookies.get(harness.settings.csrf_cookie_name)
     assert csrf_cookie is not None
     return {"X-Requested-With": "fetch", "X-CSRF-Token": csrf_cookie}
+
+
+@contextlib.asynccontextmanager
+async def _fake_session_scope(db: object) -> AsyncIterator[object]:
+    yield db
+
+
+@dataclass(frozen=True, slots=True)
+class FakeAppContainer:
+    """Container stand-in for route tests that monkeypatch the services.
+
+    ``session()`` hands out the same fake ``db`` the test asserts against, so a
+    route opening its own session still reaches the object under inspection.
+    """
+
+    db: object
+    # No real pool to probe. The readiness route treats a container without an
+    # engine as "nothing to ask", which is only ever true of a test double —
+    # AppContainer declares engine, so production always has one.
+    engine: object | None = None
+
+    def session(self, **_kwargs: object) -> AbstractAsyncContextManager[object]:
+        return _fake_session_scope(self.db)

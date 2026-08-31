@@ -11,7 +11,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request, status
 
-from sophia.api.deps import get_app_container, get_settings, require_learning_path_scope
+from sophia.api.deps import (
+    get_settings,
+    request_session,
+    require_learning_path_scope,
+)
 from sophia.api.schemas.content import (
     ContentKind,
     ContentLanguage,
@@ -20,10 +24,11 @@ from sophia.api.schemas.content import (
     ContentTranslation,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.learning import ContentLanguage as DomainContentLanguage
 from sophia.services.content_language import get_translations, resolve_content_language
 
-router = APIRouter(tags=["content-language"])
+router = APIRouter(tags=["content-language"], route_class=TransactionalRoute)
 
 LearningPathIdPath = Annotated[int, Path(gt=0)]
 LanguageOverrideQuery = Annotated[ContentLanguage | None, Query(alias="lang")]
@@ -41,7 +46,7 @@ async def get_content_language(
     lang: LanguageOverrideQuery = None,
 ) -> ContentLanguageResponse:
     await require_learning_path_scope(request, learning_path_id)
-    db = get_app_container(request).db
+    db = await request_session(request)
     settings = get_settings(request)
 
     resolved = await resolve_content_language(

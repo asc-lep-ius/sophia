@@ -5,14 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
-import aiosqlite
-
 from sophia.domain.errors import LectureDownloadError
 from sophia.domain.models import DownloadProgressEvent, Lecture, LectureTrack
 from sophia.services.hermes_download import download_lectures
 
+from .._sql import exec_sql
+
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _make_lecture(
@@ -43,33 +45,8 @@ async def _progress_gen(*_: object, **__: object):
     yield DownloadProgressEvent(bytes_downloaded=1024, total_bytes=1024, speed_bps=512.0)
 
 
-async def _setup_db(db: aiosqlite.Connection) -> None:
-    """Apply the lecture_downloads schema to an in-memory DB."""
-    await db.executescript("""
-        CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);
-        INSERT OR IGNORE INTO schema_version (version) VALUES (3);
-
-        CREATE TABLE IF NOT EXISTS lecture_downloads (
-            episode_id TEXT PRIMARY KEY,
-            module_id INTEGER NOT NULL,
-            series_id TEXT NOT NULL DEFAULT '',
-            title TEXT NOT NULL,
-            track_url TEXT NOT NULL,
-            track_mimetype TEXT NOT NULL,
-            file_path TEXT,
-            file_size_bytes INTEGER,
-            status TEXT NOT NULL DEFAULT 'queued',
-            error TEXT,
-            started_at TIMESTAMP,
-            completed_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    await db.commit()
-
-
 def _make_container(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     tmp_path: Path,
     episodes: list[Lecture] | None = None,
     details: dict[str, Lecture | None] | None = None,
@@ -97,16 +74,14 @@ def _make_container(
 # ------------------------------------------------------------------
 
 
-async def test_download_lectures_happy_path(tmp_path: Path) -> None:
+async def test_download_lectures_happy_path(tmp_path: Path, db: AsyncSession) -> None:
     lectures = [
         _make_lecture(episode_id="ep-001", title="Lecture 1"),
         _make_lecture(episode_id="ep-002", title="Lecture 2"),
     ]
-    async with aiosqlite.connect(":memory:") as db:
-        await _setup_db(db)
-        container = _make_container(db, tmp_path, episodes=lectures)
+    container = _make_container(db, tmp_path, episodes=lectures)
 
-        results = await download_lectures(container, module_id=42)
+    results = await download_lectures(container, db, module_id=42)
 
     assert len(results) == 2
     assert all(r.status == "completed" for r in results)
@@ -119,26 +94,23 @@ async def test_download_lectures_happy_path(tmp_path: Path) -> None:
 # ------------------------------------------------------------------
 
 
-async def test_download_lectures_skips_completed(tmp_path: Path) -> None:
-    async with aiosqlite.connect(":memory:") as db:
-        await _setup_db(db)
+async def test_download_lectures_skips_completed(tmp_path: Path, db: AsyncSession) -> None:
+    # Pre-insert a completed row for ep-001
+    await exec_sql(
+        db,
+        """INSERT INTO lecture_downloads
+           (episode_id, module_id, series_id, title, track_url, track_mimetype, status)
+           VALUES (?, ?, ?, ?, ?, ?, 'completed')""",
+        ("ep-001", 42, "series-abc", "Lecture 1", "https://x/v.mp4", "video/mp4"),
+    )
 
-        # Pre-insert a completed row for ep-001
-        await db.execute(
-            """INSERT INTO lecture_downloads
-               (episode_id, module_id, series_id, title, track_url, track_mimetype, status)
-               VALUES (?, ?, ?, ?, ?, ?, 'completed')""",
-            ("ep-001", 42, "series-abc", "Lecture 1", "https://x/v.mp4", "video/mp4"),
-        )
-        await db.commit()
+    lectures = [
+        _make_lecture(episode_id="ep-001", title="Lecture 1"),
+        _make_lecture(episode_id="ep-002", title="Lecture 2"),
+    ]
+    container = _make_container(db, tmp_path, episodes=lectures)
 
-        lectures = [
-            _make_lecture(episode_id="ep-001", title="Lecture 1"),
-            _make_lecture(episode_id="ep-002", title="Lecture 2"),
-        ]
-        container = _make_container(db, tmp_path, episodes=lectures)
-
-        results = await download_lectures(container, module_id=42)
+    results = await download_lectures(container, db, module_id=42)
 
     assert len(results) == 2
     skipped = [r for r in results if r.status == "skipped"]
@@ -154,13 +126,11 @@ async def test_download_lectures_skips_completed(tmp_path: Path) -> None:
 # ------------------------------------------------------------------
 
 
-async def test_download_lectures_handles_no_tracks(tmp_path: Path) -> None:
+async def test_download_lectures_handles_no_tracks(tmp_path: Path, db: AsyncSession) -> None:
     lecture = _make_lecture(episode_id="ep-001", tracks=[])
-    async with aiosqlite.connect(":memory:") as db:
-        await _setup_db(db)
-        container = _make_container(db, tmp_path, episodes=[lecture])
+    container = _make_container(db, tmp_path, episodes=[lecture])
 
-        results = await download_lectures(container, module_id=42)
+    results = await download_lectures(container, db, module_id=42)
 
     assert len(results) == 1
     assert results[0].status == "failed"
@@ -172,19 +142,49 @@ async def test_download_lectures_handles_no_tracks(tmp_path: Path) -> None:
 # ------------------------------------------------------------------
 
 
-async def test_download_lectures_handles_download_error(tmp_path: Path) -> None:
-    async with aiosqlite.connect(":memory:") as db:
-        await _setup_db(db)
-        container = _make_container(db, tmp_path)
+async def test_download_lectures_handles_download_error(tmp_path: Path, db: AsyncSession) -> None:
+    container = _make_container(db, tmp_path)
 
-        async def _failing_gen(*_: object, **__: object):
-            raise LectureDownloadError("network timeout")
-            yield  # noqa: RUF027 — makes this an async generator
+    async def _failing_gen(*_: object, **__: object):
+        raise LectureDownloadError("network timeout")
+        yield  # noqa: RUF027 — makes this an async generator
 
-        container.lecture_downloader.download_track = MagicMock(side_effect=_failing_gen)
+    container.lecture_downloader.download_track = MagicMock(side_effect=_failing_gen)
 
-        results = await download_lectures(container, module_id=42)
+    results = await download_lectures(container, db, module_id=42)
 
     assert len(results) == 1
     assert results[0].status == "failed"
     assert "network timeout" in (results[0].error or "")
+
+
+async def test_a_retry_does_not_inherit_the_previous_attempts_result(
+    db: AsyncSession,
+) -> None:
+    """A re-download clears the last run's outcome, as INSERT OR REPLACE did.
+
+    Otherwise a failed retry renders as status='failed' beside the file_path and
+    completed_at of the run before it.
+    """
+    from sophia.services.hermes_download import _upsert_downloading
+
+    await exec_sql(
+        db,
+        "INSERT INTO lecture_downloads (episode_id, module_id, title, track_url,"
+        " track_mimetype, status, file_path, file_size_bytes, error, completed_at,"
+        " skip_reason, lecture_number)"
+        " VALUES ('ep-1', 42, 'L1', 'u', 'audio/m4a', 'completed', '/old.m4a', 999,"
+        " 'boom', '2026-01-01T00:00:00+00:00', 'silent_recording', 3)",
+    )
+
+    await _upsert_downloading(db, "ep-1", 42, "s-1", "L1", "u2", "audio/m4a")
+
+    row = (await exec_sql(db, "SELECT * FROM lecture_downloads WHERE episode_id = 'ep-1'")).one()
+    assert row.status == "downloading"
+    assert row.file_path is None
+    assert row.file_size_bytes is None
+    assert row.error is None
+    assert row.completed_at is None
+    assert row.skip_reason is None
+    # Catalogue metadata describes the lecture, not the attempt, so it survives.
+    assert row.lecture_number == 3

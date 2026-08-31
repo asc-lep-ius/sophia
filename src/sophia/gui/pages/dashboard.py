@@ -111,11 +111,11 @@ async def _dashboard_cards() -> None:
     density: str = app.storage.tab.get(TAB_DENSITY_MODE, DENSITY_STANDARD)
 
     try:
-        db = container.db
-        reviews = await get_due_reviews(db)
-        deadlines = await get_deadlines(db)
-        plan_items = await build_plan_items(db)
-        summaries = await get_course_summaries(db)
+        async with container.session() as db:
+            reviews = await get_due_reviews(db)
+            deadlines = await get_deadlines(db)
+            plan_items = await build_plan_items(db)
+            summaries = await get_course_summaries(db)
     except Exception:
         log.exception("dashboard_data_fetch_failed")
         skeleton_card()

@@ -41,8 +41,8 @@ async def plan_default(
     }
 
     try:
-        async with create_app() as container:
-            items = await build_plan_items(container.db, horizon_days=horizon)
+        async with create_app() as container, container.session() as db:
+            items = await build_plan_items(db, horizon_days=horizon)
 
             if not items:
                 console.print("[dim]Nothing on the radar. Enjoy the quiet.[/dim]")
@@ -105,7 +105,7 @@ async def plan_default(
             for item in items:
                 if item.course_id not in course_ids_seen:
                     course_ids_seen.add(item.course_id)
-                    hint = await get_scaffold_hint(container.db, item.course_id)
+                    hint = await get_scaffold_hint(db, item.course_id)
                     if hint:
                         hints.append(f"[dim]{item.course_name}: {hint}[/dim]")
 

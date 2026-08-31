@@ -21,7 +21,7 @@ async def discover() -> None:
     console = get_console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             extractor = RegexReferenceExtractor()
             refs = await discover_books(
                 courses=container.moodle,
@@ -36,7 +36,7 @@ async def discover() -> None:
 
             from sophia.services.pipeline import persist_references
 
-            saved = await persist_references(container.db, refs)
+            saved = await persist_references(db, refs)
     except AuthError:
         console.print("[red]Not logged in — run:[/red] sophia auth login")
         raise SystemExit(1) from None

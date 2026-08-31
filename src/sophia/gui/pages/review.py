@@ -200,8 +200,8 @@ async def _review_session() -> None:
         return
 
     try:
-        db = container.db
-        reviews = await get_due_review_items(db)
+        async with container.session() as db:
+            reviews = await get_due_review_items(db)
     except Exception:
         log.exception("review_fetch_failed")
         skeleton_card()
@@ -248,8 +248,8 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
         try:
             container = get_container()
             if container:
-                db = container.db
-                await complete_review_item(db, card.topic, card.course_id, score)
+                async with container.session() as db:
+                    await complete_review_item(db, card.topic, card.course_id, score)
         except Exception:
             log.exception("review_complete_failed", topic=card.topic)
 

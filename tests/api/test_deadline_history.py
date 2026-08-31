@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -11,7 +10,7 @@ from sophia.api.sessions import SessionTenant
 from sophia.domain.models import CalibrationMetrics, Deadline, DeadlineType
 from sophia.services.chronos_history import DayEffort, DeadlineReflection, TimeEntry
 
-from ._session_helpers import build_harness, login
+from ._session_helpers import FakeAppContainer, build_harness, login
 
 if TYPE_CHECKING:
     import pytest
@@ -19,26 +18,15 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
-
-
-class FakeDeadlineCursor:
-    def __init__(self, row: tuple[int] | None) -> None:
-        self._row = row
-
-    async def fetchone(self) -> tuple[int] | None:
-        return self._row
-
-
 class FakeDeadlineDb:
+    """Answers the one scalar lookup the route makes: deadline id -> course id."""
+
     def __init__(self, deadline_courses: dict[str, int]) -> None:
         self._deadline_courses = deadline_courses
 
-    async def execute(self, _query: str, parameters: tuple[str]) -> FakeDeadlineCursor:
-        course_id = self._deadline_courses.get(parameters[0])
-        return FakeDeadlineCursor(None if course_id is None else (course_id,))
+    async def scalar(self, statement: object) -> int | None:
+        deadline_id = statement.whereclause.right.value  # pyright: ignore[reportAttributeAccessIssue]
+        return self._deadline_courses.get(deadline_id)
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:

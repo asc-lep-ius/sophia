@@ -6,7 +6,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Request, status
 
-from sophia.api.deps import current_session_record, get_app_container, require_csrf
+from sophia.api.deps import (
+    current_session_record,
+    get_app_container,
+    request_session,
+    require_csrf,
+)
 from sophia.api.schemas.content_sources import (
     ContentItemListResponse,
     ContentItemResponse,
@@ -17,10 +22,11 @@ from sophia.api.schemas.content_sources import (
     DiscoveredContentSourceResponse,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
+from sophia.api.transactions import TransactionalRoute
 from sophia.services.hermes_catalog import discover_lecture_modules, get_lecture_modules
 from sophia.services.hermes_manage import EpisodeStatus, get_pipeline_status
 
-router = APIRouter(tags=["content-sources"])
+router = APIRouter(tags=["content-sources"], route_class=TransactionalRoute)
 
 ContentSourceIdPath = Annotated[int, Path(gt=0)]
 
@@ -32,8 +38,7 @@ ContentSourceIdPath = Annotated[int, Path(gt=0)]
 )
 async def list_content_sources(request: Request) -> ContentSourceListResponse:
     await current_session_record(request)
-    app = get_app_container(request)
-    modules = await get_lecture_modules(app.db)
+    modules = await get_lecture_modules(await request_session(request))
     return ContentSourceListResponse(
         sources=[
             ContentSourceResponse(
@@ -53,7 +58,10 @@ async def list_content_sources(request: Request) -> ContentSourceListResponse:
 )
 async def discover_content_sources(request: Request) -> ContentSourceDiscoveryResponse:
     await require_csrf(request)
-    modules = await discover_lecture_modules(get_app_container(request))
+    modules = await discover_lecture_modules(
+        get_app_container(request),
+        await request_session(request),
+    )
     return ContentSourceDiscoveryResponse(
         sources=[
             DiscoveredContentSourceResponse(
@@ -104,8 +112,7 @@ async def read_content_source_ingestion_status(
 
 async def _content_item_rows(content_source_id: int, request: Request) -> list[EpisodeStatus]:
     await current_session_record(request)
-    app = get_app_container(request)
-    episodes = await get_pipeline_status(app.db, content_source_id)
+    episodes = await get_pipeline_status(await request_session(request), content_source_id)
     if not episodes:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return episodes

@@ -38,9 +38,10 @@ from sophia.api.sessions import (
     SessionUser,
     create_session_record,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.config import Settings
 
-router = APIRouter(tags=["auth"])
+router = APIRouter(tags=["auth"], route_class=TransactionalRoute)
 
 type LoginAuthenticator = Callable[[AuthLoginRequest, Settings], Awaitable[LoginIdentity]]
 

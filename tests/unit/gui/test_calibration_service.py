@@ -49,7 +49,9 @@ def _make_session(**overrides: Any) -> StudySession:
 
 class TestGetCalibrationRatings:
     @pytest.mark.asyncio
-    async def test_returns_ratings(self, mock_container: AppContainer) -> None:
+    async def test_returns_ratings(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.calibration_service import get_calibration_ratings
 
         expected = [_make_rating()]
@@ -61,7 +63,7 @@ class TestGetCalibrationRatings:
             result = await get_calibration_ratings(mock_container, COURSE_ID)
 
         assert result == expected
-        mock_fn.assert_awaited_once_with(mock_container.db, COURSE_ID)
+        mock_fn.assert_awaited_once_with(mock_db_session, COURSE_ID)
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:
@@ -145,7 +147,9 @@ class TestGetCourseAvgConfidence:
 
 class TestGetStudySessionsForTopic:
     @pytest.mark.asyncio
-    async def test_returns_sessions(self, mock_container: AppContainer) -> None:
+    async def test_returns_sessions(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
         from sophia.gui.services.calibration_service import get_study_sessions_for_topic
 
         expected = [_make_session()]
@@ -157,7 +161,7 @@ class TestGetStudySessionsForTopic:
             result = await get_study_sessions_for_topic(mock_container, COURSE_ID, TOPIC)
 
         assert result == expected
-        mock_fn.assert_awaited_once_with(mock_container.db, COURSE_ID, TOPIC)
+        mock_fn.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC)
 
     @pytest.mark.asyncio
     async def test_returns_empty_on_error(self, mock_container: AppContainer) -> None:

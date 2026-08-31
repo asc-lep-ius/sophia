@@ -4,20 +4,28 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import delete, insert, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
 from sophia.domain.errors import TranscriptionError
 from sophia.domain.models import HermesConfig
+from sophia.infra.schema import (
+    lecture_downloads,
+    transcript_segments,
+    transcriptions,
+)
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import TranscriptSegment
     from sophia.infra.di import AppContainer
@@ -42,6 +50,7 @@ class TranscriptionResult:
 
 async def transcribe_lectures(
     app: AppContainer,
+    session: AsyncSession,
     module_id: int,
     *,
     on_start: Callable[[str, str], None] | None = None,
@@ -52,11 +61,11 @@ async def transcribe_lectures(
 
     Returns one result per episode (completed / skipped / failed).
     """
-    downloads = await _get_downloads(app.db, module_id)
+    downloads = await _get_downloads(session, module_id)
     if not downloads:
         return []
 
-    completed_ids = await _get_transcribed_ids(app.db, module_id)
+    completed_ids = await _get_transcribed_ids(session, module_id)
     results: list[TranscriptionResult] = []
     transcriber: WhisperTranscriber | None = None
 
@@ -81,7 +90,7 @@ async def transcribe_lectures(
             transcriber = _create_transcriber(app)
 
         result = await _transcribe_episode(
-            app.db,
+            session,
             transcriber,
             episode_id,
             module_id,
@@ -102,26 +111,42 @@ def _create_transcriber(app: AppContainer) -> WhisperTranscriber:
     return WhisperTranscriber(config.whisper, model_dir=app.settings.cache_dir / "whisper")
 
 
-async def _get_downloads(db: aiosqlite.Connection, module_id: int) -> list[tuple[str, str, str]]:
-    cursor = await db.execute(
-        "SELECT episode_id, title, file_path FROM lecture_downloads "
-        "WHERE module_id = ? AND status = 'completed'",
-        (module_id,),
-    )
-    return await cursor.fetchall()  # type: ignore[return-value]
+async def _get_downloads(session: AsyncSession, module_id: int) -> list[tuple[str, str, str]]:
+    rows = (
+        await session.execute(
+            select(
+                lecture_downloads.c.episode_id,
+                lecture_downloads.c.title,
+                lecture_downloads.c.file_path,
+            ).where(
+                lecture_downloads.c.module_id == module_id,
+                lecture_downloads.c.status == "completed",
+            )
+        )
+    ).all()
+    return [(row.episode_id, row.title, row.file_path) for row in rows]
 
 
-async def _get_transcribed_ids(db: aiosqlite.Connection, module_id: int) -> set[str]:
-    cursor = await db.execute(
-        "SELECT episode_id FROM transcriptions WHERE module_id = ? AND status = 'completed'",
-        (module_id,),
+async def _get_transcribed_ids(session: AsyncSession, module_id: int) -> set[str]:
+    query = select(transcriptions.c.episode_id).where(
+        transcriptions.c.module_id == module_id,
+        transcriptions.c.status == "completed",
     )
-    rows = await cursor.fetchall()
-    return {row[0] for row in rows}
+    return set((await session.scalars(query)).all())
+
+
+async def _set_transcription_state(
+    session: AsyncSession,
+    episode_id: str,
+    values: dict[str, object],
+) -> None:
+    await session.execute(
+        update(transcriptions).where(transcriptions.c.episode_id == episode_id).values(**values)
+    )
 
 
 async def _transcribe_episode(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     transcriber: WhisperTranscriber,
     episode_id: str,
     module_id: int,
@@ -135,13 +160,31 @@ async def _transcribe_episode(
     if on_start:
         on_start(episode_id, title)
 
-    await db.execute(
-        "INSERT OR REPLACE INTO transcriptions "
-        "(episode_id, module_id, language, status, started_at) "
-        "VALUES (?, ?, 'de', 'processing', datetime('now'))",
-        (episode_id, module_id),
+    statement = pg_insert(transcriptions).values(
+        episode_id=episode_id,
+        module_id=module_id,
+        language="de",
+        status="processing",
+        started_at=datetime.now(UTC),
     )
-    await db.commit()
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[transcriptions.c.episode_id],
+            set_={
+                "module_id": statement.excluded.module_id,
+                "language": statement.excluded.language,
+                "status": statement.excluded.status,
+                "started_at": statement.excluded.started_at,
+                # See hermes_index: a retry must not inherit the previous run's
+                # result, which INSERT OR REPLACE used to discard.
+                "duration_s": None,
+                "segment_count": None,
+                "srt_path": None,
+                "error": None,
+                "completed_at": None,
+            },
+        )
+    )
 
     try:
         segments: list[TranscriptSegment] = await asyncio.wait_for(
@@ -153,15 +196,20 @@ async def _transcribe_episode(
         srt_path = audio_path.with_suffix(audio_path.suffix + ".srt")
         srt_path.write_text(srt_content, encoding="utf-8")
 
-        await _persist_segments(db, episode_id, segments)
+        await _persist_segments(session, episode_id, segments)
         duration_s = segments[-1].end if segments else 0.0
 
-        await db.execute(
-            "UPDATE transcriptions SET status='completed', segment_count=?, "
-            "duration_s=?, srt_path=?, completed_at=datetime('now') WHERE episode_id=?",
-            (len(segments), duration_s, str(srt_path), episode_id),
+        await _set_transcription_state(
+            session,
+            episode_id,
+            {
+                "status": "completed",
+                "segment_count": len(segments),
+                "duration_s": duration_s,
+                "srt_path": str(srt_path),
+                "completed_at": datetime.now(UTC),
+            },
         )
-        await db.commit()
 
         if on_complete:
             on_complete(episode_id, len(segments))
@@ -177,11 +225,7 @@ async def _transcribe_episode(
 
     except TimeoutError:
         msg = f"transcription timed out after {_TRANSCRIPTION_TIMEOUT_S}s"
-        await db.execute(
-            "UPDATE transcriptions SET status='failed', error=? WHERE episode_id=?",
-            (msg, episode_id),
-        )
-        await db.commit()
+        await _set_transcription_state(session, episode_id, {"status": "failed", "error": msg})
 
         log.error(
             "transcription_timed_out",
@@ -198,11 +242,11 @@ async def _transcribe_episode(
         )
 
     except (TranscriptionError, OSError) as exc:
-        await db.execute(
-            "UPDATE transcriptions SET status='failed', error=? WHERE episode_id=?",
-            (str(exc), episode_id),
+        await _set_transcription_state(
+            session,
+            episode_id,
+            {"status": "failed", "error": str(exc)},
         )
-        await db.commit()
 
         log.error("transcription_failed", episode_id=episode_id, error=str(exc))
         return TranscriptionResult(
@@ -216,14 +260,25 @@ async def _transcribe_episode(
 
 
 async def _persist_segments(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     episode_id: str,
     segments: list[TranscriptSegment],
 ) -> None:
-    await db.execute("DELETE FROM transcript_segments WHERE episode_id = ?", (episode_id,))
-    await db.executemany(
-        "INSERT INTO transcript_segments "
-        "(episode_id, segment_index, start_time, end_time, text) "
-        "VALUES (?, ?, ?, ?, ?)",
-        [(episode_id, idx, seg.start, seg.end, seg.text) for idx, seg in enumerate(segments)],
+    await session.execute(
+        delete(transcript_segments).where(transcript_segments.c.episode_id == episode_id)
+    )
+    if not segments:
+        return
+    await session.execute(
+        insert(transcript_segments),
+        [
+            {
+                "episode_id": episode_id,
+                "segment_index": idx,
+                "start_time": seg.start,
+                "end_time": seg.end,
+                "text": seg.text,
+            }
+            for idx, seg in enumerate(segments)
+        ],
     )

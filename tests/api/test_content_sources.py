@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import content_sources as content_sources_router
 from sophia.services.hermes_catalog import DiscoveredLectureModule, LectureModule
 from sophia.services.hermes_manage import EpisodeStatus
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def test_content_source_routes_require_authentication() -> None:
@@ -149,7 +143,9 @@ def test_discover_content_sources_returns_discovered_sources(
     harness = build_harness(app_container=cast("AppContainer", fake_app))
     login(harness)
 
-    async def fake_discover_lecture_modules(app: AppContainer) -> list[DiscoveredLectureModule]:
+    async def fake_discover_lecture_modules(
+        app: AppContainer, db: object
+    ) -> list[DiscoveredLectureModule]:
         assert app is fake_app
         return [
             DiscoveredLectureModule(

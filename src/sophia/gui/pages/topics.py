@@ -147,7 +147,8 @@ async def _render_reconciliation_banner(container: AppContainer, course_id: int)
         reconcile_manual_topics,
     )
 
-    result = await reconcile_manual_topics(container.db, course_id)
+    async with container.session() as db:
+        result = await reconcile_manual_topics(db, course_id)
     message = format_reconciliation_message(result)
     if not message:
         return

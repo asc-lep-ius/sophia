@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
-    get_app_container,
+    request_session,
     require_csrf_learning_path_scope,
     require_learning_path_scope,
 )
@@ -20,6 +20,7 @@ from sophia.api.schemas.calibration import (
     CalibrationRatingSavedResponse,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
+from sophia.api.transactions import TransactionalRoute
 from sophia.services.athena_confidence import (
     get_blind_spots,
     get_confidence_ratings,
@@ -31,7 +32,7 @@ from sophia.services.athena_confidence import (
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating
 
-router = APIRouter(tags=["calibration"])
+router = APIRouter(tags=["calibration"], route_class=TransactionalRoute)
 
 ATHENA_CONFIDENCE_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     "format_calibration_feedback": {
@@ -67,7 +68,7 @@ async def list_calibration_ratings(
     topic: TopicFilterQuery = None,
 ) -> CalibrationRatingListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    ratings = await get_confidence_ratings(get_app_container(request).db, learning_path_id)
+    ratings = await get_confidence_ratings(await request_session(request), learning_path_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
         if not ratings:
@@ -88,7 +89,7 @@ async def list_calibration_blind_spots(
     request: Request,
 ) -> CalibrationRatingListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    ratings = await get_blind_spots(get_app_container(request).db, learning_path_id)
+    ratings = await get_blind_spots(await request_session(request), learning_path_id)
     return CalibrationRatingListResponse(
         learning_path_id=learning_path_id,
         ratings=[_calibration_rating_response(rating) for rating in ratings],
@@ -107,7 +108,7 @@ async def save_calibration_rating(
 ) -> CalibrationRatingSavedResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     rating = await rate_confidence(
-        get_app_container(request),
+        await request_session(request),
         payload.topic,
         payload.learning_path_id,
         payload.rating,
@@ -127,7 +128,7 @@ async def patch_actual_score(
 ) -> ActualScoreUpdateResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     await update_actual_score(
-        get_app_container(request).db,
+        await request_session(request),
         payload.topic,
         payload.learning_path_id,
         payload.actual,

@@ -259,7 +259,7 @@ async def go(
     if schedule:
         from datetime import UTC, datetime, timedelta
 
-        from sophia.infra.persistence import connect_db, run_migrations
+        from sophia.infra.di import create_app
         from sophia.infra.scheduler import SchedulerError, create_scheduler
 
         async with http_session() as http:
@@ -290,20 +290,17 @@ async def go(
             cmd_parts.extend(["--preferences", preferences])
         command = " ".join(cmd_parts)
 
-        db = await connect_db(settings.db_path)
         try:
-            await run_migrations(db)
-            scheduler = create_scheduler(db)
-            job = await scheduler.schedule(
-                command,
-                schedule_time,
-                description=f"Register for {target.title or course_number}",
-            )
+            async with create_app(settings) as container, container.session() as db:
+                scheduler = create_scheduler(db)
+                job = await scheduler.schedule(
+                    command,
+                    schedule_time,
+                    description=f"Register for {target.title or course_number}",
+                )
         except SchedulerError as exc:
             console.print(f"[red]Failed to schedule: {exc}[/red]")
             raise SystemExit(1) from None
-        finally:
-            await db.close()
 
         console.print("\n[bold green]Job scheduled![/bold green]")
         console.print(f"  Job ID:    {job.job_id}")

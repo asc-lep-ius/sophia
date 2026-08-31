@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import structlog
+from sqlalchemy import insert, select
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import (
@@ -32,6 +33,7 @@ from sophia.domain.learning import (
     QuestionOption,
     StoredContentOrigin,
 )
+from sophia.infra.schema import generated_questions, question_attempts
 from sophia.services.athena_confidence import (
     get_confidence_ratings,
     get_topic_difficulty_level,
@@ -41,9 +43,8 @@ from sophia.services.hermes_setup import load_hermes_config
 from sophia.services.provenance import record_provenance
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    import aiosqlite
+    from sqlalchemy import Row
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -58,14 +59,10 @@ ELABORATION_REQUIRED_EVENTS = (
     LearningEventType.ELABORATION_WRITTEN,
 )
 
-_QUESTION_COLUMNS = (
-    "id, course_id, topic, kind, prompt, difficulty, content_language, "
-    "options, segments, elaboration_policy"
-)
-
 
 async def generate_and_store_questions(
     app: AppContainer,
+    session: AsyncSession,
     course_id: int,
     topic: str,
     *,
@@ -78,9 +75,10 @@ async def generate_and_store_questions(
     Difficulty adapts to the learner's own confidence in the topic, mirroring
     the interactive session rather than serving one fixed band to everybody.
     """
-    difficulty = await _adaptive_difficulty(app, course_id, topic)
+    difficulty = await _adaptive_difficulty(app, session, course_id, topic)
     prompts, generator_ref = await _generate_prompts(
         app,
+        session,
         course_id,
         topic,
         count=count,
@@ -103,9 +101,9 @@ async def generate_and_store_questions(
     ]
 
     for question in questions:
-        await _insert_question(app.db, question)
+        await _insert_question(session, question)
         await record_provenance(
-            app.db,
+            session,
             ContentProvenance(
                 content_kind=ContentKind.QUESTION,
                 content_id=question.id,
@@ -115,29 +113,27 @@ async def generate_and_store_questions(
                 generator_ref=generator_ref,
                 generated_at=generated_at,
             ),
-            commit=False,
         )
-    await app.db.commit()
 
     log.info("study_questions_generated", course_id=course_id, topic=topic, count=len(questions))
     return questions
 
 
 async def get_question(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     question_id: str,
 ) -> GeneratedQuestion | None:
     """Load one persisted question by id."""
-    cursor = await db.execute(
-        f"SELECT {_QUESTION_COLUMNS} FROM generated_questions WHERE id = ?",
-        (question_id,),
-    )
-    row = cast("tuple[object, ...] | None", await cursor.fetchone())
+    row = (
+        await session.execute(
+            select(generated_questions).where(generated_questions.c.id == question_id)
+        )
+    ).one_or_none()
     return None if row is None else _row_to_question(row)
 
 
 async def save_attempt(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     question_id: str,
     user_id: str,
@@ -149,27 +145,30 @@ async def save_attempt(
     No score is written: grading moves server-side in the study realtime phase,
     and guessing a score here would bake in the very defect that phase fixes.
     """
-    submitted_at = datetime.now(UTC).isoformat()
-    cursor = await db.execute(
-        "INSERT INTO question_attempts ("
-        "course_id, question_id, user_id, answer_text, confidence, submitted_at) "
-        "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
-        (course_id, question_id, user_id, answer_text, confidence, submitted_at),
-    )
-    row = cast("tuple[int, ...] | None", await cursor.fetchone())
-    if row is None:
-        msg = "attempt insert returned no row"
-        raise RuntimeError(msg)
-    await db.commit()
+    submitted_at = datetime.now(UTC)
+    attempt_id = (
+        await session.execute(
+            insert(question_attempts)
+            .values(
+                course_id=course_id,
+                question_id=question_id,
+                user_id=user_id,
+                answer_text=answer_text,
+                confidence=confidence,
+                submitted_at=submitted_at,
+            )
+            .returning(question_attempts.c.id)
+        )
+    ).scalar_one()
 
     return QuestionAttempt(
-        id=row[0],
+        id=attempt_id,
         course_id=course_id,
         question_id=question_id,
         user_id=user_id,
         answer_text=answer_text,
         confidence=confidence,
-        submitted_at=submitted_at,
+        submitted_at=submitted_at.isoformat(),
     )
 
 
@@ -186,14 +185,20 @@ def default_elaboration_policy(
     )
 
 
-async def _adaptive_difficulty(app: AppContainer, course_id: int, topic: str) -> str:
-    ratings = await get_confidence_ratings(app.db, course_id)
+async def _adaptive_difficulty(
+    app: AppContainer,
+    session: AsyncSession,
+    course_id: int,
+    topic: str,
+) -> str:
+    ratings = await get_confidence_ratings(session, course_id)
     topic_rating = next((rating for rating in ratings if rating.topic == topic), None)
     return get_topic_difficulty_level(topic_rating.predicted if topic_rating else None).value
 
 
 async def _generate_prompts(
     app: AppContainer,
+    session: AsyncSession,
     course_id: int,
     topic: str,
     *,
@@ -208,6 +213,7 @@ async def _generate_prompts(
     try:
         prompts = await generate_study_questions(
             app,
+            session,
             course_id,
             topic,
             count=count,
@@ -226,42 +232,39 @@ def _generator_ref(app: AppContainer) -> str:
     return f"{config.llm.provider.value}:{config.llm.model}"
 
 
-async def _insert_question(db: aiosqlite.Connection, question: GeneratedQuestion) -> None:
+async def _insert_question(session: AsyncSession, question: GeneratedQuestion) -> None:
     policy = question.elaboration_policy
-    await db.execute(
-        "INSERT INTO generated_questions ("
-        "id, course_id, topic, kind, prompt, difficulty, content_language, "
-        "options, segments, elaboration_policy) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            question.id,
-            question.course_id,
-            question.topic,
-            question.kind.value,
-            question.prompt,
-            question.difficulty,
-            question.content_language.value,
-            json.dumps([option.model_dump() for option in question.options]),
-            json.dumps([segment.model_dump() for segment in question.segments]),
-            None if policy is None else policy.model_dump_json(),
-        ),
+    await session.execute(
+        insert(generated_questions).values(
+            id=question.id,
+            course_id=question.course_id,
+            topic=question.topic,
+            kind=question.kind.value,
+            prompt=question.prompt,
+            difficulty=question.difficulty,
+            content_language=question.content_language.value,
+            options=json.dumps([option.model_dump() for option in question.options]),
+            segments=json.dumps([segment.model_dump() for segment in question.segments]),
+            elaboration_policy=None if policy is None else policy.model_dump_json(),
+        )
     )
 
 
-def _row_to_question(row: tuple[object, ...]) -> GeneratedQuestion:
-    raw_policy = row[9]
+def _row_to_question(row: Row[tuple[object, ...]]) -> GeneratedQuestion:
     return GeneratedQuestion(
-        id=str(row[0]),
-        course_id=int(cast("int", row[1])),
-        topic=str(row[2]),
-        kind=QuestionKind(str(row[3])),
-        prompt=str(row[4] or ""),
-        difficulty=str(row[5]),
-        content_language=ContentLanguage(str(row[6])),
-        options=_decode_options(row[7]),
-        segments=_decode_segments(row[8]),
+        id=row.id,
+        course_id=row.course_id,
+        topic=row.topic,
+        kind=QuestionKind(row.kind),
+        prompt=row.prompt or "",
+        difficulty=row.difficulty,
+        content_language=ContentLanguage(row.content_language),
+        options=_decode_options(row.options),
+        segments=_decode_segments(row.segments),
         elaboration_policy=(
-            None if raw_policy is None else ElaborationPolicy.model_validate_json(str(raw_policy))
+            None
+            if row.elaboration_policy is None
+            else ElaborationPolicy.model_validate_json(row.elaboration_policy)
         ),
     )
 
@@ -274,8 +277,8 @@ def _decode_segments(raw: object) -> tuple[ClozeSegment, ...]:
     return tuple(ClozeSegment.model_validate(item) for item in _decode_list(raw))
 
 
-def _decode_list(raw: object) -> Sequence[object]:
+def _decode_list(raw: object) -> list[object]:
     if not isinstance(raw, str) or not raw:
-        return ()
-    decoded = cast("object", json.loads(raw))
-    return cast("Sequence[object]", decoded) if isinstance(decoded, list) else ()
+        return []
+    decoded: object = json.loads(raw)
+    return cast("list[object]", decoded) if isinstance(decoded, list) else []

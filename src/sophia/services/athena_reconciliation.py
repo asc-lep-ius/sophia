@@ -7,9 +7,13 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from sophia.infra.schema import topic_mappings, topic_reconciliations
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 
@@ -24,12 +28,12 @@ class ReconciliationResult:
 
 
 async def reconcile_manual_topics(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> ReconciliationResult:
     """Match manual topic predictions against Moodle-sourced topics using fuzzy matching."""
-    manual = await _load_topics(db, course_id, manual=True)
-    moodle = await _load_topics(db, course_id, manual=False)
+    manual = await _load_topics(session, course_id, manual=True)
+    moodle = await _load_topics(session, course_id, manual=False)
 
     if not manual:
         return ReconciliationResult(matched=[], unmatched_manual=[], new_moodle=[])
@@ -51,7 +55,7 @@ async def reconcile_manual_topics(
 
     new_moodle = [t for t in moodle if t not in claimed_moodle]
 
-    await _persist_matches(db, course_id, matched)
+    await _persist_matches(session, course_id, matched)
 
     log.info(
         "topics_reconciled",
@@ -105,18 +109,17 @@ def format_reconciliation_message(result: ReconciliationResult) -> str:
 
 
 async def _load_topics(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     *,
     manual: bool,
 ) -> list[str]:
-    op = "=" if manual else "!="
-    cursor = await db.execute(
-        f"SELECT topic FROM topic_mappings WHERE course_id = ? AND source {op} 'manual'",  # noqa: S608
-        (course_id,),
+    source = topic_mappings.c.source
+    query = select(topic_mappings.c.topic).where(
+        topic_mappings.c.course_id == course_id,
+        source == "manual" if manual else source != "manual",
     )
-    rows = await cursor.fetchall()
-    return [row[0] for row in rows]
+    return list((await session.scalars(query)).all())
 
 
 def _find_best_match(topic: str, candidates: list[str]) -> tuple[str, float]:
@@ -132,15 +135,23 @@ def _find_best_match(topic: str, candidates: list[str]) -> tuple[str, float]:
 
 
 async def _persist_matches(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     matched: list[tuple[str, str, float]],
 ) -> None:
     for manual_topic, moodle_topic, similarity in matched:
-        await db.execute(
-            "INSERT OR IGNORE INTO topic_reconciliations "
-            "(manual_topic, moodle_topic, course_id, similarity) "
-            "VALUES (?, ?, ?, ?)",
-            (manual_topic, moodle_topic, course_id, similarity),
+        await session.execute(
+            pg_insert(topic_reconciliations)
+            .values(
+                manual_topic=manual_topic,
+                moodle_topic=moodle_topic,
+                course_id=course_id,
+                similarity=similarity,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    topic_reconciliations.c.manual_topic,
+                    topic_reconciliations.c.course_id,
+                ]
+            )
         )
-    await db.commit()

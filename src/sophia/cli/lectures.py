@@ -5,6 +5,14 @@ from __future__ import annotations
 from typing import Annotated
 
 import cyclopts
+from sqlalchemy import func, select
+
+from sophia.infra.schema import (
+    course_materials,
+    knowledge_index,
+    lecture_downloads,
+    transcriptions,
+)
 
 app = cyclopts.App(
     name="lectures",
@@ -241,17 +249,17 @@ async def lectures_status(
     from sophia.infra.di import create_app
     from sophia.services.hermes_manage import get_pipeline_status
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        statuses = await get_pipeline_status(container.db, resolved_id)
+        statuses = await get_pipeline_status(db, resolved_id)
 
-        mat_cursor = await container.db.execute(
-            "SELECT COUNT(*) FROM course_materials WHERE module_id = ?",
-            (resolved_id,),
+        materials = await db.scalar(
+            select(func.count())
+            .select_from(course_materials)
+            .where(course_materials.c.module_id == resolved_id)
         )
-        mat_row = await mat_cursor.fetchone()
-        mat_count = str(mat_row[0]) if mat_row and mat_row[0] else "0"
+        mat_count = str(materials or 0)
 
     if not statuses:
         console.print(f"[yellow]No episodes found for module {resolved_id}.[/yellow]")
@@ -300,10 +308,10 @@ async def lectures_discard(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        ok = await discard_episode(container.db, resolved_id, episode_id)
+        ok = await discard_episode(db, resolved_id, episode_id)
 
     if ok:
         console.print(f"[green]Episode {episode_id} discarded.[/green]")
@@ -331,10 +339,10 @@ async def lectures_restore(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        ok = await restore_episode(container.db, resolved_id, episode_id)
+        ok = await restore_episode(db, resolved_id, episode_id)
 
     if ok:
         console.print(f"[green]Episode {episode_id} restored to queue.[/green]")
@@ -362,10 +370,10 @@ async def lectures_mark_missed(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        ok = await mark_missed(container.db, resolved_id, episode_id)
+        ok = await mark_missed(db, resolved_id, episode_id)
 
     if ok:
         console.print(f"[green]Episode {episode_id} marked as missed.[/green]")
@@ -393,10 +401,10 @@ async def lectures_unmark_missed(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        ok = await unmark_missed(container.db, resolved_id, episode_id)
+        ok = await unmark_missed(db, resolved_id, episode_id)
 
     if ok:
         console.print(f"[green]Missed mark removed from episode {episode_id}.[/green]")
@@ -424,10 +432,10 @@ async def lectures_catch_up(
 
     console = Console()
 
-    async with create_app() as container:
+    async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
             resolved_id = await resolve_module_id(module_id, container.moodle)
-        info = await get_catch_up_info(container.db, resolved_id)
+        info = await get_catch_up_info(db, resolved_id)
 
     if not info.missed_episodes:
         console.print("[yellow]No lectures marked as missed.[/yellow]")
@@ -507,7 +515,7 @@ async def lectures_purge(
 
     episode_count = 0
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             from sophia.adapters.knowledge_store import ChromaKnowledgeStore
@@ -515,7 +523,7 @@ async def lectures_purge(
             store = ChromaKnowledgeStore(container.settings.data_dir / "knowledge")
 
             if all_episodes:
-                episode_count = await get_episode_count(container.db, resolved_id)
+                episode_count = await get_episode_count(db, resolved_id)
                 if episode_count == 0:
                     console.print(f"[yellow]No episodes found for module {resolved_id}.[/yellow]")
                     return
@@ -530,11 +538,11 @@ async def lectures_purge(
                 ):
                     console.print("[dim]Aborted.[/dim]")
                     return
-                result = await purge_module(container.db, store, resolved_id)
+                result = await purge_module(db, store, resolved_id)
             else:
                 assert episode_id is not None
                 result = await purge_episode(
-                    container.db,
+                    db,
                     store,
                     resolved_id,
                     episode_id,
@@ -589,17 +597,23 @@ async def materials(
     console = Console()
 
     try:
-        async with create_app() as container:
-            new = await scrape_course_materials(container, course_id)
+        async with create_app() as container, container.session() as db:
+            new = await scrape_course_materials(container, db, course_id)
             if new:
                 console.print(f"[green]Discovered {len(new)} new material(s).[/green]")
 
-            cursor = await container.db.execute(
-                "SELECT name, url, mimetype, file_size_bytes, status, chunk_count"
-                " FROM course_materials WHERE course_id = ?",
-                (course_id,),
-            )
-            rows = await cursor.fetchall()
+            rows = (
+                await db.execute(
+                    select(
+                        course_materials.c.name,
+                        course_materials.c.url,
+                        course_materials.c.mimetype,
+                        course_materials.c.file_size_bytes,
+                        course_materials.c.status,
+                        course_materials.c.chunk_count,
+                    ).where(course_materials.c.course_id == course_id)
+                )
+            ).all()
 
             if not rows:
                 console.print("[yellow]No materials found for this course.[/yellow]")
@@ -629,7 +643,7 @@ async def materials(
             if index:
                 from sophia.services.material_index import index_materials
 
-                chunk_count = await index_materials(container, course_id)
+                chunk_count = await index_materials(container, db, course_id)
                 console.print(
                     f"[green]Indexed {chunk_count} chunk(s) from course materials.[/green]"
                 )
@@ -738,7 +752,7 @@ async def lectures_download(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             progress = Progress(
@@ -755,7 +769,12 @@ async def lectures_download(
                 progress.update(tasks[episode_id], completed=event.bytes_downloaded)  # type: ignore[arg-type]
 
             with progress:
-                results = await download_lectures(container, resolved_id, on_progress=_on_progress)
+                results = await download_lectures(
+                    container,
+                    db,
+                    resolved_id,
+                    on_progress=_on_progress,
+                )
 
             table = Table(title="Download Results")
             table.add_column("Title", style="cyan", no_wrap=False)
@@ -808,21 +827,25 @@ async def lectures_transcribe(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
 
-            cursor = await container.db.execute(
-                "SELECT COUNT(*) FROM lecture_downloads ld"
-                " WHERE ld.module_id = ? AND ld.status = 'completed'"
-                " AND ld.episode_id NOT IN ("
-                "  SELECT episode_id FROM transcriptions"
-                "  WHERE module_id = ? AND status = 'completed'"
-                ")",
-                (resolved_id, resolved_id),
+            transcribed = select(transcriptions.c.episode_id).where(
+                transcriptions.c.module_id == resolved_id,
+                transcriptions.c.status == "completed",
             )
-            _row = await cursor.fetchone()
-            pending_count = int(_row[0]) if _row is not None else 0
+            pending_count = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(lecture_downloads)
+                    .where(
+                        lecture_downloads.c.module_id == resolved_id,
+                        lecture_downloads.c.status == "completed",
+                        lecture_downloads.c.episode_id.not_in(transcribed),
+                    )
+                )
+            ) or 0
 
             with Progress(
                 SpinnerColumn(),
@@ -842,7 +865,7 @@ async def lectures_transcribe(
                     progress.update(task, description="[cyan]Transcribing…[/cyan]")
 
                 results = await transcribe_lectures(
-                    container, resolved_id, on_start=_on_start, on_complete=_on_complete
+                    container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
                 )
 
             table = Table(title="Transcription Results")
@@ -901,21 +924,25 @@ async def lectures_index(
     console = Console()
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
 
-            cursor = await container.db.execute(
-                "SELECT COUNT(*) FROM transcriptions t"
-                " WHERE t.module_id = ? AND t.status = 'completed'"
-                " AND t.episode_id NOT IN ("
-                "  SELECT episode_id FROM knowledge_index"
-                "  WHERE module_id = ? AND status = 'completed'"
-                ")",
-                (resolved_id, resolved_id),
+            indexed = select(knowledge_index.c.episode_id).where(
+                knowledge_index.c.module_id == resolved_id,
+                knowledge_index.c.status == "completed",
             )
-            _row = await cursor.fetchone()
-            pending_count = int(_row[0]) if _row is not None else 0
+            pending_count = (
+                await db.scalar(
+                    select(func.count())
+                    .select_from(transcriptions)
+                    .where(
+                        transcriptions.c.module_id == resolved_id,
+                        transcriptions.c.status == "completed",
+                        transcriptions.c.episode_id.not_in(indexed),
+                    )
+                )
+            ) or 0
 
             with Progress(
                 SpinnerColumn(),
@@ -937,7 +964,7 @@ async def lectures_index(
                     progress.update(task, description="[cyan]Indexing…[/cyan]")
 
                 results = await index_lectures(
-                    container, resolved_id, on_start=_on_start, on_complete=_on_complete
+                    container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
                 )
 
             table = Table(title="Indexing Results")
@@ -1005,7 +1032,7 @@ async def lectures_process(
     _STATUS_STYLES = {"completed": "green", "skipped": "yellow", "failed": "red"}
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             console.print(f"\n[bold]Pipeline for module {resolved_id}[/bold]\n")
@@ -1117,6 +1144,7 @@ async def lectures_process(
 
                 result: PipelineResult = await run_pipeline(
                     container,
+                    db,
                     resolved_id,
                     index_materials=materials_flag,
                     course_id=_course_id,
@@ -1276,11 +1304,12 @@ async def lectures_search(
     source_filter = source if source != "all" else None
 
     try:
-        async with create_app() as container:
+        async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             results = await search_lectures(
                 container,
+                db,
                 resolved_id,
                 query,
                 n_results=count,

@@ -1,8 +1,14 @@
 """Ambient tenancy scope for database work.
 
 Lives in ``infra`` rather than ``api`` so the engine can read it without the
-persistence layer depending on the web layer. The API middleware pushes the
-request's org into it; background tasks and the CLI push their own.
+persistence layer depending on the web layer.
+
+**Nothing in production sets this yet.** :func:`set_org_id` and :func:`org_scope`
+have no callers, so every session binds ``app.org_id`` to
+:data:`DEFAULT_ORG_ID`. The mechanism is in place and proven not to leak across
+pooled connections; binding it to the authenticated tenant is the next step, and
+row-level security must not be enabled before that lands, or every tenant would
+share the ``"local"`` scope.
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from sophia.api.deps import (
     ensure_learning_path_scope,
     get_app_container,
+    request_session,
     require_csrf_learning_path_scope,
     require_learning_path_scope,
 )
@@ -26,6 +27,7 @@ from sophia.api.schemas.topics import (
     TopicOrigin,
     TopicResponse,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.models import TopicSource
 from sophia.services.athena_confidence import get_confidence_ratings, rate_confidence
 from sophia.services.athena_study import (
@@ -37,7 +39,7 @@ from sophia.services.athena_study import (
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, TopicMapping
 
-router = APIRouter(tags=["topics"])
+router = APIRouter(tags=["topics"], route_class=TransactionalRoute)
 
 LearningPathIdPath = Annotated[int, Path(gt=0)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
@@ -59,7 +61,7 @@ async def list_topics(
     request: Request,
 ) -> TopicListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    topics = await get_course_topics(get_app_container(request), learning_path_id)
+    topics = await get_course_topics(await request_session(request), learning_path_id)
     return TopicListResponse(
         learning_path_id=learning_path_id,
         topics=[_topic_response(topic) for topic in topics],
@@ -77,12 +79,13 @@ async def extract_topics(
     payload: TopicExtractionRequest,
     request: Request,
 ) -> TopicExtractionResponse:
-    session = await require_csrf_learning_path_scope(request, learning_path_id)
+    auth_session = await require_csrf_learning_path_scope(request, learning_path_id)
     # Content source ownership is not persisted yet, so the pre-existing scope
     # equality check is kept verbatim rather than relaxed here. See #103.
-    ensure_learning_path_scope(session, payload.content_source_id)
+    ensure_learning_path_scope(auth_session, payload.content_source_id)
     topics = await extract_topics_from_lectures(
         get_app_container(request),
+        await request_session(request),
         payload.content_source_id,
         force=payload.force,
     )
@@ -107,7 +110,11 @@ async def create_manual_topic(
     request: Request,
 ) -> TopicResponse:
     await require_csrf_learning_path_scope(request, learning_path_id)
-    topic = await save_manual_topic(get_app_container(request), payload.topic, learning_path_id)
+    topic = await save_manual_topic(
+        await request_session(request),
+        payload.topic,
+        learning_path_id,
+    )
     if topic is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     return TopicResponse(topic=_topic_response(topic))
@@ -125,7 +132,7 @@ async def list_topic_confidence_ratings(
     topic: TopicFilterQuery = None,
 ) -> TopicConfidenceListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    ratings = await get_confidence_ratings(get_app_container(request).db, learning_path_id)
+    ratings = await get_confidence_ratings(await request_session(request), learning_path_id)
     if topic is not None:
         ratings = [rating for rating in ratings if rating.topic == topic]
         if not ratings:
@@ -149,7 +156,7 @@ async def save_topic_confidence_rating(
 ) -> TopicConfidenceResponse:
     await require_csrf_learning_path_scope(request, learning_path_id)
     rating = await rate_confidence(
-        get_app_container(request),
+        await request_session(request),
         payload.topic,
         learning_path_id,
         payload.rating,

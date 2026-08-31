@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import func, select
 
+from sophia.infra.schema import study_sessions
 from sophia.services.athena_confidence import rate_confidence as _rate_confidence
 from sophia.services.athena_study import get_course_topics as _get_course_topics
 from sophia.services.athena_study import save_manual_topic as _save_manual_topic
@@ -46,7 +48,8 @@ async def get_topics_for_courses(
 async def get_nearest_deadline(app: AppContainer) -> Deadline | None:
     """Get the closest upcoming deadline, or None."""
     try:
-        deadlines = await _get_deadlines(app.db, horizon_days=90)
+        async with app.session() as db:
+            deadlines = await _get_deadlines(db, horizon_days=90)
         return deadlines[0] if deadlines else None
     except Exception:
         log.exception("quickstart_get_deadline_failed")
@@ -91,9 +94,9 @@ async def save_manual_topics(
 async def get_completed_session_count(app: AppContainer) -> int:
     """Count total completed study sessions across all courses."""
     try:
-        cursor = await app.db.execute("SELECT COUNT(*) FROM study_sessions")
-        row = await cursor.fetchone()
-        return int(row[0]) if row else 0
+        async with app.session() as db:
+            total = await db.scalar(select(func.count()).select_from(study_sessions))
+        return int(total or 0)
     except Exception:
         log.exception("quickstart_session_count_failed")
         return 0

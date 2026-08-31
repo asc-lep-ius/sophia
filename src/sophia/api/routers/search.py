@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from sophia.api.deps import get_app_container, require_effective_learning_path_id
+from sophia.api.deps import get_app_container, request_session, require_effective_learning_path_id
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.search import (
     ContentSearchRequest,
@@ -14,12 +14,13 @@ from sophia.api.schemas.search import (
     ContentSearchResultResponse,
     ContentSearchSourceFilter,
 )
+from sophia.api.transactions import TransactionalRoute
 from sophia.services.hermes_index import search_lectures
 
 if TYPE_CHECKING:
     from sophia.domain.models import LectureSearchResult
 
-router = APIRouter(tags=["search"])
+router = APIRouter(tags=["search"], route_class=TransactionalRoute)
 
 # The index stores TU Wien source tags; the public contract stays content-agnostic.
 _INDEX_FILTER_BY_API_FILTER = {
@@ -50,6 +51,7 @@ async def search_content(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     results = await search_lectures(
         get_app_container(request),
+        await request_session(request),
         payload.content_source_id,
         payload.query,
         n_results=payload.n_results,

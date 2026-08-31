@@ -15,7 +15,7 @@ unnecessary.
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 import structlog
 from sqlalchemy import text
@@ -26,6 +26,7 @@ from sophia.infra.org_context import get_org_id
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from sqlalchemy import CursorResult, Result
     from sqlalchemy.ext.asyncio import AsyncEngine
 
 log = structlog.get_logger()
@@ -103,6 +104,15 @@ async def current_org_setting(session: AsyncSession) -> str:
         {"setting": ORG_SETTING},
     )
     return result.scalar_one_or_none() or ""
+
+
+def affected_rows(result: Result[Any]) -> int:
+    """Rows a DML statement touched.
+
+    ``AsyncSession.execute`` is typed as returning ``Result``, which has no
+    ``rowcount``; for DML it is a ``CursorResult`` at runtime.
+    """
+    return max(cast("CursorResult[Any]", result).rowcount, 0)
 
 
 async def check_connection(engine: AsyncEngine) -> bool:

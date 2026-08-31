@@ -2,30 +2,21 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import ConfidenceRating
 
+from .._sql import exec_sql
 
-@pytest.fixture
-async def db():
-    """In-memory SQLite with topic + confidence + metacognition migrations applied."""
-    conn = await aiosqlite.connect(":memory:")
-    await conn.execute("PRAGMA foreign_keys=ON")
-    await conn.executescript(Path("src/sophia/infra/migrations/001_initial.sql").read_text())
-    await conn.executescript(Path("src/sophia/infra/migrations/006_topics.sql").read_text())
-    await conn.executescript(Path("src/sophia/infra/migrations/007_confidence.sql").read_text())
-    await conn.commit()
-    yield conn
-    await conn.close()
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.fixture
-def app_container(db: aiosqlite.Connection) -> MagicMock:
+def app_container(db: AsyncSession) -> MagicMock:
     """Minimal AppContainer mock wired to the in-memory DB."""
     container = MagicMock()
     container.db = db
@@ -117,10 +108,10 @@ class TestRatingToScore:
 
 class TestRateConfidence:
     @pytest.mark.asyncio
-    async def test_stores_and_returns_rating(self, app_container: MagicMock) -> None:
+    async def test_stores_and_returns_rating(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import rate_confidence
 
-        result = await rate_confidence(app_container, "Sorting", course_id=42, rating=4)
+        result = await rate_confidence(db, "Sorting", course_id=42, rating=4)
 
         assert isinstance(result, ConfidenceRating)
         assert result.topic == "Sorting"
@@ -130,15 +121,13 @@ class TestRateConfidence:
         assert result.rated_at != ""
 
     @pytest.mark.asyncio
-    async def test_persists_to_database(
-        self, app_container: MagicMock, db: aiosqlite.Connection
-    ) -> None:
+    async def test_persists_to_database(self, app_container: MagicMock, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import rate_confidence
 
-        await rate_confidence(app_container, "Hashing", course_id=42, rating=2)
+        await rate_confidence(db, "Hashing", course_id=42, rating=2)
 
-        cursor = await db.execute("SELECT topic, predicted FROM confidence_ratings")
-        rows = list(await cursor.fetchall())
+        cursor = await exec_sql(db, "SELECT topic, predicted FROM confidence_ratings")
+        rows = list(cursor.fetchall())
         assert len(rows) == 1
         assert rows[0][0] == "Hashing"
         assert rows[0][1] == pytest.approx(0.25)  # pyright: ignore[reportUnknownMemberType]
@@ -151,30 +140,32 @@ class TestRateConfidence:
 
 class TestGetConfidenceRatings:
     @pytest.mark.asyncio
-    async def test_returns_empty_for_no_data(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_empty_for_no_data(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_confidence_ratings
 
         result = await get_confidence_ratings(db, course_id=99)
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_returns_latest_per_topic(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_latest_per_topic(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_confidence_ratings
 
         # Insert two ratings for same topic — second should win
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.25),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.75),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Hashing", 42, 0.5),
         )
-        await db.commit()
 
         result = await get_confidence_ratings(db, course_id=42)
         assert len(result) == 2
@@ -184,18 +175,19 @@ class TestGetConfidenceRatings:
         assert by_topic["Hashing"].predicted == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
-    async def test_filters_by_course_id(self, db: aiosqlite.Connection) -> None:
+    async def test_filters_by_course_id(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_confidence_ratings
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.5),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 99, 0.75),
         )
-        await db.commit()
 
         result = await get_confidence_ratings(db, course_id=42)
         assert len(result) == 1
@@ -209,34 +201,35 @@ class TestGetConfidenceRatings:
 
 class TestGetBlindSpots:
     @pytest.mark.asyncio
-    async def test_finds_overconfident_topics(self, db: aiosqlite.Connection) -> None:
+    async def test_finds_overconfident_topics(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_blind_spots
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, actual) "
             "VALUES (?, ?, ?, ?)",
             ("Sorting", 42, 0.9, 0.3),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted, actual) "
             "VALUES (?, ?, ?, ?)",
             ("Hashing", 42, 0.5, 0.5),
         )
-        await db.commit()
 
         result = await get_blind_spots(db, course_id=42)
         assert len(result) == 1
         assert result[0].topic == "Sorting"
 
     @pytest.mark.asyncio
-    async def test_returns_empty_when_no_actual(self, db: aiosqlite.Connection) -> None:
+    async def test_returns_empty_when_no_actual(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_blind_spots
 
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.9),
         )
-        await db.commit()
 
         result = await get_blind_spots(db, course_id=42)
         assert result == []
@@ -299,24 +292,25 @@ class TestFormatCalibrationFeedback:
 
 class TestUpdateActualScore:
     @pytest.mark.asyncio
-    async def test_updates_most_recent_rating(self, db: aiosqlite.Connection) -> None:
+    async def test_updates_most_recent_rating(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import update_actual_score
 
         # Two ratings for same topic — update should hit the latest
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.25),
         )
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
             ("Sorting", 42, 0.75),
         )
-        await db.commit()
 
         await update_actual_score(db, "Sorting", course_id=42, actual=0.6)
 
-        cursor = await db.execute("SELECT predicted, actual FROM confidence_ratings ORDER BY id")
-        rows = list(await cursor.fetchall())
+        cursor = await exec_sql(db, "SELECT predicted, actual FROM confidence_ratings ORDER BY id")
+        rows = list(cursor.fetchall())
         assert len(rows) == 2
         # First rating should be untouched
         assert rows[0][1] is None

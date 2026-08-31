@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import search as search_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import LectureSearchResult
 
-from ._session_helpers import build_harness, login
+from ._session_helpers import FakeAppContainer, build_harness, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -53,6 +47,7 @@ def test_search_content_returns_response_shape(monkeypatch: pytest.MonkeyPatch) 
 
     async def fake_search_lectures(
         app: AppContainer,
+        db: object,
         module_id: int,
         query: str,
         *,
@@ -123,6 +118,7 @@ def test_search_content_uses_session_scope_when_learning_path_id_omitted(
 
     async def fake_search_lectures(
         _app: AppContainer,
+        _db: object,
         module_id: int,
         _query: str,
         *,
@@ -162,6 +158,7 @@ def test_search_content_rejects_out_of_scope_learning_path_before_service_call(
 
     async def fake_search_lectures(
         _app: AppContainer,
+        _db: object,
         module_id: int,
         _query: str,
         *,
@@ -197,6 +194,7 @@ def test_search_content_rejects_cross_scope_content_source_before_service_call(
 
     async def fake_search_lectures(
         _app: AppContainer,
+        _db: object,
         module_id: int,
         _query: str,
         *,
@@ -254,6 +252,7 @@ def test_search_content_maps_document_filter_to_index_source(
 
     async def fake_search_lectures(
         _app: AppContainer,
+        _db: object,
         _module_id: int,
         _query: str,
         *,

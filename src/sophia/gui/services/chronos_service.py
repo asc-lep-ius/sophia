@@ -7,8 +7,13 @@ from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import structlog
+from sqlalchemy import select
 
 from sophia.domain.errors import AuthError
+from sophia.infra.schema import (
+    deadline_reflections,
+    time_entries,
+)
 from sophia.services.chronos import (
     complete_deadline as _complete_deadline,
 )
@@ -35,6 +40,9 @@ from sophia.services.chronos import (
 )
 from sophia.services.chronos import (
     get_tracked_time as _get_tracked_time,
+)
+from sophia.services.chronos import (
+    latest_estimate as _latest_estimate,
 )
 from sophia.services.chronos import (
     record_estimate as _record_estimate,
@@ -91,7 +99,8 @@ async def get_upcoming_deadlines(
 ) -> list[Deadline]:
     """Fetch upcoming deadlines within the horizon window."""
     try:
-        return await _get_deadlines(app.db, course_id=course_id, horizon_days=horizon_days)
+        async with app.session() as db:
+            return await _get_deadlines(db, course_id=course_id, horizon_days=horizon_days)
     except Exception:
         log.exception("get_deadlines_failed", course_id=course_id)
         return []
@@ -103,7 +112,8 @@ async def get_deadline_priority(
 ) -> dict[str, float]:
     """Compute priority score for a deadline (sync scorer + async tracked time)."""
     try:
-        tracked = await _get_tracked_time(app.db, deadline.id)
+        async with app.session() as db:
+            tracked = await _get_tracked_time(db, deadline.id)
         return _compute_priority_score(deadline, None, tracked)
     except Exception:
         log.exception("get_deadline_priority_failed", deadline_id=deadline.id)
@@ -137,7 +147,8 @@ async def estimate_effort(
 async def start_deadline_timer(app: AppContainer, deadline_id: str) -> None:
     """Start a timer for a deadline."""
     try:
-        await _start_timer(app.db, deadline_id)
+        async with app.session() as db:
+            await _start_timer(db, deadline_id)
     except Exception:
         log.exception("start_timer_failed", deadline_id=deadline_id)
 
@@ -145,7 +156,8 @@ async def start_deadline_timer(app: AppContainer, deadline_id: str) -> None:
 async def stop_deadline_timer(app: AppContainer, deadline_id: str) -> float:
     """Stop a running timer, returning elapsed hours."""
     try:
-        return await _stop_timer(app.db, deadline_id)
+        async with app.session() as db:
+            return await _stop_timer(db, deadline_id)
     except Exception:
         log.exception("stop_timer_failed", deadline_id=deadline_id)
         return 0.0
@@ -154,7 +166,8 @@ async def stop_deadline_timer(app: AppContainer, deadline_id: str) -> float:
 async def get_deadline_tracked_time(app: AppContainer, deadline_id: str) -> float:
     """Get total tracked time for a deadline."""
     try:
-        return await _get_tracked_time(app.db, deadline_id)
+        async with app.session() as db:
+            return await _get_tracked_time(db, deadline_id)
     except Exception:
         log.exception("get_tracked_time_failed", deadline_id=deadline_id)
         return 0.0
@@ -170,13 +183,14 @@ async def reflect_on_deadline(
 ) -> None:
     """Record a post-deadline reflection."""
     try:
-        await _record_reflection(
-            app.db,
-            deadline_id,
-            predicted_hours=predicted_hours,
-            actual_hours=actual_hours,
-            reflection_text=reflection_text,
-        )
+        async with app.session() as db:
+            await _record_reflection(
+                db,
+                deadline_id,
+                predicted_hours=predicted_hours,
+                actual_hours=actual_hours,
+                reflection_text=reflection_text,
+            )
     except Exception:
         log.exception("reflect_on_deadline_failed", deadline_id=deadline_id)
 
@@ -191,7 +205,8 @@ async def get_deadline_scaffold(
     from sophia.domain.models import EstimationScaffold
 
     try:
-        return await _get_scaffold_level(app.db, deadline_type, course_id=course_id)
+        async with app.session() as db:
+            return await _get_scaffold_level(db, deadline_type, course_id=course_id)
     except Exception:
         log.exception("get_scaffold_failed", deadline_type=deadline_type)
         return EstimationScaffold.FULL
@@ -208,7 +223,8 @@ async def get_deadline_calibration(
 ) -> list[CalibrationMetrics]:
     """Get calibration metrics for effort estimation."""
     try:
-        return await _get_calibration_metrics(app.db, deadline_type)
+        async with app.session() as db:
+            return await _get_calibration_metrics(db, deadline_type)
     except Exception:
         log.exception("get_calibration_failed", deadline_type=deadline_type)
         return []
@@ -277,7 +293,8 @@ async def record_manual_time_entry(
 ) -> None:
     """Record a manual time entry for a deadline."""
     try:
-        await _record_time(app.db, deadline_id, hours, note, recorded_at=recorded_at)
+        async with app.session() as db:
+            await _record_time(db, deadline_id, hours, note, recorded_at=recorded_at)
     except Exception:
         log.exception("record_manual_time_failed", deadline_id=deadline_id)
 
@@ -288,13 +305,23 @@ async def get_time_entries(
 ) -> list[dict[str, object]]:
     """Fetch all time entries for a deadline, ordered by recorded_at."""
     try:
-        cursor = await app.db.execute(
-            "SELECT hours, source, note, recorded_at "
-            "FROM time_entries WHERE deadline_id = ? ORDER BY recorded_at",
-            (deadline_id,),
-        )
-        rows = await cursor.fetchall()
-        return [{"hours": r[0], "source": r[1], "note": r[2], "recorded_at": r[3]} for r in rows]
+        async with app.session() as db:
+            rows = (
+                await db.execute(
+                    select(time_entries)
+                    .where(time_entries.c.deadline_id == deadline_id)
+                    .order_by(time_entries.c.recorded_at)
+                )
+            ).all()
+        return [
+            {
+                "hours": row.hours,
+                "source": row.source,
+                "note": row.note,
+                "recorded_at": row.recorded_at,
+            }
+            for row in rows
+        ]
     except Exception:
         log.exception("get_time_entries_failed", deadline_id=deadline_id)
         return []
@@ -307,7 +334,8 @@ async def export_deadlines_ics(
 ) -> str | None:
     """Export upcoming deadlines as ICS calendar string."""
     try:
-        return await _export_deadlines_ics(app.db, horizon_days=horizon_days)
+        async with app.session() as db:
+            return await _export_deadlines_ics(db, horizon_days=horizon_days)
     except Exception:
         log.exception("export_deadlines_ics_failed")
         return None
@@ -321,7 +349,8 @@ async def get_past_deadlines(
 ) -> list[Deadline]:
     """Fetch all past deadlines (completed or past due)."""
     try:
-        return await _get_missed_deadlines(app.db, course_id=course_id, limit=limit)
+        async with app.session() as db:
+            return await _get_missed_deadlines(db, course_id=course_id, limit=limit)
     except Exception:
         log.exception("get_past_deadlines_failed", course_id=course_id)
         return []
@@ -333,19 +362,21 @@ async def get_deadline_reflection(
 ) -> dict[str, object] | None:
     """Fetch reflection data for a past deadline (if recorded)."""
     try:
-        cursor = await app.db.execute(
-            "SELECT predicted_hours, actual_hours, reflection_text "
-            "FROM deadline_reflections WHERE deadline_id = ? "
-            "ORDER BY rowid DESC LIMIT 1",
-            (deadline_id,),
-        )
-        row = await cursor.fetchone()
+        async with app.session() as db:
+            row = (
+                await db.execute(
+                    select(deadline_reflections)
+                    .where(deadline_reflections.c.deadline_id == deadline_id)
+                    .order_by(deadline_reflections.c.id.desc())
+                    .limit(1)
+                )
+            ).one_or_none()
         if not row:
             return None
         return {
-            "predicted_hours": row[0],
-            "actual_hours": row[1],
-            "reflection_text": row[2],
+            "predicted_hours": row.predicted_hours,
+            "actual_hours": row.actual_hours,
+            "reflection_text": row.reflection_text,
         }
     except Exception:
         log.exception("get_deadline_reflection_failed", deadline_id=deadline_id)
@@ -536,22 +567,15 @@ async def get_effort_distribution_data(
 ) -> list[DayEffort]:
     """Fetch deadlines + estimates + tracked time, then compute distribution."""
     try:
-        deadlines = await _get_deadlines(app.db, horizon_days=horizon_days)
-
         estimates: dict[str, float] = {}
         tracked_map: dict[str, float] = {}
-        for dl in deadlines:
-            # Fetch latest estimate
-            cursor = await app.db.execute(
-                "SELECT predicted_hours FROM effort_estimates "
-                "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-                (dl.id,),
-            )
-            row = await cursor.fetchone()
-            if row and row[0] is not None:
-                estimates[dl.id] = float(row[0])
-
-            tracked_map[dl.id] = await _get_tracked_time(app.db, dl.id)
+        async with app.session() as db:
+            deadlines = await _get_deadlines(db, horizon_days=horizon_days)
+            for dl in deadlines:
+                predicted = await _latest_estimate(db, dl.id)
+                if predicted is not None:
+                    estimates[dl.id] = predicted
+                tracked_map[dl.id] = await _get_tracked_time(db, dl.id)
 
         today_str = datetime.now(UTC).strftime("%Y-%m-%d")
         return compute_effort_distribution(

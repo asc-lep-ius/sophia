@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -19,10 +20,11 @@ from sophia.config import Settings
 from sophia.domain.errors import AuthError
 
 if TYPE_CHECKING:
-    import aiosqlite
     import httpx
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sophia.infra.alembic_runner import upgrade_async
+from sophia.infra.engine import create_engine, create_session_factory, session_scope
 from sophia.infra.http import http_session
-from sophia.infra.persistence import connect_db, run_migrations
 
 log = structlog.get_logger()
 
@@ -31,15 +33,31 @@ _DI_INIT_TIMEOUT_S = 30
 
 @dataclass(frozen=True)
 class AppContainer:
-    """Wired application dependencies. Created once at startup, passed to services."""
+    """Wired application dependencies. Created once at startup, passed to services.
+
+    The container holds the session *factory*, never a session. An
+    ``AsyncSession`` is not safe to use from two coroutines at once, and the GUI
+    and job runner both run concurrent tasks, so every unit of work opens its
+    own through :meth:`session`.
+    """
 
     settings: Settings
     http: httpx.AsyncClient
-    db: aiosqlite.Connection
+    engine: AsyncEngine
+    session_factory: async_sessionmaker[AsyncSession]
     moodle: MoodleAdapter
     tiss: TissAdapter
     opencast: OpencastAdapter
     lecture_downloader: HttpLectureDownloader
+
+    def session(self, *, org_id: str | None = None) -> AbstractAsyncContextManager[AsyncSession]:
+        """Open one transaction-scoped session bound to an org.
+
+        Commits on clean exit, rolls back on exception. ``org_id`` defaults to
+        the ambient scope, which nothing sets yet — see
+        :mod:`sophia.infra.org_context`.
+        """
+        return session_scope(self.session_factory, org_id=org_id)
 
 
 @contextlib.asynccontextmanager
@@ -81,9 +99,17 @@ async def _init_resources(
     http = await stack.enter_async_context(http_session())
     tuwel_domain = urlparse(settings.tuwel_host).hostname or ""
     http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
-    db = await connect_db(settings.db_path)
-    stack.push_async_callback(db.close)
-    await run_migrations(db)
+    engine = create_engine(
+        settings.database_url,
+        pool_size=settings.database_pool_size,
+        max_overflow=settings.database_max_overflow,
+        pool_timeout=settings.database_pool_timeout,
+        pool_recycle=settings.database_pool_recycle,
+        echo=settings.database_echo,
+    )
+    stack.push_async_callback(engine.dispose)
+    await upgrade_async(settings.database_url)
+    session_factory = create_session_factory(engine)
 
     moodle = MoodleAdapter(
         http=http,
@@ -100,7 +126,8 @@ async def _init_resources(
     return AppContainer(
         settings=settings,
         http=http,
-        db=db,
+        engine=engine,
+        session_factory=session_factory,
         moodle=moodle,
         tiss=tiss,
         opencast=opencast,

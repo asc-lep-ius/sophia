@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
+
+from sqlalchemy import select
 
 from sophia.domain.models import Deadline  # noqa: TC001
-from sophia.services.chronos import get_deadlines, get_tracked_time
+from sophia.infra.schema import deadline_reflections, time_entries
+from sophia.services.chronos import get_deadlines, get_tracked_time, latest_estimate
 from sophia.services.chronos_export import get_missed_deadlines
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 DbRow = tuple[object, ...]
 
@@ -41,75 +44,79 @@ class DayEffort:
 
 
 async def get_past_deadlines(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     limit: int = 50,
 ) -> list[Deadline]:
     """Fetch past deadlines without GUI exception fallbacks."""
-    return await get_missed_deadlines(db, course_id=course_id, limit=limit)
+    return await get_missed_deadlines(session, course_id=course_id, limit=limit)
 
 
 async def get_time_entries(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_id: str,
 ) -> list[TimeEntry]:
     """Fetch time entries for a deadline, ordered by recorded timestamp."""
-    cursor = await db.execute(
-        "SELECT hours, source, note, recorded_at "
-        "FROM time_entries WHERE deadline_id = ? ORDER BY recorded_at",
-        (deadline_id,),
-    )
-    rows = cast("list[DbRow]", await cursor.fetchall())
+    rows = (
+        await session.execute(
+            select(time_entries)
+            .where(time_entries.c.deadline_id == deadline_id)
+            .order_by(time_entries.c.recorded_at)
+        )
+    ).all()
     return [
         TimeEntry(
-            hours=_float_cell(row[0]),
-            source=str(row[1]),
-            note=str(row[2]) if row[2] is not None else None,
-            recorded_at=str(row[3]),
+            hours=_float_cell(row.hours),
+            source=str(row.source),
+            note=str(row.note) if row.note is not None else None,
+            recorded_at=str(row.recorded_at),
         )
         for row in rows
     ]
 
 
 async def get_deadline_reflection(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     deadline_id: str,
 ) -> DeadlineReflection | None:
     """Fetch the most recent reflection for a deadline."""
-    cursor = await db.execute(
-        "SELECT predicted_hours, actual_hours, reflection_text, reflected_at "
-        "FROM deadline_reflections WHERE deadline_id = ? "
-        "ORDER BY rowid DESC LIMIT 1",
-        (deadline_id,),
-    )
-    row = cast("DbRow | None", await cursor.fetchone())
+    row = (
+        await session.execute(
+            select(deadline_reflections)
+            .where(deadline_reflections.c.deadline_id == deadline_id)
+            .order_by(deadline_reflections.c.id.desc())
+            .limit(1)
+        )
+    ).one_or_none()
     if row is None:
         return None
     return DeadlineReflection(
-        predicted_hours=_float_cell(row[0]) if row[0] is not None else None,
-        actual_hours=_float_cell(row[1]),
-        reflection_text=str(row[2]) if row[2] is not None else None,
-        reflected_at=str(row[3]),
+        predicted_hours=(
+            _float_cell(row.predicted_hours) if row.predicted_hours is not None else None
+        ),
+        actual_hours=_float_cell(row.actual_hours),
+        reflection_text=str(row.reflection_text) if row.reflection_text is not None else None,
+        reflected_at=str(row.reflected_at),
     )
 
 
 async def get_effort_distribution(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     *,
     course_id: int | None = None,
     horizon_days: int = 14,
 ) -> list[DayEffort]:
     """Fetch deadlines, latest estimates, and tracked time for effort distribution."""
-    deadlines = await get_deadlines(db, course_id=course_id, horizon_days=horizon_days)
+    deadlines = await get_deadlines(session, course_id=course_id, horizon_days=horizon_days)
     estimates: dict[str, float] = {}
     tracked: dict[str, float] = {}
 
     for deadline in deadlines:
-        estimate = await _latest_estimate(db, deadline.id)
+        estimate = await latest_estimate(session, deadline.id)
         if estimate is not None:
             estimates[deadline.id] = estimate
-        tracked[deadline.id] = await get_tracked_time(db, deadline.id)
+        tracked[deadline.id] = await get_tracked_time(session, deadline.id)
 
     return compute_effort_distribution(
         deadlines=deadlines,
@@ -118,18 +125,6 @@ async def get_effort_distribution(
         today=datetime.now(UTC).strftime("%Y-%m-%d"),
         horizon_days=horizon_days,
     )
-
-
-async def _latest_estimate(db: aiosqlite.Connection, deadline_id: str) -> float | None:
-    cursor = await db.execute(
-        "SELECT predicted_hours FROM effort_estimates "
-        "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-        (deadline_id,),
-    )
-    row = cast("DbRow | None", await cursor.fetchone())
-    if row is None or row[0] is None:
-        return None
-    return _float_cell(row[0])
 
 
 def compute_effort_distribution(

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 
 from sophia.domain.models import REVIEW_INTERVALS
 from sophia.services.athena_review import compute_fsrs_interval
+
+from .._sql import exec_sql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 # ---------------------------------------------------------------------------
 # Pure algorithm tests
@@ -86,20 +91,9 @@ class TestBackwardCompat:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-async def db():
-    from sophia.infra.persistence import run_migrations
-
-    db_conn = await aiosqlite.connect(":memory:")
-    await db_conn.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(db_conn)
-    yield db_conn
-    await db_conn.close()
-
-
 class TestCompleteReviewUsesFSRS:
     @pytest.mark.asyncio
-    async def test_complete_review_returns_fsrs_fields(self, db: aiosqlite.Connection) -> None:
+    async def test_complete_review_returns_fsrs_fields(self, db: AsyncSession) -> None:
         from sophia.services.athena_review import complete_review, schedule_review
 
         await schedule_review(db, "Sorting", course_id=42)
@@ -111,18 +105,19 @@ class TestCompleteReviewUsesFSRS:
         assert result.review_count >= 1
 
     @pytest.mark.asyncio
-    async def test_complete_review_persists_fsrs_columns(self, db: aiosqlite.Connection) -> None:
+    async def test_complete_review_persists_fsrs_columns(self, db: AsyncSession) -> None:
         from sophia.services.athena_review import complete_review, schedule_review
 
         await schedule_review(db, "Sorting", course_id=42)
         await complete_review(db, "Sorting", course_id=42, score=0.9)
 
-        cursor = await db.execute(
+        cursor = await exec_sql(
+            db,
             "SELECT difficulty, stability, review_count "
             "FROM review_schedule WHERE topic = ? AND course_id = ?",
             ("Sorting", 42),
         )
-        row = await cursor.fetchone()
+        row = cursor.fetchone()
         assert row is not None
         difficulty, stability, review_count = row
         assert difficulty is not None
@@ -132,19 +127,19 @@ class TestCompleteReviewUsesFSRS:
 
 class TestCompleteReviewHandlesNullColumns:
     @pytest.mark.asyncio
-    async def test_null_defaults(self, db: aiosqlite.Connection) -> None:
+    async def test_null_defaults(self, db: AsyncSession) -> None:
         """Pre-migration rows with NULL FSRS columns use safe defaults."""
         # Insert a row as if it were created before the FSRS migration
         now = datetime.now(UTC)
         next_at = (now + timedelta(days=1)).isoformat()
-        await db.execute(
+        await exec_sql(
+            db,
             "INSERT INTO review_schedule "
             "(topic, course_id, interval_index, next_review_at, "
             "difficulty, stability, review_count) "
             "VALUES (?, ?, 0, ?, NULL, NULL, NULL)",
             ("OldTopic", 42, next_at),
         )
-        await db.commit()
 
         from sophia.services.athena_review import complete_review
 
@@ -158,7 +153,7 @@ class TestCompleteReviewHandlesNullColumns:
 
 class TestScheduleReviewInitializesFSRS:
     @pytest.mark.asyncio
-    async def test_new_schedule_has_defaults(self, db: aiosqlite.Connection) -> None:
+    async def test_new_schedule_has_defaults(self, db: AsyncSession) -> None:
         from sophia.services.athena_review import schedule_review
 
         result = await schedule_review(db, "NewTopic", course_id=42)

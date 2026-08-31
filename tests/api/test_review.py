@@ -2,24 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from sophia.api.routers import review as review_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ReviewSchedule
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
 
     from sophia.infra.di import AppContainer
-
-
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:

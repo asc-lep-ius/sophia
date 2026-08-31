@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import aiosqlite
 import pytest
 
-from sophia.api.sessions import SessionTenant
 from sophia.domain.learning import ContentLanguage, LearningPathSettings, StoredContentOrigin
 from sophia.domain.models import Course
-from sophia.infra.persistence import run_migrations
 from sophia.services.content_language import (
     get_learning_path_settings,
     resolve_content_language,
@@ -19,47 +15,19 @@ from sophia.services.content_language import (
     sync_learning_path_settings,
 )
 
-from ._session_helpers import ApiHarness, build_harness, login
+from ._db_harness import db_harness
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-    from sophia.infra.di import AppContainer
+pytestmark = pytest.mark.postgres
 
 LEARNING_PATH_ID = 12
 
 
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: aiosqlite.Connection
-
-
-@pytest.fixture
-async def db() -> AsyncIterator[aiosqlite.Connection]:
-    connection = await aiosqlite.connect(":memory:")
-    await connection.execute("PRAGMA foreign_keys=ON")
-    await run_migrations(connection)
-    yield connection
-    await connection.close()
-
-
-def build_logged_in_harness(db: aiosqlite.Connection) -> ApiHarness:
-    harness = build_harness(
-        app_container=cast("AppContainer", FakeAppContainer(db=db)),
-        tenant=SessionTenant(
-            org_id="tu-wien",
-            learning_path_id=str(LEARNING_PATH_ID),
-            cohort_id="cohort-a",
-            role="student",
-        ),
-    )
-    login(harness)
-    return harness
-
-
-async def store_exam_language(db: aiosqlite.Connection, language: ContentLanguage) -> None:
+async def store_exam_language(session: AsyncSession, language: ContentLanguage) -> None:
     await save_learning_path_settings(
-        db,
+        session,
         LearningPathSettings(
             course_id=LEARNING_PATH_ID,
             exam_language=language,
@@ -68,70 +36,80 @@ async def store_exam_language(db: aiosqlite.Connection, language: ContentLanguag
     )
 
 
-async def test_learning_path_exam_language_beats_the_ui_locale(db: aiosqlite.Connection) -> None:
-    """The test session's UI locale is English; the exam is in German."""
-    await store_exam_language(db, ContentLanguage.DE)
-    harness = build_logged_in_harness(db)
+async def test_learning_path_exam_language_beats_the_ui_locale(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The session's UI locale is English; the exam is in German."""
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await store_exam_language(session, ContentLanguage.DE)
+        await harness.login()
 
-    response = harness.client.get(f"/api/learning-paths/{LEARNING_PATH_ID}/content-language")
+        response = await harness.client.get(
+            f"/api/learning-paths/{LEARNING_PATH_ID}/content-language"
+        )
 
     assert response.status_code == 200
     assert response.json()["content_language"] == "de"
     assert response.json()["resolved_from"] == "learning_path"
 
 
-async def test_explicit_lang_override_wins(db: aiosqlite.Connection) -> None:
-    await store_exam_language(db, ContentLanguage.DE)
-    harness = build_logged_in_harness(db)
+async def test_explicit_lang_override_wins(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await store_exam_language(session, ContentLanguage.DE)
+        await harness.login()
 
-    response = harness.client.get(
-        f"/api/learning-paths/{LEARNING_PATH_ID}/content-language?lang=en"
-    )
+        response = await harness.client.get(
+            f"/api/learning-paths/{LEARNING_PATH_ID}/content-language?lang=en"
+        )
 
     assert response.json()["content_language"] == "en"
     assert response.json()["resolved_from"] == "override"
 
 
 async def test_configured_default_applies_when_the_path_has_no_exam_language(
-    db: aiosqlite.Connection,
+    clean_engine: AsyncEngine,
 ) -> None:
-    harness = build_logged_in_harness(db)
-
-    response = harness.client.get(f"/api/learning-paths/{LEARNING_PATH_ID}/content-language")
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        response = await harness.client.get(
+            f"/api/learning-paths/{LEARNING_PATH_ID}/content-language"
+        )
 
     assert response.json()["content_language"] == "de"
     assert response.json()["resolved_from"] == "default"
 
 
-async def test_unknown_language_override_is_rejected(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
-
-    response = harness.client.get(
-        f"/api/learning-paths/{LEARNING_PATH_ID}/content-language?lang=fr"
-    )
+async def test_unknown_language_override_is_rejected(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        response = await harness.client.get(
+            f"/api/learning-paths/{LEARNING_PATH_ID}/content-language?lang=fr"
+        )
 
     assert response.status_code == 422
 
 
-async def test_content_language_is_scoped_to_the_session(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
-
-    response = harness.client.get("/api/learning-paths/99/content-language")
+async def test_content_language_is_scoped_to_the_session(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        response = await harness.client.get("/api/learning-paths/99/content-language")
 
     assert response.status_code == 403
 
 
-async def test_translations_are_reserved_and_start_empty(db: aiosqlite.Connection) -> None:
-    harness = build_logged_in_harness(db)
-
-    response = harness.client.get(f"/api/learning-paths/{LEARNING_PATH_ID}/content-language")
+async def test_translations_are_reserved_and_start_empty(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine) as harness:
+        await harness.login()
+        response = await harness.client.get(
+            f"/api/learning-paths/{LEARNING_PATH_ID}/content-language"
+        )
 
     assert response.json()["available_translations"] == []
 
 
-async def test_fallback_order_is_override_then_path_then_default(
-    db: aiosqlite.Connection,
-) -> None:
+async def test_fallback_order_is_override_then_path_then_default(db: AsyncSession) -> None:
     await store_exam_language(db, ContentLanguage.EN)
 
     override = await resolve_content_language(
@@ -158,9 +136,7 @@ async def test_fallback_order_is_override_then_path_then_default(
     assert (from_default.language, from_default.resolved_from) == (ContentLanguage.DE, "default")
 
 
-async def test_sync_stores_the_language_the_upstream_source_reports(
-    db: aiosqlite.Connection,
-) -> None:
+async def test_sync_stores_the_language_the_upstream_source_reports(db: AsyncSession) -> None:
     stored = await sync_learning_path_settings(
         db,
         [
@@ -176,7 +152,7 @@ async def test_sync_stores_the_language_the_upstream_source_reports(
     assert settings.content_origin == StoredContentOrigin.TUWEL
 
 
-async def test_sync_skips_paths_whose_language_is_unknown(db: aiosqlite.Connection) -> None:
+async def test_sync_skips_paths_whose_language_is_unknown(db: AsyncSession) -> None:
     """An unstated upstream language must not be pinned to a guess."""
     stored = await sync_learning_path_settings(
         db,
@@ -187,9 +163,7 @@ async def test_sync_skips_paths_whose_language_is_unknown(db: aiosqlite.Connecti
     assert await get_learning_path_settings(db, 12) is None
 
 
-async def test_sync_updates_a_language_that_changed_upstream(
-    db: aiosqlite.Connection,
-) -> None:
+async def test_sync_updates_a_language_that_changed_upstream(db: AsyncSession) -> None:
     await store_exam_language(db, ContentLanguage.DE)
 
     await sync_learning_path_settings(

@@ -223,8 +223,3 @@ class Settings(BaseSettings):
             if candidate and candidate not in keys:
                 keys.append(candidate)
         return tuple(keys)
-
-    @property
-    def db_path(self) -> Path:
-        """Path to the SQLite database file."""
-        return self.data_dir / "sophia.db"

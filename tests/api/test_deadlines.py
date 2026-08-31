@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
@@ -10,7 +9,7 @@ from sophia.api.routers import deadlines as deadlines_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import Deadline, DeadlineType, EffortEstimate, EstimationScaffold
 
-from ._session_helpers import build_harness, csrf_headers, login
+from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
     import pytest
@@ -18,26 +17,15 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 
-@dataclass(frozen=True, slots=True)
-class FakeAppContainer:
-    db: object
-
-
-class FakeDeadlineCursor:
-    def __init__(self, row: tuple[int] | None) -> None:
-        self._row = row
-
-    async def fetchone(self) -> tuple[int] | None:
-        return self._row
-
-
 class FakeDeadlineDb:
+    """Answers the one scalar lookup the route makes: deadline id -> course id."""
+
     def __init__(self, deadline_courses: dict[str, int]) -> None:
         self._deadline_courses = deadline_courses
 
-    async def execute(self, _query: str, parameters: tuple[str]) -> FakeDeadlineCursor:
-        course_id = self._deadline_courses.get(parameters[0])
-        return FakeDeadlineCursor(None if course_id is None else (course_id,))
+    async def scalar(self, statement: object) -> int | None:
+        deadline_id = statement.whereclause.right.value  # pyright: ignore[reportAttributeAccessIssue]
+        return self._deadline_courses.get(deadline_id)
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -112,8 +100,9 @@ def test_deadline_current_state_routes_return_response_shapes(
         assert horizon_days == 14
         return [sample_deadline()]
 
-    async def fake_sync_deadlines(app: AppContainer) -> list[Deadline]:
+    async def fake_sync_deadlines(app: AppContainer, db: object) -> list[Deadline]:
         assert app is fake_app
+        assert db is fake_app.db
         calls.append("sync")
         return [sample_deadline()]
 
@@ -160,10 +149,10 @@ def test_deadline_current_state_routes_return_response_shapes(
         calls.append(f"reflection:{deadline_id}")
 
     async def fake_complete_deadline(
-        app: AppContainer,
+        db: object,
         deadline_id: str,
     ) -> tuple[float | None, float, str]:
-        assert app is fake_app
+        assert db is fake_app.db
         calls.append(f"complete:{deadline_id}")
         return 2.0, 3.0, "Slightly under."
 
@@ -421,8 +410,9 @@ def test_deadline_sync_filters_response_to_session_learning_path(
     login(harness)
     calls: list[str] = []
 
-    async def fake_sync_deadlines(app: AppContainer) -> list[Deadline]:
+    async def fake_sync_deadlines(app: AppContainer, db: object) -> list[Deadline]:
         assert app is fake_app
+        assert db is fake_app.db
         calls.append("sync")
         return [
             sample_deadline("assign:1", course_id=12),
@@ -448,7 +438,7 @@ def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch)
     login(harness)
 
     async def fake_record_estimate(
-        app: AppContainer,
+        db: object,
         *,
         deadline_id: str,
         course_id: int,
@@ -456,7 +446,7 @@ def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch)
         breakdown: dict[str, float] | None = None,
         intention: str | None = None,
     ) -> EffortEstimate:
-        assert app is fake_app
+        assert db is fake_app.db
         assert deadline_id == "assign:1"
         assert course_id == 12
         assert predicted_hours == 3.5

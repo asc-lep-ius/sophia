@@ -9,9 +9,22 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from sophia.infra.engine import affected_rows
+from sophia.infra.schema import (
+    confidence_ratings,
+    deadline_cache,
+    effort_estimates,
+    lecture_downloads,
+    metacognition_log,
+    review_schedule,
+    topic_lecture_links,
+)
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 from sophia.domain.models import PlanItem, PlanItemType
 
@@ -22,21 +35,21 @@ COMPRESSION_HORIZON_DAYS = 30
 
 
 async def get_exam_for_course(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> datetime | None:
     """Return the nearest future exam date for a course, or None."""
-    now = datetime.now(UTC).isoformat()
-    cursor = await db.execute(
-        "SELECT due_at FROM deadline_cache "
-        "WHERE course_id = ? AND deadline_type = 'exam' AND due_at > ? "
-        "ORDER BY due_at ASC LIMIT 1",
-        (course_id, now),
+    due_at = await session.scalar(
+        select(deadline_cache.c.due_at)
+        .where(
+            deadline_cache.c.course_id == course_id,
+            deadline_cache.c.deadline_type == "exam",
+            deadline_cache.c.due_at > datetime.now(UTC).isoformat(),
+        )
+        .order_by(deadline_cache.c.due_at.asc())
+        .limit(1)
     )
-    row = await cursor.fetchone()
-    if row is None:
-        return None
-    return datetime.fromisoformat(row[0])
+    return None if due_at is None else datetime.fromisoformat(due_at)
 
 
 def cap_review_for_exam(
@@ -62,7 +75,7 @@ def cap_review_for_exam(
 
 
 async def compress_reviews_for_exam(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     exam_date: datetime,
 ) -> int:
@@ -76,23 +89,17 @@ async def compress_reviews_for_exam(
     if buffer <= now:
         return 0
 
-    cursor = await db.execute(
-        "SELECT topic, next_review_at FROM review_schedule "
-        "WHERE course_id = ? AND next_review_at > ?",
-        (course_id, buffer.isoformat()),
-    )
-    rows = list(await cursor.fetchall())
-
-    compressed = 0
-    for topic, _current_next in rows:
-        await db.execute(
-            "UPDATE review_schedule SET next_review_at = ? WHERE topic = ? AND course_id = ?",
-            (buffer.isoformat(), topic, course_id),
+    result = await session.execute(
+        update(review_schedule)
+        .where(
+            review_schedule.c.course_id == course_id,
+            review_schedule.c.next_review_at > buffer,
         )
-        compressed += 1
+        .values(next_review_at=buffer)
+    )
+    compressed = affected_rows(result)
 
     if compressed:
-        await db.commit()
         log.info(
             "reviews_compressed",
             course_id=course_id,
@@ -103,7 +110,7 @@ async def compress_reviews_for_exam(
     return compressed
 
 
-async def compress_all_courses(db: aiosqlite.Connection) -> dict[int, int]:
+async def compress_all_courses(session: AsyncSession) -> dict[int, int]:
     """Run compression for all courses with upcoming exams.
 
     Call this after `sophia deadlines sync`.
@@ -112,18 +119,23 @@ async def compress_all_courses(db: aiosqlite.Connection) -> dict[int, int]:
     now = datetime.now(UTC).isoformat()
     horizon = (datetime.now(UTC) + timedelta(days=COMPRESSION_HORIZON_DAYS)).isoformat()
 
-    cursor = await db.execute(
-        "SELECT DISTINCT course_id, due_at FROM deadline_cache "
-        "WHERE deadline_type = 'exam' AND due_at > ? AND due_at < ? "
-        "ORDER BY due_at ASC",
-        (now, horizon),
-    )
-    exams = list(await cursor.fetchall())
+    exams = (
+        await session.execute(
+            select(deadline_cache.c.course_id, deadline_cache.c.due_at)
+            .where(
+                deadline_cache.c.deadline_type == "exam",
+                deadline_cache.c.due_at > now,
+                deadline_cache.c.due_at < horizon,
+            )
+            .distinct()
+            .order_by(deadline_cache.c.due_at.asc())
+        )
+    ).all()
 
     results: dict[int, int] = {}
     for course_id, due_at_str in exams:
         exam_date = datetime.fromisoformat(due_at_str)
-        count = await compress_reviews_for_exam(db, course_id, exam_date)
+        count = await compress_reviews_for_exam(session, course_id, exam_date)
         if count > 0:
             results[course_id] = count
 
@@ -137,7 +149,7 @@ CONFIDENCE_BOOST_FACTOR = 1.5
 
 
 async def log_confidence_prediction(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     topic: str,
     confidence_rating: float,
@@ -150,49 +162,58 @@ async def log_confidence_prediction(
     The row's course_id column is deliberately left at its default: the scope
     lives in the domain string for confidence rows. Any future course filter
     over them must match on domain, not course_id — see
-    023_metacognition_course_backfill.sql, which backfills effort rows only.
+    the 023 tenancy backfill, which backfilled effort rows only.
     """
     domain = f"confidence:{course_id}"
-    now = datetime.now(UTC).isoformat()
-
-    await db.execute(
-        "INSERT OR REPLACE INTO metacognition_log "
-        "(domain, item_id, predicted, predicted_at) VALUES (?, ?, ?, ?)",
-        (domain, topic, confidence_rating, now),
+    statement = pg_insert(metacognition_log).values(
+        domain=domain,
+        item_id=topic,
+        predicted=confidence_rating,
+        predicted_at=datetime.now(UTC),
     )
-    await db.commit()
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[metacognition_log.c.domain, metacognition_log.c.item_id],
+            set_={
+                "predicted": statement.excluded.predicted,
+                "predicted_at": statement.excluded.predicted_at,
+                # A re-rating voids the old outcome; see record_estimate.
+                "actual": None,
+                "actual_at": None,
+            },
+        )
+    )
 
 
 async def log_confidence_actual(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
     topic: str,
     actual_score: float,
 ) -> None:
     """Record an actual exam/test score against a confidence prediction."""
     domain = f"confidence:{course_id}"
-    now = datetime.now(UTC).isoformat()
-
-    await db.execute(
-        "UPDATE metacognition_log SET actual = ?, actual_at = ? WHERE domain = ? AND item_id = ?",
-        (actual_score, now, domain, topic),
+    await session.execute(
+        update(metacognition_log)
+        .where(
+            metacognition_log.c.domain == domain,
+            metacognition_log.c.item_id == topic,
+        )
+        .values(actual=actual_score, actual_at=datetime.now(UTC))
     )
-    await db.commit()
 
 
 async def get_course_confidence(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> float | None:
     """Average normalized confidence (0-1) for a course, or None if no ratings."""
-    cursor = await db.execute(
-        "SELECT AVG(predicted) FROM confidence_ratings WHERE course_id = ?",
-        (course_id,),
+    average = await session.scalar(
+        select(func.avg(confidence_ratings.c.predicted)).where(
+            confidence_ratings.c.course_id == course_id,
+        )
     )
-    row = await cursor.fetchone()
-    if row is None or row[0] is None:
-        return None
-    return float(row[0])
+    return None if average is None else float(average)
 
 
 def confidence_priority_multiplier(confidence: float | None) -> float:
@@ -223,8 +244,19 @@ REVIEW_OVERDUE_BOOST_PER_DAY = 0.1
 CONFIDENCE_GAP_THRESHOLD = 0.5  # predicted < 0.5 (= 2.5/5 raw) is a gap
 
 
+async def _course_name(session: AsyncSession, course_id: int) -> str:
+    """Best-known display name for a course, falling back to its id."""
+    name = await session.scalar(
+        select(deadline_cache.c.course_name)
+        .where(deadline_cache.c.course_id == course_id)
+        .distinct()
+        .limit(1)
+    )
+    return name or f"Course {course_id}"
+
+
 async def build_plan_items(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     horizon_days: int = 14,
 ) -> list[PlanItem]:
     """Gather items from Chronos + Athena, score them, return sorted.
@@ -232,35 +264,35 @@ async def build_plan_items(
     Scoring is for SORTING, not prescribing. The student decides.
     """
     items: list[PlanItem] = []
-    items.extend(await _deadline_items(db, horizon_days))
-    items.extend(await _review_items(db))
-    items.extend(await _confidence_gap_items(db))
-    items.extend(await _missed_topic_items(db))
+    items.extend(await _deadline_items(session, horizon_days))
+    items.extend(await _review_items(session))
+    items.extend(await _confidence_gap_items(session))
+    items.extend(await _missed_topic_items(session))
     items.sort(key=lambda i: i.score, reverse=True)
     return items
 
 
 async def _deadline_items(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     horizon_days: int,
 ) -> list[PlanItem]:
     """Build PlanItems from upcoming deadlines with priority scores."""
     from sophia.services.chronos import compute_priority_score, get_deadlines, get_tracked_time
 
-    deadlines = await get_deadlines(db, horizon_days=horizon_days)
+    deadlines = await get_deadlines(session, horizon_days=horizon_days)
     items: list[PlanItem] = []
 
     for d in deadlines:
-        est_cursor = await db.execute(
-            "SELECT predicted_hours FROM effort_estimates "
-            "WHERE deadline_id = ? ORDER BY estimated_at DESC LIMIT 1",
-            (d.id,),
+        predicted = await session.scalar(
+            select(effort_estimates.c.predicted_hours)
+            .where(effort_estimates.c.deadline_id == d.id)
+            .order_by(effort_estimates.c.estimated_at.desc())
+            .limit(1)
         )
-        est_row = await est_cursor.fetchone()
-        est_hours = float(est_row[0]) if est_row else None
+        est_hours = float(predicted) if predicted is not None else None
 
-        tracked = await get_tracked_time(db, d.id)
-        confidence = await get_course_confidence(db, d.course_id)
+        tracked = await get_tracked_time(session, d.id)
+        confidence = await get_course_confidence(session, d.course_id)
         conf_mult = confidence_priority_multiplier(confidence)
         ps = compute_priority_score(d, est_hours, tracked, confidence_multiplier=conf_mult)
 
@@ -284,11 +316,11 @@ async def _deadline_items(
     return items
 
 
-async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
+async def _review_items(session: AsyncSession) -> list[PlanItem]:
     """Build PlanItems from due reviews."""
     from sophia.services.athena_review import get_due_reviews
 
-    reviews = await get_due_reviews(db)
+    reviews = await get_due_reviews(session)
     items: list[PlanItem] = []
 
     now = datetime.now(UTC)
@@ -297,7 +329,7 @@ async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
         overdue_days = max(0, (now - review_due).days)
         review_score = REVIEW_BASE_WEIGHT + (overdue_days * REVIEW_OVERDUE_BOOST_PER_DAY)
 
-        exam_date = await get_exam_for_course(db, r.course_id)
+        exam_date = await get_exam_for_course(session, r.course_id)
         exam_str = ""
         exam_boost = 1.0
         if exam_date:
@@ -307,12 +339,7 @@ async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
                 review_score *= exam_boost
                 exam_str = f" — exam in {days_to_exam}d"
 
-        name_cursor = await db.execute(
-            "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
-            (r.course_id,),
-        )
-        name_row = await name_cursor.fetchone()
-        course_name = name_row[0] if name_row else f"Course {r.course_id}"
+        course_name = await _course_name(session, r.course_id)
 
         detail = f"review #{r.review_count + 1}, last score: "
         detail += f"{r.score_at_last_review:.0%}" if r.score_at_last_review else "none"
@@ -338,10 +365,11 @@ async def _review_items(db: aiosqlite.Connection) -> list[PlanItem]:
     return items
 
 
-async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
+async def _confidence_gap_items(session: AsyncSession) -> list[PlanItem]:
     """Build PlanItems from low-confidence topics across all courses."""
-    cursor = await db.execute("SELECT DISTINCT course_id FROM confidence_ratings")
-    course_ids = [row[0] for row in await cursor.fetchall()]
+    course_ids = list(
+        (await session.scalars(select(confidence_ratings.c.course_id).distinct())).all()
+    )
 
     items: list[PlanItem] = []
     now = datetime.now(UTC)
@@ -349,10 +377,10 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
     for course_id in course_ids:
         from sophia.services.athena_confidence import get_confidence_ratings
 
-        ratings = await get_confidence_ratings(db, course_id)
+        ratings = await get_confidence_ratings(session, course_id)
         low_ratings = [r for r in ratings if r.predicted < CONFIDENCE_GAP_THRESHOLD]
 
-        exam_date = await get_exam_for_course(db, course_id)
+        exam_date = await get_exam_for_course(session, course_id)
         exam_boost = 1.0
         exam_str = ""
         if exam_date:
@@ -361,12 +389,7 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
                 exam_boost = 2.0
                 exam_str = f" — exam in {days_to_exam}d"
 
-        name_cursor = await db.execute(
-            "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
-            (course_id,),
-        )
-        name_row = await name_cursor.fetchone()
-        course_name = name_row[0] if name_row else f"Course {course_id}"
+        course_name = await _course_name(session, course_id)
 
         for rating in low_ratings:
             confidence_deficit = 1 - rating.predicted
@@ -392,7 +415,7 @@ async def _confidence_gap_items(db: aiosqlite.Connection) -> list[PlanItem]:
     return items
 
 
-async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
+async def _missed_topic_items(session: AsyncSession) -> list[PlanItem]:
     """Build PlanItems from topics only covered in missed lectures.
 
     Pedagogical rationale: topics the student was never exposed to are the most
@@ -401,10 +424,15 @@ async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
     """
     from sophia.services.hermes_manage import get_catch_up_info
 
-    cursor = await db.execute(
-        "SELECT DISTINCT module_id FROM lecture_downloads WHERE missed_at IS NOT NULL",
+    module_ids = list(
+        (
+            await session.scalars(
+                select(lecture_downloads.c.module_id)
+                .where(lecture_downloads.c.missed_at.is_not(None))
+                .distinct()
+            )
+        ).all()
     )
-    module_ids = [row[0] for row in await cursor.fetchall()]
     if not module_ids:
         return []
 
@@ -412,7 +440,7 @@ async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
     now = datetime.now(UTC)
 
     for module_id in module_ids:
-        info = await get_catch_up_info(db, module_id)
+        info = await get_catch_up_info(session, module_id)
         if not info.missed_only_topics:
             continue
 
@@ -420,16 +448,18 @@ async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
         if not missed_episode_ids:
             continue
 
-        placeholders = ",".join("?" * len(missed_episode_ids))
-        cursor = await db.execute(
-            "SELECT DISTINCT course_id FROM topic_lecture_links"
-            f" WHERE episode_id IN ({placeholders})",  # noqa: S608
-            missed_episode_ids,
+        course_ids = list(
+            (
+                await session.scalars(
+                    select(topic_lecture_links.c.course_id)
+                    .where(topic_lecture_links.c.episode_id.in_(missed_episode_ids))
+                    .distinct()
+                )
+            ).all()
         )
-        course_ids = [row[0] for row in await cursor.fetchall()]
 
         for course_id in course_ids:
-            exam_date = await get_exam_for_course(db, course_id)
+            exam_date = await get_exam_for_course(session, course_id)
             exam_boost = 1.0
             exam_str = ""
             if exam_date:
@@ -438,12 +468,7 @@ async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
                     exam_boost = 2.0
                     exam_str = f" — exam in {days_to_exam}d"
 
-            name_cursor = await db.execute(
-                "SELECT DISTINCT course_name FROM deadline_cache WHERE course_id = ? LIMIT 1",
-                (course_id,),
-            )
-            name_row = await name_cursor.fetchone()
-            course_name = name_row[0] if name_row else f"Course {course_id}"
+            course_name = await _course_name(session, course_id)
 
             for topic in info.missed_only_topics:
                 score = MISSED_TOPIC_BASE_WEIGHT * exam_boost
@@ -469,7 +494,7 @@ async def _missed_topic_items(db: aiosqlite.Connection) -> list[PlanItem]:
 
 
 async def get_scaffold_hint(
-    db: aiosqlite.Connection,
+    session: AsyncSession,
     course_id: int,
 ) -> str | None:
     """Compare Athena scaffold (study maturity) with Chronos scaffold
@@ -482,10 +507,14 @@ async def get_scaffold_hint(
     from sophia.services.athena_study import get_scaffold_level as athena_scaffold_level
     from sophia.services.chronos import get_scaffold_level as chronos_scaffold_level
 
-    explanation_count = await get_explanation_count(db, course_id)
+    explanation_count = await get_explanation_count(session, course_id)
     athena_level = athena_scaffold_level(explanation_count)
 
-    chronos_level = await chronos_scaffold_level(db, DeadlineType.EXAM, course_id=course_id)
+    chronos_level = await chronos_scaffold_level(
+        session,
+        DeadlineType.EXAM,
+        course_id=course_id,
+    )
 
     athena_open = athena_level == 0
     chronos_open = chronos_level == EstimationScaffold.OPEN

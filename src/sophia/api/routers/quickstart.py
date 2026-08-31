@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
     get_app_container,
+    request_session,
     require_csrf_learning_path_scope,
     require_effective_learning_path_id,
 )
@@ -25,6 +26,7 @@ from sophia.api.schemas.quickstart import (
     QuickstartTopicResponse,
 )
 from sophia.api.schemas.topics import TopicOrigin
+from sophia.api.transactions import TransactionalRoute
 from sophia.domain.models import Course, Deadline, TopicMapping, TopicSource  # noqa: TC001
 from sophia.services.quickstart import (
     QuickstartOverview,
@@ -34,7 +36,7 @@ from sophia.services.quickstart import (
     save_manual_topics,
 )
 
-router = APIRouter(tags=["quickstart"])
+router = APIRouter(tags=["quickstart"], route_class=TransactionalRoute)
 
 _TOPIC_ORIGIN_BY_SOURCE = {
     TopicSource.LECTURE: TopicOrigin.TRANSCRIPT,
@@ -58,6 +60,7 @@ async def get_quickstart_overview_route(
     effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     overview = await get_quickstart_overview(
         get_app_container(request),
+        await request_session(request),
         course_id=effective_learning_path_id,
     )
     if not overview.courses:
@@ -77,7 +80,7 @@ async def save_quickstart_confidence(
 ) -> QuickstartConfidenceResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     saved_count = await save_initial_confidence(
-        get_app_container(request),
+        await request_session(request),
         course_id=payload.learning_path_id,
         ratings=payload.ratings,
     )
@@ -99,7 +102,7 @@ async def save_quickstart_manual_topics(
 ) -> QuickstartManualTopicsResponse:
     await require_csrf_learning_path_scope(request, payload.learning_path_id)
     topics = await save_manual_topics(
-        get_app_container(request),
+        await request_session(request),
         course_id=payload.learning_path_id,
         topics=payload.topics,
     )
@@ -120,7 +123,7 @@ async def get_quickstart_session_count(
 ) -> QuickstartSessionCountResponse:
     effective_learning_path_id = await require_effective_learning_path_id(request, learning_path_id)
     completed_session_count = await get_completed_session_count(
-        get_app_container(request),
+        await request_session(request),
         course_id=effective_learning_path_id,
     )
     return QuickstartSessionCountResponse(

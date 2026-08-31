@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +17,11 @@ from sophia.gui.services.quickstart_service import (
     save_manual_topics,
 )
 
+from ..._sql import exec_sql
+
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.infra.di import AppContainer
 
 
@@ -104,19 +108,32 @@ class TestGetNearestDeadline:
 
 class TestGetCompletedSessionCount:
     @pytest.mark.asyncio
-    async def test_returns_count(self, mock_container: AppContainer) -> None:
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=(3,))
-        mock_container.db.execute = AsyncMock(return_value=mock_cursor)
+    async def test_returns_count(
+        self,
+        real_db_container: AppContainer,
+        db: AsyncSession,
+    ) -> None:
+        for index in range(3):
+            await exec_sql(
+                db,
+                "INSERT INTO study_sessions (course_id, topic, completed_at) VALUES (?, ?, ?)",
+                (42, f"Topic {index}", "2026-01-01T10:00:00+00:00"),
+            )
 
-        result = await get_completed_session_count(mock_container)
-        assert result == 3
+        assert await get_completed_session_count(real_db_container) == 3
 
     @pytest.mark.asyncio
-    async def test_error_returns_zero(self, mock_container: AppContainer) -> None:
-        mock_container.db.execute = AsyncMock(side_effect=RuntimeError("db error"))
-        result = await get_completed_session_count(mock_container)
-        assert result == 0
+    async def test_error_returns_zero(
+        self,
+        mock_container: AppContainer,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """The wrapper swallows failures so the dashboard still renders."""
+        monkeypatch.setattr(
+            mock_container, "session", MagicMock(side_effect=RuntimeError("db error"))
+        )
+
+        assert await get_completed_session_count(mock_container) == 0
 
 
 # ---------------------------------------------------------------------------

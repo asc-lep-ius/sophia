@@ -125,8 +125,7 @@ def read_rows(
     """Read one source table, coerced to the types the Postgres columns declare."""
     columns = [column.name for column in table.columns]
     quoted = ", ".join(f'"{name}"' for name in columns)
-    order = ", ".join(f'"{name}"' for name in _ordering_columns(table))
-    cursor = connection.execute(f'SELECT {quoted} FROM "{table.name}" ORDER BY {order}')  # noqa: S608
+    cursor = connection.execute(f'SELECT {quoted} FROM "{table.name}"')  # noqa: S608
     return [
         {column.name: coerce_value(row[column.name], column) for column in table.columns}
         for row in cursor.fetchall()
@@ -150,11 +149,21 @@ def coerce_value(value: object, column: Column[object]) -> object:
 
 
 def checksum(rows: Sequence[dict[str, object]], table: Table) -> str:
-    """Hash a table's rows from a canonical, engine-independent representation."""
+    """Hash a table's rows from a canonical, engine-independent representation.
+
+    The rendered rows are sorted here rather than by either engine. Sorting in
+    SQL would compare text under SQLite's BINARY collation on one side and the
+    cluster's collation (en_US.utf8 in the shipped image) on the other, so any
+    table with a text key would checksum differently after a correct transfer.
+    A relational table has no inherent row order, so ordering is not a property
+    worth proving — the multiset of rows is.
+    """
     digest = hashlib.sha256()
     column_names = [column.name for column in table.columns]
-    for row in rows:
-        line = FIELD_SEPARATOR.join(canonical(row.get(name)) for name in column_names)
+    lines = sorted(
+        FIELD_SEPARATOR.join(canonical(row.get(name)) for name in column_names) for row in rows
+    )
+    for line in lines:
         digest.update(line.encode())
         digest.update(ROW_SEPARATOR.encode())
     return digest.hexdigest()
@@ -192,6 +201,10 @@ async def transfer(
         if not dry_run and rows:
             await _write_rows(engine, table, rows, batch_size)
 
+        # A dry run writes nothing, so there is no target to compare against:
+        # the target figures below echo the source and TableReport.ok is
+        # vacuously true. Dry-run previews volume; only --mode verify proves
+        # anything. _print_report says so in the operator's output.
         target_rows = [] if dry_run else await _read_target(engine, table)
         reports.append(
             TableReport(
@@ -266,16 +279,9 @@ async def _write_rows(
 
 
 async def _read_target(engine: AsyncEngine, table: Table) -> list[dict[str, object]]:
-    order = [table.columns[name] for name in _ordering_columns(table)]
     async with engine.connect() as connection:
-        result = await connection.execute(select(table).order_by(*order))
+        result = await connection.execute(select(table))
         return [dict(row) for row in result.mappings()]
-
-
-def _ordering_columns(table: Table) -> list[str]:
-    """Order rows identically on both sides so checksums are comparable."""
-    primary_key = [column.name for column in table.primary_key.columns]
-    return primary_key or [column.name for column in table.columns]
 
 
 def _sequence_column(table: Table) -> Column[object] | None:

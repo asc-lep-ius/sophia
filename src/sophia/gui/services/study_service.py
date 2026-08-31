@@ -10,8 +10,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import structlog
+from sqlalchemy import select
 
 from sophia.domain.errors import TopicExtractionError
+from sophia.infra.schema import lecture_downloads, topic_lecture_links
 from sophia.services.athena_confidence import (
     get_blind_spots,
     get_confidence_ratings,
@@ -34,7 +36,7 @@ from sophia.services.athena_study import (
 )
 
 if TYPE_CHECKING:
-    import aiosqlite
+    from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.domain.models import DifficultyLevel, StudentFlashcard, StudySession
     from sophia.infra.di import AppContainer
@@ -46,7 +48,8 @@ _FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
 
 async def _determine_difficulty(app: AppContainer, course_id: int, topic: str) -> DifficultyLevel:
     """Look up the latest confidence rating for *topic* and map to difficulty."""
-    ratings = await get_confidence_ratings(app.db, course_id)
+    async with app.session() as db:
+        ratings = await get_confidence_ratings(db, course_id)
     topic_rating = next((r for r in ratings if r.topic == topic), None)
     return get_topic_difficulty_level(topic_rating.predicted if topic_rating else None)
 
@@ -113,29 +116,28 @@ _NOVEL_CONFIDENCE_THRESHOLD = rating_to_score(1)
 
 
 async def _get_missed_lecture_topics(
-    db: aiosqlite.Connection,
+    db: AsyncSession,
     course_id: int,
 ) -> list[str]:
     """Topics only covered in missed lectures (zero-exposure gaps)."""
-    cursor = await db.execute(
-        "SELECT DISTINCT tll.topic "
-        "FROM topic_lecture_links tll "
-        "JOIN lecture_downloads ld ON ld.episode_id = tll.episode_id "
-        "WHERE tll.course_id = ? AND ld.missed_at IS NOT NULL",
-        (course_id,),
-    )
-    missed = {row[0] for row in await cursor.fetchall()}
 
-    cursor = await db.execute(
-        "SELECT DISTINCT tll.topic "
-        "FROM topic_lecture_links tll "
-        "JOIN lecture_downloads ld ON ld.episode_id = tll.episode_id "
-        "WHERE tll.course_id = ? AND ld.missed_at IS NULL",
-        (course_id,),
-    )
-    attended = {row[0] for row in await cursor.fetchall()}
+    async def topics_where(missed: bool) -> set[str]:
+        missed_at = lecture_downloads.c.missed_at
+        query = (
+            select(topic_lecture_links.c.topic)
+            .join(
+                lecture_downloads,
+                lecture_downloads.c.episode_id == topic_lecture_links.c.episode_id,
+            )
+            .where(
+                topic_lecture_links.c.course_id == course_id,
+                missed_at.is_not(None) if missed else missed_at.is_(None),
+            )
+            .distinct()
+        )
+        return set((await db.scalars(query)).all())
 
-    return sorted(missed - attended)
+    return sorted(await topics_where(missed=True) - await topics_where(missed=False))
 
 
 async def select_interleave_topics(
@@ -148,39 +150,39 @@ async def select_interleave_topics(
 
     Priority: blind spots → missed-lecture → due reviews → all course topics.
     """
-    db = app.db
     topics: list[str] = []
 
-    # 1. Blind spots (overconfident topics)
-    blind_spots = await get_blind_spots(db, course_id)
-    topics.extend(r.topic for r in blind_spots)
+    async with app.session() as db:
+        # 1. Blind spots (overconfident topics)
+        blind_spots = await get_blind_spots(db, course_id)
+        topics.extend(r.topic for r in blind_spots)
 
-    # 2. Missed-lecture topics
-    if len(topics) < max_topics:
-        missed = await _get_missed_lecture_topics(db, course_id)
-        for t in missed:
-            if t not in topics:
-                topics.append(t)
-            if len(topics) >= max_topics:
-                break
+        # 2. Missed-lecture topics
+        if len(topics) < max_topics:
+            missed = await _get_missed_lecture_topics(db, course_id)
+            for t in missed:
+                if t not in topics:
+                    topics.append(t)
+                if len(topics) >= max_topics:
+                    break
 
-    # 3. Due reviews
-    if len(topics) < max_topics:
-        due = await get_due_reviews(db, course_id)
-        for r in due:
-            if r.topic not in topics:
-                topics.append(r.topic)
-            if len(topics) >= max_topics:
-                break
+        # 3. Due reviews
+        if len(topics) < max_topics:
+            due = await get_due_reviews(db, course_id)
+            for r in due:
+                if r.topic not in topics:
+                    topics.append(r.topic)
+                if len(topics) >= max_topics:
+                    break
 
-    # 4. All course topics (fill when < 2 selected)
-    if len(topics) < 2:
-        all_topics = await get_course_topics(app, course_id)
-        for tm in all_topics:
-            if tm.topic not in topics:
-                topics.append(tm.topic)
-            if len(topics) >= max_topics:
-                break
+        # 4. All course topics (fill when < 2 selected)
+        if len(topics) < 2:
+            all_topics = await get_course_topics(db, course_id)
+            for tm in all_topics:
+                if tm.topic not in topics:
+                    topics.append(tm.topic)
+                if len(topics) >= max_topics:
+                    break
 
     return topics[:max_topics]
 
@@ -191,10 +193,12 @@ async def check_novel_topic(
     topic: str,
 ) -> bool:
     """Return True if student has zero prior sessions AND no confidence > baseline."""
-    sessions = await get_study_sessions(app.db, course_id, topic)
+    async with app.session() as db:
+        sessions = await get_study_sessions(db, course_id, topic)
     if sessions:
         return False
-    ratings = await get_confidence_ratings(app.db, course_id)
+    async with app.session() as db:
+        ratings = await get_confidence_ratings(db, course_id)
     topic_rating = next((r for r in ratings if r.topic == topic), None)
     return not (topic_rating and topic_rating.predicted > _NOVEL_CONFIDENCE_THRESHOLD)
 
@@ -205,7 +209,8 @@ async def start_session(
     topic: str,
 ) -> StudySession:
     """Start a new study session."""
-    return await start_study_session(app.db, course_id, topic)
+    async with app.session() as db:
+        return await start_study_session(db, course_id, topic)
 
 
 async def complete_session(
@@ -216,7 +221,8 @@ async def complete_session(
     post_score: float,
 ) -> None:
     """Record pre/post scores and mark session complete."""
-    await complete_study_session(app.db, session_id, pre_score, post_score)
+    async with app.session() as db:
+        await complete_study_session(db, session_id, pre_score, post_score)
 
 
 async def save_study_flashcard(
@@ -227,7 +233,8 @@ async def save_study_flashcard(
     back: str,
 ) -> StudentFlashcard:
     """Save a student-authored flashcard from a study session."""
-    return await save_flashcard(app.db, course_id, topic, front, back)
+    async with app.session() as db:
+        return await save_flashcard(db, course_id, topic, front, back)
 
 
 async def finalize_calibration(
@@ -237,8 +244,9 @@ async def finalize_calibration(
     actual_score: float,
 ) -> None:
     """Update actual score and recalculate topic calibration."""
-    await update_actual_score(app.db, topic, course_id, actual_score)
-    await update_topic_calibration(app.db, course_id, topic)
+    async with app.session() as db:
+        await update_actual_score(db, topic, course_id, actual_score)
+        await update_topic_calibration(db, course_id, topic)
 
 
 def compute_score(answers: dict[str, str], questions: list[str]) -> float:

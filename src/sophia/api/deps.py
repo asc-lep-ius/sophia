@@ -6,16 +6,20 @@ import secrets
 from typing import TYPE_CHECKING, cast
 
 from fastapi import HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from sophia.api.context import get_request_context
 from sophia.api.schemas.common import CohortScope, LearningPathScope, OrgScope, RoleScope, UserScope
 from sophia.api.sessions import InvalidSessionToken, SessionCore, SessionRecord
+from sophia.api.transactions import get_transaction_stack
 from sophia.domain.errors import AuthError
+from sophia.infra.org_context import DEFAULT_ORG_ID
 
 if TYPE_CHECKING:
     from sophia.config import Settings
     from sophia.infra.di import AppContainer
 
+_SESSION_STATE_ATTR = "sophia_db_session"
 _SESSION_RECORD_STATE_ATTR = "sophia_session_record"
 _SESSION_LOADED_STATE_ATTR = "sophia_session_loaded"
 _REQUESTED_WITH_VALUES = frozenset({"fetch", "xmlhttprequest"})
@@ -43,6 +47,27 @@ def get_app_container(request: Request) -> AppContainer:
         msg = "app container is not configured"
         raise RuntimeError(msg)
     return cast("AppContainer", app_container)
+
+
+async def request_session(request: Request) -> AsyncSession:
+    """Return the one session this request runs in, opening it on first use.
+
+    The session is entered into the request's transaction stack, which
+    :class:`~sophia.api.transactions.TransactionalRoute` closes inside the route
+    handler. Two dependencies asking for a session in the same request get the
+    same one, so the request stays a single transaction.
+    """
+    existing = getattr(request.state, _SESSION_STATE_ATTR, None)
+    if isinstance(existing, AsyncSession):
+        return existing
+
+    context = get_request_context()
+    org_id = context.org_id if context is not None else DEFAULT_ORG_ID
+    session = await get_transaction_stack(request).enter_async_context(
+        get_app_container(request).session(org_id=org_id),
+    )
+    setattr(request.state, _SESSION_STATE_ATTR, session)
+    return session
 
 
 async def optional_session_record(request: Request) -> SessionRecord | None:
