@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     elaboration_min_chars: int = Field(default=80, ge=0)
     elaboration_min_prompt_dwell_ms: int = Field(default=5000, ge=0)
 
+    # Study realtime (SSE)
+    sse_heartbeat_interval_seconds: int = Field(default=15, gt=0)
+    sse_event_retention_days: int = Field(default=3, gt=0)
+    sse_max_streams_per_user: int = Field(default=4, gt=0)
+    sse_queue_maxsize: int = Field(default=64, gt=0)
+    sse_replay_batch_size: int = Field(default=200, gt=0)
+
     # Observability
     log_format: Literal["json", "console"] = "json"
     log_debug: bool = False

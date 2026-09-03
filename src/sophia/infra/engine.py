@@ -36,6 +36,15 @@ _SET_ORG_SQL = text("SELECT set_config(:setting, :org_id, true)")
 _PING_SQL = text("SELECT 1")
 
 
+def asyncpg_dsn(database_url: str) -> str:
+    """Convert the SQLAlchemy ``postgresql+asyncpg://`` URL to a plain asyncpg DSN.
+
+    ``asyncpg.connect`` speaks the bare ``postgresql://`` scheme; the driver
+    suffix is a SQLAlchemy-ism it does not understand.
+    """
+    return database_url.replace("postgresql+asyncpg://", "postgresql://", 1)
+
+
 def create_engine(
     database_url: str,
     *,
