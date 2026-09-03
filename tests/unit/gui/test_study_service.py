@@ -508,28 +508,6 @@ class TestSaveStudyFlashcard:
         mock_save.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC, "Q?", "A.")
 
 
-# -- finalize_calibration ---------------------------------------------------
-
-
-class TestFinalizeCalibration:
-    """Tests for finalize_calibration."""
-
-    @pytest.mark.asyncio
-    async def test_updates_actual_score_and_calibration(
-        self, mock_container: AppContainer, mock_db_session: AsyncMock
-    ) -> None:
-        from sophia.gui.services.study_service import finalize_calibration
-
-        with (
-            patch(f"{_PATCH_BASE}.update_actual_score", new_callable=AsyncMock) as mock_actual,
-            patch(f"{_PATCH_BASE}.update_topic_calibration", new_callable=AsyncMock) as mock_calib,
-        ):
-            await finalize_calibration(mock_container, COURSE_ID, TOPIC, 0.75)
-
-        mock_actual.assert_awaited_once_with(mock_db_session, TOPIC, COURSE_ID, 0.75)
-        mock_calib.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC)
-
-
 # -- format_improvement ------------------------------------------------------
 
 

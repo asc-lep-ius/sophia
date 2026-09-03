@@ -16,11 +16,15 @@ from sophia.domain.learning import (
     LearningEventType,
     QuestionKind,
 )
-from sophia.infra.schema import question_attempts
+from sophia.infra.schema import confidence_ratings, question_attempts
 from sophia.services.athena_session import start_study_session
 from sophia.services.engagement_policy import evaluate_elaboration_policy
 from sophia.services.learning_events import ingest_events
-from sophia.services.study_questions import ELABORATION_REQUIRED_EVENTS, _insert_question
+from sophia.services.study_questions import (
+    ELABORATION_REQUIRED_EVENTS,
+    SELF_RATING_SCORES,
+    _insert_question,
+)
 
 from ._db_harness import db_harness, learning_path_tenant
 
@@ -242,3 +246,103 @@ def test_policy_evaluation_reports_every_missing_requirement() -> None:
     assert outcome.met is False
     assert outcome.missing_event_types == ELABORATION_REQUIRED_EVENTS
     assert outcome.prompt_dwell_ms == 0
+
+
+async def test_duplicate_attempt_request_id_is_idempotent(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            session_id = await seed_session(session)
+            await ingest_events(
+                session,
+                [trace_event(*event) for event in COMPLETE_TRACE],
+                max_future_skew_seconds=60,
+            )
+        await harness.login()
+
+        first = await submit_answer(harness, session_id=session_id, request_id="dup-1")
+        retry = await submit_answer(harness, session_id=session_id, request_id="dup-1")
+        stored = await attempt_count(harness)
+
+    assert first.status_code == 200
+    assert retry.status_code == 200
+    assert first.json() == retry.json()
+    assert stored == 1
+
+
+async def test_attempt_rejects_a_session_owned_by_another_learner(
+    clean_engine: AsyncEngine,
+) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            session_id = await seed_session(session, user_id="somebody-else")
+        await harness.login("learner")
+
+        response = await submit_answer(harness, session_id=session_id)
+        stored = await attempt_count(harness)
+
+    assert response.status_code == 404
+    assert stored == 0
+
+
+async def test_attempt_score_reaches_only_the_grading_learners_own_prediction(
+    clean_engine: AsyncEngine,
+) -> None:
+    """A graded attempt must update the submitting learner's own most-recent
+    prediction for the topic, never another learner's — confidence_ratings has
+    no per-session key, only (topic, course_id, user_id)."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            await seed_question(session)
+            session_id = await seed_session(session)
+            await ingest_events(
+                session,
+                [trace_event(*event) for event in COMPLETE_TRACE],
+                max_future_skew_seconds=60,
+            )
+        await harness.login("learner")
+
+        # Two learners each predict the same topic before either is graded.
+        own_prediction = await harness.client.post(
+            "/api/study/predictions",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "session_id": session_id,
+                "topic": "Graphs",
+                "rating": 4,
+                "request_id": "pred-learner",
+            },
+            headers=harness.csrf_headers(),
+        )
+        assert own_prediction.status_code == 200
+
+        async with harness.seed() as session:
+            other_session_id = await seed_session(session, user_id="other-learner")
+            await session.execute(
+                confidence_ratings.insert().values(
+                    topic="Graphs",
+                    course_id=LEARNING_PATH_ID,
+                    predicted=0.5,
+                    session_id=other_session_id,
+                    user_id="other-learner",
+                    request_id="pred-other",
+                )
+            )
+
+        response = await submit_answer(harness, session_id=session_id, self_rating=1)
+        assert response.status_code == 200
+
+        async with harness.seed() as session:
+            rows = (
+                await session.execute(
+                    select(
+                        confidence_ratings.c.user_id,
+                        confidence_ratings.c.actual,
+                    ).where(confidence_ratings.c.topic == "Graphs")
+                )
+            ).all()
+
+    by_user = {row.user_id: row.actual for row in rows}
+    assert by_user["learner"] == pytest.approx(SELF_RATING_SCORES[1])
+    assert by_user["other-learner"] is None

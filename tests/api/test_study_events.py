@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING, cast
 
+import anyio
 import pytest
 
 from sophia.api.routers.study_events import _event_stream
@@ -326,3 +327,97 @@ def _counter_value(metrics_text: str, series: str) -> float:
         if line.startswith(series):
             return float(line.rsplit(" ", 1)[-1])
     return 0.0
+
+
+async def test_generator_cleanup_runs_under_real_cancellation(clean_engine: AsyncEngine) -> None:
+    """is_disconnected()-based stopping (used by the other tests here) never
+    exercises the CancelledError path a real client disconnect takes under
+    uvicorn/anyio — a cancel scope hitting an unshielded finally block can
+    skip everything after its first await. Drives the generator inside a real
+    cancel scope instead, matching that path."""
+    async with db_harness(
+        clean_engine,
+        tenant=learning_path_tenant(LEARNING_PATH_ID),
+        settings_overrides=_FAST_SETTINGS,
+    ) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+
+        before = await harness.client.get("/api/metrics")
+
+        agen = _event_stream(
+            cast("AppContainer", harness.container),
+            cast("Request", FakeSSERequest()),
+            session_id=session_id,
+            user_id="learner",
+            org_id="tu-wien",
+            settings=harness.settings,
+        )
+
+        async def consume() -> None:
+            async for _frame in agen:
+                pass
+
+        with anyio.move_on_after(5):
+            async with anyio.create_task_group() as task_group:
+                task_group.start_soon(consume)
+                await asyncio.sleep(0.3)
+                task_group.cancel_scope.cancel()
+
+        after = await harness.client.get("/api/metrics")
+
+    before_open = _counter_value(before.text, 'sse_connections_open{stream="study"}')
+    after_open = _counter_value(after.text, 'sse_connections_open{stream="study"}')
+    assert after_open == before_open
+
+    before_disconnects = _counter_value(
+        before.text, 'sse_disconnect_total{reason="client",stream="study"}'
+    )
+    after_disconnects = _counter_value(
+        after.text, 'sse_disconnect_total{reason="client",stream="study"}'
+    )
+    assert after_disconnects == before_disconnects + 1
+
+
+async def test_generator_ignores_notifications_for_other_sessions(
+    clean_engine: AsyncEngine,
+) -> None:
+    """A NOTIFY for a different session must not wake this stream — a global
+    channel that every stream listens to would otherwise turn every learner's
+    submission into a DB round trip (and, past the queue bound, a forced
+    disconnect) for every *other* open stream in the deployment."""
+    async with db_harness(
+        clean_engine,
+        tenant=learning_path_tenant(LEARNING_PATH_ID),
+        settings_overrides={"sse_heartbeat_interval_seconds": 30, "sse_queue_maxsize": 4},
+    ) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+            other_session_id = await seed_session(session, user_id="other")
+
+        request = FakeSSERequest()
+        agen = _event_stream(
+            cast("AppContainer", harness.container),
+            cast("Request", request),
+            session_id=session_id,
+            user_id="learner",
+            org_id="tu-wien",
+            settings=harness.settings,
+        )
+
+        async def push_to_other_session() -> None:
+            await asyncio.sleep(0.3)
+            async with harness.seed() as session:
+                await append_event(
+                    session,
+                    session_id=other_session_id,
+                    course_id=LEARNING_PATH_ID,
+                    actor_id="other",
+                    event_type="unrelated",
+                    payload={},
+                )
+
+        pusher = asyncio.create_task(push_to_other_session())
+        with pytest.raises(TimeoutError):
+            await collect_until(agen, "event:", timeout=1.5)
+        await pusher

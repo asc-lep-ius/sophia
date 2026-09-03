@@ -7,8 +7,10 @@ import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
+from sophia.api.schemas.study import StudyFlashcardRequest
 from sophia.domain.models import FlashcardSource
 from sophia.infra.schema import (
     confidence_ratings,
@@ -22,6 +24,8 @@ from sophia.services.athena_session import save_flashcard, start_study_session
 from ._db_harness import db_harness, learning_path_tenant
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from sqlalchemy import Table
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
@@ -272,6 +276,54 @@ async def test_flashcard_without_session_saves_unconditionally_as_before(
     assert second.status_code == 200
     assert first.json()["flashcard"]["id"] != second.json()["flashcard"]["id"]
     assert stored == 2
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"session_id": 1},
+        {"request_id": "req-1"},
+    ],
+)
+def test_flashcard_request_rejects_half_of_the_idempotency_pair(
+    overrides: dict[str, Any],
+) -> None:
+    with pytest.raises(ValidationError, match="session_id and request_id"):
+        StudyFlashcardRequest(
+            learning_path_id=LEARNING_PATH_ID,
+            topic="Graphs",
+            front="Q?",
+            back="A.",
+            **overrides,
+        )
+
+
+async def test_flashcard_rejects_session_id_given_without_request_id(
+    clean_engine: AsyncEngine,
+) -> None:
+    """Half the idempotency pair must not silently fall back to the
+    non-idempotent path — that's the request the client actually made."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+        await harness.login()
+
+        response = await harness.client.post(
+            "/api/study/flashcards",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "topic": "Graphs",
+                "front": "Q?",
+                "back": "A.",
+                "session_id": session_id,
+            },
+            headers=harness.csrf_headers(),
+        )
+
+    # The error envelope redacts field-level validation detail by design
+    # (see request.validation_failed elsewhere in this suite) — status code
+    # is the only thing to assert at this layer.
+    assert response.status_code == 422
 
 
 async def test_flashcard_with_session_is_idempotent(clean_engine: AsyncEngine) -> None:

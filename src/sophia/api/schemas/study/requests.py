@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from sophia.api.schemas.common import ApiModel
 
@@ -43,6 +44,13 @@ class StudyFlashcardRequest(ApiModel):
     source: StudyFlashcardSource = StudyFlashcardSource.STUDY
     session_id: int | None = Field(default=None, gt=0)
     request_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def _session_and_request_id_travel_together(self) -> Self:
+        if (self.session_id is None) != (self.request_id is None):
+            msg = "session_id and request_id must be given together, or not at all"
+            raise ValueError(msg)
+        return self
 
 
 class StudyQuestionRequest(ApiModel):

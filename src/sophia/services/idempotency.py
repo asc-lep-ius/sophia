@@ -52,6 +52,12 @@ async def insert_or_fetch_row(
     if inserted is not None:
         return inserted, True
 
+    # Not filtered by org_id: nothing in this codebase sets it explicitly on
+    # insert (every row takes the column's own "default" server_default), and
+    # the session-level app.org_id Postgres setting is a separate, currently
+    # unrelated concept (still "local" everywhere — see infra/org_context.py).
+    # Filtering here against either would only produce a mismatch, not real
+    # tenant isolation; session_id already disambiguates uniquely regardless.
     existing = (
         await session.execute(
             select(table).where(

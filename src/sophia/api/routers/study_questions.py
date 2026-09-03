@@ -72,7 +72,7 @@ async def generate_questions(
     request: Request,
     lang: LanguageOverrideQuery = None,
 ) -> StudyQuestionListResponse:
-    await require_csrf_learning_path_scope(request, payload.learning_path_id)
+    session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
     app_container = get_app_container(request)
     db = await request_session(request)
     settings = get_settings(request)
@@ -94,6 +94,7 @@ async def generate_questions(
             min_elaboration_chars=settings.elaboration_min_chars,
             min_prompt_dwell_ms=settings.elaboration_min_prompt_dwell_ms,
         ),
+        user_id=session.user.id,
     )
     provenance = await get_provenance_map(
         db,
@@ -157,7 +158,8 @@ async def submit_attempt(
             db,
             question.topic,
             question.course_id,
-            result.attempt.score or 0.0,
+            result.attempt.score if result.attempt.score is not None else 0.0,
+            user_id=session.user.id,
         )
         await append_event(
             db,

@@ -93,13 +93,17 @@ async def generate_and_store_questions(
     count: int,
     content_language: ContentLanguage,
     policy: ElaborationPolicy,
+    user_id: str | None = None,
 ) -> list[GeneratedQuestion]:
     """Generate open-response questions, persist them, and record provenance.
 
     Difficulty adapts to the learner's own confidence in the topic, mirroring
-    the interactive session rather than serving one fixed band to everybody.
+    the interactive session rather than serving one fixed band to everybody —
+    ``user_id`` is what makes it *that learner's* confidence rather than
+    whichever confidence rating happens to be newest across everyone sharing
+    the course.
     """
-    difficulty = await _adaptive_difficulty(app, session, course_id, topic)
+    difficulty = await _adaptive_difficulty(app, session, course_id, topic, user_id=user_id)
     prompts, generator_ref = await _generate_prompts(
         app,
         session,
@@ -272,8 +276,10 @@ async def _adaptive_difficulty(
     session: AsyncSession,
     course_id: int,
     topic: str,
+    *,
+    user_id: str | None,
 ) -> str:
-    ratings = await get_confidence_ratings(session, course_id)
+    ratings = await get_confidence_ratings(session, course_id, user_id=user_id)
     topic_rating = next((rating for rating in ratings if rating.topic == topic), None)
     return get_topic_difficulty_level(topic_rating.predicted if topic_rating else None).value
 

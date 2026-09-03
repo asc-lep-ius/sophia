@@ -23,6 +23,7 @@ import contextlib
 import json
 from typing import TYPE_CHECKING, Annotated
 
+import anyio
 import asyncpg  # pyright: ignore[reportMissingTypeStubs]
 import structlog
 from fastapi import APIRouter, HTTPException, Path, Request, status
@@ -52,6 +53,11 @@ log = structlog.get_logger()
 
 STREAM_NAME = "study"
 _STREAM_SLOT_KEY_PREFIX = "sse:study:streams"
+_CLEANUP_TIMEOUT_SECONDS = 5
+"""Bound on the shielded finally-block cleanup — not settings-driven like the
+other timings in this module, since it's an internal safety cap against a
+wedged Postgres/Redis call, not something an operator would tune per
+deployment."""
 
 router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
@@ -106,8 +112,16 @@ async def _event_stream(
     queue: asyncio.Queue[None] = asyncio.Queue(maxsize=settings.sse_queue_maxsize)
     overflowed = False
 
-    def _on_notify(_conn: object, _pid: int, _channel: str, _payload: str) -> None:
+    def _on_notify(_conn: object, _pid: int, _channel: str, payload: str) -> None:
+        # The payload names the session an event belongs to; a stream that
+        # ignores it wakes for every event in the deployment, not just its
+        # own. Any parse failure falls through to waking anyway — a spurious
+        # wake costs one DB read, but ignoring one that mattered would not
+        # self-heal until the next heartbeat.
         nonlocal overflowed
+        with contextlib.suppress(ValueError, TypeError, KeyError):
+            if json.loads(payload)["session_id"] != session_id:
+                return
         try:
             queue.put_nowait(None)
         except asyncio.QueueFull:
@@ -141,6 +155,8 @@ async def _event_stream(
                 disconnect_reason = "overflow"
                 return
 
+            await _renew_stream_slot(request, user_id, settings)
+
             async with app_container.session(org_id=org_id) as db:
                 events = await replay_events(
                     db,
@@ -162,12 +178,23 @@ async def _event_stream(
         disconnect_reason = "client"
         raise
     finally:
-        if listener_conn is not None:
-            with contextlib.suppress(Exception):
-                await listener_conn.close()  # pyright: ignore[reportUnknownMemberType]
+        # A client disconnect cancels this generator inside a cancel scope
+        # that keeps re-delivering CancelledError to the first await it sees,
+        # which would otherwise skip everything below the first `await` in
+        # this block. The metric calls are sync (safe either way); the
+        # cleanup awaits are shielded so cancellation cannot skip them —
+        # an unshielded `finally` here was observed to leave the connections
+        # gauge growing monotonically and the Redis slot never released.
         SSE_CONNECTIONS_OPEN.labels(stream=STREAM_NAME).dec()
         SSE_DISCONNECTS.labels(stream=STREAM_NAME, reason=disconnect_reason).inc()
-        await _release_stream_slot(request, user_id)
+        # Bounded even though shielded: an unresponsive Postgres or Redis
+        # must not pin this response task open indefinitely just because
+        # cancellation can no longer reach it.
+        with anyio.move_on_after(_CLEANUP_TIMEOUT_SECONDS, shield=True):
+            if listener_conn is not None:
+                with contextlib.suppress(Exception):
+                    await listener_conn.close()  # pyright: ignore[reportUnknownMemberType]
+            await _release_stream_slot(request, user_id)
 
 
 def _initial_last_event_id(request: Request) -> int:
@@ -214,13 +241,26 @@ async def _reserve_stream_slot(request: Request, user_id: str, settings: Setting
     redis_client = getattr(request.app.state, "redis", None)
     if redis_client is None:
         return True
-    key = f"{_STREAM_SLOT_KEY_PREFIX}:{user_id}"
+    key = _stream_slot_key(user_id)
     current = await redis_client.incr(key)
-    await redis_client.expire(key, settings.sse_heartbeat_interval_seconds * 4)
+    await redis_client.expire(key, _stream_slot_ttl_seconds(settings))
     if current > settings.sse_max_streams_per_user:
         await redis_client.decr(key)
         return False
     return True
+
+
+async def _renew_stream_slot(request: Request, user_id: str, settings: Settings) -> None:
+    """Refresh the slot key's TTL so a long-lived stream doesn't outlive it.
+
+    Without this a stream open longer than the TTL has its slot silently
+    expire, and the next connection undercounts how many are actually open.
+    """
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        return
+    with contextlib.suppress(Exception):
+        await redis_client.expire(_stream_slot_key(user_id), _stream_slot_ttl_seconds(settings))
 
 
 async def _release_stream_slot(request: Request, user_id: str) -> None:
@@ -228,4 +268,23 @@ async def _release_stream_slot(request: Request, user_id: str) -> None:
     if redis_client is None:
         return
     with contextlib.suppress(Exception):
-        await redis_client.decr(f"{_STREAM_SLOT_KEY_PREFIX}:{user_id}")
+        key = _stream_slot_key(user_id)
+        remaining = await redis_client.decr(key)
+        # A slot leaked by a crash that never released it (or a TTL expiry
+        # racing a release) can drive the counter negative; DECR sets no TTL
+        # of its own, so a stray negative key would otherwise persist and
+        # loosen the cap for every future connection. Deleting rather than
+        # resetting to 0 leaves nothing behind — a missing key INCRs to 1 the
+        # same way a 0 key would. Best-effort: a concurrent reserve/release
+        # can still race it, matching the rest of this cap's best-effort
+        # nature.
+        if remaining < 0:
+            await redis_client.delete(key)
+
+
+def _stream_slot_key(user_id: str) -> str:
+    return f"{_STREAM_SLOT_KEY_PREFIX}:{user_id}"
+
+
+def _stream_slot_ttl_seconds(settings: Settings) -> int:
+    return settings.sse_heartbeat_interval_seconds * 4
