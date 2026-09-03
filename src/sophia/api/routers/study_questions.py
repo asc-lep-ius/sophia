@@ -34,10 +34,13 @@ from sophia.api.transactions import TransactionalRoute
 from sophia.domain.errors import AthenaError, EngagementPolicyUnmet
 from sophia.domain.learning import ContentKind
 from sophia.domain.learning import ContentLanguage as DomainContentLanguage
+from sophia.services.athena_confidence import update_actual_score
+from sophia.services.athena_session import get_session_scope
 from sophia.services.content_language import resolve_content_language
 from sophia.services.engagement_policy import evaluate_elaboration_policy
 from sophia.services.learning_events import get_question_trace
 from sophia.services.provenance import get_provenance_map
+from sophia.services.study_events import append_event
 from sophia.services.study_questions import (
     default_elaboration_policy,
     generate_and_store_questions,
@@ -129,16 +132,47 @@ async def submit_attempt(
     if question is None or question.course_id != payload.learning_path_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
+    scope = await get_session_scope(db, payload.session_id)
+    if (
+        scope is None
+        or scope.course_id != payload.learning_path_id
+        or scope.user_id != session.user.id
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
     await _enforce_engagement_policy(db, question, session.user.id)
-    attempt = await save_attempt(
+    result = await save_attempt(
         db,
         payload.learning_path_id,
         payload.question_id,
         session.user.id,
         payload.answer_text,
         payload.confidence,
+        session_id=payload.session_id,
+        request_id=payload.request_id,
+        self_rating=payload.self_rating,
     )
-    return StudyAttemptResponse(attempt=_attempt_response(attempt))
+    if result.is_new:
+        await update_actual_score(
+            db,
+            question.topic,
+            question.course_id,
+            result.attempt.score or 0.0,
+        )
+        await append_event(
+            db,
+            session_id=payload.session_id,
+            course_id=payload.learning_path_id,
+            actor_id=session.user.id,
+            event_type="attempt_scored",
+            payload={
+                "attempt_id": result.attempt.id,
+                "question_id": payload.question_id,
+                "score": result.attempt.score,
+            },
+            request_id=payload.request_id,
+        )
+    return StudyAttemptResponse(attempt=_attempt_response(result.attempt))
 
 
 async def _enforce_engagement_policy(
@@ -210,8 +244,11 @@ def _attempt_response(attempt: QuestionAttempt) -> StudyAttemptItemResponse:
     return StudyAttemptItemResponse(
         id=attempt.id,
         learning_path_id=attempt.course_id,
+        session_id=attempt.session_id,
         question_id=attempt.question_id,
         answer_text=attempt.answer_text,
         confidence=attempt.confidence,
+        self_rating=attempt.self_rating,
+        score=attempt.score,
         submitted_at=attempt.submitted_at,
     )

@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import structlog
 from sqlalchemy import insert, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import (
@@ -58,6 +60,28 @@ ELABORATION_REQUIRED_EVENTS = (
     LearningEventType.PREDICTION_MADE,
     LearningEventType.ELABORATION_WRITTEN,
 )
+
+SELF_RATING_SCORES: dict[int, float] = {1: 0.0, 2: 0.3, 3: 0.7, 4: 1.0}
+"""Post-reveal self-grade -> score. Mirrors the values of
+``gui/services/review_service.RATING_SCORES`` (the same Again/Hard/Good/Easy
+scale already used for flashcard review) but is not imported from there:
+``services`` must not depend on ``gui``, and this is a distinct domain concept
+(grading an open-response question attempt, not scheduling a flashcard review).
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class AttemptResult:
+    """A saved attempt plus whether this request created it.
+
+    ``is_new`` is False when a duplicate ``request_id`` matched an existing row:
+    the attempt returned is the one from the original submission, and callers
+    must not repeat side effects (calibration write, event-log append) that
+    already ran for it.
+    """
+
+    attempt: QuestionAttempt
+    is_new: bool
 
 
 async def generate_and_store_questions(
@@ -139,16 +163,27 @@ async def save_attempt(
     user_id: str,
     answer_text: str,
     confidence: int | None,
-) -> QuestionAttempt:
-    """Persist a learner's answer.
+    *,
+    session_id: int,
+    request_id: str,
+    self_rating: int,
+) -> AttemptResult:
+    """Persist a learner's self-graded answer, idempotently.
 
-    No score is written: grading moves server-side in the study realtime phase,
-    and guessing a score here would bake in the very defect that phase fixes.
+    The score comes from the learner's own post-reveal self-assessment
+    (``self_rating``, the same Again/Hard/Good/Easy scale flashcard review
+    already uses) rather than automated grading: nothing in this codebase stores
+    an expected answer or rubric to grade ``answer_text`` against. A retried
+    ``request_id`` returns the original attempt (with ``is_new=False``) instead
+    of inserting a second row, relying on the unique constraint on
+    ``(org_id, session_id, user_id, request_id)`` rather than an in-process map,
+    so it stays correct across worker restarts and concurrent retries.
     """
+    score = SELF_RATING_SCORES[self_rating]
     submitted_at = datetime.now(UTC)
-    attempt_id = (
+    inserted = (
         await session.execute(
-            insert(question_attempts)
+            pg_insert(question_attempts)
             .values(
                 course_id=course_id,
                 question_id=question_id,
@@ -156,19 +191,66 @@ async def save_attempt(
                 answer_text=answer_text,
                 confidence=confidence,
                 submitted_at=submitted_at,
+                session_id=session_id,
+                request_id=request_id,
+                self_rating=self_rating,
+                score=score,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    question_attempts.c.org_id,
+                    question_attempts.c.session_id,
+                    question_attempts.c.user_id,
+                    question_attempts.c.request_id,
+                ],
             )
             .returning(question_attempts.c.id)
         )
-    ).scalar_one()
+    ).one_or_none()
 
+    if inserted is not None:
+        return AttemptResult(
+            attempt=QuestionAttempt(
+                id=inserted.id,
+                course_id=course_id,
+                question_id=question_id,
+                user_id=user_id,
+                answer_text=answer_text,
+                confidence=confidence,
+                submitted_at=submitted_at.isoformat(),
+                session_id=session_id,
+                request_id=request_id,
+                self_rating=self_rating,
+                score=score,
+            ),
+            is_new=True,
+        )
+
+    existing = (
+        await session.execute(
+            select(question_attempts).where(
+                question_attempts.c.session_id == session_id,
+                question_attempts.c.user_id == user_id,
+                question_attempts.c.request_id == request_id,
+            )
+        )
+    ).one()
+    return AttemptResult(attempt=_row_to_attempt(existing), is_new=False)
+
+
+def _row_to_attempt(row: Row[tuple[object, ...]]) -> QuestionAttempt:
     return QuestionAttempt(
-        id=attempt_id,
-        course_id=course_id,
-        question_id=question_id,
-        user_id=user_id,
-        answer_text=answer_text,
-        confidence=confidence,
-        submitted_at=submitted_at.isoformat(),
+        id=row.id,
+        course_id=row.course_id,
+        question_id=row.question_id,
+        user_id=row.user_id,
+        answer_text=row.answer_text,
+        confidence=row.confidence,
+        submitted_at=row.submitted_at.isoformat() if row.submitted_at else "",
+        session_id=row.session_id,
+        request_id=row.request_id,
+        self_rating=row.self_rating,
+        score=row.score,
     )
 
 

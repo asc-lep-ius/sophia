@@ -17,6 +17,7 @@ from sophia.domain.learning import (
     QuestionKind,
 )
 from sophia.infra.schema import question_attempts
+from sophia.services.athena_session import start_study_session
 from sophia.services.engagement_policy import evaluate_elaboration_policy
 from sophia.services.learning_events import ingest_events
 from sophia.services.study_questions import ELABORATION_REQUIRED_EVENTS, _insert_question
@@ -38,6 +39,11 @@ POLICY = ElaborationPolicy(
     min_elaboration_chars=80,
     min_prompt_dwell_ms=5000,
 )
+
+
+async def seed_session(session: AsyncSession, *, user_id: str = "learner") -> int:
+    study_session = await start_study_session(session, LEARNING_PATH_ID, "Graphs", user_id=user_id)
+    return study_session.id
 
 
 async def seed_question(session: AsyncSession) -> None:
@@ -87,14 +93,21 @@ COMPLETE_TRACE: tuple[tuple[str, LearningEventType, TracePayload], ...] = (
 async def submit_answer(
     harness: DbHarness,
     answer: str = "A cut bounds flow because every unit crosses it.",
+    *,
+    session_id: int,
+    self_rating: int = 3,
+    request_id: str = "req-1",
 ) -> Response:
     return await harness.client.post(
         "/api/study/attempts",
         json={
             "learning_path_id": LEARNING_PATH_ID,
+            "session_id": session_id,
             "question_id": QUESTION_ID,
             "answer_text": answer,
             "confidence": 3,
+            "self_rating": self_rating,
+            "request_id": request_id,
         },
         headers=harness.csrf_headers(),
     )
@@ -109,9 +122,10 @@ async def test_answer_without_trace_is_rejected_with_412(clean_engine: AsyncEngi
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             await seed_question(session)
+            session_id = await seed_session(session)
         await harness.login()
 
-        response = await submit_answer(harness)
+        response = await submit_answer(harness, session_id=session_id)
         stored = await attempt_count(harness)
 
     assert response.status_code == 412
@@ -123,9 +137,10 @@ async def test_rejection_names_the_missing_steps(clean_engine: AsyncEngine) -> N
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             await seed_question(session)
+            session_id = await seed_session(session)
         await harness.login()
 
-        params = (await submit_answer(harness)).json()["detail"]["params"]
+        params = (await submit_answer(harness, session_id=session_id)).json()["detail"]["params"]
 
     assert params["missing_event_types"] == "prompt_shown,prediction_made,elaboration_written"
     assert params["elaboration_chars"] == 0
@@ -135,6 +150,7 @@ async def test_answer_with_complete_trace_is_accepted(clean_engine: AsyncEngine)
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             await seed_question(session)
+            session_id = await seed_session(session)
             await ingest_events(
                 session,
                 [trace_event(*event) for event in COMPLETE_TRACE],
@@ -142,12 +158,13 @@ async def test_answer_with_complete_trace_is_accepted(clean_engine: AsyncEngine)
             )
         await harness.login()
 
-        response = await submit_answer(harness)
+        response = await submit_answer(harness, session_id=session_id, self_rating=3)
 
     assert response.status_code == 200
     attempt = response.json()["attempt"]
     assert attempt["question_id"] == QUESTION_ID
     assert attempt["learning_path_id"] == LEARNING_PATH_ID
+    assert attempt["score"] == pytest.approx(0.7)
 
 
 async def test_shallow_elaboration_does_not_satisfy_the_policy(
@@ -157,6 +174,7 @@ async def test_shallow_elaboration_does_not_satisfy_the_policy(
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             await seed_question(session)
+            session_id = await seed_session(session)
             await ingest_events(
                 session,
                 [
@@ -170,7 +188,7 @@ async def test_shallow_elaboration_does_not_satisfy_the_policy(
             )
         await harness.login()
 
-        response = await submit_answer(harness)
+        response = await submit_answer(harness, session_id=session_id)
 
     assert response.status_code == 412
     assert response.json()["detail"]["params"]["elaboration_chars"] == 4
@@ -182,6 +200,7 @@ async def test_another_learners_trace_does_not_unlock_the_question(
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             await seed_question(session)
+            session_id = await seed_session(session)
             await ingest_events(
                 session,
                 [
@@ -192,7 +211,7 @@ async def test_another_learners_trace_does_not_unlock_the_question(
             )
         await harness.login()
 
-        response = await submit_answer(harness)
+        response = await submit_answer(harness, session_id=session_id)
 
     assert response.status_code == 412
 
@@ -205,8 +224,11 @@ async def test_unknown_question_is_404(clean_engine: AsyncEngine) -> None:
             "/api/study/attempts",
             json={
                 "learning_path_id": LEARNING_PATH_ID,
+                "session_id": 1,
                 "question_id": "does-not-exist",
                 "answer_text": "anything",
+                "self_rating": 3,
+                "request_id": "req-1",
             },
             headers=harness.csrf_headers(),
         )

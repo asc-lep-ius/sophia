@@ -217,8 +217,8 @@ async def complete_session(
     app: AppContainer,
     *,
     session_id: int,
-    pre_score: float,
-    post_score: float,
+    pre_score: float | None,
+    post_score: float | None,
 ) -> None:
     """Record pre/post scores and mark session complete."""
     async with app.session() as db:
@@ -247,13 +247,6 @@ async def finalize_calibration(
     async with app.session() as db:
         await update_actual_score(db, topic, course_id, actual_score)
         await update_topic_calibration(db, course_id, topic)
-
-
-def compute_score(answers: dict[str, str], questions: list[str]) -> float:
-    """Compute a rough score (fraction of non-empty answers). Range 0.0–1.0."""
-    if not questions:
-        return 0.0
-    return sum(1 for a in answers.values() if a.strip()) / len(questions)
 
 
 def format_improvement(pre: float, post: float) -> str:

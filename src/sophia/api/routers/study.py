@@ -50,6 +50,12 @@ router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
 ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     "complete_study_session": {"operation_id": "completeStudySession"},
+    "get_session_scope": {
+        "rationale": (
+            "Ownership lookup shared by study.py, study_questions.py, and "
+            "study_events.py's realtime endpoints — not itself an HTTP endpoint."
+        ),
+    },
     "get_study_sessions": {"operation_id": "listStudySessions"},
     "run_interactive_session": {
         "rationale": "Rich/CLI orchestration is not a direct HTTP endpoint.",
@@ -106,11 +112,12 @@ async def create_study_session(
     payload: StudySessionStartRequest,
     request: Request,
 ) -> StudySessionResponse:
-    await require_csrf_learning_path_scope(request, payload.learning_path_id)
+    auth_session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
     session = await start_study_session(
         await request_session(request),
         payload.learning_path_id,
         payload.topic,
+        user_id=auth_session.user.id,
     )
     return StudySessionResponse(session=_study_session_response(session))
 

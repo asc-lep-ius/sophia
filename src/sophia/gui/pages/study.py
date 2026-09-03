@@ -17,8 +17,6 @@ from sophia.gui.middleware.health import get_container
 from sophia.gui.services.study_service import (
     check_novel_topic,
     complete_session,
-    compute_score,
-    finalize_calibration,
     format_improvement,
     get_posttest_questions,
     get_pretest_questions,
@@ -325,22 +323,34 @@ def _save_current_state(
     store.save_state(session_id, state)
 
 
+def _fraction_answered(answers: dict[str, str], count: int) -> float:
+    """Fraction of answers that are non-blank — a progress preview, not a grade.
+
+    Real grading happens server-side on attempt submission (see
+    ``services/study_questions.py``); this only drives the pretest/posttest
+    progress labels shown while the learner is still answering.
+    """
+    if count == 0:
+        return 0.0
+    return sum(1 for answer in answers.values() if answer.strip()) / count
+
+
 def _compute_pre_score(topics: list[str]) -> float | None:
-    """Compute pre-test score if answers exist, else None."""
+    """Compute pre-test answered-fraction if answers exist, else None."""
     answers = _get_pre_answers()
     if not answers:
         return None
     count = len(topics) * _PRETEST_COUNT
-    return compute_score(answers, [""] * count)
+    return _fraction_answered(answers, count)
 
 
 def _compute_post_score(topics: list[str]) -> float | None:
-    """Compute post-test score if answers exist, else None."""
+    """Compute post-test answered-fraction if answers exist, else None."""
     answers = _get_post_answers()
     if not answers:
         return None
     count = len(topics) * _POSTTEST_COUNT
-    return compute_score(answers, [""] * count)
+    return _fraction_answered(answers, count)
 
 
 async def _render_stepper(
@@ -478,7 +488,7 @@ async def _render_pretest(
     # Score display + next button
     complete = _questions_complete(answers, conf, count=total)
     if complete and total > 0:
-        score = compute_score(answers, [q for _, q, _ in all_questions])
+        score = _fraction_answered(answers, len(all_questions))
         ui.label(f"Pre-test score: {score:.0%}").classes("text-lg font-bold mt-4")
 
     with ui.stepper_navigation():
@@ -596,8 +606,8 @@ async def _render_posttest(
     complete = _questions_complete(answers, conf, count=total)
     if complete and total > 0:
         pre_answers = _get_pre_answers()
-        pre_score = compute_score(pre_answers, [""] * len(pre_answers)) if pre_answers else 0.0
-        post_score = compute_score(answers, [q for _, q, _ in all_questions])
+        pre_score = _fraction_answered(pre_answers, len(pre_answers)) if pre_answers else 0.0
+        post_score = _fraction_answered(answers, len(all_questions))
         improvement = format_improvement(pre_score, post_score)
         ui.label(f"Improvement: {improvement}").classes("text-lg font-bold mt-4")
 
@@ -735,15 +745,16 @@ async def _complete_study_session(
     course_id: int,
     topics: list[str],
 ) -> None:
-    """Complete the study session — record scores and calibration for each topic."""
-    pre_answers = _get_pre_answers()
-    post_answers = _get_post_answers()
-    pre_count = len(topics) * _PRETEST_COUNT
-    post_count = len(topics) * _POSTTEST_COUNT
+    """Mark each topic's study session complete.
 
-    pre_score = compute_score(pre_answers, [""] * pre_count) if pre_answers else 0.0
-    post_score = compute_score(post_answers, [""] * post_count) if post_answers else 0.0
-
+    No score is recorded here: this page has no way to grade an answer any more
+    honestly than the fraction-of-non-blank heuristic issue #97 retired, and
+    writing that fake score into ``confidence_ratings.actual`` is exactly the
+    defect that issue fixed. Real grading happens server-side, self-graded by
+    the learner post-reveal, on the attempt-submission path
+    (``services/study_questions.py::save_attempt``) the SvelteKit study surface
+    uses. Sessions completed from this legacy page are left unscored.
+    """
     session_ids = _get_session_ids()
     for t in topics:
         try:
@@ -754,10 +765,9 @@ async def _complete_study_session(
             await complete_session(
                 container,
                 session_id=sid,
-                pre_score=pre_score,
-                post_score=post_score,
+                pre_score=None,
+                post_score=None,
             )
-            await finalize_calibration(container, course_id, t, post_score)
         except Exception:
             log.exception("session_complete_failed", topic=t)
 

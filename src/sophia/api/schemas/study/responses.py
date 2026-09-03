@@ -61,9 +61,12 @@ class StudyQuestionListResponse(ApiModel):
 class StudyAttemptItemResponse(ApiModel):
     id: int
     learning_path_id: int
+    session_id: int | None
     question_id: str
     answer_text: str
     confidence: int | None
+    self_rating: int | None
+    score: float | None
     submitted_at: str
 
 

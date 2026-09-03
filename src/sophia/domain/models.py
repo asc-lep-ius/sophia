@@ -639,6 +639,7 @@ class StudySession(BaseModel, frozen=True):
     post_test_score: float | None = None  # 0.0-1.0
     started_at: str = ""
     completed_at: str | None = None
+    user_id: str | None = None
 
     @property
     def improvement(self) -> float | None:

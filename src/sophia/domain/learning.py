@@ -184,3 +184,7 @@ class QuestionAttempt(BaseModel, frozen=True):
     answer_text: str
     confidence: int | None
     submitted_at: str
+    session_id: int | None = None
+    request_id: str | None = None
+    self_rating: int | None = None
+    score: float | None = None

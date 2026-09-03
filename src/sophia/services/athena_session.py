@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from asyncio import sleep as asyncio_sleep
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -42,13 +43,15 @@ async def start_study_session(
     session: AsyncSession,
     course_id: int,
     topic: str,
+    *,
+    user_id: str | None = None,
 ) -> StudySession:
     """Create a new study session."""
     now = datetime.now(UTC)
     session_id = (
         await session.execute(
             insert(study_sessions)
-            .values(course_id=course_id, topic=topic, started_at=now)
+            .values(course_id=course_id, topic=topic, started_at=now, user_id=user_id)
             .returning(study_sessions.c.id)
         )
     ).scalar_one()
@@ -57,16 +60,22 @@ async def start_study_session(
         course_id=course_id,
         topic=topic,
         started_at=now.isoformat(),
+        user_id=user_id,
     )
 
 
 async def complete_study_session(
     session: AsyncSession,
     session_id: int,
-    pre_test_score: float,
-    post_test_score: float,
+    pre_test_score: float | None,
+    post_test_score: float | None,
 ) -> None:
-    """Record pre/post scores and mark session complete."""
+    """Record pre/post scores and mark session complete.
+
+    ``None`` scores mark the session complete without claiming a grade — used by
+    callers that have no way to compute a real one (see gui/pages/study.py, which
+    stopped fabricating a score once the non-empty-answer heuristic was retired).
+    """
     await session.execute(
         update(study_sessions)
         .where(study_sessions.c.id == session_id)
@@ -76,6 +85,33 @@ async def complete_study_session(
             completed_at=datetime.now(UTC),
         )
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SessionScope:
+    """The course and owning learner a study session belongs to."""
+
+    course_id: int
+    user_id: str | None
+
+
+async def get_session_scope(session: AsyncSession, session_id: int) -> SessionScope | None:
+    """Look up who a study session belongs to, for realtime-endpoint ownership checks.
+
+    ``user_id`` is ``None`` for sessions started before study realtime tracked an
+    owner — those predate per-user ownership and can never pass an ownership
+    check, which is the correct outcome: nothing can prove who they belong to.
+    """
+    row = (
+        await session.execute(
+            select(study_sessions.c.course_id, study_sessions.c.user_id).where(
+                study_sessions.c.id == session_id
+            )
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+    return SessionScope(course_id=row.course_id, user_id=row.user_id)
 
 
 async def get_study_sessions(
@@ -101,6 +137,7 @@ async def get_study_sessions(
             post_test_score=row.post_test_score,
             started_at=row.started_at.isoformat() if row.started_at else "",
             completed_at=row.completed_at.isoformat() if row.completed_at else None,
+            user_id=row.user_id,
         )
         for row in rows
     ]
