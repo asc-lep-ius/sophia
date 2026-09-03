@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
     Column,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -12,7 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import TIMESTAMP
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 
 from sophia.infra.schema._shared import metadata, org_id_column
 
@@ -136,5 +139,39 @@ question_attempts = Table(
     Column("confidence", Integer),
     org_id_column(),
     Column("submitted_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("session_id", Integer, ForeignKey("study_sessions.id")),
+    Column("request_id", Text),
+    Column("score", Float()),
+    Column("self_rating", Integer),
+    CheckConstraint("score IS NULL OR score BETWEEN 0.0 AND 1.0", name="score_ratio"),
+    CheckConstraint(
+        "self_rating IS NULL OR self_rating BETWEEN 1 AND 4",
+        name="self_rating_range",
+    ),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_question_attempts_session_request",
+    ),
     Index("idx_question_attempts_scope", "course_id", "question_id", "user_id"),
+)
+
+study_events = Table(
+    "study_events",
+    metadata,
+    Column("id", BigInteger, primary_key=True),
+    Column("session_id", Integer, ForeignKey("study_sessions.id"), nullable=False),
+    Column("course_id", Integer, nullable=False),
+    Column("actor_id", Text, nullable=False),
+    Column("event_type", Text, nullable=False),
+    Column("payload", JSONB(), nullable=False, server_default=text("'{}'::jsonb")),
+    Column("request_id", Text),
+    Column("client_time", TIMESTAMP(timezone=True)),
+    Column("server_time", TIMESTAMP(timezone=True), nullable=False, server_default=_NOW),
+    Column("schema_version", Integer, nullable=False, server_default=text("1")),
+    org_id_column(),
+    Index("idx_study_events_session", "session_id", "id"),
+    Index("idx_study_events_retention", "server_time"),
 )
