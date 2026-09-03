@@ -10,10 +10,11 @@ from typing import TYPE_CHECKING
 from sqlalchemy import insert, select, update
 
 from sophia.domain.errors import TopicExtractionError
-from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
+from sophia.domain.models import FlashcardSource, StudentFlashcard, StudyReflection, StudySession
 from sophia.infra.schema import (
     lecture_downloads,
     student_flashcards,
+    study_reflections,
     study_sessions,
     topic_lecture_links,
 )
@@ -23,6 +24,7 @@ from sophia.services.athena_confidence import (
     get_topic_difficulty_level,
 )
 from sophia.services.athena_review import get_due_reviews
+from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -148,6 +150,13 @@ async def get_study_sessions(
 # ---------------------------------------------------------------------------
 
 
+async def get_flashcard_course_id(session: AsyncSession, flashcard_id: int) -> int | None:
+    """Look up which course a flashcard belongs to, for scope checks."""
+    return await session.scalar(
+        select(student_flashcards.c.course_id).where(student_flashcards.c.id == flashcard_id)
+    )
+
+
 async def save_flashcard(
     session: AsyncSession,
     course_id: int,
@@ -181,6 +190,117 @@ async def save_flashcard(
         back=back,
         source=flashcard_source,
         created_at=now.isoformat(),
+    )
+
+
+async def save_flashcard_idempotent(
+    session: AsyncSession,
+    course_id: int,
+    topic: str,
+    front: str,
+    back: str,
+    source: FlashcardSource | str,
+    *,
+    session_id: int,
+    user_id: str,
+    request_id: str,
+) -> tuple[StudentFlashcard, bool]:
+    """Idempotently save a flashcard authored during a live study session.
+
+    Distinct from :func:`save_flashcard`, used elsewhere (CLI, the pre-realtime
+    study page) with no request id to be idempotent on. Returns
+    ``(flashcard, is_new)``.
+    """
+    flashcard_source = FlashcardSource(source)
+    now = datetime.now(UTC)
+    row, is_new = await insert_or_fetch_row(
+        session,
+        student_flashcards,
+        {
+            "course_id": course_id,
+            "topic": topic,
+            "front": front,
+            "back": back,
+            "source": flashcard_source.value,
+            "created_at": now,
+            "session_id": session_id,
+            "user_id": user_id,
+            "request_id": request_id,
+        },
+        conflict_columns=(
+            student_flashcards.c.org_id,
+            student_flashcards.c.session_id,
+            student_flashcards.c.user_id,
+            student_flashcards.c.request_id,
+        ),
+        session_id=session_id,
+        user_id=user_id,
+        request_id=request_id,
+    )
+    return (
+        StudentFlashcard(
+            id=row.id,
+            course_id=row.course_id,
+            topic=row.topic,
+            front=row.front,
+            back=row.back,
+            source=FlashcardSource(row.source),
+            created_at=row.created_at.isoformat() if row.created_at else "",
+        ),
+        is_new,
+    )
+
+
+async def save_reflection(
+    session: AsyncSession,
+    session_id: int,
+    course_id: int,
+    user_id: str,
+    prompt: str,
+    reflection_text: str,
+    *,
+    request_id: str,
+) -> tuple[StudyReflection, bool]:
+    """Idempotently persist a metacognitive reflection for a study session.
+
+    Reflection text was previously kept only in browser tab storage and
+    discarded; this is the first place it is persisted server-side. Returns
+    ``(reflection, is_new)``.
+    """
+    now = datetime.now(UTC)
+    row, is_new = await insert_or_fetch_row(
+        session,
+        study_reflections,
+        {
+            "session_id": session_id,
+            "course_id": course_id,
+            "user_id": user_id,
+            "prompt": prompt,
+            "reflection_text": reflection_text,
+            "created_at": now,
+            "request_id": request_id,
+        },
+        conflict_columns=(
+            study_reflections.c.org_id,
+            study_reflections.c.session_id,
+            study_reflections.c.user_id,
+            study_reflections.c.request_id,
+        ),
+        session_id=session_id,
+        user_id=user_id,
+        request_id=request_id,
+    )
+    return (
+        StudyReflection(
+            id=row.id,
+            session_id=row.session_id,
+            course_id=row.course_id,
+            user_id=row.user_id,
+            prompt=row.prompt,
+            reflection_text=row.reflection_text,
+            created_at=row.created_at.isoformat() if row.created_at else "",
+        ),
+        is_new,
     )
 
 

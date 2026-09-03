@@ -46,6 +46,7 @@ ATHENA_CONFIDENCE_METHOD_COVERAGE: dict[str, dict[str, str]] = {
         "rationale": "Pure helper folded into calibration rating response DTOs.",
     },
     "rate_confidence": {"operation_id": "saveCalibrationConfidenceRating"},
+    "record_study_prediction": {"operation_id": "recordStudyPrediction"},
     "rating_to_score": {
         "rationale": "Pure helper used inside rate_confidence, not a standalone HTTP concern.",
     },

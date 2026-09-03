@@ -678,6 +678,18 @@ class CardReviewAttempt(BaseModel, frozen=True):
     reviewed_at: str = ""
 
 
+class StudyReflection(BaseModel, frozen=True):
+    """A learner's metacognitive reflection recorded during a study session."""
+
+    id: int = 0
+    session_id: int
+    course_id: int
+    user_id: str
+    prompt: str
+    reflection_text: str
+    created_at: str = ""
+
+
 class SelfExplanation(BaseModel, frozen=True):
     """A student's self-explanation of why they got a question wrong."""
 

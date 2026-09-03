@@ -10,6 +10,7 @@ from sqlalchemy import func, insert, select, update
 
 from sophia.domain.models import ConfidenceRating, DifficultyLevel
 from sophia.infra.schema import confidence_ratings
+from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
     from sqlalchemy import Row
@@ -72,6 +73,54 @@ async def rate_confidence(
         predicted=predicted,
         rated_at=now.isoformat(),
     )
+
+
+async def record_study_prediction(
+    session: AsyncSession,
+    topic: str,
+    course_id: int,
+    rating: int,
+    *,
+    session_id: int,
+    user_id: str,
+    request_id: str,
+) -> tuple[ConfidenceRating, bool]:
+    """Idempotently record a confidence prediction made during a live study session.
+
+    Distinct from :func:`rate_confidence`, which the general calibration and
+    topics surfaces use outside the context of a study session and which has
+    no request id to be idempotent on. Returns ``(rating, is_new)``.
+    """
+    predicted = rating_to_score(rating)
+    now = datetime.now(UTC)
+    row, is_new = await insert_or_fetch_row(
+        session,
+        confidence_ratings,
+        {
+            "topic": topic,
+            "course_id": course_id,
+            "predicted": predicted,
+            "rated_at": now,
+            "session_id": session_id,
+            "user_id": user_id,
+            "request_id": request_id,
+        },
+        conflict_columns=(
+            confidence_ratings.c.org_id,
+            confidence_ratings.c.session_id,
+            confidence_ratings.c.user_id,
+            confidence_ratings.c.request_id,
+        ),
+        session_id=session_id,
+        user_id=user_id,
+        request_id=request_id,
+    )
+    if is_new:
+        from sophia.services.athena_chronos import log_confidence_prediction
+
+        await log_confidence_prediction(session, course_id, topic, predicted)
+        log.info("study_prediction_recorded", topic=topic, course_id=course_id, predicted=predicted)
+    return _row_to_rating(row), is_new
 
 
 async def get_confidence_ratings(
