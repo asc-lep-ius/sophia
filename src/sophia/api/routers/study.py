@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from sophia.api.deps import (
     current_session_record,
     ensure_learning_path_scope,
+    get_settings,
     request_session,
     require_csrf,
     require_csrf_learning_path_scope,
@@ -23,6 +24,7 @@ from sophia.api.schemas.study import (
     StudyFlashcardRequest,
     StudyFlashcardResponse,
     StudyFlashcardSource,
+    StudyPacingResponse,
     StudyPhaseAttemptCounts,
     StudyPredictionItemResponse,
     StudyPredictionRequest,
@@ -130,6 +132,22 @@ _API_FLASHCARD_SOURCE = {
 LearningPathIdQuery = Annotated[int, Query(gt=0)]
 SessionIdPath = Annotated[int, Path(gt=0)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
+
+
+@router.get(
+    "/study/pacing",
+    response_model=StudyPacingResponse,
+    operation_id="getStudyPacing",
+)
+async def get_study_pacing(request: Request) -> StudyPacingResponse:
+    """Serve the pacing floors the study surface enforces in the browser."""
+    await current_session_record(request)
+    settings = get_settings(request)
+    return StudyPacingResponse(
+        reflection_min_seconds=settings.study_reflection_min_seconds,
+        elaboration_min_chars=settings.elaboration_min_chars,
+        prompt_min_dwell_ms=settings.elaboration_min_prompt_dwell_ms,
+    )
 
 
 @router.get(

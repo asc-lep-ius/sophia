@@ -3079,6 +3079,30 @@
         "title": "StudyFlashcardSource",
         "type": "string"
       },
+      "StudyPacingResponse": {
+        "description": "The pedagogy floors the study surface must honour.\n\nServed rather than compiled into the client so shortening productive\nfriction is a deployment decision with an audit trail, not a one-line edit\nin a bundle.",
+        "properties": {
+          "elaboration_min_chars": {
+            "title": "Elaboration Min Chars",
+            "type": "integer"
+          },
+          "prompt_min_dwell_ms": {
+            "title": "Prompt Min Dwell Ms",
+            "type": "integer"
+          },
+          "reflection_min_seconds": {
+            "title": "Reflection Min Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reflection_min_seconds",
+          "elaboration_min_chars",
+          "prompt_min_dwell_ms"
+        ],
+        "title": "StudyPacingResponse",
+        "type": "object"
+      },
       "StudyPhaseAttemptCounts": {
         "description": "How many attempts the session holds in each phase of the cycle.",
         "properties": {
@@ -8461,6 +8485,36 @@
           }
         },
         "summary": "Create Study Flashcard",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/pacing": {
+      "get": {
+        "description": "Serve the pacing floors the study surface enforces in the browser.",
+        "operationId": "getStudyPacing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyPacingResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Study Pacing",
         "tags": [
           "study"
         ]

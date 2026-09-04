@@ -549,3 +549,23 @@ def test_flashcard_transcript_source_maps_to_domain_lecture_source(
 
     assert response.status_code == 200
     assert response.json()["flashcard"]["source"] == "transcript"
+
+
+def test_study_pacing_serves_the_server_configured_floors() -> None:
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    login(harness)
+
+    response = harness.client.get("/api/study/pacing")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "reflection_min_seconds": harness.settings.study_reflection_min_seconds,
+        "elaboration_min_chars": harness.settings.elaboration_min_chars,
+        "prompt_min_dwell_ms": harness.settings.elaboration_min_prompt_dwell_ms,
+    }
+
+
+def test_study_pacing_requires_authentication() -> None:
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+
+    assert harness.client.get("/api/study/pacing").status_code == 401

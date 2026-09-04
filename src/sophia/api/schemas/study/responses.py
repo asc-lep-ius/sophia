@@ -56,6 +56,19 @@ class StudySessionCompletionResponse(ApiModel):
     session: StudySessionItemResponse
 
 
+class StudyPacingResponse(ApiModel):
+    """The pedagogy floors the study surface must honour.
+
+    Served rather than compiled into the client so shortening productive
+    friction is a deployment decision with an audit trail, not a one-line edit
+    in a bundle.
+    """
+
+    reflection_min_seconds: int
+    elaboration_min_chars: int
+    prompt_min_dwell_ms: int
+
+
 class StudyPhaseAttemptCounts(ApiModel):
     """How many attempts the session holds in each phase of the cycle."""
 
