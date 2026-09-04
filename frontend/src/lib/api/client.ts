@@ -68,9 +68,29 @@ export function createApiClient(options: ClientOptions = {}) {
   });
 }
 
+export type UnwrapOptions = {
+  /**
+   * Whether ISO datetime strings become `Date` objects.
+   *
+   * Off is not a shortcut: it keeps the body exactly as the generated contract
+   * declares it, which is what a caller needs when the interesting fields are
+   * literal unions the widening would swallow.
+   */
+  normalizeDates?: boolean;
+};
+
 export async function unwrapApiResponse<Data, ErrorBody>(
   resultPromise: Promise<ApiResult<Data, ErrorBody>>,
-): Promise<NormalizedDateValue<Data>> {
+  options: { normalizeDates: false },
+): Promise<Data | undefined>;
+export async function unwrapApiResponse<Data, ErrorBody>(
+  resultPromise: Promise<ApiResult<Data, ErrorBody>>,
+  options?: UnwrapOptions,
+): Promise<NormalizedDateValue<Data>>;
+export async function unwrapApiResponse<Data, ErrorBody>(
+  resultPromise: Promise<ApiResult<Data, ErrorBody>>,
+  options: UnwrapOptions = {},
+): Promise<Data | NormalizedDateValue<Data> | undefined> {
   const result = await resultPromise;
   const requestId = result.response.headers.get("x-request-id") ?? undefined;
 
@@ -80,6 +100,9 @@ export async function unwrapApiResponse<Data, ErrorBody>(
     );
   }
 
+  if (options.normalizeDates === false) {
+    return result.data;
+  }
   return normalizeIsoDatetimes(result.data) as NormalizedDateValue<Data>;
 }
 

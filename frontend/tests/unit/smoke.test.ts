@@ -8,7 +8,7 @@ const tenant = {
   learning_path_id: "default-learning-path",
   org_id: "local",
   role: "student",
-};
+} as const;
 
 const user = {
   displayName: "Smoke Tester",
@@ -16,6 +16,15 @@ const user = {
   id: "smoke-1",
   name: "Smoke Tester",
 };
+
+const layoutData = {
+  authenticated: true,
+  locale: "en",
+  settings: null,
+  theme: "light",
+  tenant,
+  user,
+} as const;
 
 describe("frontend scaffold smoke", () => {
   it("renders the authenticated app shell navigation", () => {
@@ -35,14 +44,41 @@ describe("frontend scaffold smoke", () => {
     expect(within(sidebar).getByText("default-learning-path")).toBeTruthy();
   });
 
-  it("renders the study controls with pointer equivalents", () => {
-    render(StudyPage);
+  it("offers a session to start and one to resume", () => {
+    render(StudyPage, {
+      data: {
+        ...layoutData,
+        learningPathId: 12,
+        sessions: [
+          {
+            id: 5,
+            learning_path_id: 12,
+            topic: "Graphs",
+            pre_test_score: null,
+            post_test_score: null,
+            started_at: "2026-09-04T10:00:00Z",
+            completed_at: null,
+            improvement: null,
+          },
+        ],
+      },
+      form: null,
+    });
 
     expect(screen.getByRole("heading", { name: "Study" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Reveal answer" })).toBeTruthy();
+    expect(screen.getByLabelText("Topic")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Start session" })).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Undo last grade" }),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Again" })).toBeTruthy();
+      screen.getByRole("link", { name: "Resume" }).getAttribute("href"),
+    ).toBe("/app/study/5/act");
+  });
+
+  it("says so plainly when the workspace has no numeric learning path", () => {
+    render(StudyPage, {
+      data: { ...layoutData, learningPathId: null, sessions: [] },
+      form: null,
+    });
+
+    expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
   });
 });
