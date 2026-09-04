@@ -1,6 +1,7 @@
 """Study API transport schemas."""
 
 from sophia.api.schemas.study.requests import (
+    StudyAttemptPhase,
     StudyAttemptRequest,
     StudyFlashcardRequest,
     StudyFlashcardSource,
@@ -8,14 +9,15 @@ from sophia.api.schemas.study.requests import (
     StudyQuestionRequest,
     StudyReflectionRequest,
     StudySelfExplanationRequest,
-    StudySessionCompleteRequest,
     StudySessionStartRequest,
 )
 from sophia.api.schemas.study.responses import (
+    CalibrationBand,
     StudyAttemptItemResponse,
     StudyAttemptResponse,
     StudyFlashcardItemResponse,
     StudyFlashcardResponse,
+    StudyPhaseAttemptCounts,
     StudyPredictionItemResponse,
     StudyPredictionResponse,
     StudyQuestionListResponse,
@@ -26,17 +28,22 @@ from sophia.api.schemas.study.responses import (
     StudySessionCompletionResponse,
     StudySessionItemResponse,
     StudySessionListResponse,
+    StudySessionQuestionListResponse,
     StudySessionResponse,
+    StudySessionSummaryResponse,
 )
 
 __all__ = [
+    "CalibrationBand",
     "StudyAttemptItemResponse",
+    "StudyAttemptPhase",
     "StudyAttemptRequest",
     "StudyAttemptResponse",
     "StudyFlashcardItemResponse",
     "StudyFlashcardRequest",
     "StudyFlashcardResponse",
     "StudyFlashcardSource",
+    "StudyPhaseAttemptCounts",
     "StudyPredictionItemResponse",
     "StudyPredictionRequest",
     "StudyPredictionResponse",
@@ -48,10 +55,11 @@ __all__ = [
     "StudySelfExplanationItemResponse",
     "StudySelfExplanationRequest",
     "StudySelfExplanationResponse",
-    "StudySessionCompleteRequest",
     "StudySessionCompletionResponse",
     "StudySessionItemResponse",
     "StudySessionListResponse",
+    "StudySessionQuestionListResponse",
     "StudySessionResponse",
     "StudySessionStartRequest",
+    "StudySessionSummaryResponse",
 ]

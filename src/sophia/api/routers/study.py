@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
-from sqlalchemy import select
 
 from sophia.api.deps import (
+    current_session_record,
     ensure_learning_path_scope,
     request_session,
     require_csrf,
@@ -15,12 +15,15 @@ from sophia.api.deps import (
     require_learning_path_scope,
 )
 from sophia.api.provenance import api_provenance
+from sophia.api.questions import question_response, require_provenance
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.study import (
+    CalibrationBand,
     StudyFlashcardItemResponse,
     StudyFlashcardRequest,
     StudyFlashcardResponse,
     StudyFlashcardSource,
+    StudyPhaseAttemptCounts,
     StudyPredictionItemResponse,
     StudyPredictionRequest,
     StudyPredictionResponse,
@@ -30,20 +33,21 @@ from sophia.api.schemas.study import (
     StudySelfExplanationItemResponse,
     StudySelfExplanationRequest,
     StudySelfExplanationResponse,
-    StudySessionCompleteRequest,
     StudySessionCompletionResponse,
     StudySessionItemResponse,
     StudySessionListResponse,
+    StudySessionQuestionListResponse,
     StudySessionResponse,
     StudySessionStartRequest,
+    StudySessionSummaryResponse,
 )
 from sophia.api.transactions import TransactionalRoute
+from sophia.domain.learning import AttemptPhase as DomainAttemptPhase
 from sophia.domain.learning import ContentKind
 from sophia.domain.models import FlashcardSource
-from sophia.infra.schema import study_sessions
 from sophia.services.athena_confidence import record_study_prediction
 from sophia.services.athena_session import (
-    complete_study_session,
+    finalize_study_session,
     get_flashcard_course_id,
     get_session_scope,
     get_study_sessions,
@@ -51,10 +55,12 @@ from sophia.services.athena_session import (
     save_flashcard_idempotent,
     save_reflection,
     start_study_session,
+    summarize_study_session,
 )
 from sophia.services.athena_study import save_self_explanation_idempotent
-from sophia.services.provenance import learner_authored, record_provenance
+from sophia.services.provenance import get_provenance_map, learner_authored, record_provenance
 from sophia.services.study_events import append_event
+from sophia.services.study_questions import get_session_questions
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -68,11 +74,22 @@ if TYPE_CHECKING:
         StudyReflection,
         StudySession,
     )
+    from sophia.services.athena_session import SessionScope, StudySessionSummary
 
 router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
 ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
-    "complete_study_session": {"operation_id": "completeStudySession"},
+    "complete_study_session": {
+        "rationale": (
+            "In-process grading for the CLI study flows, which compute their own "
+            "scores. The HTTP path uses finalize_study_session so a client cannot "
+            "post scores it invented."
+        ),
+    },
+    "finalize_study_session": {"operation_id": "completeStudySession"},
+    "get_study_session": {
+        "rationale": "Single-session lookup folded into completion and summary responses.",
+    },
     "get_flashcard_course_id": {
         "rationale": "Scope-check lookup for the self-explanation endpoint, not itself a route.",
     },
@@ -98,6 +115,7 @@ ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     },
     "save_reflection": {"operation_id": "saveStudyReflection"},
     "start_study_session": {"operation_id": "startStudySession"},
+    "summarize_study_session": {"operation_id": "getStudySessionSummary"},
 }
 
 _DOMAIN_FLASHCARD_SOURCE = {
@@ -159,26 +177,86 @@ async def create_study_session(
     "/study/sessions/{session_id}/complete",
     response_model=StudySessionCompletionResponse,
     operation_id="completeStudySession",
-    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
+    },
 )
 async def mark_study_session_complete(
     session_id: SessionIdPath,
-    payload: StudySessionCompleteRequest,
     request: Request,
 ) -> StudySessionCompletionResponse:
+    """Close a session on scores the server computes from its own attempts.
+
+    This takes no scores from the client on purpose: the endpoint used to
+    accept whatever pre/post pair it was handed, which is how a "+0%
+    improvement" heuristic could be recorded as fact (see issue #97).
+    """
     auth_session = await require_csrf(request)
     db = await request_session(request)
-    learning_path_id = await _study_session_learning_path_id(db, session_id)
-    if learning_path_id is None:
+    await _require_session_ownership_by_id(db, auth_session, session_id)
+    completed = await finalize_study_session(db, session_id)
+    if completed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    ensure_learning_path_scope(auth_session, learning_path_id)
-    await complete_study_session(
-        db,
-        session_id,
-        payload.pre_test_score,
-        payload.post_test_score,
+    return StudySessionCompletionResponse(
+        session_id=session_id,
+        completed=True,
+        session=_study_session_response(completed),
     )
-    return StudySessionCompletionResponse(session_id=session_id, completed=True)
+
+
+@router.get(
+    "/study/sessions/{session_id}/summary",
+    response_model=StudySessionSummaryResponse,
+    operation_id="getStudySessionSummary",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
+)
+async def get_study_session_summary(
+    session_id: SessionIdPath,
+    request: Request,
+) -> StudySessionSummaryResponse:
+    """Serve the reflect route its numbers, so the client computes none of them."""
+    auth_session = await current_session_record(request)
+    db = await request_session(request)
+    await _require_session_ownership_by_id(db, auth_session, session_id)
+    summary = await summarize_study_session(db, session_id, user_id=auth_session.user.id)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return _summary_response(summary)
+
+
+@router.get(
+    "/study/sessions/{session_id}/questions",
+    response_model=StudySessionQuestionListResponse,
+    operation_id="listStudySessionQuestions",
+    responses={status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope}},
+)
+async def list_study_session_questions(
+    session_id: SessionIdPath,
+    request: Request,
+) -> StudySessionQuestionListResponse:
+    """Read a session's question set back instead of generating a new one.
+
+    A reload must not cost another model call, nor hand the learner a
+    different set of cards half-way through a session.
+    """
+    auth_session = await current_session_record(request)
+    db = await request_session(request)
+    scope = await _require_session_ownership_by_id(db, auth_session, session_id)
+    questions = await get_session_questions(db, session_id)
+    provenance = await get_provenance_map(
+        db,
+        ContentKind.QUESTION,
+        [question.id for question in questions],
+    )
+    return StudySessionQuestionListResponse(
+        session_id=session_id,
+        learning_path_id=scope.course_id,
+        questions=[
+            question_response(question, require_provenance(provenance, question))
+            for question in questions
+        ],
+    )
 
 
 @router.post(
@@ -369,33 +447,51 @@ async def _require_session_ownership(
     auth_session: SessionRecord,
     learning_path_id: int,
     session_id: int,
-) -> None:
+) -> SessionScope:
     """A session started before study realtime tracked ownership has no user_id
     to match, so it can never pass this check — see get_session_scope."""
-    scope = await get_session_scope(db, session_id)
-    if (
-        scope is None
-        or scope.course_id != learning_path_id
-        or scope.user_id != auth_session.user.id
-    ):
+    scope = await _require_session_ownership_by_id(db, auth_session, session_id)
+    if scope.course_id != learning_path_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return scope
 
 
-async def _study_session_learning_path_id(
+async def _require_session_ownership_by_id(
     db: AsyncSession,
+    auth_session: SessionRecord,
     session_id: int,
-) -> int | None:
-    course_id = await db.scalar(
-        select(study_sessions.c.course_id).where(study_sessions.c.id == session_id)
+) -> SessionScope:
+    """Ownership check for the routes that carry no learning path of their own.
+
+    The learning path comes from the stored session rather than the request, so
+    these cannot be answered with a scope check alone: without matching the
+    owner, a learner sharing a learning path could complete or read somebody
+    else's session (the gap issue #97's audit left open on this endpoint).
+    """
+    scope = await get_session_scope(db, session_id)
+    if scope is None or scope.user_id != auth_session.user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    ensure_learning_path_scope(auth_session, scope.course_id)
+    return scope
+
+
+def _summary_response(summary: StudySessionSummary) -> StudySessionSummaryResponse:
+    predicted = summary.predicted
+    measured = summary.measured
+    return StudySessionSummaryResponse(
+        session=_study_session_response(summary.session),
+        attempts=StudyPhaseAttemptCounts(
+            pre_test=summary.attempts_by_phase[DomainAttemptPhase.PRE_TEST],
+            practice=summary.attempts_by_phase[DomainAttemptPhase.PRACTICE],
+            post_test=summary.attempts_by_phase[DomainAttemptPhase.POST_TEST],
+        ),
+        practice_score=summary.practice_score,
+        predicted=predicted,
+        measured=measured,
+        calibration_delta=(None if predicted is None or measured is None else measured - predicted),
+        band=CalibrationBand(summary.band.value),
+        legacy_scored=summary.legacy_scored,
     )
-    if course_id is None:
-        return None
-    if isinstance(course_id, int):
-        return course_id
-    if isinstance(course_id, str):
-        return int(course_id)
-    msg = "study session course_id must be an integer"
-    raise TypeError(msg)
 
 
 def _study_session_response(session: StudySession) -> StudySessionItemResponse:

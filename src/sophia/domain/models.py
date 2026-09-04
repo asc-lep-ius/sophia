@@ -606,6 +606,38 @@ class TopicLectureLink(BaseModel, frozen=True):
     score: float  # embedding similarity score
 
 
+class CalibrationBand(StrEnum):
+    """How a learner's prediction compares with their measured performance.
+
+    The judgement is domain knowledge; the wording that goes with it is not.
+    The study surface localizes each band itself rather than rendering a
+    server-authored sentence.
+    """
+
+    UNKNOWN = "unknown"
+    WELL_CALIBRATED = "well_calibrated"
+    OVERCONFIDENT = "overconfident"
+    UNDERCONFIDENT = "underconfident"
+
+
+CALIBRATION_TOLERANCE = 0.1
+"""Prediction/performance gap treated as well calibrated, either direction."""
+
+
+def calibration_band(predicted: float | None, measured: float | None) -> CalibrationBand:
+    """Classify a prediction against measured performance.
+
+    Either value may be missing — a learner who predicted but has not been
+    measured yet is not badly calibrated, they are unmeasured.
+    """
+    if predicted is None or measured is None:
+        return CalibrationBand.UNKNOWN
+    error = predicted - measured
+    if abs(error) <= CALIBRATION_TOLERANCE:
+        return CalibrationBand.WELL_CALIBRATED
+    return CalibrationBand.OVERCONFIDENT if error > 0 else CalibrationBand.UNDERCONFIDENT
+
+
 class ConfidenceRating(BaseModel, frozen=True):
     """A student's self-assessed confidence vs actual performance for a topic."""
 
@@ -621,6 +653,11 @@ class ConfidenceRating(BaseModel, frozen=True):
         if self.actual is None:
             return None
         return self.predicted - self.actual
+
+    @property
+    def band(self) -> CalibrationBand:
+        """Machine-readable calibration verdict for the study surface."""
+        return calibration_band(self.predicted, self.actual)
 
     @property
     def is_blind_spot(self) -> bool:

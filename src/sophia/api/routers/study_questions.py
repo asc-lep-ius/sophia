@@ -18,21 +18,20 @@ from sophia.api.deps import (
     request_session,
     require_csrf_learning_path_scope,
 )
-from sophia.api.provenance import api_provenance
+from sophia.api.questions import question_response, require_provenance
 from sophia.api.schemas.content import ContentLanguage
-from sophia.api.schemas.engagement import ElaborationPolicy, LearningEventType
 from sophia.api.schemas.errors import ErrorEnvelope
-from sophia.api.schemas.questions import OpenResponseQuestion, Question, QuestionDifficulty
 from sophia.api.schemas.study import (
     StudyAttemptItemResponse,
+    StudyAttemptPhase,
     StudyAttemptRequest,
     StudyAttemptResponse,
     StudyQuestionListResponse,
     StudyQuestionRequest,
 )
 from sophia.api.transactions import TransactionalRoute
-from sophia.domain.errors import AthenaError, EngagementPolicyUnmet
-from sophia.domain.learning import ContentKind
+from sophia.domain.errors import EngagementPolicyUnmet
+from sophia.domain.learning import AttemptPhase, ContentKind
 from sophia.domain.learning import ContentLanguage as DomainContentLanguage
 from sophia.services.athena_confidence import update_actual_score
 from sophia.services.athena_session import get_session_scope
@@ -49,12 +48,9 @@ from sophia.services.study_questions import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.domain.learning import ContentProvenance, GeneratedQuestion, QuestionAttempt
-    from sophia.domain.learning import ElaborationPolicy as DomainElaborationPolicy
+    from sophia.domain.learning import GeneratedQuestion, QuestionAttempt
 
 router = APIRouter(tags=["study"], route_class=TransactionalRoute)
 
@@ -77,6 +73,11 @@ async def generate_questions(
     db = await request_session(request)
     settings = get_settings(request)
 
+    if payload.session_id is not None:
+        await _require_session_ownership(
+            db, session.user.id, payload.learning_path_id, payload.session_id
+        )
+
     resolved = await resolve_content_language(
         db,
         payload.learning_path_id,
@@ -95,6 +96,7 @@ async def generate_questions(
             min_prompt_dwell_ms=settings.elaboration_min_prompt_dwell_ms,
         ),
         user_id=session.user.id,
+        session_id=payload.session_id,
     )
     provenance = await get_provenance_map(
         db,
@@ -106,7 +108,7 @@ async def generate_questions(
         topic=payload.topic,
         content_language=ContentLanguage(resolved.language.value),
         questions=[
-            _question_response(question, _require_provenance(provenance, question))
+            question_response(question, require_provenance(provenance, question))
             for question in questions
         ],
     )
@@ -133,13 +135,9 @@ async def submit_attempt(
     if question is None or question.course_id != payload.learning_path_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    scope = await get_session_scope(db, payload.session_id)
-    if (
-        scope is None
-        or scope.course_id != payload.learning_path_id
-        or scope.user_id != session.user.id
-    ):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    await _require_session_ownership(
+        db, session.user.id, payload.learning_path_id, payload.session_id
+    )
 
     await _enforce_engagement_policy(db, question, session.user.id)
     result = await save_attempt(
@@ -152,6 +150,7 @@ async def submit_attempt(
         session_id=payload.session_id,
         request_id=payload.request_id,
         self_rating=payload.self_rating,
+        phase=AttemptPhase(payload.phase.value),
     )
     if result.is_new:
         await update_actual_score(
@@ -177,6 +176,18 @@ async def submit_attempt(
     return StudyAttemptResponse(attempt=_attempt_response(result.attempt))
 
 
+async def _require_session_ownership(
+    db: AsyncSession,
+    user_id: str,
+    learning_path_id: int,
+    session_id: int,
+) -> None:
+    """Answer 404, not 403, for somebody else's session: existence is not public."""
+    scope = await get_session_scope(db, session_id)
+    if scope is None or scope.course_id != learning_path_id or scope.user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+
 async def _enforce_engagement_policy(
     db: AsyncSession,
     question: GeneratedQuestion,
@@ -193,55 +204,6 @@ async def _enforce_engagement_policy(
         raise EngagementPolicyUnmet(msg, outcome.params)
 
 
-def _question_response(
-    question: GeneratedQuestion,
-    provenance: ContentProvenance,
-) -> Question:
-    return OpenResponseQuestion(
-        id=question.id,
-        topic=question.topic,
-        difficulty=QuestionDifficulty(question.difficulty),
-        content_language=ContentLanguage(question.content_language.value),
-        provenance=api_provenance(provenance),
-        prompt=question.prompt,
-        engagement_policy=_policy_response(question.elaboration_policy),
-    )
-
-
-def _require_provenance(
-    provenance: Mapping[str, ContentProvenance],
-    question: GeneratedQuestion,
-) -> ContentProvenance:
-    """Refuse to serve generated content whose provenance failed to persist.
-
-    Silently dropping the question would hand the client a short list it cannot
-    distinguish from a small one, and serving it without provenance would defeat
-    the point of recording provenance at all.
-    """
-    record = provenance.get(question.id)
-    if record is None:
-        msg = f"generated question {question.id} has no provenance record"
-        raise AthenaError(msg)
-    return record
-
-
-def _policy_response(policy: DomainElaborationPolicy | None) -> ElaborationPolicy:
-    """Project a stored policy, or an ungated one for a question that carries none."""
-    if policy is None:
-        return ElaborationPolicy(
-            required_event_types=[],
-            min_elaboration_chars=0,
-            min_prompt_dwell_ms=0,
-        )
-    return ElaborationPolicy(
-        required_event_types=[
-            LearningEventType(event_type.value) for event_type in policy.required_event_types
-        ],
-        min_elaboration_chars=policy.min_elaboration_chars,
-        min_prompt_dwell_ms=policy.min_prompt_dwell_ms,
-    )
-
-
 def _attempt_response(attempt: QuestionAttempt) -> StudyAttemptItemResponse:
     return StudyAttemptItemResponse(
         id=attempt.id,
@@ -252,5 +214,6 @@ def _attempt_response(attempt: QuestionAttempt) -> StudyAttemptItemResponse:
         confidence=attempt.confidence,
         self_rating=attempt.self_rating,
         score=attempt.score,
+        phase=StudyAttemptPhase(attempt.phase.value),
         submitted_at=attempt.submitted_at,
     )

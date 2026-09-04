@@ -18,14 +18,17 @@ class StudyFlashcardSource(StrEnum):
     MANUAL = "manual"
 
 
+class StudyAttemptPhase(StrEnum):
+    """Which part of the equilibration cycle an attempt belongs to."""
+
+    PRE_TEST = "pre_test"
+    PRACTICE = "practice"
+    POST_TEST = "post_test"
+
+
 class StudySessionStartRequest(ApiModel):
     learning_path_id: int = Field(gt=0)
     topic: str = Field(min_length=1)
-
-
-class StudySessionCompleteRequest(ApiModel):
-    pre_test_score: float = Field(ge=0.0, le=1.0)
-    post_test_score: float = Field(ge=0.0, le=1.0)
 
 
 class StudyFlashcardRequest(ApiModel):
@@ -54,9 +57,17 @@ class StudyFlashcardRequest(ApiModel):
 
 
 class StudyQuestionRequest(ApiModel):
+    """Generate a batch of questions, optionally bound to a live session.
+
+    Passing ``session_id`` is what makes the batch readable back through
+    ``listStudySessionQuestions``; without it the questions belong to the
+    learning path alone, as they did before the study surface existed.
+    """
+
     learning_path_id: int = Field(gt=0)
     topic: str = Field(min_length=1)
     count: int = Field(default=3, ge=1, le=10)
+    session_id: int | None = Field(default=None, gt=0)
 
 
 class StudyAttemptRequest(ApiModel):
@@ -71,6 +82,10 @@ class StudyAttemptRequest(ApiModel):
     stores an answer key to grade against. ``request_id`` is a client-generated
     idempotency key: retrying the same submission returns the original result
     rather than recording a second attempt.
+
+    ``phase`` says where in the cycle the attempt was made. The client chooses
+    it, but it cannot forge a better outcome by doing so: the phase decides
+    which mean an attempt is averaged into, never what the attempt scores.
     """
 
     learning_path_id: int = Field(gt=0)
@@ -80,6 +95,7 @@ class StudyAttemptRequest(ApiModel):
     confidence: int | None = Field(default=None, ge=1, le=5)
     self_rating: int = Field(ge=1, le=4)
     request_id: str = Field(min_length=1, max_length=128)
+    phase: StudyAttemptPhase = StudyAttemptPhase.PRACTICE
 
 
 class StudyPredictionRequest(ApiModel):

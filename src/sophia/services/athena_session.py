@@ -7,12 +7,22 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import func, insert, select, update
 
 from sophia.domain.errors import TopicExtractionError
-from sophia.domain.models import FlashcardSource, StudentFlashcard, StudyReflection, StudySession
+from sophia.domain.learning import AttemptPhase
+from sophia.domain.models import (
+    CalibrationBand,
+    FlashcardSource,
+    StudentFlashcard,
+    StudyReflection,
+    StudySession,
+    calibration_band,
+)
 from sophia.infra.schema import (
+    confidence_ratings,
     lecture_downloads,
+    question_attempts,
     student_flashcards,
     study_reflections,
     study_sessions,
@@ -28,6 +38,7 @@ from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
     from rich.console import Console
+    from sqlalchemy import Row
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.infra.di import AppContainer
@@ -89,6 +100,29 @@ async def complete_study_session(
     )
 
 
+async def finalize_study_session(session: AsyncSession, session_id: int) -> StudySession | None:
+    """Mark a session complete, scoring it from what the learner actually did.
+
+    Unlike :func:`complete_study_session` — which still serves the CLI flows
+    that grade in-process — nothing here is taken from the caller. Pre and post
+    scores are the mean server-computed score of the session's own ``pre_test``
+    and ``post_test`` attempts, so a client cannot post an improvement figure
+    it invented. A phase with no attempts scores ``None`` rather than zero: not
+    sitting a post-test is an absent measurement, not a failed one.
+    """
+    means = await _phase_score_means(session, session_id)
+    await session.execute(
+        update(study_sessions)
+        .where(study_sessions.c.id == session_id)
+        .values(
+            pre_test_score=means.get(AttemptPhase.PRE_TEST),
+            post_test_score=means.get(AttemptPhase.POST_TEST),
+            completed_at=datetime.now(UTC),
+        )
+    )
+    return await get_study_session(session, session_id)
+
+
 @dataclass(frozen=True, slots=True)
 class SessionScope:
     """The course and owning learner a study session belongs to."""
@@ -116,6 +150,73 @@ async def get_session_scope(session: AsyncSession, session_id: int) -> SessionSc
     return SessionScope(course_id=row.course_id, user_id=row.user_id)
 
 
+async def get_study_session(session: AsyncSession, session_id: int) -> StudySession | None:
+    """Load one study session by id."""
+    row = (
+        await session.execute(select(study_sessions).where(study_sessions.c.id == session_id))
+    ).one_or_none()
+    return None if row is None else _row_to_study_session(row)
+
+
+@dataclass(frozen=True, slots=True)
+class StudySessionSummary:
+    """What a learner is shown on the reflect route, computed server-side.
+
+    ``predicted`` is the confidence the learner committed to before working;
+    ``measured`` is what their graded attempts came to. Holding both is the
+    disequilibrium moment the cycle is built around, so neither may be derived
+    on the client. ``measured`` prefers the post-test and falls back to
+    practice attempts, because a learner who reflects before sitting the
+    post-test still deserves a comparison rather than a blank.
+    """
+
+    session: StudySession
+    attempts_by_phase: dict[AttemptPhase, int]
+    practice_score: float | None
+    predicted: float | None
+    measured: float | None
+    band: CalibrationBand
+    legacy_scored: bool
+
+
+async def summarize_study_session(
+    session: AsyncSession,
+    session_id: int,
+    *,
+    user_id: str,
+) -> StudySessionSummary | None:
+    """Score a session and compare it against the learner's own prediction."""
+    row = (
+        await session.execute(select(study_sessions).where(study_sessions.c.id == session_id))
+    ).one_or_none()
+    if row is None:
+        return None
+
+    study_session = _row_to_study_session(row)
+    means = await _phase_score_means(session, session_id)
+    counts = await _phase_attempt_counts(session, session_id)
+    practice_score = means.get(AttemptPhase.PRACTICE)
+    predicted = await _session_prediction(
+        session,
+        study_session.course_id,
+        study_session.topic,
+        user_id=user_id,
+    )
+    measured = study_session.post_test_score
+    if measured is None:
+        measured = practice_score
+
+    return StudySessionSummary(
+        session=study_session,
+        attempts_by_phase=counts,
+        practice_score=practice_score,
+        predicted=predicted,
+        measured=measured,
+        band=calibration_band(predicted, measured),
+        legacy_scored=bool(row.legacy_scored),
+    )
+
+
 async def get_study_sessions(
     session: AsyncSession,
     course_id: int,
@@ -130,19 +231,80 @@ async def get_study_sessions(
     if topic:
         query = query.where(study_sessions.c.topic == topic)
     rows = (await session.execute(query)).all()
-    return [
-        StudySession(
-            id=row.id,
-            course_id=row.course_id,
-            topic=row.topic,
-            pre_test_score=row.pre_test_score,
-            post_test_score=row.post_test_score,
-            started_at=row.started_at.isoformat() if row.started_at else "",
-            completed_at=row.completed_at.isoformat() if row.completed_at else None,
-            user_id=row.user_id,
+    return [_row_to_study_session(row) for row in rows]
+
+
+def _row_to_study_session(row: Row[tuple[object, ...]]) -> StudySession:
+    return StudySession(
+        id=row.id,
+        course_id=row.course_id,
+        topic=row.topic,
+        pre_test_score=row.pre_test_score,
+        post_test_score=row.post_test_score,
+        started_at=row.started_at.isoformat() if row.started_at else "",
+        completed_at=row.completed_at.isoformat() if row.completed_at else None,
+        user_id=row.user_id,
+    )
+
+
+async def _phase_score_means(
+    session: AsyncSession,
+    session_id: int,
+) -> dict[AttemptPhase, float]:
+    """Mean graded score per phase, skipping attempts that never got a score."""
+    rows = (
+        await session.execute(
+            select(question_attempts.c.phase, func.avg(question_attempts.c.score))
+            .where(
+                question_attempts.c.session_id == session_id,
+                question_attempts.c.score.is_not(None),
+            )
+            .group_by(question_attempts.c.phase)
         )
-        for row in rows
-    ]
+    ).all()
+    return {AttemptPhase(phase): float(mean) for phase, mean in rows if mean is not None}
+
+
+async def _phase_attempt_counts(
+    session: AsyncSession,
+    session_id: int,
+) -> dict[AttemptPhase, int]:
+    """How many attempts each phase holds, graded or not."""
+    rows = (
+        await session.execute(
+            select(question_attempts.c.phase, func.count())
+            .where(question_attempts.c.session_id == session_id)
+            .group_by(question_attempts.c.phase)
+        )
+    ).all()
+    counts = dict.fromkeys(AttemptPhase, 0)
+    for phase, count in rows:
+        counts[AttemptPhase(phase)] = int(count)
+    return counts
+
+
+async def _session_prediction(
+    session: AsyncSession,
+    course_id: int,
+    topic: str,
+    *,
+    user_id: str,
+) -> float | None:
+    """The learner's own most recent confidence prediction for the topic.
+
+    Scoped to the learner: a shared learning path must not surface somebody
+    else's prediction as this learner's disequilibrium moment.
+    """
+    return await session.scalar(
+        select(confidence_ratings.c.predicted)
+        .where(
+            confidence_ratings.c.course_id == course_id,
+            confidence_ratings.c.topic == topic,
+            confidence_ratings.c.user_id == user_id,
+        )
+        .order_by(confidence_ratings.c.id.desc())
+        .limit(1)
+    )
 
 
 # ---------------------------------------------------------------------------
