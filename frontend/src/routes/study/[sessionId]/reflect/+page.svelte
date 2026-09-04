@@ -77,6 +77,16 @@
     return () => current?.destroy();
   });
 
+  // `$effect` cleanup does not run when the tab closes or the page is hard
+  // reloaded, which is exactly when a held grade would be lost. `pagehide`
+  // fires in both, and on mobile it is the only one that reliably does.
+  $effect(() => {
+    const current = runtime;
+    const flush = () => current?.flushOnUnload();
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  });
+
   // The countdown is the pedagogy, not a spinner: the floor comes from the
   // server (GET /api/study/pacing) so shortening it is a deployment change,
   // and the results stay closed until it elapses.

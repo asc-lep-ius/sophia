@@ -47,6 +47,8 @@ const PACED_SESSION_LIMIT = 100;
 const DEFAULT_DECK_SIZE = 51;
 const EXTEND_DECK_SIZE = 2;
 const EXTEND_SESSION_ID = 501;
+/** A session whose generation failed: the predict route must be able to recover it. */
+const EMPTY_SESSION_ID = 502;
 
 const state = {
   sessions: new Map(),
@@ -66,6 +68,13 @@ const state = {
  * friction — so a spec chooses its behaviour by choosing an id. One id gets a
  * two-card deck, for the test that drains a queue and extends it.
  */
+function deckSizeFor(id) {
+  if (id === EXTEND_SESSION_ID) {
+    return EXTEND_DECK_SIZE;
+  }
+  return id === EMPTY_SESSION_ID ? 0 : DEFAULT_DECK_SIZE;
+}
+
 function ensureSession(id) {
   if (state.sessions.has(id)) {
     return;
@@ -74,9 +83,32 @@ function ensureSession(id) {
   addSession(state.sessions, state.questions, {
     id,
     topic: paced ? "Graphs" : "Latency",
-    cards: id === EXTEND_SESSION_ID ? EXTEND_DECK_SIZE : DEFAULT_DECK_SIZE,
+    cards: deckSizeFor(id),
     policy: paced ? PACED_POLICY : UNGATED_POLICY,
   });
+}
+
+function buildQuestion({ id, sessionId, topic, position, policy }) {
+  return {
+    id,
+    kind: "open_response",
+    topic,
+    prompt: `Card ${position + 1}: explain ${topic} in your own words.`,
+    difficulty: "explain",
+    content_language: "en",
+    translations: [],
+    provenance: {
+      origin: "lms",
+      generated_by: "model",
+      generator_ref: "fixture-model",
+      generated_at: "2026-09-04T10:00:00Z",
+      verified_by: null,
+      verified_at: null,
+      source_spans: [],
+    },
+    engagement_policy: policy,
+    session_id: sessionId,
+  };
 }
 
 function addSession(sessions, questions, { id, topic, cards, policy }) {
@@ -92,25 +124,15 @@ function addSession(sessions, questions, { id, topic, cards, policy }) {
   });
   questions.set(
     id,
-    Array.from({ length: cards }, (_unused, index) => ({
-      id: `s${id}-q${index}`,
-      kind: "open_response",
-      topic,
-      prompt: `Card ${index + 1}: explain ${topic} in your own words.`,
-      difficulty: "explain",
-      content_language: "en",
-      translations: [],
-      provenance: {
-        origin: "lms",
-        generated_by: "model",
-        generator_ref: "fixture-model",
-        generated_at: "2026-09-04T10:00:00Z",
-        verified_by: null,
-        verified_at: null,
-        source_spans: [],
-      },
-      engagement_policy: policy,
-    })),
+    Array.from({ length: cards }, (_unused, index) =>
+      buildQuestion({
+        id: `s${id}-q${index}`,
+        sessionId: id,
+        topic,
+        position: index,
+        policy,
+      }),
+    ),
   );
 }
 
@@ -211,16 +233,25 @@ function generateQuestions(_match, body) {
     ensureSession(sessionId);
   }
   const existing = state.questions.get(sessionId) ?? [];
-  const template = existing[0] ?? (state.questions.get(1) ?? [])[0];
-  const added = Array.from({ length: body.count ?? 3 }, (_unused, index) => ({
-    ...template,
-    id: `s${sessionId}-gen${existing.length + index}`,
-    prompt: `Generated card ${existing.length + index + 1}.`,
-  }));
+  const topic = body.topic ?? "Graphs";
+  // Built from scratch rather than cloned from an existing card: a session
+  // that never had one is exactly the case the recovery path exists for.
+  const policy =
+    existing[0]?.engagement_policy ??
+    (sessionId < PACED_SESSION_LIMIT ? PACED_POLICY : UNGATED_POLICY);
+  const added = Array.from({ length: body.count ?? 3 }, (_unused, index) =>
+    buildQuestion({
+      id: `s${sessionId}-gen${existing.length + index}`,
+      sessionId,
+      topic,
+      position: existing.length + index,
+      policy,
+    }),
+  );
   state.questions.set(sessionId, [...existing, ...added]);
   return {
     learning_path_id: LEARNING_PATH_ID,
-    topic: body.topic ?? "Graphs",
+    topic,
     content_language: "en",
     questions: added,
   };

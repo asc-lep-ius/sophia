@@ -48,6 +48,16 @@
     return () => current.destroy();
   });
 
+  // `$effect` cleanup does not run when the tab closes or the page is hard
+  // reloaded, which is exactly when a held grade would be lost. `pagehide`
+  // fires in both, and on mobile it is the only one that reliably does.
+  $effect(() => {
+    const current = runtime;
+    const flush = () => current?.flushOnUnload();
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  });
+
   $effect(() => {
     const stream = new StudyEventStream({
       sessionId: data.sessionId,

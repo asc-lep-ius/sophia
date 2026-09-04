@@ -56,8 +56,6 @@ export type StudySessionStoreOptions = {
 export const GRADES = [1, 2, 3, 4] as const;
 export type Grade = (typeof GRADES)[number];
 
-const UNDO_WINDOW_MS = 10_000;
-
 /**
  * The study session's state machine and card queue.
  *
@@ -229,9 +227,16 @@ export class StudySessionStore {
     );
   }
 
+  /**
+   * Whether the last grade can still be taken back.
+   *
+   * Asks the outbox rather than a wall clock: a button that stays enabled
+   * after the grade has gone can only ever apologise, which is worse than a
+   * button that goes quiet at the moment the answer becomes "no".
+   */
   get canUndo(): boolean {
     const grade = this.#lastGrade;
-    return grade !== null && this.#observedNow() - grade.at <= UNDO_WINDOW_MS;
+    return grade !== null && this.#outbox.canCancel(grade.requestId);
   }
 
   setAnswer(value: string): void {
@@ -279,6 +284,13 @@ export class StudySessionStore {
       queuePosition: this.#index,
     };
     const requestId = this.#newId();
+
+    // This submission supersedes any rejected one for the same card: see
+    // SubmissionOutbox.discardFailed for what leaving it behind would cost.
+    const position = this.#index;
+    this.#outbox.discardFailed(
+      (failed) => failed.payload.queuePosition === position,
+    );
 
     // Optimistic: the learner sees the next card immediately, and the entry
     // holds everything needed to put this one back if the server refuses.

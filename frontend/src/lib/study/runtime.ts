@@ -22,6 +22,7 @@ export type StudyRuntime = {
   store: StudySessionStore;
   events: LearningEventBatcher;
   destroy: () => void;
+  flushOnUnload: () => void;
 };
 
 /**
@@ -39,6 +40,7 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
     sessionId: options.sessionId,
   };
   const events = new LearningEventBatcher(context);
+  let unloading = false;
 
   const store = new StudySessionStore({
     questions: options.questions,
@@ -47,14 +49,18 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
     learningEvents: events,
     submit: async (submission, requestId) => {
       await events.flushNow();
-      const attempt = await submitAttempt(context, {
-        questionId: submission.questionId,
-        answerText: submission.answerText,
-        confidence: submission.confidence,
-        selfRating: submission.selfRating,
-        phase: submission.phase,
-        requestId,
-      });
+      const attempt = await submitAttempt(
+        context,
+        {
+          questionId: submission.questionId,
+          answerText: submission.answerText,
+          confidence: submission.confidence,
+          selfRating: submission.selfRating,
+          phase: submission.phase,
+          requestId,
+        },
+        { keepalive: unloading },
+      );
       options.onGraded?.(attempt);
     },
   });
@@ -63,12 +69,26 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
     store,
     events,
     destroy: () => {
-      // Order matters: a held grade is sent last so the process events it
-      // depends on are already on their way — the server refuses an attempt
-      // whose trace it has not ingested.
+      // The grade goes first: its own submission awaits the event flush, so
+      // the trace the server checks is on its way before the attempt is. A
+      // bare event flush follows for the case where nothing was held.
+      store.flushGrades();
       events.flushQuietly();
       events.destroy();
+    },
+    /**
+     * Teardown for a page that is going away rather than navigating.
+     *
+     * `$effect` cleanup does not run on a tab close or a hard reload, so
+     * without this the grade still inside its cancel window would simply be
+     * dropped. Requests go out with `keepalive`; a browser may still refuse
+     * to finish them, and a grade that does not land leaves the card without
+     * an attempt, so the resumed session presents it again.
+     */
+    flushOnUnload: () => {
+      unloading = true;
       store.flushGrades();
+      events.flushOnUnload();
     },
   };
 }

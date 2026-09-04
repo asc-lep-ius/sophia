@@ -30,11 +30,15 @@ export const DEFAULT_RETRY_DELAY_MS = 400;
  *
  * Dispatching the instant a grade is entered leaves nothing to cancel — the
  * request is already in flight, so "undo" could only ever apologise. Holding
- * the submission for a moment is what makes the documented behaviour real, and
- * it costs nothing: the surface has already moved on optimistically, and
- * `flush` sends everything the moment the page is leaving.
+ * the submission is what makes the documented behaviour real.
+ *
+ * Two and a half seconds is the shortest window a deliberate correction fits
+ * into: noticing the wrong key, finding undo, pressing it. Shorter is a
+ * feature that only works in tests. It is safe to wait that long because the
+ * surface has already moved on optimistically and teardown flushes what is
+ * still held.
  */
-export const DEFAULT_HOLD_MS = 700;
+export const DEFAULT_HOLD_MS = 2500;
 
 /**
  * Holds submissions that have already been reflected in the UI.
@@ -70,6 +74,26 @@ export class SubmissionOutbox<T> {
 
   has(requestId: string): boolean {
     return this.#entries.some((entry) => entry.requestId === requestId);
+  }
+
+  /** Whether this entry could still be taken back, i.e. is still held. */
+  canCancel(requestId: string): boolean {
+    return this.#holds.has(requestId);
+  }
+
+  /**
+   * Forget a failed entry that a fresh submission supersedes.
+   *
+   * A rolled-back card can be graded again, and when it is, the rejected
+   * attempt is history: leaving it in the outbox would keep counting it as
+   * unsaved and — worse — keep offering its queue position as a place to
+   * rewind to, dragging the learner back onto a card the server has since
+   * accepted.
+   */
+  discardFailed(matches: (entry: OutboxEntry<T>) => boolean): void {
+    this.#entries = this.#entries.filter(
+      (entry) => entry.status !== "failed" || !matches(entry),
+    );
   }
 
   /** Cancel a submission that has not been sent yet; returns whether it was. */
@@ -120,8 +144,10 @@ export class SubmissionOutbox<T> {
   /**
    * Send everything still being held, now.
    *
-   * Called when the surface is torn down: a held grade is a real grade, and a
-   * learner closing the tab must not lose it to a cancel window nobody used.
+   * Called when the surface is torn down. Best effort on an unload: the
+   * requests go out with `keepalive`, but a browser is under no obligation to
+   * finish them. A grade that does not land is not lost work — the card simply
+   * has no attempt, so the resumed session presents it again.
    */
   flush(): void {
     for (const entry of this.#entries) {

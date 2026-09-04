@@ -37,6 +37,8 @@ const MAX_BATCH_SIZE = 100;
 export class LearningEventBatcher {
   #pending: LearningEventInput[] = [];
   #timer: number | null = null;
+  #flushing: Promise<void> | null = null;
+  #keepalive = false;
   #options: Required<Omit<LearningEventBatcherOptions, "flushIntervalMs">> & {
     flushIntervalMs: number;
   };
@@ -74,7 +76,28 @@ export class LearningEventBatcher {
     this.#scheduleFlush();
   }
 
-  async flushNow(): Promise<void> {
+  /**
+   * Post everything buffered.
+   *
+   * Concurrent calls share one flush: teardown triggers this from two
+   * directions at once (its own call, and the held grade whose submission
+   * awaits it), and two flushes reading the same buffer would post the same
+   * batch twice.
+   */
+  flushNow(): Promise<void> {
+    this.#flushing ??= this.#drain().finally(() => {
+      this.#flushing = null;
+    });
+    return this.#flushing;
+  }
+
+  /** Post what is buffered in a way that can outlive the page. */
+  flushOnUnload(): void {
+    this.#keepalive = true;
+    this.flushQuietly();
+  }
+
+  async #drain(): Promise<void> {
     this.#cancelFlush();
     while (this.#pending.length > 0) {
       const batch = this.#pending.slice(0, MAX_BATCH_SIZE);
@@ -87,6 +110,7 @@ export class LearningEventBatcher {
           learningPathId: this.#options.learningPathId,
         },
         batch,
+        { keepalive: this.#keepalive },
       );
       this.#pending = this.#pending.slice(batch.length);
     }

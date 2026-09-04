@@ -73,6 +73,15 @@ export async function recordPrediction(
   );
 }
 
+/**
+ * `keepalive` lets a request outlive the page that started it.
+ *
+ * Only used on the teardown path: a grade still inside its cancel window when
+ * the learner closes the tab would otherwise be dropped by the browser mid
+ * unload. Bodies here are far under the 64 KB the option allows.
+ */
+export type SendOptions = { keepalive?: boolean };
+
 export async function submitAttempt(
   context: StudyRequestContext,
   input: {
@@ -83,6 +92,7 @@ export async function submitAttempt(
     phase: StudyAttemptPhase;
     requestId: string;
   },
+  options: SendOptions = {},
 ): Promise<StudyAttempt> {
   const client = createApiClient();
   const result = await unwrapApiResponse(
@@ -98,6 +108,7 @@ export async function submitAttempt(
         request_id: input.requestId,
       },
       headers: studyMutationHeaders(context.csrfToken),
+      keepalive: options.keepalive,
     }),
     { normalizeDates: false },
   );
@@ -153,6 +164,7 @@ export async function loadSessionSummary(
 export async function ingestLearningEvents(
   context: Pick<StudyRequestContext, "csrfToken" | "learningPathId">,
   events: LearningEventInput[],
+  options: SendOptions = {},
 ): Promise<void> {
   const client = createApiClient();
   await unwrapApiResponse(
@@ -162,6 +174,7 @@ export async function ingestLearningEvents(
         events,
       },
       headers: studyMutationHeaders(context.csrfToken),
+      keepalive: options.keepalive,
     }),
   );
 }

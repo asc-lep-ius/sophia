@@ -81,6 +81,9 @@ async function readQuestions(
     { params: { session_id: sessionId } },
   );
   if (!response.ok) {
+    // An empty deck rather than an error: the page can say "no cards" and
+    // offer to generate some. The learning path is a placeholder nothing
+    // reads — every route takes it from the session's own tenant.
     return {
       session_id: sessionId,
       learning_path_id: 0,

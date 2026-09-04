@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
   import { goto } from "$app/navigation";
   import { untrack } from "svelte";
   import { resolve } from "$app/paths";
@@ -8,11 +9,11 @@
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard, remainingCards } from "$lib/study/deck";
   import { createStudyRuntime } from "$lib/study/runtime";
-  import type { PageData } from "./$types";
+  import type { ActionData, PageData } from "./$types";
 
-  type Props = { data: PageData };
+  type Props = { data: PageData; form: ActionData };
 
-  let { data }: Props = $props();
+  let { data, form }: Props = $props();
 
   const RATINGS = [
     { value: 1, label: () => m.study_predict_1() },
@@ -68,6 +69,16 @@
     const current = runtime;
     current?.store.recordPromptShown();
     return () => current?.destroy();
+  });
+
+  // `$effect` cleanup does not run when the tab closes or the page is hard
+  // reloaded, which is exactly when a held grade would be lost. `pagehide`
+  // fires in both, and on mobile it is the only one that reliably does.
+  $effect(() => {
+    const current = runtime;
+    const flush = () => current?.flushOnUnload();
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
   });
 
   async function choose(value: number) {
@@ -142,16 +153,30 @@
 
 <section class="pretest" aria-labelledby="study-pretest-heading">
   <h2 id="study-pretest-heading">{m.study_pretest_heading()}</h2>
-  {#if runtime && !preTestDone}
+  <!--
+    A resumed session whose pre-test is already answered is finished, not
+    broken: the empty-deck error below is for a session that has no cards at
+    all, which is a state a learner can act on.
+  -->
+  {#if preTestDone}
+    <p class="done" role="status">{m.study_finished()}</p>
+  {:else if runtime}
     <StudyCard
       store={runtime.store}
       hint={m.study_pretest_hint()}
       showQueue={false}
     />
-  {:else if runtime}
-    <p class="done" role="status">{m.study_finished()}</p>
   {:else}
-    <p class="error">{m.study_queue_empty()}</p>
+    <div class="empty-deck">
+      <p class="error">{m.study_queue_empty()}</p>
+      <form method="POST" action="?/generate" use:enhance>
+        <input type="hidden" name="topic" value={data.summary.session.topic} />
+        <button type="submit">{m.study_extend()}</button>
+      </form>
+      {#if form?.error}
+        <p class="error" role="alert">{m.study_extend_failed()}</p>
+      {/if}
+    </div>
   {/if}
 </section>
 
@@ -217,6 +242,11 @@
     margin: 0;
     font-size: 1.1rem;
     overflow-wrap: anywhere;
+  }
+
+  .empty-deck {
+    display: grid;
+    gap: 0.5rem;
   }
 
   .advance {

@@ -121,6 +121,39 @@ describe("submission outbox", () => {
     expect(outbox.cancel("req-1")).toBe(false);
   });
 
+  it("reports whether an entry can still be taken back", async () => {
+    const outbox = new SubmissionOutbox<string>({
+      submit: async () => undefined,
+      rollback: vi.fn(),
+      holdMs: 10_000,
+    });
+    outbox.enqueue("req-1", "grade");
+
+    expect(outbox.canCancel("req-1")).toBe(true);
+    outbox.flush();
+    expect(outbox.canCancel("req-1")).toBe(false);
+    await settle();
+  });
+
+  it("forgets a failed entry a fresh submission supersedes", async () => {
+    const outbox = new SubmissionOutbox<string>({
+      submit: async () => {
+        throw apiError(412);
+      },
+      rollback: vi.fn(),
+      holdMs: 0,
+      wait: async () => undefined,
+    });
+    outbox.enqueue("req-1", "grade");
+    await settle();
+    expect(outbox.failedCount).toBe(1);
+
+    outbox.discardFailed((entry) => entry.payload === "grade");
+
+    expect(outbox.failedCount).toBe(0);
+    expect(outbox.entries).toEqual([]);
+  });
+
   it("flushes held entries when the surface goes away", async () => {
     const submit = vi.fn(async () => undefined);
     const outbox = new SubmissionOutbox<string>({

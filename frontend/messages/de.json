@@ -129,7 +129,7 @@
   "study_reflection_too_soon": "Die Reflexionspause ist noch nicht vorbei. Gib ihr noch einen Moment.",
   "study_results_heading": "Vorhersage gegen Messung",
   "study_resume": "Weiter",
-  "study_retry": "Erneut senden",
+  "study_retry_card": "Karte {position} erneut senden",
   "study_reveal": "Aufdecken",
   "study_reveal_available": "Du kannst jetzt aufdecken.",
   "study_reveal_blocked": "Noch {remaining} Zeichen eigener Antwort, dann kannst du aufdecken.",

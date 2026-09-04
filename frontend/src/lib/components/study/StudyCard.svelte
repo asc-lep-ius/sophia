@@ -207,15 +207,25 @@
         : m.study_grade_rejected()}
     </p>
     <div class="error-actions">
-      {#each store.outboxEntries.filter((entry) => entry.status === "failed") as entry (entry.requestId)}
-        <button type="button" onclick={() => void store.retryFailed(entry.requestId)}>
-          {m.study_retry()}
-        </button>
-      {/each}
       <button type="button" onclick={() => store.dismissError()}>
         {m.study_dismiss()}
       </button>
     </div>
+  </div>
+{/if}
+
+<!--
+  Outside the error banner on purpose: dismissing a message must not remove
+  the only way to send a rejected grade. Each button names its card, because
+  several of them read out identically otherwise.
+-->
+{#if store.failedCount > 0}
+  <div class="unsent" aria-label={m.study_unsaved_grades({ count: store.failedCount })}>
+    {#each store.outboxEntries.filter((entry) => entry.status === "failed") as entry (entry.requestId)}
+      <button type="button" onclick={() => void store.retryFailed(entry.requestId)}>
+        {m.study_retry_card({ position: entry.payload.queuePosition + 1 })}
+      </button>
+    {/each}
   </div>
 {/if}
 
@@ -345,9 +355,15 @@
     border: 0;
   }
 
-  .error-actions {
+  .error-actions,
+  .unsent {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  .unsent {
+    max-width: 52rem;
+    margin-top: 0.5rem;
   }
 </style>

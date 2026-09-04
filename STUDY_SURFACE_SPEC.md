@@ -102,14 +102,22 @@ retry idempotent server-side — before rolling back. On rollback the card is
 restored at its queue position and the learner gets a non-blocking error with a
 retry action.
 
-A grade is held briefly before it is sent, which is what gives undo something
-to cancel: dispatching on the keystroke would leave undo able only to
-apologise. The hold is invisible — the surface has already moved to the next
-card — and every held grade is flushed when the surface is torn down.
+A grade is held for a couple of seconds before it is sent, which is what gives
+undo something to cancel: dispatching on the keystroke would leave undo able
+only to apologise. The hold is invisible — the surface has already moved to the
+next card. Leaving the route flushes what is held; a tab close or hard reload
+flushes it too, from `pagehide` and with `keepalive`, but that is best effort.
+A grade the browser drops on the way out is not lost work: the card then has no
+attempt, so the resumed session presents it again.
 
-Undo first checks the outbox. If the grade is still inside its hold window,
-cancel it locally. If it has already been sent, say so: the grade is durable,
-and showing a queue the server does not have would be a lie.
+Undo is offered exactly while the grade is still cancellable — the control is
+disabled the moment the submission goes out, rather than staying enabled and
+apologising afterwards.
+
+A rejected grade is superseded by the next grade of the same card, and forgotten
+when that one is accepted. Leaving it in the outbox would keep counting it as
+unsaved and keep offering its queue position as somewhere a later rollback could
+rewind to, landing the learner on a card the server has already accepted.
 
 Several grades can be in flight at once. A rollback rewinds to the *earliest*
 rejected card and never forwards, so one rejection cannot overwrite another's

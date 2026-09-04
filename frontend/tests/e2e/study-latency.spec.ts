@@ -22,6 +22,8 @@ const LATENCY_SESSION = 201;
 const KEYBOARD_SESSION = 202;
 // The fixture gives this id a two-card deck: one anchor, one practice card.
 const EXTEND_SESSION = 501;
+// And this one no deck at all, standing in for a failed first generation.
+const EMPTY_SESSION = 502;
 const INTERACTION_BUDGET_MS = 50;
 const CARDS_TO_WORK = 12;
 const CPU_THROTTLE_RATE = 4;
@@ -139,4 +141,16 @@ test("a drained queue can be extended without leaving the session", async ({
 
   await expect(page.getByLabel("Your answer")).toBeVisible();
   await expect(page.getByText(/Card 1 of \d+/)).toBeVisible();
+});
+
+test("a session that never got cards can be recovered from the predict route", async ({
+  page,
+}) => {
+  await authenticateShell(page);
+  await page.goto(`/app/study/${EMPTY_SESSION}/predict`);
+
+  await expect(page.getByText("No cards left in this session.")).toBeVisible();
+  await page.getByRole("button", { name: "Add more cards" }).click();
+
+  await expect(page.getByLabel("Your answer")).toBeVisible();
 });

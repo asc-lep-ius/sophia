@@ -202,16 +202,19 @@ describe("study session store", () => {
     expect(submitted).toEqual([]);
   });
 
-  it("refuses to undo a grade the server already has", async () => {
+  it("stops offering undo once the grade has gone", async () => {
+    // The control goes quiet rather than staying enabled and apologising:
+    // the harness dispatches immediately (holdMs 0), so there is nothing left
+    // to cancel by the time the learner could press it.
     const { store, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
     store.reveal();
     store.grade(3);
-    await Promise.resolve();
+    await settle();
 
+    expect(store.canUndo).toBe(false);
     expect(store.undo()).toBe(false);
-    expect(store.error).toBe("study.undo_already_committed");
   });
 
   it("rewinds to the earliest rejected card when several fail at once", async () => {
@@ -237,6 +240,61 @@ describe("study session store", () => {
     expect(
       store.outboxEntries.filter((entry) => entry.status === "failed"),
     ).toHaveLength(2);
+  });
+
+  it("forgets a rejected grade once the card is graded again", async () => {
+    // Left behind, the rejected entry keeps counting as unsaved and keeps
+    // offering its queue position as somewhere a later rollback can rewind to
+    // — landing the learner back on a card the server has since accepted.
+    const { store, advanceMs, failEvery, submitted } = harness(4);
+
+    failEvery(new TypeError("network down"));
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+    await settle();
+    expect(store.failedCount).toBe(1);
+
+    failEvery(null);
+    elaborate(store);
+    store.grade(3);
+    await settle();
+
+    expect(store.failedCount).toBe(0);
+    expect(submitted.map((entry) => entry.questionId)).toEqual(["q-0"]);
+  });
+
+  it("rewinds to the later card when an earlier failure was superseded", async () => {
+    const { store, advanceMs, failEvery } = harness(4);
+
+    failEvery(new TypeError("network down"));
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+    await settle();
+
+    failEvery(null);
+    elaborate(store);
+    store.grade(3);
+    await settle();
+
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+    await settle();
+
+    failEvery(new TypeError("network down"));
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+    await settle();
+
+    // Card 3 failed; card 1's accepted re-grade must not drag the learner back.
+    expect(store.current?.question.id).toBe("q-2");
   });
 
   it("lets the learner grade a rolled-back card again", async () => {
