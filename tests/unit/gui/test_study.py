@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from sophia.domain.models import DifficultyLevel
 
 # ---------------------------------------------------------------------------
@@ -111,6 +113,33 @@ class TestQuestionsComplete:
         from sophia.gui.pages.study import _questions_complete
 
         assert _questions_complete({}, {}, count=0) is True
+
+
+# ---------------------------------------------------------------------------
+# _fraction_answered
+# ---------------------------------------------------------------------------
+
+
+class TestFractionAnswered:
+    """This is a progress preview only — see _complete_study_session for why no
+    score derived from it is ever persisted as a grade."""
+
+    def test_fraction_of_non_empty_answers(self) -> None:
+        from sophia.gui.pages.study import _fraction_answered
+
+        answers = {"Q1": "yes", "Q2": "", "Q3": "sure"}
+        assert _fraction_answered(answers, 3) == pytest.approx(2 / 3)
+
+    def test_all_empty_answers(self) -> None:
+        from sophia.gui.pages.study import _fraction_answered
+
+        answers = {"Q1": "", "Q2": "  "}
+        assert _fraction_answered(answers, 2) == 0.0
+
+    def test_zero_count(self) -> None:
+        from sophia.gui.pages.study import _fraction_answered
+
+        assert _fraction_answered({}, 0) == 0.0
 
 
 # ---------------------------------------------------------------------------

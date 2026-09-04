@@ -467,6 +467,22 @@ class TestCompleteSession:
 
         mock_complete.assert_awaited_once_with(mock_db_session, 7, 0.4, 0.8)
 
+    @pytest.mark.asyncio
+    async def test_accepts_none_scores_for_an_unscoreable_session(
+        self, mock_container: AppContainer, mock_db_session: AsyncMock
+    ) -> None:
+        """The legacy page has no rubric to grade against — it completes a
+        session without claiming a score rather than fabricating one."""
+        from sophia.gui.services.study_service import complete_session
+
+        with patch(
+            f"{_PATCH_BASE}.complete_study_session",
+            new_callable=AsyncMock,
+        ) as mock_complete:
+            await complete_session(mock_container, session_id=7, pre_score=None, post_score=None)
+
+        mock_complete.assert_awaited_once_with(mock_db_session, 7, None, None)
+
 
 # -- save_study_flashcard ----------------------------------------------------
 
@@ -490,54 +506,6 @@ class TestSaveStudyFlashcard:
 
         assert result == expected
         mock_save.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC, "Q?", "A.")
-
-
-# -- finalize_calibration ---------------------------------------------------
-
-
-class TestFinalizeCalibration:
-    """Tests for finalize_calibration."""
-
-    @pytest.mark.asyncio
-    async def test_updates_actual_score_and_calibration(
-        self, mock_container: AppContainer, mock_db_session: AsyncMock
-    ) -> None:
-        from sophia.gui.services.study_service import finalize_calibration
-
-        with (
-            patch(f"{_PATCH_BASE}.update_actual_score", new_callable=AsyncMock) as mock_actual,
-            patch(f"{_PATCH_BASE}.update_topic_calibration", new_callable=AsyncMock) as mock_calib,
-        ):
-            await finalize_calibration(mock_container, COURSE_ID, TOPIC, 0.75)
-
-        mock_actual.assert_awaited_once_with(mock_db_session, TOPIC, COURSE_ID, 0.75)
-        mock_calib.assert_awaited_once_with(mock_db_session, COURSE_ID, TOPIC)
-
-
-# -- compute_score -----------------------------------------------------------
-
-
-class TestComputeScore:
-    """Tests for compute_score."""
-
-    def test_fraction_of_non_empty_answers(self) -> None:
-        from sophia.gui.services.study_service import compute_score
-
-        answers = {"Q1": "yes", "Q2": "", "Q3": "sure"}
-        questions = ["Q1", "Q2", "Q3"]
-        assert compute_score(answers, questions) == pytest.approx(2 / 3)
-
-    def test_all_empty_answers(self) -> None:
-        from sophia.gui.services.study_service import compute_score
-
-        answers = {"Q1": "", "Q2": "  "}
-        questions = ["Q1", "Q2"]
-        assert compute_score(answers, questions) == 0.0
-
-    def test_empty_questions_list(self) -> None:
-        from sophia.gui.services.study_service import compute_score
-
-        assert compute_score({}, []) == 0.0
 
 
 # -- format_improvement ------------------------------------------------------

@@ -12,6 +12,7 @@ from sophia.infra.schema.athena import (
     review_schedule,
     self_explanations,
     student_flashcards,
+    study_reflections,
     study_sessions,
     topic_lecture_links,
     topic_mappings,
@@ -47,6 +48,7 @@ from sophia.infra.schema.learning import (
     learning_events,
     learning_path_settings,
     question_attempts,
+    study_events,
 )
 
 __all__ = [
@@ -78,6 +80,8 @@ __all__ = [
     "scheduled_jobs",
     "self_explanations",
     "student_flashcards",
+    "study_events",
+    "study_reflections",
     "study_sessions",
     "time_entries",
     "topic_lecture_links",

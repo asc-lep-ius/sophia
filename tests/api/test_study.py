@@ -165,15 +165,19 @@ def test_start_study_session_returns_created_session(monkeypatch: pytest.MonkeyP
         db: object,
         course_id: int,
         topic: str,
+        *,
+        user_id: str | None = None,
     ) -> StudySession:
         assert db is fake_app.db
         assert course_id == 12
         assert topic == "Graphs"
+        assert user_id == "learner"
         return StudySession(
             id=8,
             course_id=12,
             topic="Graphs",
             started_at="2026-05-26T13:00:00Z",
+            user_id=user_id,
         )
 
     monkeypatch.setattr(study_router, "start_study_session", fake_start_study_session)

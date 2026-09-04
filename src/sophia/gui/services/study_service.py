@@ -19,7 +19,6 @@ from sophia.services.athena_confidence import (
     get_confidence_ratings,
     get_topic_difficulty_level,
     rating_to_score,
-    update_actual_score,
 )
 from sophia.services.athena_review import get_due_reviews
 from sophia.services.athena_session import (
@@ -32,7 +31,6 @@ from sophia.services.athena_study import (
     generate_study_questions,
     get_course_topics,
     get_lecture_context,
-    update_topic_calibration,
 )
 
 if TYPE_CHECKING:
@@ -217,8 +215,8 @@ async def complete_session(
     app: AppContainer,
     *,
     session_id: int,
-    pre_score: float,
-    post_score: float,
+    pre_score: float | None,
+    post_score: float | None,
 ) -> None:
     """Record pre/post scores and mark session complete."""
     async with app.session() as db:
@@ -235,25 +233,6 @@ async def save_study_flashcard(
     """Save a student-authored flashcard from a study session."""
     async with app.session() as db:
         return await save_flashcard(db, course_id, topic, front, back)
-
-
-async def finalize_calibration(
-    app: AppContainer,
-    course_id: int,
-    topic: str,
-    actual_score: float,
-) -> None:
-    """Update actual score and recalculate topic calibration."""
-    async with app.session() as db:
-        await update_actual_score(db, topic, course_id, actual_score)
-        await update_topic_calibration(db, course_id, topic)
-
-
-def compute_score(answers: dict[str, str], questions: list[str]) -> float:
-    """Compute a rough score (fraction of non-empty answers). Range 0.0–1.0."""
-    if not questions:
-        return 0.0
-    return sum(1 for a in answers.values() if a.strip()) / len(questions)
 
 
 def format_improvement(pre: float, post: float) -> str:

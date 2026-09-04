@@ -49,6 +49,7 @@ from sophia.services.athena_session import (
     start_study_session as start_study_session,
 )
 from sophia.services.hermes_setup import load_hermes_config
+from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -795,6 +796,56 @@ async def save_self_explanation(
         student_explanation=student_explanation,
         scaffold_level=scaffold_level,
         created_at=now.isoformat(),
+    )
+
+
+async def save_self_explanation_idempotent(
+    session: AsyncSession,
+    flashcard_id: int,
+    student_explanation: str,
+    scaffold_level: int,
+    *,
+    session_id: int,
+    user_id: str,
+    request_id: str,
+) -> tuple[SelfExplanation, bool]:
+    """Idempotently save a self-explanation made during a live study session.
+
+    Distinct from :func:`save_self_explanation`, used elsewhere (CLI) with no
+    request id to be idempotent on. Returns ``(explanation, is_new)``.
+    """
+    now = datetime.now(UTC)
+    row, is_new = await insert_or_fetch_row(
+        session,
+        self_explanations,
+        {
+            "flashcard_id": flashcard_id,
+            "student_explanation": student_explanation,
+            "scaffold_level": scaffold_level,
+            "created_at": now,
+            "session_id": session_id,
+            "user_id": user_id,
+            "request_id": request_id,
+        },
+        conflict_columns=(
+            self_explanations.c.org_id,
+            self_explanations.c.session_id,
+            self_explanations.c.user_id,
+            self_explanations.c.request_id,
+        ),
+        session_id=session_id,
+        user_id=user_id,
+        request_id=request_id,
+    )
+    return (
+        SelfExplanation(
+            id=row.id,
+            flashcard_id=row.flashcard_id,
+            student_explanation=row.student_explanation,
+            scaffold_level=row.scaffold_level,
+            created_at=row.created_at.isoformat() if row.created_at else "",
+        ),
+        is_new,
     )
 
 

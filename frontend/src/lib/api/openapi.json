@@ -2795,6 +2795,39 @@
             "title": "Question Id",
             "type": "string"
           },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "self_rating": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Rating"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
           "submitted_at": {
             "title": "Submitted At",
             "type": "string"
@@ -2803,16 +2836,19 @@
         "required": [
           "id",
           "learning_path_id",
+          "session_id",
           "question_id",
           "answer_text",
           "confidence",
+          "self_rating",
+          "score",
           "submitted_at"
         ],
         "title": "StudyAttemptItemResponse",
         "type": "object"
       },
       "StudyAttemptRequest": {
-        "description": "A learner's answer to a previously generated question.\n\nThe question is referenced by id rather than echoed back, so the engagement\npolicy the server enforces is the one it issued, not one the client claims.",
+        "description": "A learner's answer to a previously generated question, self-graded.\n\nThe question is referenced by id rather than echoed back, so the engagement\npolicy the server enforces is the one it issued, not one the client claims.\n\n``self_rating`` is the post-reveal Again/Hard/Good/Easy self-assessment the\nlearner gives once they see the expected answer \u2014 the score is computed\nfrom that, not from ``answer_text`` alone, since nothing in the system\nstores an answer key to grade against. ``request_id`` is a client-generated\nidempotency key: retrying the same submission returns the original result\nrather than recording a second attempt.",
         "properties": {
           "answer_text": {
             "minLength": 1,
@@ -2842,12 +2878,32 @@
             "minLength": 1,
             "title": "Question Id",
             "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "self_rating": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Self Rating",
+            "type": "integer"
+          },
+          "session_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Session Id",
+            "type": "integer"
           }
         },
         "required": [
           "learning_path_id",
+          "session_id",
           "question_id",
-          "answer_text"
+          "answer_text",
+          "self_rating",
+          "request_id"
         ],
         "title": "StudyAttemptRequest",
         "type": "object"
@@ -2911,6 +2967,7 @@
         "type": "object"
       },
       "StudyFlashcardRequest": {
+        "description": "Save a flashcard.\n\n``session_id`` and ``request_id`` are optional: a flashcard saved outside a\nlive study session (there is no session to be idempotent within) omits\nboth and is saved unconditionally, as before. Both must be given together\nto opt into the idempotent, session-scoped path.",
         "properties": {
           "back": {
             "minLength": 1,
@@ -2926,6 +2983,31 @@
             "exclusiveMinimum": 0.0,
             "title": "Learning Path Id",
             "type": "integer"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "source": {
             "$ref": "#/components/schemas/StudyFlashcardSource",
@@ -2967,6 +3049,87 @@
         ],
         "title": "StudyFlashcardSource",
         "type": "string"
+      },
+      "StudyPredictionItemResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "rated_at": {
+            "title": "Rated At",
+            "type": "string"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topic",
+          "predicted",
+          "rated_at"
+        ],
+        "title": "StudyPredictionItemResponse",
+        "type": "object"
+      },
+      "StudyPredictionRequest": {
+        "description": "A learner's pre-question confidence prediction for a topic, made during\na live study session \u2014 idempotent on ``request_id``.",
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "rating": {
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating",
+            "type": "integer"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Session Id",
+            "type": "integer"
+          },
+          "topic": {
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "session_id",
+          "topic",
+          "rating",
+          "request_id"
+        ],
+        "title": "StudyPredictionRequest",
+        "type": "object"
+      },
+      "StudyPredictionResponse": {
+        "properties": {
+          "prediction": {
+            "$ref": "#/components/schemas/StudyPredictionItemResponse"
+          }
+        },
+        "required": [
+          "prediction"
+        ],
+        "title": "StudyPredictionResponse",
+        "type": "object"
       },
       "StudyQuestionListResponse": {
         "description": "Generated questions plus the language they were generated in.",
@@ -3024,6 +3187,186 @@
           "topic"
         ],
         "title": "StudyQuestionRequest",
+        "type": "object"
+      },
+      "StudyReflectionItemResponse": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reflection_text": {
+            "title": "Reflection Text",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "learning_path_id",
+          "prompt",
+          "reflection_text",
+          "created_at"
+        ],
+        "title": "StudyReflectionItemResponse",
+        "type": "object"
+      },
+      "StudyReflectionRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "prompt": {
+            "minLength": 1,
+            "title": "Prompt",
+            "type": "string"
+          },
+          "reflection_text": {
+            "minLength": 1,
+            "title": "Reflection Text",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "session_id",
+          "prompt",
+          "reflection_text",
+          "request_id"
+        ],
+        "title": "StudyReflectionRequest",
+        "type": "object"
+      },
+      "StudyReflectionResponse": {
+        "properties": {
+          "reflection": {
+            "$ref": "#/components/schemas/StudyReflectionItemResponse"
+          }
+        },
+        "required": [
+          "reflection"
+        ],
+        "title": "StudyReflectionResponse",
+        "type": "object"
+      },
+      "StudySelfExplanationItemResponse": {
+        "properties": {
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "flashcard_id": {
+            "title": "Flashcard Id",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "scaffold_level": {
+            "title": "Scaffold Level",
+            "type": "integer"
+          },
+          "student_explanation": {
+            "title": "Student Explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "flashcard_id",
+          "student_explanation",
+          "scaffold_level",
+          "created_at"
+        ],
+        "title": "StudySelfExplanationItemResponse",
+        "type": "object"
+      },
+      "StudySelfExplanationRequest": {
+        "properties": {
+          "flashcard_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Flashcard Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "scaffold_level": {
+            "default": 3,
+            "maximum": 3.0,
+            "minimum": 0.0,
+            "title": "Scaffold Level",
+            "type": "integer"
+          },
+          "session_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Session Id",
+            "type": "integer"
+          },
+          "student_explanation": {
+            "minLength": 1,
+            "title": "Student Explanation",
+            "type": "string"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "session_id",
+          "flashcard_id",
+          "student_explanation",
+          "request_id"
+        ],
+        "title": "StudySelfExplanationRequest",
+        "type": "object"
+      },
+      "StudySelfExplanationResponse": {
+        "properties": {
+          "self_explanation": {
+            "$ref": "#/components/schemas/StudySelfExplanationItemResponse"
+          }
+        },
+        "required": [
+          "self_explanation"
+        ],
+        "title": "StudySelfExplanationResponse",
         "type": "object"
       },
       "StudySessionCompleteRequest": {
@@ -7973,6 +8316,81 @@
         ]
       }
     },
+    "/api/study/predictions": {
+      "post": {
+        "operationId": "recordStudyPrediction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyPredictionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyPredictionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Study Prediction",
+        "tags": [
+          "study"
+        ]
+      }
+    },
     "/api/study/questions": {
       "post": {
         "operationId": "generateStudyQuestions",
@@ -8043,6 +8461,156 @@
           }
         },
         "summary": "Generate Questions",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/reflections": {
+      "post": {
+        "operationId": "saveStudyReflection",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyReflectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyReflectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Reflection",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/self-explanations": {
+      "post": {
+        "operationId": "saveStudySelfExplanation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudySelfExplanationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySelfExplanationResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Self Explanation",
         "tags": [
           "study"
         ]

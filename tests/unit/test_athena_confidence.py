@@ -193,6 +193,55 @@ class TestGetConfidenceRatings:
         assert len(result) == 1
         assert result[0].course_id == 42
 
+    @pytest.mark.asyncio
+    async def test_unscoped_call_never_surfaces_a_learners_owned_rating(
+        self, db: AsyncSession
+    ) -> None:
+        """The write side (update_actual_score) is restricted to owner-less
+        rows when called without a learner; the read side must match, or a
+        legacy PATCH that correctly updated the owner-less row would appear
+        to have done nothing while actually exposing another learner's row."""
+        from sophia.services.athena_confidence import get_confidence_ratings
+
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
+            ("Sorting", 42, 0.25),
+        )
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, user_id) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.9, "learner"),
+        )
+
+        result = await get_confidence_ratings(db, course_id=42)
+
+        assert len(result) == 1
+        assert result[0].predicted == pytest.approx(0.25)  # pyright: ignore[reportUnknownMemberType]
+
+    @pytest.mark.asyncio
+    async def test_scoped_call_finds_the_learners_own_latest_rating(self, db: AsyncSession) -> None:
+        from sophia.services.athena_confidence import get_confidence_ratings
+
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, user_id) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.4, "learner"),
+        )
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, user_id) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.6, "other-learner"),
+        )
+
+        result = await get_confidence_ratings(db, course_id=42, user_id="learner")
+
+        assert len(result) == 1
+        assert result[0].predicted == pytest.approx(0.4)  # pyright: ignore[reportUnknownMemberType]
+
 
 # ---------------------------------------------------------------------------
 # get_blind_spots
@@ -316,3 +365,36 @@ class TestUpdateActualScore:
         assert rows[0][1] is None
         # Second (latest) should be updated
         assert rows[1][1] == pytest.approx(0.6)  # pyright: ignore[reportUnknownMemberType]
+
+    @pytest.mark.asyncio
+    async def test_unscoped_call_never_touches_a_learners_owned_rating(
+        self, db: AsyncSession
+    ) -> None:
+        """confidence_ratings mixes owner-less rows (the general calibration
+        surfaces this predates) with per-learner ones (study realtime). An
+        unscoped call — the legacy surfaces have no learner to pass — must
+        stay restricted to owner-less rows, never the newest row overall,
+        or a learner's own study-realtime prediction gets silently
+        overwritten by someone else's legacy calibration PATCH."""
+        from sophia.services.athena_confidence import update_actual_score
+
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted) VALUES (?, ?, ?)",
+            ("Sorting", 42, 0.25),
+        )
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, user_id) "
+            "VALUES (?, ?, ?, ?)",
+            ("Sorting", 42, 0.9, "learner"),
+        )
+
+        await update_actual_score(db, "Sorting", course_id=42, actual=0.6)
+
+        cursor = await exec_sql(db, "SELECT user_id, actual FROM confidence_ratings ORDER BY id")
+        rows = list(cursor.fetchall())
+        assert rows[0][0] is None
+        assert rows[0][1] == pytest.approx(0.6)  # pyright: ignore[reportUnknownMemberType]
+        assert rows[1][0] == "learner"
+        assert rows[1][1] is None

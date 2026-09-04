@@ -155,6 +155,17 @@ def test_caddy_sse_streams_are_not_buffered_or_compressed() -> None:
     assert sse_block.index("stream_close_delay 5m") < sse_block.index("transport http")
 
 
+def test_caddy_sse_matcher_covers_the_study_realtime_endpoint() -> None:
+    """/api/study/{session_id}/events has two segments before "events" — a
+    plain /api/*/events* matcher covers only one, so it needs its own entry."""
+    caddyfile = read_project_file("proxy/Caddyfile")
+    sse_matcher_line = next(
+        line for line in active_caddy_lines(caddyfile) if line.startswith("@api_sse path")
+    )
+
+    assert "/api/study/*/events*" in sse_matcher_line.split()
+
+
 def test_caddy_rate_limit_is_active_for_login_per_ip() -> None:
     caddyfile = read_project_file("proxy/Caddyfile")
     rate_limit_block = caddy_block(caddyfile, "\trate_limit")

@@ -35,7 +35,8 @@ from sophia.infra.engine import create_session_factory, session_scope
 from ._session_helpers import VALID_SESSION_KEY, FakeRedis
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Mapping
+    from typing import Any
 
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -99,9 +100,15 @@ async def db_harness(
     engine: AsyncEngine,
     *,
     tenant: SessionTenant | None = None,
+    settings_overrides: Mapping[str, Any] | None = None,
 ) -> AsyncIterator[DbHarness]:
     """Serve the API against a real engine, with a logged-in-capable client."""
-    settings = Settings(session_ttl_seconds=600)
+    settings = Settings(
+        session_ttl_seconds=600,
+        database_url=engine.url.render_as_string(hide_password=False),
+    )
+    if settings_overrides:
+        settings = settings.model_copy(update=dict(settings_overrides))
     core = SessionCore(
         store=RedisSessionStore(redis=FakeRedis(), ttl_seconds=settings.session_ttl_seconds),
         signer=SecretKeySessionManager(current_key=VALID_SESSION_KEY),

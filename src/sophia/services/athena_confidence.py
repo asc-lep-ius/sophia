@@ -10,6 +10,7 @@ from sqlalchemy import func, insert, select, update
 
 from sophia.domain.models import ConfidenceRating, DifficultyLevel
 from sophia.infra.schema import confidence_ratings
+from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
     from sqlalchemy import Row
@@ -74,14 +75,78 @@ async def rate_confidence(
     )
 
 
+async def record_study_prediction(
+    session: AsyncSession,
+    topic: str,
+    course_id: int,
+    rating: int,
+    *,
+    session_id: int,
+    user_id: str,
+    request_id: str,
+) -> tuple[ConfidenceRating, bool]:
+    """Idempotently record a confidence prediction made during a live study session.
+
+    Distinct from :func:`rate_confidence`, which the general calibration and
+    topics surfaces use outside the context of a study session and which has
+    no request id to be idempotent on. Returns ``(rating, is_new)``.
+    """
+    predicted = rating_to_score(rating)
+    now = datetime.now(UTC)
+    row, is_new = await insert_or_fetch_row(
+        session,
+        confidence_ratings,
+        {
+            "topic": topic,
+            "course_id": course_id,
+            "predicted": predicted,
+            "rated_at": now,
+            "session_id": session_id,
+            "user_id": user_id,
+            "request_id": request_id,
+        },
+        conflict_columns=(
+            confidence_ratings.c.org_id,
+            confidence_ratings.c.session_id,
+            confidence_ratings.c.user_id,
+            confidence_ratings.c.request_id,
+        ),
+        session_id=session_id,
+        user_id=user_id,
+        request_id=request_id,
+    )
+    if is_new:
+        from sophia.services.athena_chronos import log_confidence_prediction
+
+        await log_confidence_prediction(session, course_id, topic, predicted)
+        log.info("study_prediction_recorded", topic=topic, course_id=course_id, predicted=predicted)
+    return _row_to_rating(row), is_new
+
+
 async def get_confidence_ratings(
     session: AsyncSession,
     course_id: int,
+    *,
+    user_id: str | None = None,
 ) -> list[ConfidenceRating]:
-    """Load the most recent confidence ratings per topic for a course."""
+    """Load the most recent confidence ratings per topic for a course.
+
+    Same owner split as :func:`update_actual_score`: without ``user_id`` this
+    is restricted to owner-less rows (the general calibration/topics
+    surfaces), never a study-realtime learner's own row — the subquery is
+    filtered the same way as the outer query, not just the outer one, so
+    "most recent per topic" is computed within the right owner in the first
+    place rather than picking another learner's row and then dropping the
+    topic when it fails to match downstream.
+    """
+    owner_condition = (
+        confidence_ratings.c.user_id == user_id
+        if user_id is not None
+        else confidence_ratings.c.user_id.is_(None)
+    )
     latest_per_topic = (
         select(func.max(confidence_ratings.c.id))
-        .where(confidence_ratings.c.course_id == course_id)
+        .where(confidence_ratings.c.course_id == course_id, owner_condition)
         .group_by(confidence_ratings.c.topic)
         .scalar_subquery()
     )
@@ -90,6 +155,7 @@ async def get_confidence_ratings(
             select(confidence_ratings)
             .where(
                 confidence_ratings.c.course_id == course_id,
+                owner_condition,
                 confidence_ratings.c.id.in_(latest_per_topic),
             )
             .order_by(confidence_ratings.c.topic)
@@ -163,20 +229,34 @@ async def update_actual_score(
     topic: str,
     course_id: int,
     actual: float,
+    *,
+    user_id: str | None = None,
 ) -> None:
     """Update the most recent confidence rating with an actual score.
 
     Called by card review (Phase 4.3) or quiz import (Phase 4.6) when
-    objective performance data becomes available.
+    objective performance data becomes available, and by study realtime
+    attempt grading.
+
+    ``confidence_ratings`` now holds two kinds of row: owner-less ones from
+    the pre-session general calibration/topics surfaces (``rate_confidence``
+    never sets ``user_id``), and per-learner ones from study realtime
+    (``record_study_prediction`` always does). ``user_id`` picks which kind
+    ``"most recent"`` is scoped to — a caller with a learner in hand passes it
+    and only ever touches that learner's own rows; a caller without one (the
+    legacy surfaces) is restricted to owner-less rows rather than left
+    unqualified, so it can never land on — or overwrite — a row study
+    realtime created for somebody else.
     """
-    latest = (
-        select(func.max(confidence_ratings.c.id))
-        .where(
-            confidence_ratings.c.topic == topic,
-            confidence_ratings.c.course_id == course_id,
-        )
-        .scalar_subquery()
-    )
+    conditions = [
+        confidence_ratings.c.topic == topic,
+        confidence_ratings.c.course_id == course_id,
+    ]
+    if user_id is not None:
+        conditions.append(confidence_ratings.c.user_id == user_id)
+    else:
+        conditions.append(confidence_ratings.c.user_id.is_(None))
+    latest = select(func.max(confidence_ratings.c.id)).where(*conditions).scalar_subquery()
     await session.execute(
         update(confidence_ratings)
         .where(confidence_ratings.c.id == latest)

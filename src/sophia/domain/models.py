@@ -639,6 +639,7 @@ class StudySession(BaseModel, frozen=True):
     post_test_score: float | None = None  # 0.0-1.0
     started_at: str = ""
     completed_at: str | None = None
+    user_id: str | None = None
 
     @property
     def improvement(self) -> float | None:
@@ -675,6 +676,18 @@ class CardReviewAttempt(BaseModel, frozen=True):
     flashcard_id: int
     success: bool
     reviewed_at: str = ""
+
+
+class StudyReflection(BaseModel, frozen=True):
+    """A learner's metacognitive reflection recorded during a study session."""
+
+    id: int = 0
+    session_id: int
+    course_id: int
+    user_id: str
+    prompt: str
+    reflection_text: str
+    created_at: str = ""
 
 
 class SelfExplanation(BaseModel, frozen=True):

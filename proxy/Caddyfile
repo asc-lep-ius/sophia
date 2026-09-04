@@ -45,7 +45,10 @@
 		max_size 512MB
 	}
 
-	@api_sse path /api/events* /api/*/events* /api/*/stream*
+	# /api/study/*/events matches the study realtime SSE endpoint explicitly:
+	# it has two path segments between /api/ and /events (study, {session_id}),
+	# which /api/*/events* alone does not reliably cover.
+	@api_sse path /api/events* /api/*/events* /api/*/stream* /api/study/*/events*
 	# SSE paths must be handled before generic /api/* so Caddy streams events
 	# immediately and avoids upstream response compression for event streams.
 	handle @api_sse {
