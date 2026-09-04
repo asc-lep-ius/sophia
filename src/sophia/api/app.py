@@ -29,6 +29,7 @@ from sophia.api.routers import (
     review,
     search,
     study,
+    study_events,
     study_questions,
     topics,
 )
@@ -76,7 +77,15 @@ def create_api_app(
         lifespan=_standalone_api_lifespan if ready_on_startup else None,
     )
     api_app.state.settings = resolved_settings
-    api_app.state.session_core = session_core or _create_redis_session_core(resolved_settings)
+    if session_core is not None:
+        api_app.state.session_core = session_core
+        api_app.state.redis = None
+    else:
+        redis_client = redis_asyncio.Redis.from_url(resolved_settings.redis_url)  # pyright: ignore[reportUnknownMemberType]
+        api_app.state.session_core = create_session_core(
+            resolved_settings, cast("RedisSessionBackend", redis_client)
+        )
+        api_app.state.redis = redis_client
     api_app.state.login_authenticator = login_authenticator
     if app_container is not None:
         api_app.state.app_container = app_container
@@ -96,6 +105,7 @@ def create_api_app(
         study_questions.router,
         prefix=_normalize_route_prefix(route_prefix),
     )
+    api_app.include_router(study_events.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(review.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(calibration.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(deadlines.router, prefix=_normalize_route_prefix(route_prefix))
@@ -148,14 +158,6 @@ async def _standalone_api_lifespan(api_app: FastAPI) -> AsyncIterator[None]:
 def _set_runtime_readiness(api_app: FastAPI, *, ready: bool) -> None:
     api_app.state.db_ready = ready
     api_app.state.sse_broker_ready = ready
-
-
-def _create_redis_session_core(settings: Settings) -> SessionCore:
-    redis_client = cast(
-        "RedisSessionBackend",
-        redis_asyncio.Redis.from_url(settings.redis_url),  # pyright: ignore[reportUnknownMemberType]
-    )
-    return create_session_core(settings, redis_client)
 
 
 def _setup_observability(settings: Settings) -> None:

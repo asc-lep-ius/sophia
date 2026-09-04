@@ -49,6 +49,42 @@ class StudyFlashcardResponse(ApiModel):
     flashcard: StudyFlashcardItemResponse
 
 
+class StudyPredictionItemResponse(ApiModel):
+    learning_path_id: int
+    topic: str
+    predicted: float
+    rated_at: str
+
+
+class StudyPredictionResponse(ApiModel):
+    prediction: StudyPredictionItemResponse
+
+
+class StudySelfExplanationItemResponse(ApiModel):
+    id: int
+    flashcard_id: int
+    student_explanation: str
+    scaffold_level: int
+    created_at: str
+
+
+class StudySelfExplanationResponse(ApiModel):
+    self_explanation: StudySelfExplanationItemResponse
+
+
+class StudyReflectionItemResponse(ApiModel):
+    id: int
+    session_id: int
+    learning_path_id: int
+    prompt: str
+    reflection_text: str
+    created_at: str
+
+
+class StudyReflectionResponse(ApiModel):
+    reflection: StudyReflectionItemResponse
+
+
 class StudyQuestionListResponse(ApiModel):
     """Generated questions plus the language they were generated in."""
 
@@ -61,9 +97,12 @@ class StudyQuestionListResponse(ApiModel):
 class StudyAttemptItemResponse(ApiModel):
     id: int
     learning_path_id: int
+    session_id: int | None
     question_id: str
     answer_text: str
     confidence: int | None
+    self_rating: int | None
+    score: float | None
     submitted_at: str
 
 

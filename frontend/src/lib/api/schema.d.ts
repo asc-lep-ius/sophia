@@ -927,6 +927,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/study/predictions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Study Prediction */
+        post: operations["recordStudyPrediction"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/study/questions": {
         parameters: {
             query?: never;
@@ -938,6 +955,40 @@ export interface paths {
         put?: never;
         /** Generate Questions */
         post: operations["generateStudyQuestions"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/reflections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Reflection */
+        post: operations["saveStudyReflection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/self-explanations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Self Explanation */
+        post: operations["saveStudySelfExplanation"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2035,15 +2086,28 @@ export interface components {
             learning_path_id: number;
             /** Question Id */
             question_id: string;
+            /** Score */
+            score: number | null;
+            /** Self Rating */
+            self_rating: number | null;
+            /** Session Id */
+            session_id: number | null;
             /** Submitted At */
             submitted_at: string;
         };
         /**
          * StudyAttemptRequest
-         * @description A learner's answer to a previously generated question.
+         * @description A learner's answer to a previously generated question, self-graded.
          *
          *     The question is referenced by id rather than echoed back, so the engagement
          *     policy the server enforces is the one it issued, not one the client claims.
+         *
+         *     ``self_rating`` is the post-reveal Again/Hard/Good/Easy self-assessment the
+         *     learner gives once they see the expected answer — the score is computed
+         *     from that, not from ``answer_text`` alone, since nothing in the system
+         *     stores an answer key to grade against. ``request_id`` is a client-generated
+         *     idempotency key: retrying the same submission returns the original result
+         *     rather than recording a second attempt.
          */
         StudyAttemptRequest: {
             /** Answer Text */
@@ -2054,6 +2118,12 @@ export interface components {
             learning_path_id: number;
             /** Question Id */
             question_id: string;
+            /** Request Id */
+            request_id: string;
+            /** Self Rating */
+            self_rating: number;
+            /** Session Id */
+            session_id: number;
         };
         /** StudyAttemptResponse */
         StudyAttemptResponse: {
@@ -2076,7 +2146,15 @@ export interface components {
             /** Topic */
             topic: string;
         };
-        /** StudyFlashcardRequest */
+        /**
+         * StudyFlashcardRequest
+         * @description Save a flashcard.
+         *
+         *     ``session_id`` and ``request_id`` are optional: a flashcard saved outside a
+         *     live study session (there is no session to be idempotent within) omits
+         *     both and is saved unconditionally, as before. Both must be given together
+         *     to opt into the idempotent, session-scoped path.
+         */
         StudyFlashcardRequest: {
             /** Back */
             back: string;
@@ -2084,6 +2162,10 @@ export interface components {
             front: string;
             /** Learning Path Id */
             learning_path_id: number;
+            /** Request Id */
+            request_id?: string | null;
+            /** Session Id */
+            session_id?: number | null;
             /** @default study */
             source: components["schemas"]["StudyFlashcardSource"];
             /** Topic */
@@ -2099,6 +2181,38 @@ export interface components {
          * @enum {string}
          */
         StudyFlashcardSource: "study" | "transcript" | "manual";
+        /** StudyPredictionItemResponse */
+        StudyPredictionItemResponse: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Predicted */
+            predicted: number;
+            /** Rated At */
+            rated_at: string;
+            /** Topic */
+            topic: string;
+        };
+        /**
+         * StudyPredictionRequest
+         * @description A learner's pre-question confidence prediction for a topic, made during
+         *     a live study session — idempotent on ``request_id``.
+         */
+        StudyPredictionRequest: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Rating */
+            rating: number;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: number;
+            /** Topic */
+            topic: string;
+        };
+        /** StudyPredictionResponse */
+        StudyPredictionResponse: {
+            prediction: components["schemas"]["StudyPredictionItemResponse"];
+        };
         /**
          * StudyQuestionListResponse
          * @description Generated questions plus the language they were generated in.
@@ -2123,6 +2237,73 @@ export interface components {
             learning_path_id: number;
             /** Topic */
             topic: string;
+        };
+        /** StudyReflectionItemResponse */
+        StudyReflectionItemResponse: {
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Prompt */
+            prompt: string;
+            /** Reflection Text */
+            reflection_text: string;
+            /** Session Id */
+            session_id: number;
+        };
+        /** StudyReflectionRequest */
+        StudyReflectionRequest: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Prompt */
+            prompt: string;
+            /** Reflection Text */
+            reflection_text: string;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: number;
+        };
+        /** StudyReflectionResponse */
+        StudyReflectionResponse: {
+            reflection: components["schemas"]["StudyReflectionItemResponse"];
+        };
+        /** StudySelfExplanationItemResponse */
+        StudySelfExplanationItemResponse: {
+            /** Created At */
+            created_at: string;
+            /** Flashcard Id */
+            flashcard_id: number;
+            /** Id */
+            id: number;
+            /** Scaffold Level */
+            scaffold_level: number;
+            /** Student Explanation */
+            student_explanation: string;
+        };
+        /** StudySelfExplanationRequest */
+        StudySelfExplanationRequest: {
+            /** Flashcard Id */
+            flashcard_id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Request Id */
+            request_id: string;
+            /**
+             * Scaffold Level
+             * @default 3
+             */
+            scaffold_level: number;
+            /** Session Id */
+            session_id: number;
+            /** Student Explanation */
+            student_explanation: string;
+        };
+        /** StudySelfExplanationResponse */
+        StudySelfExplanationResponse: {
+            self_explanation: components["schemas"]["StudySelfExplanationItemResponse"];
         };
         /** StudySessionCompleteRequest */
         StudySessionCompleteRequest: {
@@ -4620,6 +4801,51 @@ export interface operations {
             };
         };
     };
+    recordStudyPrediction: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyPredictionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyPredictionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     generateStudyQuestions: {
         parameters: {
             query?: {
@@ -4643,6 +4869,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StudyQuestionListResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveStudyReflection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyReflectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyReflectionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveStudySelfExplanation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudySelfExplanationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySelfExplanationResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Unprocessable Content */

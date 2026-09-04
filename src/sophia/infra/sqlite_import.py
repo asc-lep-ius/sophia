@@ -118,16 +118,31 @@ def missing_tables(connection: sqlite3.Connection) -> list[str]:
     return sorted(present - set(metadata.tables))
 
 
+def transferable_columns(connection: sqlite3.Connection, table: Table) -> list[Column[object]]:
+    """Columns a table has on both sides.
+
+    A revision can add a Postgres-only column to a table this tool also
+    transfers (a ``session_id``/idempotency-key column, say) — the legacy
+    SQLite source never had it and never will. Such columns get Postgres's own
+    default on insert rather than being read from a source that cannot supply
+    them, and are excluded from the checksum for the same reason: this tool can
+    only prove a column transferred correctly when the source actually had it.
+    """
+    cursor = connection.execute(f'PRAGMA table_info("{table.name}")')
+    present = {str(row[1]) for row in cursor.fetchall()}
+    return [column for column in table.columns if column.name in present]
+
+
 def read_rows(
     connection: sqlite3.Connection,
     table: Table,
 ) -> list[dict[str, object]]:
     """Read one source table, coerced to the types the Postgres columns declare."""
-    columns = [column.name for column in table.columns]
-    quoted = ", ".join(f'"{name}"' for name in columns)
+    columns = transferable_columns(connection, table)
+    quoted = ", ".join(f'"{column.name}"' for column in columns)
     cursor = connection.execute(f'SELECT {quoted} FROM "{table.name}"')  # noqa: S608
     return [
-        {column.name: coerce_value(row[column.name], column) for column in table.columns}
+        {column.name: coerce_value(row[column.name], column) for column in columns}
         for row in cursor.fetchall()
     ]
 
@@ -148,7 +163,7 @@ def coerce_value(value: object, column: Column[object]) -> object:
     return value
 
 
-def checksum(rows: Sequence[dict[str, object]], table: Table) -> str:
+def checksum(rows: Sequence[dict[str, object]], column_names: Sequence[str]) -> str:
     """Hash a table's rows from a canonical, engine-independent representation.
 
     The rendered rows are sorted here rather than by either engine. Sorting in
@@ -157,9 +172,13 @@ def checksum(rows: Sequence[dict[str, object]], table: Table) -> str:
     table with a text key would checksum differently after a correct transfer.
     A relational table has no inherent row order, so ordering is not a property
     worth proving — the multiset of rows is.
+
+    ``column_names`` is explicit rather than read off ``rows``' own keys so both
+    sides of a comparison hash the same columns even when a target row (read
+    from Postgres, every column present) has more keys than a source row (read
+    from SQLite, see :func:`transferable_columns`).
     """
     digest = hashlib.sha256()
-    column_names = [column.name for column in table.columns]
     lines = sorted(
         FIELD_SEPARATOR.join(canonical(row.get(name)) for name in column_names) for row in rows
     )
@@ -195,8 +214,9 @@ async def transfer(
     reports: list[TableReport] = []
     for table_name in source_tables(connection):
         table = metadata.tables[table_name]
+        column_names = [column.name for column in transferable_columns(connection, table)]
         rows = read_rows(connection, table)
-        source_checksum = checksum(rows, table)
+        source_checksum = checksum(rows, column_names)
 
         if not dry_run and rows:
             await _write_rows(engine, table, rows, batch_size)
@@ -212,7 +232,9 @@ async def transfer(
                 source_rows=len(rows),
                 target_rows=len(rows) if dry_run else len(target_rows),
                 source_checksum=source_checksum,
-                target_checksum=source_checksum if dry_run else checksum(target_rows, table),
+                target_checksum=(
+                    source_checksum if dry_run else checksum(target_rows, column_names)
+                ),
             )
         )
         log.info("table_transferred", table=table_name, rows=len(rows), dry_run=dry_run)
@@ -227,6 +249,7 @@ async def verify(connection: sqlite3.Connection, engine: AsyncEngine) -> Transfe
     reports: list[TableReport] = []
     for table_name in source_tables(connection):
         table = metadata.tables[table_name]
+        column_names = [column.name for column in transferable_columns(connection, table)]
         rows = read_rows(connection, table)
         target_rows = await _read_target(engine, table)
         reports.append(
@@ -234,8 +257,8 @@ async def verify(connection: sqlite3.Connection, engine: AsyncEngine) -> Transfe
                 table=table_name,
                 source_rows=len(rows),
                 target_rows=len(target_rows),
-                source_checksum=checksum(rows, table),
-                target_checksum=checksum(target_rows, table),
+                source_checksum=checksum(rows, column_names),
+                target_checksum=checksum(target_rows, column_names),
             )
         )
     return TransferReport(tables=tuple(reports), dry_run=False)

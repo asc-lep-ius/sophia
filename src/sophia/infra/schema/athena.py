@@ -76,8 +76,19 @@ confidence_ratings = Table(
     Column("rated_at", TIMESTAMP(timezone=True), server_default=_NOW),
     Column("actual_at", TIMESTAMP(timezone=True)),
     org_id_column(),
+    Column("user_id", Text),
+    Column("session_id", Integer, ForeignKey("study_sessions.id")),
+    Column("request_id", Text),
+    Column("legacy_scored", Boolean(), nullable=False, server_default=text("false")),
     CheckConstraint("predicted BETWEEN 0.0 AND 1.0", name="predicted_ratio"),
     CheckConstraint("actual IS NULL OR actual BETWEEN 0.0 AND 1.0", name="actual_ratio"),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_confidence_ratings_session_request",
+    ),
     Index("idx_confidence_ratings_course", "course_id"),
     Index("idx_confidence_ratings_topic", "course_id", "topic"),
 )
@@ -93,6 +104,8 @@ study_sessions = Table(
     Column("started_at", TIMESTAMP(timezone=True), server_default=_NOW),
     Column("completed_at", TIMESTAMP(timezone=True)),
     org_id_column(),
+    Column("user_id", Text),
+    Column("legacy_scored", Boolean(), nullable=False, server_default=text("false")),
     CheckConstraint(
         "pre_test_score IS NULL OR pre_test_score BETWEEN 0.0 AND 1.0",
         name="pre_test_ratio",
@@ -116,7 +129,17 @@ student_flashcards = Table(
     Column("source", Text, nullable=False, server_default="study"),
     Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
     org_id_column(),
+    Column("user_id", Text),
+    Column("session_id", Integer, ForeignKey("study_sessions.id")),
+    Column("request_id", Text),
     CheckConstraint("source IN ('study', 'lecture', 'manual')", name="source_allowed"),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_student_flashcards_session_request",
+    ),
     Index("idx_flashcards_course", "course_id"),
     Index("idx_flashcards_topic", "course_id", "topic"),
 )
@@ -153,8 +176,40 @@ self_explanations = Table(
     Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
     org_id_column(),
     text_course_id_column(),
+    Column("user_id", Text),
+    Column("session_id", Integer, ForeignKey("study_sessions.id")),
+    Column("request_id", Text),
     CheckConstraint("scaffold_level BETWEEN 0 AND 3", name="scaffold_level_range"),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_self_explanations_session_request",
+    ),
     Index("idx_self_explanations_flashcard", "flashcard_id"),
+)
+
+study_reflections = Table(
+    "study_reflections",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("session_id", Integer, ForeignKey("study_sessions.id"), nullable=False),
+    Column("course_id", Integer, nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("prompt", Text, nullable=False),
+    Column("reflection_text", Text, nullable=False),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
+    Column("request_id", Text),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_study_reflections_session_request",
+    ),
+    Index("idx_study_reflections_session", "session_id"),
 )
 
 review_schedule = Table(

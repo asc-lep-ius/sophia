@@ -22,6 +22,7 @@ from sophia.infra.sqlite_import import (
     read_rows,
     source_tables,
     transfer,
+    transferable_columns,
     verify,
 )
 
@@ -295,12 +296,13 @@ async def test_checksum_ignores_row_order(fixture_sqlite: sqlite3.Connection) ->
     schedule = metadata.tables["review_schedule"]
     rows = read_rows(fixture_sqlite, schedule)
     assert len(rows) > 2, "needs enough rows that a shuffle is not just a swap"
+    column_names = [column.name for column in transferable_columns(fixture_sqlite, schedule)]
 
-    expected = checksum(rows, schedule)
+    expected = checksum(rows, column_names)
     shuffled = list(rows)
     random.Random(20260831).shuffle(shuffled)
 
     assert shuffled != rows
-    assert checksum(shuffled, schedule) == expected
+    assert checksum(shuffled, column_names) == expected
     # A genuinely different multiset must still differ.
-    assert checksum(rows[:-1], schedule) != expected
+    assert checksum(rows[:-1], column_names) != expected
