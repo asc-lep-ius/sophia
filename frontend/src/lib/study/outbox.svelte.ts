@@ -1,3 +1,5 @@
+import { SvelteMap } from "svelte/reactivity";
+
 import { SophiaApiError } from "$lib/api/client";
 import { isRetryableFailure } from "$lib/api/study";
 
@@ -15,11 +17,24 @@ export type OutboxOptions<T> = {
   rollback: (entry: OutboxEntry<T>, error: unknown) => void;
   maxAttempts?: number;
   retryDelayMs?: number;
+  /** How long an entry can still be cancelled before it is sent. */
+  holdMs?: number;
   wait?: (delayMs: number) => Promise<void>;
 };
 
 export const DEFAULT_MAX_ATTEMPTS = 3;
 export const DEFAULT_RETRY_DELAY_MS = 400;
+
+/**
+ * The window in which undo can still take a grade back.
+ *
+ * Dispatching the instant a grade is entered leaves nothing to cancel — the
+ * request is already in flight, so "undo" could only ever apologise. Holding
+ * the submission for a moment is what makes the documented behaviour real, and
+ * it costs nothing: the surface has already moved on optimistically, and
+ * `flush` sends everything the moment the page is leaving.
+ */
+export const DEFAULT_HOLD_MS = 700;
 
 /**
  * Holds submissions that have already been reflected in the UI.
@@ -32,6 +47,9 @@ export const DEFAULT_RETRY_DELAY_MS = 400;
  */
 export class SubmissionOutbox<T> {
   #entries = $state<OutboxEntry<T>[]>([]);
+  // SvelteMap rather than Map only because the project lints for it; these are
+  // timer handles, and nothing renders from them.
+  #holds = new SvelteMap<string, ReturnType<typeof setTimeout>>();
   #options: OutboxOptions<T>;
 
   constructor(options: OutboxOptions<T>) {
@@ -60,11 +78,19 @@ export class SubmissionOutbox<T> {
     if (!entry || entry.attempts > 0) {
       return false;
     }
+    this.#clearHold(requestId);
     this.#remove(requestId);
     return true;
   }
 
-  async enqueue(requestId: string, payload: T): Promise<void> {
+  /**
+   * Take a grade, and send it once its cancel window closes.
+   *
+   * Resolves when the entry is queued, not when it is accepted: the learner is
+   * already looking at the next card, and blocking on the network here is what
+   * the outbox exists to avoid.
+   */
+  enqueue(requestId: string, payload: T): void {
     const entry: OutboxEntry<T> = {
       requestId,
       payload,
@@ -72,7 +98,38 @@ export class SubmissionOutbox<T> {
       attempts: 0,
     };
     this.#entries.push(entry);
-    await this.#send(entry);
+    // Work with the entry the state array owns, not the literal above: writes
+    // to a captured plain object do not reliably reach the reactive copy, and
+    // a status the UI never sees is a grade the learner cannot retry.
+    const stored = this.#entries[this.#entries.length - 1] ?? entry;
+
+    const holdMs = this.#options.holdMs ?? DEFAULT_HOLD_MS;
+    if (holdMs <= 0) {
+      void this.#send(stored);
+      return;
+    }
+    this.#holds.set(
+      requestId,
+      setTimeout(() => {
+        this.#holds.delete(requestId);
+        void this.#send(stored);
+      }, holdMs),
+    );
+  }
+
+  /**
+   * Send everything still being held, now.
+   *
+   * Called when the surface is torn down: a held grade is a real grade, and a
+   * learner closing the tab must not lose it to a cancel window nobody used.
+   */
+  flush(): void {
+    for (const entry of this.#entries) {
+      if (this.#holds.has(entry.requestId)) {
+        this.#clearHold(entry.requestId);
+        void this.#send(entry);
+      }
+    }
   }
 
   async retry(requestId: string): Promise<void> {
@@ -105,6 +162,14 @@ export class SubmissionOutbox<T> {
           (this.#options.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS) * attempt,
         );
       }
+    }
+  }
+
+  #clearHold(requestId: string): void {
+    const hold = this.#holds.get(requestId);
+    if (hold !== undefined) {
+      clearTimeout(hold);
+      this.#holds.delete(requestId);
     }
   }
 

@@ -59,6 +59,7 @@
     "vite": "8.0.14",
     "vitest": "4.1.7"
   },
+  "//size-limit": "KNOWN RED, deferred with issue #98. The preset bundles every emitted chunk as its own entry and sums shared dependencies repeatedly, so the reported figure grows with the number of routes rather than with what a page loads: 413 kB before the study surface existed, 446 kB after, against a 260 kB limit set when the app had four routes. Do not raise the limit to make it green — the number is not measuring anything. Fix the config first (measure the entry chunk, or the built files) and set the budget from what that reports.",
   "size-limit": [
     {
       "path": ".svelte-kit/output/client/_app/immutable/**/*.js",

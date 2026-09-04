@@ -2482,8 +2482,13 @@ export interface components {
         /**
          * StudySessionQuestionListResponse
          * @description A session's persisted question set, in generation order.
+         *
+         *     ``attempted_question_ids`` is what lets a resumed session pick up where the
+         *     learner left off instead of re-presenting cards they have already graded.
          */
         StudySessionQuestionListResponse: {
+            /** Attempted Question Ids */
+            attempted_question_ids: string[];
             /** Learning Path Id */
             learning_path_id: number;
             /** Questions */
@@ -5309,6 +5314,16 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;

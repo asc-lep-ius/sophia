@@ -7,9 +7,11 @@ it. A fake session would answer whatever the test taught it to.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from sqlalchemy import update
 
 from sophia.domain.learning import (
     AttemptPhase,
@@ -23,8 +25,9 @@ from sophia.domain.learning import (
     QuestionKind,
     StoredContentOrigin,
 )
+from sophia.infra.schema import study_sessions
 from sophia.services.athena_confidence import record_study_prediction
-from sophia.services.athena_session import start_study_session
+from sophia.services.athena_session import save_reflection, start_study_session
 from sophia.services.provenance import record_provenance
 from sophia.services.study_questions import _insert_question, save_attempt
 
@@ -44,6 +47,34 @@ AGAIN, HARD, GOOD, EASY = 1, 2, 3, 4
 async def seed_session(session: AsyncSession, *, user_id: str = "learner") -> int:
     study_session = await start_study_session(session, LEARNING_PATH_ID, TOPIC, user_id=user_id)
     return study_session.id
+
+
+async def seed_reflection(
+    session: AsyncSession,
+    session_id: int,
+    *,
+    user_id: str = "learner",
+    seconds_after_start: int = 60,
+) -> None:
+    """Record a reflection, backdating the session so the pacing floor is met.
+
+    Completion refuses a session whose reflection landed inside the floor, so a
+    test that wants to reach the scoring path has to have paced like a learner.
+    """
+    await save_reflection(
+        session,
+        session_id,
+        LEARNING_PATH_ID,
+        user_id,
+        "Which part still feels unfinished?",
+        "The cut argument took me a while.",
+        request_id=f"refl-{session_id}",
+    )
+    await session.execute(
+        update(study_sessions)
+        .where(study_sessions.c.id == session_id)
+        .values(started_at=datetime.now(UTC) - timedelta(seconds=seconds_after_start))
+    )
 
 
 async def seed_question(
@@ -133,6 +164,7 @@ async def test_completion_scores_the_session_from_its_own_phased_attempts(
                 phase=AttemptPhase.POST_TEST,
                 request_id="a-2",
             )
+            await seed_reflection(session, session_id)
         await harness.login()
 
         response = await harness.client.post(
@@ -172,6 +204,7 @@ async def test_practice_attempts_do_not_count_towards_either_end(
                 phase=AttemptPhase.PRACTICE,
                 request_id="a-2",
             )
+            await seed_reflection(session, session_id)
         await harness.login()
 
         response = await harness.client.post(
@@ -210,6 +243,7 @@ async def test_summary_holds_the_prediction_against_measured_performance(
                 phase=AttemptPhase.POST_TEST,
                 request_id="a-1",
             )
+            await seed_reflection(session, session_id)
         await harness.login()
 
         await harness.client.post(
@@ -325,3 +359,83 @@ async def test_session_questions_reject_a_session_owned_by_another_learner(
         response = await harness.client.get(f"/api/study/sessions/{session_id}/questions")
 
     assert response.status_code == 404
+
+
+async def test_completion_refuses_a_session_with_no_reflection(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The abuse case: a client that never renders the countdown still POSTs here."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+        await harness.login()
+
+        response = await harness.client.post(
+            f"/api/study/sessions/{session_id}/complete",
+            headers=harness.csrf_headers(),
+        )
+
+    assert response.status_code == 412
+    assert response.json()["detail"]["code"] == "engagement.policy_unmet"
+
+
+async def test_completion_refuses_a_reflection_inside_the_floor(
+    clean_engine: AsyncEngine,
+) -> None:
+    """Reflecting two seconds in is not reflecting, whatever the client displayed."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+            await seed_reflection(session, session_id, seconds_after_start=2)
+        await harness.login()
+
+        response = await harness.client.post(
+            f"/api/study/sessions/{session_id}/complete",
+            headers=harness.csrf_headers(),
+        )
+
+    assert response.status_code == 412
+    assert response.json()["detail"]["params"]["required"] == "reflection_pacing"
+
+
+async def test_session_questions_report_what_the_learner_already_answered(
+    clean_engine: AsyncEngine,
+) -> None:
+    """A resumed session picks up after these rather than restarting at card one."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+            for index in range(3):
+                await seed_question(session, f"q-{index}", session_id=session_id)
+            await seed_attempt(
+                session,
+                session_id,
+                "q-0",
+                self_rating=GOOD,
+                phase=AttemptPhase.PRE_TEST,
+                request_id="a-1",
+            )
+            await seed_attempt(
+                session,
+                session_id,
+                "q-1",
+                self_rating=GOOD,
+                phase=AttemptPhase.PRACTICE,
+                request_id="a-2",
+            )
+            # Another learner's attempt on the same session must not count as ours.
+            await seed_attempt(
+                session,
+                session_id,
+                "q-2",
+                self_rating=GOOD,
+                phase=AttemptPhase.PRACTICE,
+                request_id="a-3",
+                user_id="somebody-else",
+            )
+        await harness.login()
+
+        response = await harness.client.get(f"/api/study/sessions/{session_id}/questions")
+
+    assert response.status_code == 200
+    assert response.json()["attempted_question_ids"] == ["q-0", "q-1"]

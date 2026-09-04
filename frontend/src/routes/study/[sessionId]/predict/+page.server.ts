@@ -4,13 +4,14 @@ import type { Actions } from "./$types";
 
 export const actions: Actions = {
   /**
-   * Generate another batch of cards for a session whose queue ran dry.
+   * Fill a deck the start action could not.
    *
-   * A form action rather than a browser call: generation is a model round-trip
-   * with no learner-process trace behind it, and the reload it causes is what
-   * re-reads the extended question set through the layout load.
+   * Generation only ever happens on a deliberate press: a session whose
+   * generation failed (or one started before this route existed) would
+   * otherwise be a dead end, but putting the retry back in the page load would
+   * hand hover preloading a way to spend model calls.
    */
-  extend: async (event) => {
+  generate: async (event) => {
     const sessionId = Number(event.params.sessionId);
     const learningPathId = Number(event.locals.tenant.learning_path_id);
     const form = await event.request.formData();
@@ -29,10 +30,8 @@ export const actions: Actions = {
       sessionId,
       topic,
     });
-    if (!generated) {
-      return fail(502, { error: "study.extend_failed" });
-    }
-
-    return { extended: true };
+    return generated
+      ? { generated: true }
+      : fail(502, { error: "study.extend_failed" });
   },
 };

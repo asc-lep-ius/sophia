@@ -60,7 +60,9 @@ function harness(questionCount = 2): StoreHarness {
       }
       submitted.push({ questionId: submission.questionId, requestId });
     },
-    retry: { maxAttempts: 2, wait: async () => undefined },
+    // holdMs 0 dispatches immediately, which is what the submission tests
+    // want; the cancel-window tests set their own hold.
+    retry: { maxAttempts: 2, holdMs: 0, wait: async () => undefined },
     now: () => now,
     newId: () => `req-${(nextId += 1)}`,
   });
@@ -76,6 +78,13 @@ function harness(questionCount = 2): StoreHarness {
       failure = error;
     },
   };
+}
+
+/** Let the outbox finish its retry loop before asserting on the rollback. */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 4; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 function elaborate(store: StudySessionStore): void {
@@ -107,7 +116,7 @@ describe("study session store", () => {
     advanceMs(6000);
     elaborate(store);
 
-    expect(await store.grade(3)).toBe(false);
+    expect(store.grade(3)).toBe(false);
     expect(submitted).toEqual([]);
   });
 
@@ -117,7 +126,8 @@ describe("study session store", () => {
     elaborate(store);
     store.reveal();
 
-    await store.grade(3);
+    store.grade(3);
+    await settle();
 
     expect(submitted).toEqual([{ questionId: "q-0", requestId: "req-1" }]);
     expect(store.position).toBe(2);
@@ -130,7 +140,7 @@ describe("study session store", () => {
     elaborate(store);
     store.reveal();
 
-    await store.grade(1);
+    store.grade(1);
 
     expect(store.againLaterCount).toBe(1);
   });
@@ -142,7 +152,8 @@ describe("study session store", () => {
     store.reveal();
     failEvery(new TypeError("network down"));
 
-    await store.grade(4);
+    store.grade(4);
+    await settle();
 
     expect(store.state).toBe("rollback");
     expect(store.error).toBe("study.grade_rejected");
@@ -157,20 +168,88 @@ describe("study session store", () => {
     store.reveal();
     failEvery(new TypeError("network down"));
 
-    await store.grade(1);
+    store.grade(1);
+    await settle();
 
     expect(store.againLaterCount).toBe(0);
   });
 
-  it("refuses to undo a grade the server already accepted", async () => {
+  it("undoes a grade that is still inside its cancel window", async () => {
+    const submitted: { questionId: string; requestId: string }[] = [];
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0"), question("q-1")],
+      pacing,
+      submit: async (submission, requestId) => {
+        submitted.push({ questionId: submission.questionId, requestId });
+      },
+      retry: { holdMs: 10_000 },
+      now: () => now,
+    });
+    now = 6000;
+    store.tick();
+    elaborate(store);
+    store.reveal();
+    store.grade(4);
+
+    expect(store.canUndo).toBe(true);
+    expect(store.undo()).toBe(true);
+    expect(store.position).toBe(1);
+    expect(store.state).toBe("revealed");
+    expect(store.error).toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(submitted).toEqual([]);
+  });
+
+  it("refuses to undo a grade the server already has", async () => {
     const { store, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
     store.reveal();
-    await store.grade(3);
+    store.grade(3);
+    await Promise.resolve();
 
     expect(store.undo()).toBe(false);
     expect(store.error).toBe("study.undo_already_committed");
+  });
+
+  it("rewinds to the earliest rejected card when several fail at once", async () => {
+    const { store, advanceMs, failEvery } = harness(3);
+    failEvery(new TypeError("network down"));
+
+    // Both grades go out before either answer comes back, which is the case
+    // where a later rollback could overwrite an earlier one's restoration.
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    store.grade(3);
+
+    await settle();
+
+    expect(store.position).toBe(1);
+    expect(store.current?.question.id).toBe("q-0");
+    expect(
+      store.outboxEntries.filter((entry) => entry.status === "failed"),
+    ).toHaveLength(2);
+  });
+
+  it("lets the learner grade a rolled-back card again", async () => {
+    const { store, advanceMs, failEvery } = harness();
+    advanceMs(6000);
+    elaborate(store);
+    store.reveal();
+    failEvery(new TypeError("network down"));
+    store.grade(4);
+    await settle();
+
+    expect(store.state).toBe("rollback");
+    expect(store.canGrade).toBe(true);
   });
 
   it("pauses to the state it resumes into", () => {
@@ -238,7 +317,8 @@ describe("study session store", () => {
     elaborate(store);
     store.reveal();
 
-    await store.grade(2);
+    store.grade(2);
+    await settle();
 
     expect(store.remaining).toBe(0);
     expect(store.current).toBeNull();

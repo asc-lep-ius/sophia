@@ -43,37 +43,40 @@ const UNGATED_POLICY = {
 
 const SELF_RATING_SCORES = { 1: 0, 2: 0.3, 3: 0.7, 4: 1 };
 
-const state = createState();
+const PACED_SESSION_LIMIT = 100;
+const DEFAULT_DECK_SIZE = 51;
+const EXTEND_DECK_SIZE = 2;
+const EXTEND_SESSION_ID = 501;
 
-function createState() {
-  const sessions = new Map();
-  const questions = new Map();
-  const attempts = new Map();
-  const predictions = new Map();
+const state = {
+  sessions: new Map(),
+  questions: new Map(),
+  attempts: new Map(),
+  predictions: new Map(),
+  nextSessionId: 900,
+};
 
-  addSession(sessions, questions, {
-    id: 1,
-    topic: "Graphs",
-    cards: 3,
-    policy: PACED_POLICY,
+/**
+ * Sessions appear on first use, so every test can own one.
+ *
+ * The fixture is one process shared by parallel workers: a test that grades a
+ * card would otherwise shorten the deck another test is asserting a card count
+ * against. The id picks the policy — under 100 is paced like production, 100
+ * and over is ungated for the tests that measure navigation rather than
+ * friction — so a spec chooses its behaviour by choosing an id. One id gets a
+ * two-card deck, for the test that drains a queue and extends it.
+ */
+function ensureSession(id) {
+  if (state.sessions.has(id)) {
+    return;
+  }
+  const paced = id < PACED_SESSION_LIMIT;
+  addSession(state.sessions, state.questions, {
+    id,
+    topic: paced ? "Graphs" : "Latency",
+    cards: id === EXTEND_SESSION_ID ? EXTEND_DECK_SIZE : DEFAULT_DECK_SIZE,
+    policy: paced ? PACED_POLICY : UNGATED_POLICY,
   });
-  addSession(sessions, questions, {
-    id: 2,
-    topic: "Latency",
-    cards: 51,
-    policy: UNGATED_POLICY,
-  });
-
-  addSession(sessions, questions, {
-    id: 3,
-    topic: "Extending",
-    // Two: the first card of any session is its anchor question, so a deck of
-    // one has nothing for the act route to work.
-    cards: 2,
-    policy: UNGATED_POLICY,
-  });
-
-  return { sessions, questions, attempts, predictions, nextSessionId: 4 };
 }
 
 function addSession(sessions, questions, { id, topic, cards, policy }) {
@@ -172,6 +175,12 @@ function listSessions() {
   };
 }
 
+function sessionAttemptsFor(sessionId) {
+  return [...state.attempts.values()].filter(
+    (attempt) => attempt.session_id === sessionId,
+  );
+}
+
 function startSession(_match, body) {
   const id = state.nextSessionId++;
   addSession(state.sessions, state.questions, {
@@ -185,15 +194,22 @@ function startSession(_match, body) {
 
 function sessionQuestions(match) {
   const sessionId = Number(match[1]);
+  ensureSession(sessionId);
   return {
     session_id: sessionId,
     learning_path_id: LEARNING_PATH_ID,
     questions: state.questions.get(sessionId) ?? [],
+    attempted_question_ids: sessionAttemptsFor(sessionId).map(
+      (attempt) => attempt.question_id,
+    ),
   };
 }
 
 function generateQuestions(_match, body) {
   const sessionId = Number(body.session_id ?? 0);
+  if (sessionId > 0) {
+    ensureSession(sessionId);
+  }
   const existing = state.questions.get(sessionId) ?? [];
   const template = existing[0] ?? (state.questions.get(1) ?? [])[0];
   const added = Array.from({ length: body.count ?? 3 }, (_unused, index) => ({
@@ -269,6 +285,7 @@ function ingestEvents(_match, body) {
 /** Mirrors the server: pre and post are the means of the phased attempts. */
 function completeSession(match) {
   const sessionId = Number(match[1]);
+  ensureSession(sessionId);
   const session = state.sessions.get(sessionId);
   if (!session) {
     return null;
@@ -285,6 +302,7 @@ function completeSession(match) {
 
 function sessionSummary(match) {
   const sessionId = Number(match[1]);
+  ensureSession(sessionId);
   const session = state.sessions.get(sessionId);
   if (!session) {
     return null;

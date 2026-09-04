@@ -6,6 +6,7 @@
   import StudyCard from "$lib/components/study/StudyCard.svelte";
   import { m } from "$lib/paraglide/messages.js";
   import { StudyEventStream, type StudyStreamStatus } from "$lib/study/events";
+  import { practiceCards } from "$lib/study/deck";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
 
@@ -22,14 +23,15 @@
   // would discard the answer a learner is part-way through writing.
   const runtime = $derived.by(() => {
     // The one tracked read: rebuilding on anything else would throw away a
-    // card in progress.
-    void `${data.sessionId}:${data.questions.length}`;
+    // card in progress. The attempted count is in the key because extending a
+    // drained deck must produce a queue that starts at the new cards.
+    void `${data.sessionId}:${data.questions.length}:${data.attemptedQuestionIds.length}`;
     return untrack(() =>
       createStudyRuntime({
         csrfToken: data.csrfToken ?? "",
         learningPathId: data.learningPathId,
         sessionId: data.sessionId,
-        questions: data.questions.slice(1),
+        questions: practiceCards(data.questions, data.attemptedQuestionIds),
         pacing: data.pacing,
         phase: "practice",
       }),

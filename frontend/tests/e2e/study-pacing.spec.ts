@@ -12,14 +12,20 @@ import { authenticateShell } from "./shell-auth";
  * meant to fail — that is its whole job.
  */
 
-const PACED_SESSION = 1;
+// Paced ids (< 100) get production's floors; one per test, because a graded
+// card changes the deck the next test would see.
+const ELABORATION_SESSION = 11;
+const DWELL_SESSION = 12;
+const PREDICT_SESSION = 13;
+const REFLECT_SESSION = 14;
+const COUNTDOWN_SESSION = 15;
 const SHORT_ANSWER = "Too short.";
 const FULL_ANSWER =
   "A minimum cut partitions the vertices so that every path from source to sink crosses it, which is why its capacity bounds the flow.";
 
 test("the reveal waits for the learner's own elaboration", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${PACED_SESSION}/act`);
+  await page.goto(`/app/study/${ELABORATION_SESSION}/act`);
 
   const reveal = page.getByRole("button", { name: "Reveal" });
   await expect(reveal).toBeDisabled();
@@ -36,7 +42,7 @@ test("the reveal waits for the prompt dwell floor as well", async ({
 }) => {
   await authenticateShell(page);
   const openedAt = Date.now();
-  await page.goto(`/app/study/${PACED_SESSION}/act`);
+  await page.goto(`/app/study/${DWELL_SESSION}/act`);
   await page.getByLabel("Your answer").fill(FULL_ANSWER);
 
   const reveal = page.getByRole("button", { name: "Reveal" });
@@ -52,7 +58,7 @@ test("studying cannot start before a prediction and a pre-test answer", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${PACED_SESSION}/predict`);
+  await page.goto(`/app/study/${PREDICT_SESSION}/predict`);
 
   const start = page.getByRole("button", { name: "Start studying" });
   await expect(start).toBeDisabled();
@@ -68,7 +74,7 @@ test("results stay closed for the server's reflection floor", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${PACED_SESSION}/reflect`);
+  await page.goto(`/app/study/${REFLECT_SESSION}/reflect`);
 
   await page.getByLabel("Your answer").fill(FULL_ANSWER);
   await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
@@ -95,7 +101,7 @@ test("the reflection countdown is the server's number, not a client constant", a
   );
   const { reflection_min_seconds: floor } = await pacing.json();
 
-  await page.goto(`/app/study/${PACED_SESSION}/reflect`);
+  await page.goto(`/app/study/${COUNTDOWN_SESSION}/reflect`);
   await page.getByLabel("Your answer").fill(FULL_ANSWER);
   await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
     timeout: 10_000,

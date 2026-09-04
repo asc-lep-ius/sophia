@@ -190,6 +190,31 @@ async def get_session_questions(
     return [_row_to_question(row) for row in rows]
 
 
+async def attempted_question_ids(
+    session: AsyncSession,
+    session_id: int,
+    user_id: str,
+) -> list[str]:
+    """The questions this learner has already answered in this session.
+
+    The study surface resumes after these rather than restarting at card one:
+    re-presenting an answered card does not just waste the learner's time, it
+    writes a second attempt (a fresh request id makes it a new row) that is
+    averaged into the session's phase means.
+    """
+    rows = (
+        await session.execute(
+            select(question_attempts.c.question_id)
+            .where(
+                question_attempts.c.session_id == session_id,
+                question_attempts.c.user_id == user_id,
+            )
+            .order_by(question_attempts.c.id)
+        )
+    ).all()
+    return [row.question_id for row in rows]
+
+
 async def save_attempt(
     session: AsyncSession,
     course_id: int,

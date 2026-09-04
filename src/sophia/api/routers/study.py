@@ -44,6 +44,7 @@ from sophia.api.schemas.study import (
     StudySessionSummaryResponse,
 )
 from sophia.api.transactions import TransactionalRoute
+from sophia.domain.errors import EngagementPolicyUnmet
 from sophia.domain.learning import AttemptPhase as DomainAttemptPhase
 from sophia.domain.learning import ContentKind
 from sophia.domain.models import FlashcardSource
@@ -51,6 +52,7 @@ from sophia.services.athena_confidence import record_study_prediction
 from sophia.services.athena_session import (
     finalize_study_session,
     get_flashcard_course_id,
+    get_reflection_pacing,
     get_session_scope,
     get_study_sessions,
     save_flashcard,
@@ -62,13 +64,14 @@ from sophia.services.athena_session import (
 from sophia.services.athena_study import save_self_explanation_idempotent
 from sophia.services.provenance import get_provenance_map, learner_authored, record_provenance
 from sophia.services.study_events import append_event
-from sophia.services.study_questions import get_session_questions
+from sophia.services.study_questions import attempted_question_ids, get_session_questions
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from sophia.api.schemas.provenance import Provenance
     from sophia.api.sessions import SessionRecord
+    from sophia.config import Settings
     from sophia.domain.models import (
         ConfidenceRating,
         SelfExplanation,
@@ -94,6 +97,12 @@ ATHENA_SESSION_METHOD_COVERAGE: dict[str, dict[str, str]] = {
     },
     "get_flashcard_course_id": {
         "rationale": "Scope-check lookup for the self-explanation endpoint, not itself a route.",
+    },
+    "get_reflection_pacing": {
+        "rationale": (
+            "Pacing evidence read inside completeStudySession's precondition check, "
+            "not an endpoint a client should be able to poll."
+        ),
     },
     "get_session_scope": {
         "rationale": (
@@ -197,6 +206,7 @@ async def create_study_session(
     operation_id="completeStudySession",
     responses={
         status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_412_PRECONDITION_FAILED: {"model": ErrorEnvelope},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
     },
 )
@@ -213,6 +223,7 @@ async def mark_study_session_complete(
     auth_session = await require_csrf(request)
     db = await request_session(request)
     await _require_session_ownership_by_id(db, auth_session, session_id)
+    await _require_reflection_pacing(db, session_id, get_settings(request))
     completed = await finalize_study_session(db, session_id)
     if completed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -274,6 +285,7 @@ async def list_study_session_questions(
             question_response(question, require_provenance(provenance, question))
             for question in questions
         ],
+        attempted_question_ids=await attempted_question_ids(db, session_id, auth_session.user.id),
     )
 
 
@@ -491,6 +503,39 @@ async def _require_session_ownership_by_id(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     ensure_learning_path_scope(auth_session, scope.course_id)
     return scope
+
+
+async def _require_reflection_pacing(
+    db: AsyncSession,
+    session_id: int,
+    settings: Settings,
+) -> None:
+    """Refuse to close a session that skipped the reflection or rushed it.
+
+    Serving the floor was never enough on its own: a client that never renders
+    the countdown can still POST here, which is exactly the abuse case issue
+    #98 names. Both timestamps compared are the server's own, so the gap cannot
+    be shortened from the browser.
+    """
+    pacing = await get_reflection_pacing(db, session_id)
+    if pacing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
+    elapsed = pacing.reflection_seconds
+    floor = settings.study_reflection_min_seconds
+    if elapsed is None:
+        msg = "session completed without a reflection"
+        raise EngagementPolicyUnmet(msg, {"required": "reflection", "reflection_seconds": 0})
+    if elapsed < floor:
+        msg = "session completed before the reflection floor elapsed"
+        raise EngagementPolicyUnmet(
+            msg,
+            {
+                "required": "reflection_pacing",
+                "reflection_seconds": int(elapsed),
+                "reflection_min_seconds": floor,
+            },
+        )
 
 
 def _summary_response(summary: StudySessionSummary) -> StudySessionSummaryResponse:

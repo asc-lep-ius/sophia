@@ -10,14 +10,23 @@ function apiError(status: number): SophiaApiError {
   });
 }
 
+/** Let the outbox's own promise chain finish before asserting. */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 4; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
 describe("submission outbox", () => {
   it("clears an entry once the server accepts it", async () => {
     const outbox = new SubmissionOutbox<string>({
       submit: async () => undefined,
       rollback: vi.fn(),
+      holdMs: 0,
     });
 
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
 
     expect(outbox.entries).toEqual([]);
     expect(outbox.pendingCount).toBe(0);
@@ -35,10 +44,12 @@ describe("submission outbox", () => {
         }
       },
       rollback: vi.fn(),
+      holdMs: 0,
       wait: async () => undefined,
     });
 
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
 
     expect(seen).toEqual(["req-1", "req-1"]);
     expect(outbox.entries).toEqual([]);
@@ -52,10 +63,12 @@ describe("submission outbox", () => {
     const outbox = new SubmissionOutbox<string>({
       submit,
       rollback,
+      holdMs: 0,
       wait: async () => undefined,
     });
 
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
 
     expect(submit).toHaveBeenCalledTimes(1);
     expect(rollback).toHaveBeenCalledOnce();
@@ -70,23 +83,57 @@ describe("submission outbox", () => {
       },
       rollback,
       maxAttempts: 3,
+      holdMs: 0,
       wait: async () => undefined,
     });
 
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
 
     expect(rollback).toHaveBeenCalledOnce();
     expect(outbox.entries[0]?.attempts).toBe(3);
+  });
+
+  it("cancels an entry still inside its hold window, and never sends it", async () => {
+    const submit = vi.fn(async () => undefined);
+    const outbox = new SubmissionOutbox<string>({
+      submit,
+      rollback: vi.fn(),
+      holdMs: 10_000,
+    });
+    outbox.enqueue("req-1", "grade");
+
+    expect(outbox.cancel("req-1")).toBe(true);
+    await settle();
+    expect(submit).not.toHaveBeenCalled();
+    expect(outbox.entries).toEqual([]);
   });
 
   it("cannot cancel an entry that has already been sent", async () => {
     const outbox = new SubmissionOutbox<string>({
       submit: async () => undefined,
       rollback: vi.fn(),
+      holdMs: 0,
     });
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
 
     expect(outbox.cancel("req-1")).toBe(false);
+  });
+
+  it("flushes held entries when the surface goes away", async () => {
+    const submit = vi.fn(async () => undefined);
+    const outbox = new SubmissionOutbox<string>({
+      submit,
+      rollback: vi.fn(),
+      holdMs: 10_000,
+    });
+    outbox.enqueue("req-1", "grade");
+
+    outbox.flush();
+    await settle();
+
+    expect(submit).toHaveBeenCalledOnce();
   });
 
   it("retries a failed entry on demand", async () => {
@@ -98,9 +145,11 @@ describe("submission outbox", () => {
         }
       },
       rollback: vi.fn(),
+      holdMs: 0,
       wait: async () => undefined,
     });
-    await outbox.enqueue("req-1", "grade");
+    outbox.enqueue("req-1", "grade");
+    await settle();
     failing = false;
 
     await outbox.retry("req-1");

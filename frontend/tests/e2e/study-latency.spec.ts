@@ -16,8 +16,12 @@ import { authenticateShell } from "./shell-auth";
  * holds the floors.
  */
 
-const LATENCY_SESSION = 2;
-const EXTEND_SESSION = 3;
+// Ungated ids (>= 100), one per test: the budget is a navigation budget, and
+// a shared deck would let one test's grades change another's card counts.
+const LATENCY_SESSION = 201;
+const KEYBOARD_SESSION = 202;
+// The fixture gives this id a two-card deck: one anchor, one practice card.
+const EXTEND_SESSION = 501;
 const INTERACTION_BUDGET_MS = 50;
 const CARDS_TO_WORK = 12;
 const CPU_THROTTLE_RATE = 4;
@@ -52,17 +56,23 @@ test("keyboard-only study stays inside the interaction budget", async ({
   }
 
   const durations = await readInteractionDurations(page);
+  const interactionCount = await page.evaluate(
+    () =>
+      (performance as Performance & { interactionCount?: number })
+        .interactionCount ?? 0,
+  );
   await client.send("Emulation.setCPUThrottlingRate", { rate: 1 });
 
-  // No reported interaction is the strongest possible pass: the observer only
-  // reports what crosses its threshold, so an empty list means every keypress
-  // was handled faster than the browser bothers to record.
+  // The browser counted the interactions, so an empty duration list means they
+  // were all faster than the observer's threshold — not that the observer
+  // failed to attach or the page navigated out from under it.
+  expect(interactionCount).toBeGreaterThan(0);
   expect(percentile(durations, 95)).toBeLessThan(INTERACTION_BUDGET_MS);
 });
 
 test("the whole session is reachable without a pointer", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${LATENCY_SESSION}/act`);
+  await page.goto(`/app/study/${KEYBOARD_SESSION}/act`);
 
   await page.getByLabel("Your answer").fill("An answer for this card.");
   await page.keyboard.press("Tab");
@@ -70,7 +80,7 @@ test("the whole session is reachable without a pointer", async ({ page }) => {
   await expect(page.getByText("What you wrote")).toBeVisible();
 
   await page.keyboard.press("3");
-  await expect(page.getByText("Card 2 of 50")).toBeVisible();
+  await expect(page.getByText(/Card 2 of \d+/)).toBeVisible();
 
   // Focus returns to the answer field with the next card, where shortcuts are
   // inert by design, so a keyboard learner tabs out to reach them again.

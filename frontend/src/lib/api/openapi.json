@@ -3580,8 +3580,15 @@
         "type": "object"
       },
       "StudySessionQuestionListResponse": {
-        "description": "A session's persisted question set, in generation order.",
+        "description": "A session's persisted question set, in generation order.\n\n``attempted_question_ids`` is what lets a resumed session pick up where the\nlearner left off instead of re-presenting cards they have already graded.",
         "properties": {
+          "attempted_question_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Attempted Question Ids",
+            "type": "array"
+          },
           "learning_path_id": {
             "title": "Learning Path Id",
             "type": "integer"
@@ -3601,7 +3608,8 @@
         "required": [
           "session_id",
           "learning_path_id",
-          "questions"
+          "questions",
+          "attempted_question_ids"
         ],
         "title": "StudySessionQuestionListResponse",
         "type": "object"
@@ -9099,6 +9107,24 @@
               }
             },
             "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition Failed",
             "headers": {
               "X-Request-ID": {
                 "description": "Request correlation identifier.",

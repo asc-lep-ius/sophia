@@ -2,6 +2,7 @@ import { fail, redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { apiFetch } from "../../hooks.server";
 import type { components } from "$lib/api/schema";
+import { generateSessionDeck } from "$lib/server/studyDeck";
 import type { Actions, PageServerLoad } from "./$types";
 
 type SessionList = components["schemas"]["StudySessionListResponse"];
@@ -47,6 +48,14 @@ export const actions: Actions = {
     }
 
     const body = (await response.json()) as { session: StudySession };
+    // Generate here rather than in the session layout's load: that load also
+    // runs on hover preloading, which would bill a model call for every
+    // session a learner's mouse passes over.
+    await generateSessionDeck(event, {
+      learningPathId,
+      sessionId: body.session.id,
+      topic,
+    });
     redirect(
       303,
       resolve("/study/[sessionId]/predict", {

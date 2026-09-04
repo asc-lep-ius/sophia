@@ -8,8 +8,6 @@ type SessionQuestions =
   components["schemas"]["StudySessionQuestionListResponse"];
 type Pacing = components["schemas"]["StudyPacingResponse"];
 
-const GENERATED_BATCH_SIZE = 5;
-
 export const load: LayoutServerLoad = async (event) => {
   const sessionId = Number(event.params.sessionId);
   if (!Number.isInteger(sessionId) || sessionId <= 0) {
@@ -23,17 +21,14 @@ export const load: LayoutServerLoad = async (event) => {
 
   const summary = await loadSummary(event, sessionId);
   const pacing = await loadPacing(event);
-  const questions = await loadQuestions(event, {
-    sessionId,
-    learningPathId,
-    topic: summary.session.topic,
-  });
+  const deck = await readQuestions(event, sessionId);
 
   return {
+    attemptedQuestionIds: deck.attempted_question_ids,
     csrfToken: event.locals.csrfToken,
     learningPathId,
     pacing,
-    questions,
+    questions: deck.questions,
     sessionId,
     summary,
   };
@@ -68,48 +63,30 @@ async function loadPacing(
 }
 
 /**
- * Read the session's cards, generating one batch only when it has none.
+ * Read the session's deck. Nothing is generated here.
  *
- * Generation is a model call: doing it on every load would make a reload cost
- * money and hand the learner a different deck half-way through a session.
+ * This load runs on hover: `app.html` opts the whole app into SvelteKit's
+ * hover preloading, so a learner sweeping the mouse across the session list
+ * would otherwise bill a model call per session they never opened. Generation
+ * belongs to the actions that a learner deliberately triggers — starting a
+ * session, or extending a drained deck.
  */
-async function loadQuestions(
-  event: Parameters<typeof apiFetch>[0],
-  scope: { sessionId: number; learningPathId: number; topic: string },
-): Promise<SessionQuestions["questions"]> {
-  const existing = await readQuestions(event, scope.sessionId);
-  if (existing.length > 0) {
-    return existing;
-  }
-
-  const generated = await apiFetch(event, "/api/study/questions", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      learning_path_id: scope.learningPathId,
-      topic: scope.topic,
-      count: GENERATED_BATCH_SIZE,
-      session_id: scope.sessionId,
-    }),
-  });
-  if (!generated.ok) {
-    return [];
-  }
-  return await readQuestions(event, scope.sessionId);
-}
-
 async function readQuestions(
   event: Parameters<typeof apiFetch>[0],
   sessionId: number,
-): Promise<SessionQuestions["questions"]> {
+): Promise<SessionQuestions> {
   const response = await apiFetch(
     event,
     "/api/study/sessions/{session_id}/questions",
     { params: { session_id: sessionId } },
   );
   if (!response.ok) {
-    return [];
+    return {
+      session_id: sessionId,
+      learning_path_id: 0,
+      questions: [],
+      attempted_question_ids: [],
+    };
   }
-  const body = (await response.json()) as SessionQuestions;
-  return body.questions;
+  return (await response.json()) as SessionQuestions;
 }

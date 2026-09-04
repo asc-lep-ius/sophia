@@ -6,6 +6,7 @@
   import StudyCard from "$lib/components/study/StudyCard.svelte";
   import { recordPrediction } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
+  import { anchorCard, remainingCards } from "$lib/study/deck";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { PageData } from "./$types";
 
@@ -21,7 +22,13 @@
     { value: 5, label: () => m.study_predict_5() },
   ];
 
-  const anchorQuestion = $derived(data.questions.at(0));
+  const anchorQuestion = $derived(anchorCard(data.questions));
+  // Already answered on a previous visit: the pre-test is done, and asking
+  // again would write a second attempt into the pre-test mean.
+  const preTestAnswered = $derived(
+    anchorQuestion !== undefined &&
+      data.attemptedQuestionIds.includes(anchorQuestion.id),
+  );
 
   // Rebuilt when the session changes, or when its deck grows — and not when
   // some unrelated `invalidateAll` hands the page a fresh data object, which
@@ -29,9 +36,12 @@
   const runtime = $derived.by(() => {
     // The one tracked read: rebuilding on anything else would throw away a
     // card in progress.
-    void `${data.sessionId}:${data.questions.length}`;
+    void `${data.sessionId}:${data.questions.length}:${data.attemptedQuestionIds.length}`;
     return untrack(() => {
-      const question = data.questions.at(0);
+      const question = remainingCards(
+        anchorCard(data.questions) ? [anchorCard(data.questions)!] : [],
+        data.attemptedQuestionIds,
+      ).at(0);
       return question
         ? createStudyRuntime({
             csrfToken: data.csrfToken ?? "",
@@ -49,7 +59,9 @@
   let predictionSaved = $state(false);
   let predictionError = $state(false);
 
-  const preTestDone = $derived(runtime !== null && runtime.store.remaining === 0);
+  const preTestDone = $derived(
+    preTestAnswered || (runtime !== null && runtime.store.remaining === 0),
+  );
   const canContinue = $derived(predictionSaved && preTestDone);
 
   $effect(() => {

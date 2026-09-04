@@ -33,7 +33,7 @@ comparison rather than two unrelated numbers.
    comes from the learner's own Again/Hard/Good/Easy rating.
 5. `grading`: an optimistic grade is queued locally and sent to the API.
 6. `committed`: the backend accepted the grade and the next card can load.
-7. `rollback`: the optimistic grade failed, the local queue restores the card, and the error is announced.
+7. `rollback`: the optimistic grade failed, the local queue restores the card, and the error is announced. The restored card is revealed and can be graded again — a rejected grade the learner cannot retry would be worse than the rejection.
 8. `paused`: timers stop, shortcuts are ignored except resume, and the current card remains recoverable.
 
 Invalid transitions are rejected. In particular, `prompt` cannot jump to
@@ -57,10 +57,13 @@ fails when any of them is shortened.
   `reflection_min_seconds` — served by `GET /api/study/pacing`, not compiled
   into the client — and until a reflection is written.
 
-The server enforces the first two independently: an attempt whose ingested
-learner-process trace does not satisfy the policy is refused with 412. The
-client's copy of the floors is there to explain what is missing, not to be
-trusted.
+The server enforces all of these independently of the client. An attempt whose
+ingested learner-process trace does not satisfy the elaboration policy is
+refused with 412, and `completeStudySession` refuses a session that recorded no
+reflection, or whose reflection landed inside the floor — both timestamps it
+compares are its own. The client's copy of the floors is there to explain what
+is missing, not to be trusted: a page that never renders the countdown still
+cannot close a session early.
 
 ## Keyboard and Pointer Bindings
 
@@ -99,9 +102,31 @@ retry idempotent server-side — before rolling back. On rollback the card is
 restored at its queue position and the learner gets a non-blocking error with a
 retry action.
 
-Undo first checks the outbox. If the grade is still pending, cancel it locally.
-If it has already been accepted, say so: the grade is durable, and showing a
-queue the server does not have would be a lie.
+A grade is held briefly before it is sent, which is what gives undo something
+to cancel: dispatching on the keystroke would leave undo able only to
+apologise. The hold is invisible — the surface has already moved to the next
+card — and every held grade is flushed when the surface is torn down.
+
+Undo first checks the outbox. If the grade is still inside its hold window,
+cancel it locally. If it has already been sent, say so: the grade is durable,
+and showing a queue the server does not have would be a lie.
+
+Several grades can be in flight at once. A rollback rewinds to the *earliest*
+rejected card and never forwards, so one rejection cannot overwrite another's
+restoration or drag a learner out of the card they are writing.
+
+## Resuming
+
+A session is resumed, never restarted. `listStudySessionQuestions` reports
+which of its cards this learner has already attempted, and the queue begins
+after them. Re-presenting an answered card would not merely waste the learner's
+time: grading it again mints a new request id, so the server stores a second
+attempt and averages both into the phase means the reflect route reports.
+
+Card generation happens only on a deliberate press — starting a session, or
+extending a drained deck. It never happens in a `load`, because the app opts
+into hover preloading and a load that generates would bill a model call for
+every session a learner's mouse passes over.
 
 ## Scores
 

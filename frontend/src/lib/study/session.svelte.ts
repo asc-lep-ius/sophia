@@ -46,7 +46,7 @@ export type StudySessionStoreOptions = {
   /** Retry tuning for the grade outbox; the defaults are the shipping ones. */
   retry?: Pick<
     OutboxOptions<GradeSubmission>,
-    "maxAttempts" | "retryDelayMs" | "wait"
+    "maxAttempts" | "retryDelayMs" | "holdMs" | "wait"
   >;
   now?: () => number;
   newId?: () => string;
@@ -135,6 +135,11 @@ export class StudySessionStore {
     return this.#outbox.pendingCount;
   }
 
+  /** Grades the server refused and never took. */
+  get failedCount(): number {
+    return this.#outbox.failedCount;
+  }
+
   get outboxEntries(): OutboxEntry<GradeSubmission>[] {
     return this.#outbox.entries;
   }
@@ -214,7 +219,14 @@ export class StudySessionStore {
   }
 
   get canGrade(): boolean {
-    return this.#state === "revealed" || this.#state === "grading";
+    // "rollback" is here because a restored card is a revealed card waiting for
+    // another grade: leaving it out meant a rejected grade could never be
+    // retried by the learner, only by the outbox.
+    return (
+      this.#state === "revealed" ||
+      this.#state === "grading" ||
+      this.#state === "rollback"
+    );
   }
 
   get canUndo(): boolean {
@@ -252,10 +264,7 @@ export class StudySessionStore {
     return true;
   }
 
-  async grade(
-    rating: Grade,
-    confidence: number | null = null,
-  ): Promise<boolean> {
+  grade(rating: Grade, confidence: number | null = null): boolean {
     const card = this.current;
     if (!card || !this.canGrade) {
       return false;
@@ -278,8 +287,13 @@ export class StudySessionStore {
     this.#lastGrade = { requestId, at: this.#now() };
     this.#advance();
 
-    await this.#outbox.enqueue(requestId, submission);
+    this.#outbox.enqueue(requestId, submission);
     return true;
+  }
+
+  /** Send anything still inside its cancel window — the surface is going away. */
+  flushGrades(): void {
+    this.#outbox.flush();
   }
 
   /**
@@ -375,12 +389,24 @@ export class StudySessionStore {
   }
 
   #rollback(entry: OutboxEntry<GradeSubmission>): void {
-    this.#index = entry.payload.queuePosition;
-    const card = this.#cards[this.#index];
+    const card = this.#cards[entry.payload.queuePosition];
     if (card) {
       card.revealed = true;
       card.againLater = false;
     }
+
+    // Rewind to the earliest rejected card, never simply to this one: with
+    // several grades in flight a later rollback would otherwise overwrite an
+    // earlier one's restoration and quietly drop it. Rewinding is also only
+    // ever backwards — a rollback that arrives while the learner is further on
+    // must not drag them forwards.
+    const earliestRejected = Math.min(
+      ...this.#outbox.entries
+        .filter((failed) => failed.status === "failed")
+        .map((failed) => failed.payload.queuePosition),
+      entry.payload.queuePosition,
+    );
+    this.#index = Math.min(this.#index, earliestRejected);
     this.#state = "rollback";
     this.#error = "study.grade_rejected";
   }

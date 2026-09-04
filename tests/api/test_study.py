@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
 from sophia.api.routers import study as study_router
 from sophia.api.sessions import SessionTenant
+from sophia.config import Settings
 from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
-from sophia.services.athena_session import SessionScope
+from sophia.services.athena_session import ReflectionPacing, SessionScope
 
 from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
@@ -19,6 +21,22 @@ if TYPE_CHECKING:
 
 async def noop_record_provenance(_db: object, _provenance: object) -> None:
     """The flashcard route tests exercise the route, not provenance persistence."""
+
+
+def _fake_reflection_pacing(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    seconds: float | None = 120.0,
+) -> None:
+    """Satisfy the completion precondition; the real check has its own tests
+    against a live database in test_study_scoring.py."""
+    started_at = datetime(2026, 9, 4, 10, 0, tzinfo=UTC)
+    reflected_at = None if seconds is None else started_at + timedelta(seconds=seconds)
+
+    async def fake_get_reflection_pacing(_db: object, _session_id: int) -> ReflectionPacing:
+        return ReflectionPacing(started_at=started_at, reflected_at=reflected_at)
+
+    monkeypatch.setattr(study_router, "get_reflection_pacing", fake_get_reflection_pacing)
 
 
 def _fake_session_owner(
@@ -241,6 +259,7 @@ def test_complete_study_session_returns_the_server_scored_session(
         )
 
     _fake_session_owner(monkeypatch, course_id=12, user_id="learner")
+    _fake_reflection_pacing(monkeypatch)
     monkeypatch.setattr(study_router, "finalize_study_session", fake_finalize_study_session)
 
     response = harness.client.post(
@@ -563,6 +582,17 @@ def test_study_pacing_serves_the_server_configured_floors() -> None:
         "elaboration_min_chars": harness.settings.elaboration_min_chars,
         "prompt_min_dwell_ms": harness.settings.elaboration_min_prompt_dwell_ms,
     }
+
+
+def test_the_shipped_reflection_floor_is_not_shortened() -> None:
+    """The floor is pedagogy, not a tunable.
+
+    Every other pacing assertion reads the configured value back, so lowering
+    the default would leave them all green. This one pins the number issue #98
+    committed to, and is the test that has to be argued with before anyone
+    ships a faster reflection.
+    """
+    assert Settings().study_reflection_min_seconds >= 30
 
 
 def test_study_pacing_requires_authentication() -> None:

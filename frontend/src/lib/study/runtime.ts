@@ -63,8 +63,12 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
     store,
     events,
     destroy: () => {
+      // Order matters: a held grade is sent last so the process events it
+      // depends on are already on their way — the server refuses an attempt
+      // whose trace it has not ingested.
       events.flushQuietly();
       events.destroy();
+      store.flushGrades();
     },
   };
 }

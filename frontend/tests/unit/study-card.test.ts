@@ -43,6 +43,9 @@ function renderCard(submitted: string[] = []) {
     submit: async (submission) => {
       submitted.push(`${submission.questionId}:${submission.selfRating}`);
     },
+    // No cancel window here: this asserts the button reaches the store, not
+    // the undo behaviour study-session-store.test.ts covers.
+    retry: { holdMs: 0 },
     now: () => 100_000,
   });
   render(StudyCard, { store });
@@ -98,6 +101,7 @@ describe("study card", () => {
     });
     await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
     await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(submitted).toEqual(["q-1:3"]);
   });

@@ -3,6 +3,7 @@
   import { untrack } from "svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StudyCard from "$lib/components/study/StudyCard.svelte";
+  import { SophiaApiError } from "$lib/api/client";
   import {
     completeSession,
     loadSessionSummary,
@@ -10,6 +11,7 @@
     type StudySessionSummary,
   } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
+  import { anchorCard } from "$lib/study/deck";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { PageData } from "./$types";
 
@@ -17,7 +19,13 @@
 
   let { data }: Props = $props();
 
-  const anchorQuestion = $derived(data.questions.at(0));
+  const anchorQuestion = $derived(anchorCard(data.questions));
+  // The post-test answers the anchor a second time on purpose, so it is not
+  // filtered by the attempted ids the way the practice deck is. What ends it
+  // is the server's own count of post-test attempts: without that, a reload
+  // here would ask for a third answer and write a second post-test row into
+  // the mean.
+  const postTestAnswered = $derived(data.summary.attempts.post_test > 0);
   const context = $derived({
     csrfToken: data.csrfToken ?? "",
     learningPathId: data.learningPathId,
@@ -30,9 +38,11 @@
   const runtime = $derived.by(() => {
     // The one tracked read: rebuilding on anything else would throw away a
     // card in progress.
-    void `${data.sessionId}:${data.questions.length}`;
+    void `${data.sessionId}:${data.questions.length}:${data.summary.attempts.post_test}`;
     return untrack(() => {
-      const question = data.questions.at(0);
+      const question = data.summary.attempts.post_test > 0
+        ? undefined
+        : anchorCard(data.questions);
       return question
         ? createStudyRuntime({
             csrfToken: data.csrfToken ?? "",
@@ -50,12 +60,14 @@
   let elapsedSeconds = $state(0);
   let summary = $state<StudySessionSummary | null>(null);
   let submitting = $state(false);
-  let failed = $state(false);
+  let failure = $state<"none" | "pacing" | "unavailable">("none");
 
   const secondsLeft = $derived(
     Math.max(data.pacing.reflection_min_seconds - elapsedSeconds, 0),
   );
-  const postTestDone = $derived(runtime === null || runtime.store.remaining === 0);
+  const postTestDone = $derived(
+    postTestAnswered || runtime === null || runtime.store.remaining === 0,
+  );
   const reflectionWritten = $derived(reflection.trim().length > 0);
   const canReveal = $derived(postTestDone && reflectionWritten && secondsLeft <= 0);
 
@@ -83,7 +95,7 @@
       return;
     }
     submitting = true;
-    failed = false;
+    failure = "none";
     try {
       runtime?.events.record({
         eventType: "reflection_written",
@@ -98,8 +110,13 @@
       });
       await completeSession(context);
       summary = await loadSessionSummary(data.sessionId);
-    } catch {
-      failed = true;
+    } catch (error) {
+      // A 412 is the server holding the pacing floor, not an outage: telling
+      // the learner to "try again shortly" would be both wrong and rude.
+      failure =
+        error instanceof SophiaApiError && error.status === 412
+          ? "pacing"
+          : "unavailable";
     } finally {
       submitting = false;
     }
@@ -163,8 +180,12 @@
     <button type="button" disabled={!canReveal || submitting} onclick={() => void revealResults()}>
       {m.study_reflection_ready()}
     </button>
-    {#if failed}
-      <p class="error" role="alert">{m.study_not_available()}</p>
+    {#if failure !== "none"}
+      <p class="error" role="alert">
+        {failure === "pacing"
+          ? m.study_reflection_too_soon()
+          : m.study_not_available()}
+      </p>
     {/if}
   </section>
 {/if}

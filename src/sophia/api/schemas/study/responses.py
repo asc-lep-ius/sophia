@@ -155,11 +155,16 @@ class StudyQuestionListResponse(ApiModel):
 
 
 class StudySessionQuestionListResponse(ApiModel):
-    """A session's persisted question set, in generation order."""
+    """A session's persisted question set, in generation order.
+
+    ``attempted_question_ids`` is what lets a resumed session pick up where the
+    learner left off instead of re-presenting cards they have already graded.
+    """
 
     session_id: int
     learning_path_id: int
     questions: list[Question]
+    attempted_question_ids: list[str]
 
 
 class StudyAttemptItemResponse(ApiModel):

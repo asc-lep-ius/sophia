@@ -100,6 +100,46 @@ async def complete_study_session(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ReflectionPacing:
+    """When a session started and when its learner first reflected.
+
+    Both timestamps are the server's own, so the gap between them is evidence
+    the client cannot shorten by editing a countdown.
+    """
+
+    started_at: datetime | None
+    reflected_at: datetime | None
+
+    @property
+    def reflection_seconds(self) -> float | None:
+        """Seconds of session before the reflection landed, or None if either end is missing."""
+        if self.started_at is None or self.reflected_at is None:
+            return None
+        return (self.reflected_at - self.started_at).total_seconds()
+
+
+async def get_reflection_pacing(
+    session: AsyncSession,
+    session_id: int,
+) -> ReflectionPacing | None:
+    """Read the pacing evidence a completion is allowed to rely on."""
+    row = (
+        await session.execute(
+            select(study_sessions.c.started_at).where(study_sessions.c.id == session_id)
+        )
+    ).one_or_none()
+    if row is None:
+        return None
+
+    reflected_at = await session.scalar(
+        select(func.min(study_reflections.c.created_at)).where(
+            study_reflections.c.session_id == session_id
+        )
+    )
+    return ReflectionPacing(started_at=row.started_at, reflected_at=reflected_at)
+
+
 async def finalize_study_session(session: AsyncSession, session_id: int) -> StudySession | None:
     """Mark a session complete, scoring it from what the learner actually did.
 

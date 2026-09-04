@@ -69,7 +69,7 @@
         store.reveal();
         return;
       case "grade":
-        void store.grade(shortcut.rating as Grade);
+        store.grade(shortcut.rating as Grade);
         return;
       case "undo":
         store.undo();
@@ -95,7 +95,13 @@
     aria-labelledby="study-card-prompt"
   >
     {#if showQueue && !store.focusMode}
-      <div class="queue" aria-live="polite">
+      <!--
+        Not a live region: position, again-later and unsent counts all change
+        on every grade, and announcing three numbers each time is noise. The
+        card change announces itself through focus moving to the new answer
+        field.
+      -->
+      <div class="queue">
         <span>
           {m.study_card_position({
             position: store.position,
@@ -108,6 +114,13 @@
         {#if store.pendingCount > 0}
           <span class="pending">
             {m.study_pending_grades({ count: store.pendingCount })}
+          </span>
+        {/if}
+        {#if store.failedCount > 0}
+          <!-- Survives dismissing the error: an unsaved grade is not a
+               notification, it is an outstanding fact about the session. -->
+          <span class="unsaved">
+            {m.study_unsaved_grades({ count: store.failedCount })}
           </span>
         {/if}
       </div>
@@ -155,7 +168,7 @@
       </div>
       <GradeBar
         disabled={store.paused}
-        onGrade={(grade) => void store.grade(grade)}
+        onGrade={(grade) => store.grade(grade)}
       />
     {/if}
 
@@ -231,6 +244,11 @@
 
   .again-later {
     color: var(--warning);
+    font-weight: 700;
+  }
+
+  .unsaved {
+    color: var(--danger);
     font-weight: 700;
   }
 
