@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { untrack } from "svelte";
   import { resolve } from "$app/paths";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StudyCard from "$lib/components/study/StudyCard.svelte";
@@ -16,19 +17,23 @@
   // predict route and is answered again on reflect, which is what makes the
   // pre→post comparison a comparison rather than two unrelated numbers.
   //
-  // Derived, not built once: SvelteKit reuses this component across a param
-  // change, so a runtime captured at init would keep serving the session the
-  // learner has already left.
-  const runtime = $derived(
-    createStudyRuntime({
-      csrfToken: data.csrfToken ?? "",
-      learningPathId: data.learningPathId,
-      sessionId: data.sessionId,
-      questions: data.questions.slice(1),
-      pacing: data.pacing,
-      phase: "practice",
-    }),
-  );
+  // Rebuilt only when the session changes. SvelteKit reuses this component
+  // across a param change, so a runtime captured at init would keep serving a
+  // session the learner has left; but an unrelated `invalidateAll` must not
+  // rebuild it either, or a card in progress loses the answer being written.
+  const runtime = $derived.by(() => {
+    const sessionId = data.sessionId;
+    return untrack(() =>
+      createStudyRuntime({
+        csrfToken: data.csrfToken ?? "",
+        learningPathId: data.learningPathId,
+        sessionId,
+        questions: data.questions.slice(1),
+        pacing: data.pacing,
+        phase: "practice",
+      }),
+    );
+  });
 
   let streamStatus = $state<StudyStreamStatus>("idle");
 

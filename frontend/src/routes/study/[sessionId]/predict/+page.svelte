@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { untrack } from "svelte";
   import { resolve } from "$app/paths";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StudyCard from "$lib/components/study/StudyCard.svelte";
@@ -20,21 +21,28 @@
     { value: 5, label: () => m.study_predict_5() },
   ];
 
-  // Derived rather than built once: SvelteKit reuses this component across a
-  // param change, and a runtime captured at init would outlive its session.
   const anchorQuestion = $derived(data.questions.at(0));
-  const runtime = $derived(
-    anchorQuestion
-      ? createStudyRuntime({
-          csrfToken: data.csrfToken ?? "",
-          learningPathId: data.learningPathId,
-          sessionId: data.sessionId,
-          questions: [anchorQuestion],
-          pacing: data.pacing,
-          phase: "pre_test",
-        })
-      : null,
-  );
+
+  // Rebuilt only when the session changes. SvelteKit reuses this component
+  // across a param change, so a runtime captured at init would keep serving a
+  // session the learner has left; but an unrelated `invalidateAll` must not
+  // rebuild it either, or a card in progress loses the answer being written.
+  const runtime = $derived.by(() => {
+    const sessionId = data.sessionId;
+    return untrack(() => {
+      const question = data.questions.at(0);
+      return question
+        ? createStudyRuntime({
+            csrfToken: data.csrfToken ?? "",
+            learningPathId: data.learningPathId,
+            sessionId,
+            questions: [question],
+            pacing: data.pacing,
+            phase: "pre_test",
+          })
+        : null;
+    });
+  });
 
   let rating = $state<number | null>(null);
   let predictionSaved = $state(false);
