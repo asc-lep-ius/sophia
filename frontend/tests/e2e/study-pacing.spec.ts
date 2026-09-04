@@ -19,6 +19,7 @@ const DWELL_SESSION = 12;
 const PREDICT_SESSION = 13;
 const REFLECT_SESSION = 14;
 const COUNTDOWN_SESSION = 15;
+const SETTLE_SESSION = 16;
 const SHORT_ANSWER = "Too short.";
 const FULL_ANSWER =
   "A minimum cut partitions the vertices so that every path from source to sink crosses it, which is why its capacity bounds the flow.";
@@ -120,4 +121,28 @@ test("the reflection countdown is the server's number, not a client constant", a
   expect(floor).toBeGreaterThanOrEqual(30);
   expect(announced).toBeGreaterThan(floor - 3);
   expect(announced).toBeLessThanOrEqual(floor);
+});
+
+test("continue waits for the pre-test grade to reach the server", async ({
+  page,
+}) => {
+  // The pre-test is the one card that is never re-presented if its grade does
+  // not land — the flow has moved past predict by then — so leaving on the
+  // optimistic advance would drop it out of the pre→post comparison.
+  await authenticateShell(page);
+  await page.goto(`/app/study/${SETTLE_SESSION}/predict`);
+
+  await page.getByRole("radio", { name: "Somewhat" }).check();
+  await page.getByLabel("Your answer").fill(FULL_ANSWER);
+  await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
+    timeout: 10_000,
+  });
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: "Good" }).click();
+
+  const start = page.getByRole("button", { name: "Start studying" });
+  await expect(start).toBeDisabled();
+  await expect(page.getByText("Saving your answer…")).toBeVisible();
+
+  await expect(start).toBeEnabled({ timeout: 10_000 });
 });

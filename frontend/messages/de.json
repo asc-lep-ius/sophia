@@ -133,6 +133,7 @@
   "study_reveal": "Aufdecken",
   "study_reveal_available": "Du kannst jetzt aufdecken.",
   "study_reveal_blocked": "Noch {remaining} Zeichen eigener Antwort, dann kannst du aufdecken.",
+  "study_saving": "Antwort wird gespeichert…",
   "study_session_completed": "Abgeschlossen",
   "study_session_in_progress": "Laufend",
   "study_session_start_failed": "Die Sitzung konnte nicht gestartet werden.",

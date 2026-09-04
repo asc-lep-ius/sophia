@@ -112,10 +112,9 @@ attempt, so the resumed session presents it again.
 
 Undo is offered while the grade is still cancellable, and the control is
 disabled the moment the submission goes out rather than staying enabled and
-apologising afterwards. The last card of a deck is the exception: its card
-section unmounts as the queue empties, so the button goes with it while the
-grade may still be held — the keyboard shortcut still reaches the store where
-the surface is still mounted.
+apologising afterwards. The last card of a deck is the exception: every route unmounts the
+card as its queue empties, so both the button and the shortcut go with it while
+that grade may still be held. The final grade of a deck has no undo.
 
 A rejected grade is superseded by the next grade of the same card, and forgotten
 when that one is accepted. Leaving it in the outbox would keep counting it as

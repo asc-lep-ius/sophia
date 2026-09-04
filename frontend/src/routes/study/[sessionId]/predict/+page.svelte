@@ -200,7 +200,16 @@
     {m.study_predict_continue()}
   </button>
   {#if !canContinue}
-    <p class="requirement">{m.study_predict_required()}</p>
+    <p class="requirement">
+      <!--
+        Two different reasons to wait, and only one of them is the learner's:
+        "record a prediction" is false once they have, and the grade is merely
+        still on its way.
+      -->
+      {predictionSaved && preTestDone
+        ? m.study_saving()
+        : m.study_predict_required()}
+    </p>
   {/if}
 </div>
 

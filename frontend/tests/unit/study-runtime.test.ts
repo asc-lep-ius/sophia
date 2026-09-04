@@ -109,6 +109,9 @@ describe("study runtime unload path", () => {
     await runtime.events.flushNow();
 
     expect(calls.at(-1)?.keepalive).toBe(false);
+    // The grade above is still held; without this its timer outlives the test.
+    runtime.destroy();
+    await settle();
   });
 
   it("does not post an empty batch on teardown", async () => {

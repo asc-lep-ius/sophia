@@ -133,6 +133,7 @@
   "study_reveal": "Reveal",
   "study_reveal_available": "You can reveal now.",
   "study_reveal_blocked": "{remaining} more characters of your own answer before you can reveal.",
+  "study_saving": "Saving your answer…",
   "study_session_completed": "Completed",
   "study_session_in_progress": "In progress",
   "study_session_start_failed": "The session could not be started.",
