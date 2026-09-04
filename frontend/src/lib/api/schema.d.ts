@@ -679,8 +679,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reserve Web Vitals */
-        post: operations["reserve_web_vitals_api_metrics_web_vitals_post"];
+        /**
+         * Report Web Vitals
+         * @description Count one field measurement of the study surface's responsiveness.
+         *
+         *     Unauthenticated on purpose — responsiveness is measured on the sign-in page
+         *     too — and safe to leave so because the only effect is incrementing a
+         *     counter whose labels come from a closed set.
+         */
+        post: operations["reportWebVitals"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2780,18 +2787,49 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /** WebVitalsReservedResponse */
-        WebVitalsReservedResponse: {
+        /** WebVitalsAcceptedResponse */
+        WebVitalsAcceptedResponse: {
             /**
              * Code
              * @constant
              */
-            code: "metrics.web_vitals.reserved";
+            code: "metrics.web_vitals.accepted";
             /**
              * Status
              * @constant
              */
-            status: "reserved";
+            status: "accepted";
+        };
+        /**
+         * WebVitalsMetricName
+         * @description The field metrics the study surface reports.
+         *
+         *     A closed set, because each value becomes a Prometheus label: an open string
+         *     would let a client mint unbounded series.
+         * @enum {string}
+         */
+        WebVitalsMetricName: "CLS" | "FCP" | "INP" | "LCP" | "TTFB";
+        /**
+         * WebVitalsRating
+         * @description The library's own verdict on a measurement, kept as its bucket.
+         * @enum {string}
+         */
+        WebVitalsRating: "good" | "needs_improvement" | "poor";
+        /**
+         * WebVitalsReportRequest
+         * @description One field measurement from a real session.
+         *
+         *     Deliberately carries no identifiers: this is aggregate responsiveness
+         *     evidence, and a per-learner interaction trace is a different thing with
+         *     different consent requirements.
+         */
+        WebVitalsReportRequest: {
+            metric_name: components["schemas"]["WebVitalsMetricName"];
+            /** Navigation Type */
+            navigation_type?: string | null;
+            rating: components["schemas"]["WebVitalsRating"];
+            /** Value */
+            value: number;
         };
         /** WorkloadDayResponse */
         WorkloadDayResponse: {
@@ -4381,14 +4419,18 @@ export interface operations {
             };
         };
     };
-    reserve_web_vitals_api_metrics_web_vitals_post: {
+    reportWebVitals: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebVitalsReportRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -4397,7 +4439,17 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["WebVitalsReservedResponse"];
+                    "application/json": components["schemas"]["WebVitalsAcceptedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

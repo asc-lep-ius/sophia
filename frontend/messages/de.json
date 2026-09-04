@@ -130,6 +130,7 @@
   "study_resume": "Weiter",
   "study_retry": "Erneut senden",
   "study_reveal": "Aufdecken",
+  "study_reveal_available": "Du kannst jetzt aufdecken.",
   "study_reveal_blocked": "Noch {remaining} Zeichen eigener Antwort, dann kannst du aufdecken.",
   "study_session_completed": "Abgeschlossen",
   "study_session_in_progress": "Laufend",

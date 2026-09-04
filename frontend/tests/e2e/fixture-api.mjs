@@ -105,7 +105,11 @@ function addSession(sessions, questions, { id, topic, cards, policy }) {
 const routes = [
   ["GET", /^\/api\/auth\/session$/, sessionResponse],
   ["GET", /^\/api\/ready$/, () => ({ status: "ready" })],
-  ["POST", /^\/api\/metrics\/web-vitals$/, () => ({ accepted: true })],
+  [
+    "POST",
+    /^\/api\/metrics\/web-vitals$/,
+    () => ({ status: "accepted", code: "metrics.web_vitals.accepted" }),
+  ],
   ["GET", /^\/api\/study\/pacing$/, pacingResponse],
   ["GET", /^\/api\/study\/sessions$/, listSessions],
   ["POST", /^\/api\/study\/sessions$/, startSession],

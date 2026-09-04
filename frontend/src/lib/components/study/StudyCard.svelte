@@ -141,6 +141,13 @@
       {#if !canReveal && store.elaborationChars >= store.minElaborationChars}
         <p class="dwell" role="status">{m.study_dwell_blocked()}</p>
       {/if}
+      <!--
+        Announced once, when the state actually changes: the character counter
+        is described-by rather than live for the same reason.
+      -->
+      <p class="sr-only" role="status">
+        {canReveal ? m.study_reveal_available() : ""}
+      </p>
     {:else}
       <div class="revealed">
         <h3>{m.study_your_answer()}</h3>
@@ -307,6 +314,17 @@
   .error p {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .error-actions {

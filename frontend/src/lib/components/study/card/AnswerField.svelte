@@ -37,10 +37,11 @@
     oninput={(event) => onInput(event.currentTarget.value)}
   ></textarea>
   <!--
-    Polite, not assertive: this updates on every keystroke, and an assertive
-    region would interrupt a screen-reader user mid-word.
+    Described-by, not a live region: this changes on every keystroke, and
+    announcing each one would talk over the learner as they write. What is
+    worth announcing is the moment the reveal opens, which the card does once.
   -->
-  <p id={descriptionId} class="counter" aria-live="polite">
+  <p id={descriptionId} class="counter">
     {remaining > 0 ? m.study_reveal_blocked({ remaining }) : ""}
   </p>
 </div>

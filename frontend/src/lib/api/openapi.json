@@ -4507,15 +4507,15 @@
         "title": "ValidationError",
         "type": "object"
       },
-      "WebVitalsReservedResponse": {
+      "WebVitalsAcceptedResponse": {
         "properties": {
           "code": {
-            "const": "metrics.web_vitals.reserved",
+            "const": "metrics.web_vitals.accepted",
             "title": "Code",
             "type": "string"
           },
           "status": {
-            "const": "reserved",
+            "const": "accepted",
             "title": "Status",
             "type": "string"
           }
@@ -4524,7 +4524,64 @@
           "status",
           "code"
         ],
-        "title": "WebVitalsReservedResponse",
+        "title": "WebVitalsAcceptedResponse",
+        "type": "object"
+      },
+      "WebVitalsMetricName": {
+        "description": "The field metrics the study surface reports.\n\nA closed set, because each value becomes a Prometheus label: an open string\nwould let a client mint unbounded series.",
+        "enum": [
+          "CLS",
+          "FCP",
+          "INP",
+          "LCP",
+          "TTFB"
+        ],
+        "title": "WebVitalsMetricName",
+        "type": "string"
+      },
+      "WebVitalsRating": {
+        "description": "The library's own verdict on a measurement, kept as its bucket.",
+        "enum": [
+          "good",
+          "needs_improvement",
+          "poor"
+        ],
+        "title": "WebVitalsRating",
+        "type": "string"
+      },
+      "WebVitalsReportRequest": {
+        "description": "One field measurement from a real session.\n\nDeliberately carries no identifiers: this is aggregate responsiveness\nevidence, and a per-learner interaction trace is a different thing with\ndifferent consent requirements.",
+        "properties": {
+          "metric_name": {
+            "$ref": "#/components/schemas/WebVitalsMetricName"
+          },
+          "navigation_type": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Navigation Type"
+          },
+          "rating": {
+            "$ref": "#/components/schemas/WebVitalsRating"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric_name",
+          "rating",
+          "value"
+        ],
+        "title": "WebVitalsReportRequest",
         "type": "object"
       },
       "WorkloadDayResponse": {
@@ -7496,13 +7553,24 @@
     },
     "/api/metrics/web-vitals": {
       "post": {
-        "operationId": "reserve_web_vitals_api_metrics_web_vitals_post",
+        "description": "Count one field measurement of the study surface's responsiveness.\n\nUnauthenticated on purpose \u2014 responsiveness is measured on the sign-in page\ntoo \u2014 and safe to leave so because the only effect is incrementing a\ncounter whose labels come from a closed set.",
+        "operationId": "reportWebVitals",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebVitalsReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebVitalsReservedResponse"
+                  "$ref": "#/components/schemas/WebVitalsAcceptedResponse"
                 }
               }
             },
@@ -7515,9 +7583,27 @@
                 }
               }
             }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
-        "summary": "Reserve Web Vitals",
+        "summary": "Report Web Vitals",
         "tags": [
           "metrics"
         ]

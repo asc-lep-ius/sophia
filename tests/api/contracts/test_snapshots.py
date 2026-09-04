@@ -11,7 +11,7 @@ import pytest
 from sophia.api.schemas.auth import AuthSessionResponse
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.schemas.health import HealthResponse, ReadinessResponse
-from sophia.api.schemas.metrics import WebVitalsReservedResponse
+from sophia.api.schemas.metrics import WebVitalsAcceptedResponse
 from sophia.api.schemas.settings import SettingsResponse
 
 if TYPE_CHECKING:
@@ -26,7 +26,7 @@ SNAPSHOT_CASES: tuple[tuple[str, type[ApiModel]], ...] = (
     ("readiness_response.json", ReadinessResponse),
     ("error_envelope.json", ErrorEnvelope),
     ("settings_response.json", SettingsResponse),
-    ("web_vitals_reserved_response.json", WebVitalsReservedResponse),
+    ("web_vitals_accepted_response.json", WebVitalsAcceptedResponse),
 )
 
 

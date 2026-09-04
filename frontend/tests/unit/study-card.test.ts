@@ -121,7 +121,7 @@ describe("study card", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Pause" }));
 
-    expect(screen.getByRole("status").textContent).toContain("Paused");
+    expect(screen.getByText(/Paused/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: /minimum cut/ })).toBeTruthy();
   });
 
