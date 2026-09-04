@@ -23,19 +23,20 @@
 
   const anchorQuestion = $derived(data.questions.at(0));
 
-  // Rebuilt only when the session changes. SvelteKit reuses this component
-  // across a param change, so a runtime captured at init would keep serving a
-  // session the learner has left; but an unrelated `invalidateAll` must not
-  // rebuild it either, or a card in progress loses the answer being written.
+  // Rebuilt when the session changes, or when its deck grows — and not when
+  // some unrelated `invalidateAll` hands the page a fresh data object, which
+  // would discard the answer a learner is part-way through writing.
   const runtime = $derived.by(() => {
-    const sessionId = data.sessionId;
+    // The one tracked read: rebuilding on anything else would throw away a
+    // card in progress.
+    void `${data.sessionId}:${data.questions.length}`;
     return untrack(() => {
       const question = data.questions.at(0);
       return question
         ? createStudyRuntime({
             csrfToken: data.csrfToken ?? "",
             learningPathId: data.learningPathId,
-            sessionId,
+            sessionId: data.sessionId,
             questions: [question],
             pacing: data.pacing,
             phase: "pre_test",

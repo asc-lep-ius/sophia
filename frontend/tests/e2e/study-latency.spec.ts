@@ -17,6 +17,7 @@ import { authenticateShell } from "./shell-auth";
  */
 
 const LATENCY_SESSION = 2;
+const EXTEND_SESSION = 3;
 const INTERACTION_BUDGET_MS = 50;
 const CARDS_TO_WORK = 12;
 const CPU_THROTTLE_RATE = 4;
@@ -112,3 +113,20 @@ function percentile(values: number[], target: number): number {
   const index = Math.ceil((target / 100) * sorted.length) - 1;
   return sorted[Math.min(Math.max(index, 0), sorted.length - 1)] ?? 0;
 }
+
+test("a drained queue can be extended without leaving the session", async ({
+  page,
+}) => {
+  await authenticateShell(page);
+  await page.goto(`/app/study/${EXTEND_SESSION}/act`);
+
+  await page.getByLabel("Your answer").fill("The one card in this deck.");
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /Good/ }).click();
+  await expect(page.getByText("No cards left in this session.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add more cards" }).click();
+
+  await expect(page.getByLabel("Your answer")).toBeVisible();
+  await expect(page.getByText(/Card 1 of \d+/)).toBeVisible();
+});

@@ -64,7 +64,16 @@ function createState() {
     policy: UNGATED_POLICY,
   });
 
-  return { sessions, questions, attempts, predictions, nextSessionId: 3 };
+  addSession(sessions, questions, {
+    id: 3,
+    topic: "Extending",
+    // Two: the first card of any session is its anchor question, so a deck of
+    // one has nothing for the act route to work.
+    cards: 2,
+    policy: UNGATED_POLICY,
+  });
+
+  return { sessions, questions, attempts, predictions, nextSessionId: 4 };
 }
 
 function addSession(sessions, questions, { id, topic, cards, policy }) {
@@ -186,8 +195,9 @@ function sessionQuestions(match) {
 function generateQuestions(_match, body) {
   const sessionId = Number(body.session_id ?? 0);
   const existing = state.questions.get(sessionId) ?? [];
+  const template = existing[0] ?? (state.questions.get(1) ?? [])[0];
   const added = Array.from({ length: body.count ?? 3 }, (_unused, index) => ({
-    ...(state.questions.get(1) ?? [])[0],
+    ...template,
     id: `s${sessionId}-gen${existing.length + index}`,
     prompt: `Generated card ${existing.length + index + 1}.`,
   }));
