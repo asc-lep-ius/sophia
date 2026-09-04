@@ -23,6 +23,7 @@ export type StudyRuntime = {
   events: LearningEventBatcher;
   destroy: () => void;
   flushOnUnload: () => void;
+  resumeFromUnload: () => void;
 };
 
 /**
@@ -77,6 +78,19 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
       events.destroy();
     },
     /**
+     * Undo an unload that turned out not to be one.
+     *
+     * `pagehide` also fires with `persisted: true` when a page enters the
+     * bfcache, and a page restored from it goes on being used. Leaving the
+     * flags set would send every later request with `keepalive`, which caps
+     * in-flight bodies at 64 KB.
+     */
+    resumeFromUnload: () => {
+      unloading = false;
+      events.resumeFromUnload();
+    },
+
+    /**
      * Teardown for a page that is going away rather than navigating.
      *
      * `$effect` cleanup does not run on a tab close or a hard reload, so
@@ -87,8 +101,13 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
      */
     flushOnUnload: () => {
       unloading = true;
-      store.flushGrades();
+      // Before the grade flush, not after: flushGrades reaches submit
+      // synchronously, submit calls events.flushNow(), and the drain reads the
+      // keepalive flag when it starts. Setting it afterwards left the events
+      // POST without keepalive — the browser cancelled it on unload, and the
+      // attempt that awaits it was then never issued at all.
       events.flushOnUnload();
+      store.flushGrades();
     },
   };
 }

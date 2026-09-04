@@ -54,8 +54,15 @@
   $effect(() => {
     const current = runtime;
     const flush = () => current?.flushOnUnload();
+    // pageshow undoes it: pagehide also fires into the bfcache, and a restored
+    // page goes on being used.
+    const resume = () => current?.resumeFromUnload();
     window.addEventListener("pagehide", flush);
-    return () => window.removeEventListener("pagehide", flush);
+    window.addEventListener("pageshow", resume);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("pageshow", resume);
+    };
   });
 
   $effect(() => {

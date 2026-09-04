@@ -97,6 +97,11 @@ export class LearningEventBatcher {
     this.flushQuietly();
   }
 
+  /** The page was restored from the bfcache; stop using the unload path. */
+  resumeFromUnload(): void {
+    this.#keepalive = false;
+  }
+
   async #drain(): Promise<void> {
     this.#cancelFlush();
     while (this.#pending.length > 0) {

@@ -110,9 +110,12 @@ flushes it too, from `pagehide` and with `keepalive`, but that is best effort.
 A grade the browser drops on the way out is not lost work: the card then has no
 attempt, so the resumed session presents it again.
 
-Undo is offered exactly while the grade is still cancellable — the control is
-disabled the moment the submission goes out, rather than staying enabled and
-apologising afterwards.
+Undo is offered while the grade is still cancellable, and the control is
+disabled the moment the submission goes out rather than staying enabled and
+apologising afterwards. The last card of a deck is the exception: its card
+section unmounts as the queue empties, so the button goes with it while the
+grade may still be held — the keyboard shortcut still reaches the store where
+the surface is still mounted.
 
 A rejected grade is superseded by the next grade of the same card, and forgotten
 when that one is accepted. Leaving it in the outbox would keep counting it as

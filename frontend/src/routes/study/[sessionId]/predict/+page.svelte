@@ -63,7 +63,15 @@
   const preTestDone = $derived(
     preTestAnswered || (runtime !== null && runtime.store.remaining === 0),
   );
-  const canContinue = $derived(predictionSaved && preTestDone);
+  // The pre-test grade is held for a moment like any other, but unlike any
+  // other card this one is not re-presented if it never lands: the flow has
+  // moved past predict. So Continue waits for the outbox to be empty rather
+  // than for the optimistic advance.
+  const preTestSettled = $derived(
+    runtime === null ||
+      (runtime.store.pendingCount === 0 && runtime.store.failedCount === 0),
+  );
+  const canContinue = $derived(predictionSaved && preTestDone && preTestSettled);
 
   $effect(() => {
     const current = runtime;
@@ -77,8 +85,15 @@
   $effect(() => {
     const current = runtime;
     const flush = () => current?.flushOnUnload();
+    // pageshow undoes it: pagehide also fires into the bfcache, and a restored
+    // page goes on being used.
+    const resume = () => current?.resumeFromUnload();
     window.addEventListener("pagehide", flush);
-    return () => window.removeEventListener("pagehide", flush);
+    window.addEventListener("pageshow", resume);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("pageshow", resume);
+    };
   });
 
   async function choose(value: number) {

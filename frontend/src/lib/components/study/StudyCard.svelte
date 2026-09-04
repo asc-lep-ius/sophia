@@ -220,7 +220,11 @@
   several of them read out identically otherwise.
 -->
 {#if store.failedCount > 0}
-  <div class="unsent" aria-label={m.study_unsaved_grades({ count: store.failedCount })}>
+  <div
+    class="unsent"
+    role="group"
+    aria-label={m.study_unsaved_grades({ count: store.failedCount })}
+  >
     {#each store.outboxEntries.filter((entry) => entry.status === "failed") as entry (entry.requestId)}
       <button type="button" onclick={() => void store.retryFailed(entry.requestId)}>
         {m.study_retry_card({ position: entry.payload.queuePosition + 1 })}
