@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import app, ui
 
+from sophia.gui.routes import STUDY_SURFACE_PATH
 from sophia.gui.services.quickstart_service import (
     get_completed_session_count,
     get_enrolled_courses,
@@ -64,7 +65,7 @@ def suggest_first_action(
             "/chronos",
         )
     if topics:
-        return "Try a study session on your weakest topic.", "/study"
+        return "Try a study session on your weakest topic.", STUDY_SURFACE_PATH
     return "Sync your courses first in Settings.", "/settings"
 
 

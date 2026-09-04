@@ -5,7 +5,15 @@ import {
   openCommandPaletteFromKeyboard,
 } from "./shell-auth";
 
-const routes = ["/app/study", "/app/dashboard", "/app/login", "/app/settings"];
+const routes = [
+  "/app/study",
+  "/app/study/1/predict",
+  "/app/study/1/act",
+  "/app/study/1/reflect",
+  "/app/dashboard",
+  "/app/login",
+  "/app/settings",
+];
 
 test.use({
   locale: "de-DE",
@@ -54,6 +62,21 @@ for (const route of routes) {
     expect(overflow.offenders).toEqual([]);
   });
 }
+
+test("a revealed German study card fits the 320px viewport", async ({
+  page,
+}) => {
+  await authenticateShell(page);
+  await page.setExtraHTTPHeaders({
+    "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
+  });
+  await page.goto("/app/study/2/act");
+  await page.getByLabel("Deine Antwort").fill("Eine Antwort zum Aufdecken.");
+  await page.getByRole("button", { name: "Aufdecken" }).click();
+  await expect(page.getByText("Was du geschrieben hast")).toBeVisible();
+
+  await expectNoHorizontalOverflow(page);
+});
 
 test("expanded German mobile drawer fits the 320px viewport", async ({
   page,

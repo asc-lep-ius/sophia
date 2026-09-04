@@ -17,6 +17,7 @@
   let { store, hint, showQueue = true }: Props = $props();
 
   const ANSWER_FIELD_ID = "study-answer";
+  const CLOCK_INTERVAL_MS = 250;
 
   let helpOpen = $state(false);
   let answerValue = $derived(store.answer);
@@ -32,6 +33,26 @@
       return;
     }
     document.getElementById(ANSWER_FIELD_ID)?.focus();
+  });
+
+  // Revealing removes the button that was focused. Without this the keyboard
+  // learner is dropped on the document body at the exact moment the grades
+  // appear — WCAG 2.4.3, and the difference between a fast flow and a hunt.
+  $effect(() => {
+    if (!browser || !store.current?.revealed || store.paused) {
+      return;
+    }
+    document.querySelector<HTMLButtonElement>('[data-grade="1"]')?.focus();
+  });
+
+  // Nothing else on the page changes while the dwell floor runs down, so the
+  // store needs a clock of its own for the reveal to become available.
+  $effect(() => {
+    if (!browser) {
+      return;
+    }
+    const clock = setInterval(() => store.tick(), CLOCK_INTERVAL_MS);
+    return () => clearInterval(clock);
   });
 
   function handleKeydown(event: KeyboardEvent) {

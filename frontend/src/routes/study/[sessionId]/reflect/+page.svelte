@@ -59,6 +59,9 @@
   // server (GET /api/study/pacing) so shortening it is a deployment change,
   // and the results stay closed until it elapses.
   $effect(() => {
+    if (!postTestDone) {
+      return;
+    }
     const ticker = setInterval(() => {
       elapsedSeconds += 1;
     }, 1000);
@@ -131,9 +134,8 @@
 {#if postTestDone && !summary}
   <section class="reflection" aria-labelledby="study-reflection-heading">
     <h2 id="study-reflection-heading">{m.study_reflection_label()}</h2>
-    <p class="prompt">{m.study_reflection_prompt()}</p>
-    <label class="sr-only" for="study-reflection">
-      {m.study_reflection_label()}
+    <label class="prompt" for="study-reflection">
+      {m.study_reflection_prompt()}
     </label>
     <textarea
       id="study-reflection"
@@ -222,12 +224,16 @@
     font: inherit;
   }
 
-  .prompt,
   .status,
   .band,
   .legacy,
   .error {
     margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .prompt {
+    font-weight: 700;
     overflow-wrap: anywhere;
   }
 
@@ -294,14 +300,4 @@
     font-size: 0.85rem;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
 </style>

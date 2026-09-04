@@ -74,6 +74,7 @@ export class StudySessionStore {
   #state = $state<StudyState>("idle");
   #stateBeforePause: StudyState = "prompt";
   #promptShownAt = $state(0);
+  #clockMs = $state(0);
   #lastGrade = $state<{ requestId: string; at: number } | null>(null);
   #error = $state<string | null>(null);
   #focusMode = $state(false);
@@ -94,6 +95,7 @@ export class StudySessionStore {
     }));
     this.#state = this.#cards.length > 0 ? "prompt" : "idle";
     this.#promptShownAt = this.#now();
+    this.#clockMs = this.#promptShownAt;
     this.#outbox = new SubmissionOutbox<GradeSubmission>({
       ...options.retry,
       submit: (payload, requestId) => this.#options.submit(payload, requestId),
@@ -158,7 +160,23 @@ export class StudySessionStore {
   }
 
   get dwellMs(): number {
-    return Math.max(this.#now() - this.#promptShownAt, 0);
+    return this.#observedNow() - this.#promptShownAt;
+  }
+
+  /**
+   * Advance the store's view of the clock.
+   *
+   * Time is state here, not something read at render: whether the dwell floor
+   * has passed changes with nothing else on the page, so without a tick the
+   * reveal button would stay disabled until the learner happened to type
+   * another character.
+   */
+  tick(): void {
+    this.#clockMs = this.#now();
+  }
+
+  #observedNow(): number {
+    return Math.max(this.#clockMs, this.#promptShownAt);
   }
 
   /**
@@ -201,7 +219,7 @@ export class StudySessionStore {
 
   get canUndo(): boolean {
     const grade = this.#lastGrade;
-    return grade !== null && this.#now() - grade.at <= UNDO_WINDOW_MS;
+    return grade !== null && this.#observedNow() - grade.at <= UNDO_WINDOW_MS;
   }
 
   setAnswer(value: string): void {
@@ -312,6 +330,7 @@ export class StudySessionStore {
     // The clock restarts rather than counting the pause as engagement: a
     // paused session is not a learner sitting with the prompt.
     this.#promptShownAt = this.#now();
+    this.#clockMs = this.#promptShownAt;
   }
 
   togglePause(): void {
@@ -351,6 +370,7 @@ export class StudySessionStore {
     }
     this.#index += 1;
     this.#promptShownAt = this.#now();
+    this.#clockMs = this.#promptShownAt;
     this.#state = "prompt";
   }
 

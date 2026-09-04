@@ -32,7 +32,13 @@ class TestKeyboardShortcutData:
             assert "action" in s
 
     def test_nav_routes_cover_first_four_pages(self) -> None:
-        assert _NAV_ROUTES == {"1": "/", "2": "/study", "3": "/review", "4": "/search"}
+        assert _NAV_ROUTES == {
+            "1": "/",
+            # Study left this app in phase 3; the shortcut follows the learner.
+            "2": "/app/study",
+            "3": "/review",
+            "4": "/search",
+        }
 
 
 class TestShortcutOverlay:

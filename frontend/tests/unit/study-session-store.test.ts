@@ -70,6 +70,7 @@ function harness(questionCount = 2): StoreHarness {
     submitted,
     advanceMs: (ms) => {
       now += ms;
+      store.tick();
     },
     failEvery: (error) => {
       failure = error;
@@ -219,6 +220,7 @@ describe("study session store", () => {
     });
 
     now = 6000;
+    store.tick();
     store.recordPromptShown();
     elaborate(store);
     store.reveal();
