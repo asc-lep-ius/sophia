@@ -1,6 +1,27 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { authenticateShell } from "./shell-auth";
+
+/**
+ * Write an answer and prove the page actually received it.
+ *
+ * `fill` acts on the server-rendered textarea, which exists before Svelte has
+ * hydrated and attached its input listener. On a loaded runner the write can
+ * land in that window: the DOM holds the text, the store never hears about it,
+ * and the elaboration floor is never met — the reveal then stays disabled
+ * until the test times out, which is how this first showed up in CI and never
+ * locally. Retrying until the "more characters" hint clears is what proves the
+ * store has the text rather than just the DOM.
+ */
+async function writeAnswer(page: Page, text: string): Promise<void> {
+  const field = page.getByLabel("Your answer");
+  await expect(async () => {
+    await field.fill(text);
+    await expect(
+      page.getByText(/more characters of your own answer/),
+    ).toBeHidden({ timeout: 1000 });
+  }).toPass({ timeout: 20_000 });
+}
 
 /**
  * The productive-friction gate.
@@ -33,8 +54,11 @@ test("the reveal waits for the learner's own elaboration", async ({ page }) => {
 
   await page.getByLabel("Your answer").fill(SHORT_ANSWER);
   await expect(reveal).toBeDisabled();
+  // The exact remaining count, not merely that a hint exists: an unhydrated
+  // page still renders the hint for an empty answer, so a write the store
+  // never received would satisfy a looser assertion for the wrong reason.
   await expect(
-    page.getByText(/more characters of your own answer/),
+    page.getByText(new RegExp(`${80 - SHORT_ANSWER.length} more characters`)),
   ).toBeVisible();
 });
 
@@ -44,7 +68,7 @@ test("the reveal waits for the prompt dwell floor as well", async ({
   await authenticateShell(page);
   const openedAt = Date.now();
   await page.goto(`/app/study/${DWELL_SESSION}/act`);
-  await page.getByLabel("Your answer").fill(FULL_ANSWER);
+  await writeAnswer(page, FULL_ANSWER);
 
   const reveal = page.getByRole("button", { name: "Reveal" });
   if (Date.now() - openedAt < 5000) {
@@ -77,7 +101,7 @@ test("results stay closed for the server's reflection floor", async ({
   await authenticateShell(page);
   await page.goto(`/app/study/${REFLECT_SESSION}/reflect`);
 
-  await page.getByLabel("Your answer").fill(FULL_ANSWER);
+  await writeAnswer(page, FULL_ANSWER);
   await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
     timeout: 10_000,
   });
@@ -103,7 +127,7 @@ test("the reflection countdown is the server's number, not a client constant", a
   const { reflection_min_seconds: floor } = await pacing.json();
 
   await page.goto(`/app/study/${COUNTDOWN_SESSION}/reflect`);
-  await page.getByLabel("Your answer").fill(FULL_ANSWER);
+  await writeAnswer(page, FULL_ANSWER);
   await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
     timeout: 10_000,
   });
@@ -133,7 +157,7 @@ test("continue waits for the pre-test grade to reach the server", async ({
   await page.goto(`/app/study/${SETTLE_SESSION}/predict`);
 
   await page.getByRole("radio", { name: "Somewhat" }).check();
-  await page.getByLabel("Your answer").fill(FULL_ANSWER);
+  await writeAnswer(page, FULL_ANSWER);
   await expect(page.getByRole("button", { name: "Reveal" })).toBeEnabled({
     timeout: 10_000,
   });

@@ -103,6 +103,23 @@ describe("study session store", () => {
     expect(store.state).toBe("prompt");
   });
 
+  it("measures dwell against the clock, not against when the timer last fired", () => {
+    // The tick only exists to make the value reactive. On a loaded machine it
+    // can be late, and reporting the last tick's timestamp as the dwell would
+    // hold the reveal shut long after the learner had waited.
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0")],
+      pacing,
+      submit: async () => undefined,
+      now: () => now,
+    });
+
+    now = 9000;
+
+    expect(store.dwellMs).toBe(9000);
+  });
+
   it("refuses to reveal before the prompt dwell floor even with an answer", () => {
     const { store, advanceMs } = harness();
     advanceMs(1000);

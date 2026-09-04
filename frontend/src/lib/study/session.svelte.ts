@@ -179,7 +179,10 @@ export class StudySessionStore {
   }
 
   #observedNow(): number {
-    return Math.max(this.#clockMs, this.#promptShownAt);
+    // #clockMs is read to make everything downstream reactive; the value comes
+    // from the clock itself, so a tick delayed by a loaded machine reports a
+    // late-but-true dwell rather than a short one.
+    return Math.max(this.#clockMs, this.#now(), this.#promptShownAt);
   }
 
   /**
