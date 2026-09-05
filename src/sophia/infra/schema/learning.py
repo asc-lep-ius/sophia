@@ -102,7 +102,9 @@ generated_questions = Table(
     Column("elaboration_policy", Text),
     org_id_column(),
     Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("session_id", Integer, ForeignKey("study_sessions.id")),
     Index("idx_generated_questions_scope", "course_id", "topic"),
+    Index("idx_generated_questions_session", "session_id", "created_at"),
 )
 
 learning_events = Table(
@@ -143,7 +145,12 @@ question_attempts = Table(
     Column("request_id", Text),
     Column("score", Float()),
     Column("self_rating", Integer),
+    Column("phase", Text, nullable=False, server_default="practice"),
     CheckConstraint("score IS NULL OR score BETWEEN 0.0 AND 1.0", name="score_ratio"),
+    CheckConstraint(
+        "phase IN ('pre_test', 'practice', 'post_test')",
+        name="phase_valid",
+    ),
     CheckConstraint(
         "self_rating IS NULL OR self_rating BETWEEN 1 AND 4",
         name="self_rating_range",

@@ -9,6 +9,7 @@ import pytest
 from sophia.api import create_api_app
 from sophia.api.routers import study_questions as questions_router
 from sophia.domain.learning import ContentLanguage, LearningPathSettings, StoredContentOrigin
+from sophia.services.athena_session import start_study_session
 from sophia.services.content_language import save_learning_path_settings
 from sophia.services.study_questions import (
     FALLBACK_GENERATOR_REF,
@@ -243,3 +244,65 @@ async def test_a_question_without_provenance_is_never_served(
 
     assert response.status_code == 500
     assert response.json()["detail"]["code"] == "athena.failed"
+
+
+async def test_generation_refuses_to_bind_a_batch_to_another_learners_session(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the ownership check a learner sharing a learning path could
+    inject cards into somebody else's deck."""
+    stub_prompts(monkeypatch, ["Why does a minimum cut bound maximum flow?"])
+
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            other_session = await start_study_session(
+                session, LEARNING_PATH_ID, "Graphs", user_id="somebody-else"
+            )
+        await harness.login("learner")
+
+        response = await harness.client.post(
+            "/api/study/questions",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "topic": "Graphs",
+                "count": 1,
+                "session_id": other_session.id,
+            },
+            headers=harness.csrf_headers(),
+        )
+        stored = await harness.client.get(f"/api/study/sessions/{other_session.id}/questions")
+
+    assert response.status_code == 404
+    assert stored.status_code == 404
+
+
+async def test_generation_binds_a_batch_to_the_learners_own_session(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub_prompts(monkeypatch, ["Why does a minimum cut bound maximum flow?"])
+
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            own_session = await start_study_session(
+                session, LEARNING_PATH_ID, "Graphs", user_id="learner"
+            )
+        await harness.login("learner")
+
+        response = await harness.client.post(
+            "/api/study/questions",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "topic": "Graphs",
+                "count": 1,
+                "session_id": own_session.id,
+            },
+            headers=harness.csrf_headers(),
+        )
+        stored = await harness.client.get(f"/api/study/sessions/{own_session.id}/questions")
+
+    assert response.status_code == 200
+    assert stored.status_code == 200
+    assert len(stored.json()["questions"]) == 1
+    assert stored.json()["attempted_question_ids"] == []

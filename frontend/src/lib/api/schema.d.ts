@@ -679,8 +679,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reserve Web Vitals */
-        post: operations["reserve_web_vitals_api_metrics_web_vitals_post"];
+        /**
+         * Report Web Vitals
+         * @description Count one field measurement of the study surface's responsiveness.
+         *
+         *     Unauthenticated on purpose — responsiveness is measured on the sign-in page
+         *     too — and safe to leave so because the only effect is incrementing a
+         *     counter whose labels come from a closed set.
+         */
+        post: operations["reportWebVitals"];
         delete?: never;
         options?: never;
         head?: never;
@@ -927,6 +934,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/study/pacing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Study Pacing
+         * @description Serve the pacing floors the study surface enforces in the browser.
+         */
+        get: operations["getStudyPacing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/study/predictions": {
         parameters: {
             query?: never;
@@ -1022,8 +1049,58 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark Study Session Complete */
+        /**
+         * Mark Study Session Complete
+         * @description Close a session on scores the server computes from its own attempts.
+         *
+         *     This takes no scores from the client on purpose: the endpoint used to
+         *     accept whatever pre/post pair it was handed, which is how a "+0%
+         *     improvement" heuristic could be recorded as fact (see issue #97).
+         */
         post: operations["completeStudySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/sessions/{session_id}/questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Study Session Questions
+         * @description Read a session's question set back instead of generating a new one.
+         *
+         *     A reload must not cost another model call, nor hand the learner a
+         *     different set of cards half-way through a session.
+         */
+        get: operations["listStudySessionQuestions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/sessions/{session_id}/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Study Session Summary
+         * @description Serve the reflect route its numbers, so the client computes none of them.
+         */
+        get: operations["getStudySessionSummary"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1107,6 +1184,12 @@ export interface components {
             tenant?: components["schemas"]["SessionTenantResponse"] | null;
             user?: components["schemas"]["SessionUserResponse"] | null;
         };
+        /**
+         * CalibrationBand
+         * @description Verdict on a learner's prediction against their measured performance.
+         * @enum {string}
+         */
+        CalibrationBand: "unknown" | "well_calibrated" | "overconfident" | "underconfident";
         /** CalibrationRatingListResponse */
         CalibrationRatingListResponse: {
             /** Learning Path Id */
@@ -2084,6 +2167,7 @@ export interface components {
             id: number;
             /** Learning Path Id */
             learning_path_id: number;
+            phase: components["schemas"]["StudyAttemptPhase"];
             /** Question Id */
             question_id: string;
             /** Score */
@@ -2095,6 +2179,12 @@ export interface components {
             /** Submitted At */
             submitted_at: string;
         };
+        /**
+         * StudyAttemptPhase
+         * @description Which part of the equilibration cycle an attempt belongs to.
+         * @enum {string}
+         */
+        StudyAttemptPhase: "pre_test" | "practice" | "post_test";
         /**
          * StudyAttemptRequest
          * @description A learner's answer to a previously generated question, self-graded.
@@ -2108,6 +2198,10 @@ export interface components {
          *     stores an answer key to grade against. ``request_id`` is a client-generated
          *     idempotency key: retrying the same submission returns the original result
          *     rather than recording a second attempt.
+         *
+         *     ``phase`` says where in the cycle the attempt was made. The client chooses
+         *     it, but it cannot forge a better outcome by doing so: the phase decides
+         *     which mean an attempt is averaged into, never what the attempt scores.
          */
         StudyAttemptRequest: {
             /** Answer Text */
@@ -2116,6 +2210,8 @@ export interface components {
             confidence?: number | null;
             /** Learning Path Id */
             learning_path_id: number;
+            /** @default practice */
+            phase: components["schemas"]["StudyAttemptPhase"];
             /** Question Id */
             question_id: string;
             /** Request Id */
@@ -2181,6 +2277,34 @@ export interface components {
          * @enum {string}
          */
         StudyFlashcardSource: "study" | "transcript" | "manual";
+        /**
+         * StudyPacingResponse
+         * @description The pedagogy floors the study surface must honour.
+         *
+         *     Served rather than compiled into the client so shortening productive
+         *     friction is a deployment decision with an audit trail, not a one-line edit
+         *     in a bundle.
+         */
+        StudyPacingResponse: {
+            /** Elaboration Min Chars */
+            elaboration_min_chars: number;
+            /** Prompt Min Dwell Ms */
+            prompt_min_dwell_ms: number;
+            /** Reflection Min Seconds */
+            reflection_min_seconds: number;
+        };
+        /**
+         * StudyPhaseAttemptCounts
+         * @description How many attempts the session holds in each phase of the cycle.
+         */
+        StudyPhaseAttemptCounts: {
+            /** Post Test */
+            post_test: number;
+            /** Practice */
+            practice: number;
+            /** Pre Test */
+            pre_test: number;
+        };
         /** StudyPredictionItemResponse */
         StudyPredictionItemResponse: {
             /** Learning Path Id */
@@ -2226,7 +2350,14 @@ export interface components {
             /** Topic */
             topic: string;
         };
-        /** StudyQuestionRequest */
+        /**
+         * StudyQuestionRequest
+         * @description Generate a batch of questions, optionally bound to a live session.
+         *
+         *     Passing ``session_id`` is what makes the batch readable back through
+         *     ``listStudySessionQuestions``; without it the questions belong to the
+         *     learning path alone, as they did before the study surface existed.
+         */
         StudyQuestionRequest: {
             /**
              * Count
@@ -2235,6 +2366,8 @@ export interface components {
             count: number;
             /** Learning Path Id */
             learning_path_id: number;
+            /** Session Id */
+            session_id?: number | null;
             /** Topic */
             topic: string;
         };
@@ -2305,17 +2438,18 @@ export interface components {
         StudySelfExplanationResponse: {
             self_explanation: components["schemas"]["StudySelfExplanationItemResponse"];
         };
-        /** StudySessionCompleteRequest */
-        StudySessionCompleteRequest: {
-            /** Post Test Score */
-            post_test_score: number;
-            /** Pre Test Score */
-            pre_test_score: number;
-        };
-        /** StudySessionCompletionResponse */
+        /**
+         * StudySessionCompletionResponse
+         * @description The completed session, carrying the scores the server just computed.
+         *
+         *     The scores are returned rather than echoed back from the request because
+         *     the client never had them: they are the mean of the session's own graded
+         *     attempts.
+         */
         StudySessionCompletionResponse: {
             /** Completed */
             completed: boolean;
+            session: components["schemas"]["StudySessionItemResponse"];
             /** Session Id */
             session_id: number;
         };
@@ -2345,6 +2479,23 @@ export interface components {
             /** Sessions */
             sessions: components["schemas"]["StudySessionItemResponse"][];
         };
+        /**
+         * StudySessionQuestionListResponse
+         * @description A session's persisted question set, in generation order.
+         *
+         *     ``attempted_question_ids`` is what lets a resumed session pick up where the
+         *     learner left off instead of re-presenting cards they have already graded.
+         */
+        StudySessionQuestionListResponse: {
+            /** Attempted Question Ids */
+            attempted_question_ids: string[];
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+            /** Session Id */
+            session_id: number;
+        };
         /** StudySessionResponse */
         StudySessionResponse: {
             session: components["schemas"]["StudySessionItemResponse"];
@@ -2355,6 +2506,28 @@ export interface components {
             learning_path_id: number;
             /** Topic */
             topic: string;
+        };
+        /**
+         * StudySessionSummaryResponse
+         * @description Server-computed close of the cycle: what was predicted against what happened.
+         *
+         *     ``band`` is the calibration judgement; the sentence that goes with it is
+         *     the study surface's to write, in the learner's own language.
+         */
+        StudySessionSummaryResponse: {
+            attempts: components["schemas"]["StudyPhaseAttemptCounts"];
+            band: components["schemas"]["CalibrationBand"];
+            /** Calibration Delta */
+            calibration_delta: number | null;
+            /** Legacy Scored */
+            legacy_scored: boolean;
+            /** Measured */
+            measured: number | null;
+            /** Practice Score */
+            practice_score: number | null;
+            /** Predicted */
+            predicted: number | null;
+            session: components["schemas"]["StudySessionItemResponse"];
         };
         /**
          * TissConnectionState
@@ -2619,18 +2792,49 @@ export interface components {
             /** Error Type */
             type: string;
         };
-        /** WebVitalsReservedResponse */
-        WebVitalsReservedResponse: {
+        /** WebVitalsAcceptedResponse */
+        WebVitalsAcceptedResponse: {
             /**
              * Code
              * @constant
              */
-            code: "metrics.web_vitals.reserved";
+            code: "metrics.web_vitals.accepted";
             /**
              * Status
              * @constant
              */
-            status: "reserved";
+            status: "accepted";
+        };
+        /**
+         * WebVitalsMetricName
+         * @description The field metrics the study surface reports.
+         *
+         *     A closed set, because each value becomes a Prometheus label: an open string
+         *     would let a client mint unbounded series.
+         * @enum {string}
+         */
+        WebVitalsMetricName: "CLS" | "FCP" | "INP" | "LCP" | "TTFB";
+        /**
+         * WebVitalsRating
+         * @description The library's own verdict on a measurement, kept as its bucket.
+         * @enum {string}
+         */
+        WebVitalsRating: "good" | "needs_improvement" | "poor";
+        /**
+         * WebVitalsReportRequest
+         * @description One field measurement from a real session.
+         *
+         *     Deliberately carries no identifiers: this is aggregate responsiveness
+         *     evidence, and a per-learner interaction trace is a different thing with
+         *     different consent requirements.
+         */
+        WebVitalsReportRequest: {
+            metric_name: components["schemas"]["WebVitalsMetricName"];
+            /** Navigation Type */
+            navigation_type?: string | null;
+            rating: components["schemas"]["WebVitalsRating"];
+            /** Value */
+            value: number;
         };
         /** WorkloadDayResponse */
         WorkloadDayResponse: {
@@ -4220,14 +4424,18 @@ export interface operations {
             };
         };
     };
-    reserve_web_vitals_api_metrics_web_vitals_post: {
+    reportWebVitals: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WebVitalsReportRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             202: {
@@ -4236,7 +4444,17 @@ export interface operations {
                     "X-Request-ID"?: string;
                 };
                 content: {
-                    "application/json": components["schemas"]["WebVitalsReservedResponse"];
+                    "application/json": components["schemas"]["WebVitalsAcceptedResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -4801,6 +5019,27 @@ export interface operations {
             };
         };
     };
+    getStudyPacing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyPacingResponse"];
+                };
+            };
+        };
+    };
     recordStudyPrediction: {
         parameters: {
             query?: never;
@@ -5061,11 +5300,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["StudySessionCompleteRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5077,6 +5312,26 @@ export interface operations {
                     "application/json": components["schemas"]["StudySessionCompletionResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -5085,6 +5340,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listStudySessionQuestions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySessionQuestionListResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    getStudySessionSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudySessionSummaryResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

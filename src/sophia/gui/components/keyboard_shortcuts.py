@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, Final
 
 from nicegui import ui
 
+from sophia.gui.routes import STUDY_SURFACE_PATH
+
 if TYPE_CHECKING:
     from nicegui.events import KeyEventArguments
 
@@ -19,7 +21,7 @@ _SHORTCUTS: Final[list[dict[str, str]]] = [
 
 _NAV_ROUTES: Final[dict[str, str]] = {
     "1": "/",
-    "2": "/study",
+    "2": STUDY_SURFACE_PATH,
     "3": "/review",
     "4": "/search",
 }

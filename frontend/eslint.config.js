@@ -30,7 +30,9 @@ export default [
     },
   },
   {
-    files: ["**/*.svelte"],
+    // .svelte.ts modules go through svelte-eslint-parser, which needs the
+    // TypeScript parser handed to it the same way .svelte files do.
+    files: ["**/*.svelte", "**/*.svelte.ts", "**/*.svelte.js"],
     languageOptions: {
       parserOptions: {
         parser: tseslint.parser,

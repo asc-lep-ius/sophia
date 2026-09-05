@@ -4,6 +4,23 @@ import { sveltekit } from "@sveltejs/kit/vite";
 import { svelteTesting } from "@testing-library/svelte/vite";
 import { defineConfig } from "vitest/config";
 
+const API_PROXY_TARGET =
+  process.env.SOPHIA_API_PROXY_TARGET ?? "http://127.0.0.1:8000";
+
+/**
+ * In production Caddy serves /app from this server and /api from the API on
+ * one origin. Dev and preview have no Caddy, so the browser-side study calls
+ * (and the SSE stream, which cannot carry headers and so needs the session
+ * cookie) would otherwise be cross-origin.
+ */
+const apiProxy = {
+  "/api": {
+    target: API_PROXY_TARGET,
+    changeOrigin: false,
+    ws: false,
+  },
+};
+
 export default defineConfig({
   plugins: [
     tailwindcss(),
@@ -15,6 +32,8 @@ export default defineConfig({
     }),
     svelteTesting(),
   ],
+  server: { proxy: apiProxy },
+  preview: { proxy: apiProxy },
   test: {
     environment: "jsdom",
     globals: true,

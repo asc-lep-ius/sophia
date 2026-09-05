@@ -2,33 +2,55 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, cast
+
+import pytest
 
 from sophia.api.routers import study as study_router
 from sophia.api.sessions import SessionTenant
+from sophia.config import Settings
 from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
+from sophia.services.athena_session import ReflectionPacing, SessionScope
 
 from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
-    import pytest
-
     from sophia.infra.di import AppContainer
-
-
-class FakeStudySessionDb:
-    """Answers the one scalar lookup the route makes: session id -> course id."""
-
-    def __init__(self, session_courses: dict[int, int]) -> None:
-        self._session_courses = session_courses
-
-    async def scalar(self, statement: object) -> int | None:
-        session_id = statement.whereclause.right.value  # pyright: ignore[reportAttributeAccessIssue]
-        return self._session_courses.get(session_id)
 
 
 async def noop_record_provenance(_db: object, _provenance: object) -> None:
     """The flashcard route tests exercise the route, not provenance persistence."""
+
+
+def _fake_reflection_pacing(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    seconds: float | None = 120.0,
+) -> None:
+    """Satisfy the completion precondition; the real check has its own tests
+    against a live database in test_study_scoring.py."""
+    started_at = datetime(2026, 9, 4, 10, 0, tzinfo=UTC)
+    reflected_at = None if seconds is None else started_at + timedelta(seconds=seconds)
+
+    async def fake_get_reflection_pacing(_db: object, _session_id: int) -> ReflectionPacing:
+        return ReflectionPacing(started_at=started_at, reflected_at=reflected_at)
+
+    monkeypatch.setattr(study_router, "get_reflection_pacing", fake_get_reflection_pacing)
+
+
+def _fake_session_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    course_id: int,
+    user_id: str | None,
+) -> None:
+    """Answer the ownership lookup the session-scoped routes make first."""
+
+    async def fake_get_session_scope(_db: object, _session_id: int) -> SessionScope:
+        return SessionScope(course_id=course_id, user_id=user_id)
+
+    monkeypatch.setattr(study_router, "get_session_scope", fake_get_session_scope)
 
 
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
@@ -207,43 +229,80 @@ def test_complete_study_session_requires_csrf() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     login(harness)
 
-    response = harness.client.post(
-        "/api/study/sessions/8/complete",
-        json={"pre_test_score": 0.25, "post_test_score": 0.75},
-    )
+    response = harness.client.post("/api/study/sessions/8/complete")
 
     assert response.status_code == 403
     assert response.json() == {"detail": {"code": "http.failed", "params": {}}}
 
 
-def test_complete_study_session_returns_completion(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_app = FakeAppContainer(db=FakeStudySessionDb({8: 12}))
+def test_complete_study_session_returns_the_server_scored_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_app = FakeAppContainer(db=object())
     harness = build_harness(
         app_container=cast("AppContainer", fake_app),
         tenant=learning_path_tenant(),
     )
     login(harness)
-    calls: list[tuple[object, int, float, float]] = []
+    calls: list[tuple[object, int]] = []
 
-    async def fake_complete_study_session(
-        db: object,
-        session_id: int,
-        pre_test_score: float,
-        post_test_score: float,
-    ) -> None:
-        calls.append((db, session_id, pre_test_score, post_test_score))
+    async def fake_finalize_study_session(db: object, session_id: int) -> StudySession:
+        calls.append((db, session_id))
+        return StudySession(
+            id=session_id,
+            course_id=12,
+            topic="Graphs",
+            pre_test_score=0.3,
+            post_test_score=0.7,
+            started_at="2026-09-04T10:00:00+00:00",
+            completed_at="2026-09-04T10:40:00+00:00",
+        )
 
-    monkeypatch.setattr(study_router, "complete_study_session", fake_complete_study_session)
+    _fake_session_owner(monkeypatch, course_id=12, user_id="learner")
+    _fake_reflection_pacing(monkeypatch)
+    monkeypatch.setattr(study_router, "finalize_study_session", fake_finalize_study_session)
 
     response = harness.client.post(
         "/api/study/sessions/8/complete",
-        json={"pre_test_score": 0.25, "post_test_score": 0.75},
         headers=csrf_headers(harness),
     )
 
     assert response.status_code == 200
-    assert response.json() == {"session_id": 8, "completed": True}
-    assert calls == [(fake_app.db, 8, 0.25, 0.75)]
+    body = response.json()
+    assert body["session_id"] == 8
+    assert body["completed"] is True
+    assert body["session"]["pre_test_score"] == 0.3
+    assert body["session"]["post_test_score"] == 0.7
+    assert body["session"]["improvement"] == pytest.approx(0.4)
+    assert calls == [(fake_app.db, 8)]
+
+
+def test_complete_study_session_rejects_a_session_owned_by_another_learner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The learning-path scope check alone let a same-tenant learner close
+    somebody else's session — the gap issue #97's audit left open here."""
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(),
+    )
+    login(harness)
+    calls: list[int] = []
+
+    async def fake_finalize_study_session(_db: object, session_id: int) -> StudySession | None:
+        calls.append(session_id)
+        return None
+
+    _fake_session_owner(monkeypatch, course_id=12, user_id="somebody-else")
+    monkeypatch.setattr(study_router, "finalize_study_session", fake_finalize_study_session)
+
+    response = harness.client.post(
+        "/api/study/sessions/8/complete",
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 404
+    assert calls == []
 
 
 def test_save_flashcard_requires_csrf() -> None:
@@ -378,27 +437,22 @@ def test_study_routes_reject_out_of_scope_course_ids() -> None:
 def test_complete_study_session_rejects_cross_course_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    fake_app = FakeAppContainer(db=FakeStudySessionDb({8: 99}))
     harness = build_harness(
-        app_container=cast("AppContainer", fake_app),
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
         tenant=learning_path_tenant(12),
     )
     login(harness)
     calls: list[int] = []
 
-    async def fake_complete_study_session(
-        _db: object,
-        session_id: int,
-        _pre_test_score: float,
-        _post_test_score: float,
-    ) -> None:
+    async def fake_finalize_study_session(_db: object, session_id: int) -> StudySession | None:
         calls.append(session_id)
+        return None
 
-    monkeypatch.setattr(study_router, "complete_study_session", fake_complete_study_session)
+    _fake_session_owner(monkeypatch, course_id=99, user_id="learner")
+    monkeypatch.setattr(study_router, "finalize_study_session", fake_finalize_study_session)
 
     response = harness.client.post(
         "/api/study/sessions/8/complete",
-        json={"pre_test_score": 0.25, "post_test_score": 0.75},
         headers=csrf_headers(harness),
     )
 
@@ -514,3 +568,34 @@ def test_flashcard_transcript_source_maps_to_domain_lecture_source(
 
     assert response.status_code == 200
     assert response.json()["flashcard"]["source"] == "transcript"
+
+
+def test_study_pacing_serves_the_server_configured_floors() -> None:
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    login(harness)
+
+    response = harness.client.get("/api/study/pacing")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "reflection_min_seconds": harness.settings.study_reflection_min_seconds,
+        "elaboration_min_chars": harness.settings.elaboration_min_chars,
+        "prompt_min_dwell_ms": harness.settings.elaboration_min_prompt_dwell_ms,
+    }
+
+
+def test_the_shipped_reflection_floor_is_not_shortened() -> None:
+    """The floor is pedagogy, not a tunable.
+
+    Every other pacing assertion reads the configured value back, so lowering
+    the default would leave them all green. This one pins the number issue #98
+    committed to, and is the test that has to be argued with before anyone
+    ships a faster reflection.
+    """
+    assert Settings().study_reflection_min_seconds >= 30
+
+
+def test_study_pacing_requires_authentication() -> None:
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+
+    assert harness.client.get("/api/study/pacing").status_code == 401

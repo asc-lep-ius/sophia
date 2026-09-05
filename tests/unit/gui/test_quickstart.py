@@ -61,7 +61,7 @@ class TestSuggestFirstAction:
     def test_with_topics_only(self) -> None:
         msg, path = suggest_first_action(deadlines=[], topics=["Linear Algebra", "Calculus"])
         assert "study session" in msg.lower()
-        assert path == "/study"
+        assert path == "/app/study"
 
     def test_with_nothing(self) -> None:
         msg, path = suggest_first_action(deadlines=[], topics=[])

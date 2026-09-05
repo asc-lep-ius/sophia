@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import (
+    AttemptPhase,
     ClozeSegment,
     ContentKind,
     ContentLanguage,
@@ -94,6 +95,7 @@ async def generate_and_store_questions(
     content_language: ContentLanguage,
     policy: ElaborationPolicy,
     user_id: str | None = None,
+    session_id: int | None = None,
 ) -> list[GeneratedQuestion]:
     """Generate open-response questions, persist them, and record provenance.
 
@@ -102,6 +104,11 @@ async def generate_and_store_questions(
     ``user_id`` is what makes it *that learner's* confidence rather than
     whichever confidence rating happens to be newest across everyone sharing
     the course.
+
+    ``session_id`` binds the batch to a live study session so it can be read
+    back by :func:`get_session_questions` instead of regenerated: a reload must
+    not cost another model call, nor hand the learner a different card set
+    half-way through a session.
     """
     difficulty = await _adaptive_difficulty(app, session, course_id, topic, user_id=user_id)
     prompts, generator_ref = await _generate_prompts(
@@ -124,6 +131,8 @@ async def generate_and_store_questions(
             difficulty=difficulty,
             content_language=content_language,
             elaboration_policy=policy,
+            session_id=session_id,
+            created_at=generated_at,
         )
         for prompt in prompts
     ]
@@ -160,6 +169,52 @@ async def get_question(
     return None if row is None else _row_to_question(row)
 
 
+async def get_session_questions(
+    session: AsyncSession,
+    session_id: int,
+) -> list[GeneratedQuestion]:
+    """Load a study session's question set in the order it was generated.
+
+    Ordering by ``(created_at, id)`` rather than ``created_at`` alone keeps a
+    batch written inside one transaction — every row of which shares a
+    timestamp — in a stable order across reads, so a reload does not reshuffle
+    the queue the learner is part-way through.
+    """
+    rows = (
+        await session.execute(
+            select(generated_questions)
+            .where(generated_questions.c.session_id == session_id)
+            .order_by(generated_questions.c.created_at, generated_questions.c.id)
+        )
+    ).all()
+    return [_row_to_question(row) for row in rows]
+
+
+async def attempted_question_ids(
+    session: AsyncSession,
+    session_id: int,
+    user_id: str,
+) -> list[str]:
+    """The questions this learner has already answered in this session.
+
+    The study surface resumes after these rather than restarting at card one:
+    re-presenting an answered card does not just waste the learner's time, it
+    writes a second attempt (a fresh request id makes it a new row) that is
+    averaged into the session's phase means.
+    """
+    rows = (
+        await session.execute(
+            select(question_attempts.c.question_id)
+            .where(
+                question_attempts.c.session_id == session_id,
+                question_attempts.c.user_id == user_id,
+            )
+            .order_by(question_attempts.c.id)
+        )
+    ).all()
+    return [row.question_id for row in rows]
+
+
 async def save_attempt(
     session: AsyncSession,
     course_id: int,
@@ -171,6 +226,7 @@ async def save_attempt(
     session_id: int,
     request_id: str,
     self_rating: int,
+    phase: AttemptPhase = AttemptPhase.PRACTICE,
 ) -> AttemptResult:
     """Persist a learner's self-graded answer, idempotently.
 
@@ -199,6 +255,7 @@ async def save_attempt(
                 request_id=request_id,
                 self_rating=self_rating,
                 score=score,
+                phase=phase.value,
             )
             .on_conflict_do_nothing(
                 index_elements=[
@@ -226,6 +283,7 @@ async def save_attempt(
                 request_id=request_id,
                 self_rating=self_rating,
                 score=score,
+                phase=phase,
             ),
             is_new=True,
         )
@@ -255,6 +313,7 @@ def _row_to_attempt(row: Row[tuple[object, ...]]) -> QuestionAttempt:
         request_id=row.request_id,
         self_rating=row.self_rating,
         score=row.score,
+        phase=AttemptPhase(row.phase),
     )
 
 
@@ -334,6 +393,11 @@ async def _insert_question(session: AsyncSession, question: GeneratedQuestion) -
             options=json.dumps([option.model_dump() for option in question.options]),
             segments=json.dumps([segment.model_dump() for segment in question.segments]),
             elaboration_policy=None if policy is None else policy.model_dump_json(),
+            session_id=question.session_id,
+            # Stamped per row rather than once per batch: the study surface
+            # reads a session's questions back in this order, and rows sharing
+            # a timestamp would come back in whatever order the id sort gives.
+            created_at=datetime.now(UTC),
         )
     )
 
@@ -354,6 +418,8 @@ def _row_to_question(row: Row[tuple[object, ...]]) -> GeneratedQuestion:
             if row.elaboration_policy is None
             else ElaborationPolicy.model_validate_json(row.elaboration_policy)
         ),
+        session_id=row.session_id,
+        created_at=row.created_at.isoformat() if row.created_at else "",
     )
 
 

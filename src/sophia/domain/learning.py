@@ -60,6 +60,19 @@ class QuestionKind(StrEnum):
     CLOZE = "cloze"
 
 
+class AttemptPhase(StrEnum):
+    """Which part of the equilibration cycle an attempt was made in.
+
+    The distinction is what makes a pre→post improvement figure meaningful:
+    ``PRACTICE`` attempts happen while the learner is still studying and must
+    not count towards either end of the comparison.
+    """
+
+    PRE_TEST = "pre_test"
+    PRACTICE = "practice"
+    POST_TEST = "post_test"
+
+
 class LearningEventType(StrEnum):
     """Traceable steps of the predict → act → reflect cycle."""
 
@@ -172,6 +185,8 @@ class GeneratedQuestion(BaseModel, frozen=True):
     options: tuple[QuestionOption, ...] = ()
     segments: tuple[ClozeSegment, ...] = ()
     elaboration_policy: ElaborationPolicy | None = None
+    session_id: int | None = None
+    created_at: str = ""
 
 
 class QuestionAttempt(BaseModel, frozen=True):
@@ -188,3 +203,4 @@ class QuestionAttempt(BaseModel, frozen=True):
     request_id: str | None = None
     self_rating: int | None = None
     score: float | None = None
+    phase: AttemptPhase = AttemptPhase.PRACTICE
