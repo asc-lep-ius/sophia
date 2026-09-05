@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     learning_event_max_future_skew_seconds: int = Field(default=60, ge=0)
     elaboration_min_chars: int = Field(default=80, ge=0)
     elaboration_min_prompt_dwell_ms: int = Field(default=5000, ge=0)
+    # The reflection floor the CLI has always paced at, made a setting so the
+    # web surface reads it from the server rather than hard-coding a number a
+    # client-side edit could shorten.
+    study_reflection_min_seconds: int = Field(default=30, ge=0)
 
     # Study realtime (SSE)
     sse_heartbeat_interval_seconds: int = Field(default=15, gt=0)

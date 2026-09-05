@@ -11,15 +11,27 @@ export default defineConfig({
     baseURL: "http://127.0.0.1:4173",
     trace: "on-first-retry",
   },
-  webServer: {
-    command: "pnpm run build && pnpm run preview -- --host 127.0.0.1",
-    env: {
-      SOPHIA_E2E_AUTH: "1",
+  // The fixture API comes first so the preview server's own loads have
+  // something to answer them. Both are torn down with the run.
+  webServer: [
+    {
+      command: "node ./tests/e2e/fixture-api.mjs",
+      reuseExistingServer: !process.env.CI,
+      timeout: 30000,
+      url: "http://127.0.0.1:8788/api/ready",
     },
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-    url: "http://127.0.0.1:4173/app",
-  },
+    {
+      command: "pnpm run build && pnpm run preview -- --host 127.0.0.1",
+      env: {
+        SOPHIA_E2E_AUTH: "1",
+        SOPHIA_API_BASE_URL: "http://127.0.0.1:8788",
+        SOPHIA_API_PROXY_TARGET: "http://127.0.0.1:8788",
+      },
+      reuseExistingServer: !process.env.CI,
+      timeout: 120000,
+      url: "http://127.0.0.1:4173/app",
+    },
+  ],
   projects: [
     {
       name: "chromium",

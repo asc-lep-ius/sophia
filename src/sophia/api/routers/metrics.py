@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request, Response, status
+from fastapi import APIRouter, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, generate_latest
 
-from sophia.api.schemas.metrics import WebVitalsReservedResponse
+from sophia.api.schemas.metrics import (
+    WebVitalsAcceptedResponse,
+    WebVitalsMetricName,
+    WebVitalsRating,
+    WebVitalsReportRequest,
+)
 from sophia.api.transactions import TransactionalRoute
 
 router = APIRouter(tags=["metrics"], route_class=TransactionalRoute)
@@ -36,9 +41,9 @@ def _initialize_custom_metric_series() -> None:
     SSE_CONNECTIONS_OPEN.labels(stream="study").set(0)
     SSE_EVENTS_EMITTED.labels(stream="study", event_type="heartbeat").inc(0)
     SSE_DISCONNECTS.labels(stream="study", reason="client").inc(0)
-    for metric_name in ("CLS", "INP", "LCP"):
-        for rating in ("good", "needs_improvement", "poor"):
-            WEB_VITALS_REPORTS.labels(metric_name=metric_name, rating=rating).inc(0)
+    for metric_name in WebVitalsMetricName:
+        for rating in WebVitalsRating:
+            WEB_VITALS_REPORTS.labels(metric_name=metric_name.value, rating=rating.value).inc(0)
 
 
 _initialize_custom_metric_series()
@@ -51,9 +56,19 @@ async def metrics() -> Response:
 
 @router.post(
     "/metrics/web-vitals",
-    response_model=WebVitalsReservedResponse,
+    response_model=WebVitalsAcceptedResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    operation_id="reportWebVitals",
 )
-async def reserve_web_vitals(_request: Request) -> WebVitalsReservedResponse:
-    WEB_VITALS_REPORTS.labels(metric_name="INP", rating="good").inc(0)
-    return WebVitalsReservedResponse(status="reserved", code="metrics.web_vitals.reserved")
+async def report_web_vitals(payload: WebVitalsReportRequest) -> WebVitalsAcceptedResponse:
+    """Count one field measurement of the study surface's responsiveness.
+
+    Unauthenticated on purpose — responsiveness is measured on the sign-in page
+    too — and safe to leave so because the only effect is incrementing a
+    counter whose labels come from a closed set.
+    """
+    WEB_VITALS_REPORTS.labels(
+        metric_name=payload.metric_name.value,
+        rating=payload.rating.value,
+    ).inc()
+    return WebVitalsAcceptedResponse(status="accepted", code="metrics.web_vitals.accepted")

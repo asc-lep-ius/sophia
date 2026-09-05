@@ -38,7 +38,7 @@
     "@axe-core/playwright": "4.11.3",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.60.0",
-    "@size-limit/preset-small-lib": "12.1.0",
+    "@size-limit/file": "12.1.0",
     "@sveltejs/adapter-node": "5.5.4",
     "@sveltejs/kit": "2.61.0",
     "@sveltejs/vite-plugin-svelte": "7.1.2",
@@ -62,7 +62,9 @@
   "size-limit": [
     {
       "path": ".svelte-kit/output/client/_app/immutable/**/*.js",
-      "limit": "260 KB"
+      "limit": "95 KB",
+      "gzip": true
     }
-  ]
+  ],
+  "//size-limit": "Measures the built client bundle as files, not as a re-bundled library. The previous preset ran esbuild over every emitted chunk as its own entry, so shared dependencies were counted once per chunk and the figure grew with the route count rather than with what a browser downloads — it read 442 kB for a bundle that gzips to 65 kB. The budget below is set from the real transferred size with room for roughly one more surface; when it is hit, look at what the chunks contain before raising it."
 }

@@ -7,8 +7,10 @@ export async function authenticateShell(page: Page): Promise<void> {
     { name: "sophia-e2e-auth", value: "1", url: PREVIEW_ORIGIN },
     { name: "sophia-org-id", value: "local", url: PREVIEW_ORIGIN },
     {
+      // Numeric: the study API scopes every call on a learning path id, and
+      // the placeholder the shell ships with is not one.
       name: "sophia-learning-path-id",
-      value: "default-learning-path",
+      value: "12",
       url: PREVIEW_ORIGIN,
     },
   ]);

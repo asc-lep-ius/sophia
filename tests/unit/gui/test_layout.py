@@ -24,7 +24,7 @@ class TestNavItems:
         paths = {item["path"] for item in NAV_ITEMS}
         expected = {
             "/",
-            "/study",
+            "/app/study",
             "/review",
             "/search",
             "/chronos",

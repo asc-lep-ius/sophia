@@ -142,6 +142,17 @@
         "title": "AuthSessionResponse",
         "type": "object"
       },
+      "CalibrationBand": {
+        "description": "Verdict on a learner's prediction against their measured performance.",
+        "enum": [
+          "unknown",
+          "well_calibrated",
+          "overconfident",
+          "underconfident"
+        ],
+        "title": "CalibrationBand",
+        "type": "string"
+      },
       "CalibrationRatingListResponse": {
         "properties": {
           "learning_path_id": {
@@ -2791,6 +2802,9 @@
             "title": "Learning Path Id",
             "type": "integer"
           },
+          "phase": {
+            "$ref": "#/components/schemas/StudyAttemptPhase"
+          },
           "question_id": {
             "title": "Question Id",
             "type": "string"
@@ -2842,13 +2856,24 @@
           "confidence",
           "self_rating",
           "score",
+          "phase",
           "submitted_at"
         ],
         "title": "StudyAttemptItemResponse",
         "type": "object"
       },
+      "StudyAttemptPhase": {
+        "description": "Which part of the equilibration cycle an attempt belongs to.",
+        "enum": [
+          "pre_test",
+          "practice",
+          "post_test"
+        ],
+        "title": "StudyAttemptPhase",
+        "type": "string"
+      },
       "StudyAttemptRequest": {
-        "description": "A learner's answer to a previously generated question, self-graded.\n\nThe question is referenced by id rather than echoed back, so the engagement\npolicy the server enforces is the one it issued, not one the client claims.\n\n``self_rating`` is the post-reveal Again/Hard/Good/Easy self-assessment the\nlearner gives once they see the expected answer \u2014 the score is computed\nfrom that, not from ``answer_text`` alone, since nothing in the system\nstores an answer key to grade against. ``request_id`` is a client-generated\nidempotency key: retrying the same submission returns the original result\nrather than recording a second attempt.",
+        "description": "A learner's answer to a previously generated question, self-graded.\n\nThe question is referenced by id rather than echoed back, so the engagement\npolicy the server enforces is the one it issued, not one the client claims.\n\n``self_rating`` is the post-reveal Again/Hard/Good/Easy self-assessment the\nlearner gives once they see the expected answer \u2014 the score is computed\nfrom that, not from ``answer_text`` alone, since nothing in the system\nstores an answer key to grade against. ``request_id`` is a client-generated\nidempotency key: retrying the same submission returns the original result\nrather than recording a second attempt.\n\n``phase`` says where in the cycle the attempt was made. The client chooses\nit, but it cannot forge a better outcome by doing so: the phase decides\nwhich mean an attempt is averaged into, never what the attempt scores.",
         "properties": {
           "answer_text": {
             "minLength": 1,
@@ -2872,6 +2897,10 @@
             "exclusiveMinimum": 0.0,
             "title": "Learning Path Id",
             "type": "integer"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/StudyAttemptPhase",
+            "default": "practice"
           },
           "question_id": {
             "maxLength": 128,
@@ -3050,6 +3079,54 @@
         "title": "StudyFlashcardSource",
         "type": "string"
       },
+      "StudyPacingResponse": {
+        "description": "The pedagogy floors the study surface must honour.\n\nServed rather than compiled into the client so shortening productive\nfriction is a deployment decision with an audit trail, not a one-line edit\nin a bundle.",
+        "properties": {
+          "elaboration_min_chars": {
+            "title": "Elaboration Min Chars",
+            "type": "integer"
+          },
+          "prompt_min_dwell_ms": {
+            "title": "Prompt Min Dwell Ms",
+            "type": "integer"
+          },
+          "reflection_min_seconds": {
+            "title": "Reflection Min Seconds",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reflection_min_seconds",
+          "elaboration_min_chars",
+          "prompt_min_dwell_ms"
+        ],
+        "title": "StudyPacingResponse",
+        "type": "object"
+      },
+      "StudyPhaseAttemptCounts": {
+        "description": "How many attempts the session holds in each phase of the cycle.",
+        "properties": {
+          "post_test": {
+            "title": "Post Test",
+            "type": "integer"
+          },
+          "practice": {
+            "title": "Practice",
+            "type": "integer"
+          },
+          "pre_test": {
+            "title": "Pre Test",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pre_test",
+          "practice",
+          "post_test"
+        ],
+        "title": "StudyPhaseAttemptCounts",
+        "type": "object"
+      },
       "StudyPredictionItemResponse": {
         "properties": {
           "learning_path_id": {
@@ -3163,6 +3240,7 @@
         "type": "object"
       },
       "StudyQuestionRequest": {
+        "description": "Generate a batch of questions, optionally bound to a live session.\n\nPassing ``session_id`` is what makes the batch readable back through\n``listStudySessionQuestions``; without it the questions belong to the\nlearning path alone, as they did before the study surface existed.",
         "properties": {
           "count": {
             "default": 3,
@@ -3175,6 +3253,18 @@
             "exclusiveMinimum": 0.0,
             "title": "Learning Path Id",
             "type": "integer"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
           },
           "topic": {
             "minLength": 1,
@@ -3369,33 +3459,15 @@
         "title": "StudySelfExplanationResponse",
         "type": "object"
       },
-      "StudySessionCompleteRequest": {
-        "properties": {
-          "post_test_score": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Post Test Score",
-            "type": "number"
-          },
-          "pre_test_score": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Pre Test Score",
-            "type": "number"
-          }
-        },
-        "required": [
-          "pre_test_score",
-          "post_test_score"
-        ],
-        "title": "StudySessionCompleteRequest",
-        "type": "object"
-      },
       "StudySessionCompletionResponse": {
+        "description": "The completed session, carrying the scores the server just computed.\n\nThe scores are returned rather than echoed back from the request because\nthe client never had them: they are the mean of the session's own graded\nattempts.",
         "properties": {
           "completed": {
             "title": "Completed",
             "type": "boolean"
+          },
+          "session": {
+            "$ref": "#/components/schemas/StudySessionItemResponse"
           },
           "session_id": {
             "title": "Session Id",
@@ -3404,7 +3476,8 @@
         },
         "required": [
           "session_id",
-          "completed"
+          "completed",
+          "session"
         ],
         "title": "StudySessionCompletionResponse",
         "type": "object"
@@ -3506,6 +3579,41 @@
         "title": "StudySessionListResponse",
         "type": "object"
       },
+      "StudySessionQuestionListResponse": {
+        "description": "A session's persisted question set, in generation order.\n\n``attempted_question_ids`` is what lets a resumed session pick up where the\nlearner left off instead of re-presenting cards they have already graded.",
+        "properties": {
+          "attempted_question_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Attempted Question Ids",
+            "type": "array"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            },
+            "title": "Questions",
+            "type": "array"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id",
+          "learning_path_id",
+          "questions",
+          "attempted_question_ids"
+        ],
+        "title": "StudySessionQuestionListResponse",
+        "type": "object"
+      },
       "StudySessionResponse": {
         "properties": {
           "session": {
@@ -3536,6 +3644,80 @@
           "topic"
         ],
         "title": "StudySessionStartRequest",
+        "type": "object"
+      },
+      "StudySessionSummaryResponse": {
+        "description": "Server-computed close of the cycle: what was predicted against what happened.\n\n``band`` is the calibration judgement; the sentence that goes with it is\nthe study surface's to write, in the learner's own language.",
+        "properties": {
+          "attempts": {
+            "$ref": "#/components/schemas/StudyPhaseAttemptCounts"
+          },
+          "band": {
+            "$ref": "#/components/schemas/CalibrationBand"
+          },
+          "calibration_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Delta"
+          },
+          "legacy_scored": {
+            "title": "Legacy Scored",
+            "type": "boolean"
+          },
+          "measured": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Measured"
+          },
+          "practice_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Practice Score"
+          },
+          "predicted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted"
+          },
+          "session": {
+            "$ref": "#/components/schemas/StudySessionItemResponse"
+          }
+        },
+        "required": [
+          "session",
+          "attempts",
+          "practice_score",
+          "predicted",
+          "measured",
+          "calibration_delta",
+          "band",
+          "legacy_scored"
+        ],
+        "title": "StudySessionSummaryResponse",
         "type": "object"
       },
       "TissConnectionState": {
@@ -4333,15 +4515,15 @@
         "title": "ValidationError",
         "type": "object"
       },
-      "WebVitalsReservedResponse": {
+      "WebVitalsAcceptedResponse": {
         "properties": {
           "code": {
-            "const": "metrics.web_vitals.reserved",
+            "const": "metrics.web_vitals.accepted",
             "title": "Code",
             "type": "string"
           },
           "status": {
-            "const": "reserved",
+            "const": "accepted",
             "title": "Status",
             "type": "string"
           }
@@ -4350,7 +4532,64 @@
           "status",
           "code"
         ],
-        "title": "WebVitalsReservedResponse",
+        "title": "WebVitalsAcceptedResponse",
+        "type": "object"
+      },
+      "WebVitalsMetricName": {
+        "description": "The field metrics the study surface reports.\n\nA closed set, because each value becomes a Prometheus label: an open string\nwould let a client mint unbounded series.",
+        "enum": [
+          "CLS",
+          "FCP",
+          "INP",
+          "LCP",
+          "TTFB"
+        ],
+        "title": "WebVitalsMetricName",
+        "type": "string"
+      },
+      "WebVitalsRating": {
+        "description": "The library's own verdict on a measurement, kept as its bucket.",
+        "enum": [
+          "good",
+          "needs_improvement",
+          "poor"
+        ],
+        "title": "WebVitalsRating",
+        "type": "string"
+      },
+      "WebVitalsReportRequest": {
+        "description": "One field measurement from a real session.\n\nDeliberately carries no identifiers: this is aggregate responsiveness\nevidence, and a per-learner interaction trace is a different thing with\ndifferent consent requirements.",
+        "properties": {
+          "metric_name": {
+            "$ref": "#/components/schemas/WebVitalsMetricName"
+          },
+          "navigation_type": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Navigation Type"
+          },
+          "rating": {
+            "$ref": "#/components/schemas/WebVitalsRating"
+          },
+          "value": {
+            "minimum": 0.0,
+            "title": "Value",
+            "type": "number"
+          }
+        },
+        "required": [
+          "metric_name",
+          "rating",
+          "value"
+        ],
+        "title": "WebVitalsReportRequest",
         "type": "object"
       },
       "WorkloadDayResponse": {
@@ -7322,13 +7561,24 @@
     },
     "/api/metrics/web-vitals": {
       "post": {
-        "operationId": "reserve_web_vitals_api_metrics_web_vitals_post",
+        "description": "Count one field measurement of the study surface's responsiveness.\n\nUnauthenticated on purpose \u2014 responsiveness is measured on the sign-in page\ntoo \u2014 and safe to leave so because the only effect is incrementing a\ncounter whose labels come from a closed set.",
+        "operationId": "reportWebVitals",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebVitalsReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/WebVitalsReservedResponse"
+                  "$ref": "#/components/schemas/WebVitalsAcceptedResponse"
                 }
               }
             },
@@ -7341,9 +7591,27 @@
                 }
               }
             }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
-        "summary": "Reserve Web Vitals",
+        "summary": "Report Web Vitals",
         "tags": [
           "metrics"
         ]
@@ -8316,6 +8584,36 @@
         ]
       }
     },
+    "/api/study/pacing": {
+      "get": {
+        "description": "Serve the pacing floors the study surface enforces in the browser.",
+        "operationId": "getStudyPacing",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyPacingResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Study Pacing",
+        "tags": [
+          "study"
+        ]
+      }
+    },
     "/api/study/predictions": {
       "post": {
         "operationId": "recordStudyPrediction",
@@ -8767,6 +9065,7 @@
     },
     "/api/study/sessions/{session_id}/complete": {
       "post": {
+        "description": "Close a session on scores the server computes from its own attempts.\n\nThis takes no scores from the client on purpose: the endpoint used to\naccept whatever pre/post pair it was handed, which is how a \"+0%\nimprovement\" heuristic could be recorded as fact (see issue #97).",
         "operationId": "completeStudySession",
         "parameters": [
           {
@@ -8780,16 +9079,6 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/StudySessionCompleteRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
@@ -8800,6 +9089,42 @@
               }
             },
             "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition Failed",
             "headers": {
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
@@ -8829,6 +9154,162 @@
           }
         },
         "summary": "Mark Study Session Complete",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions/{session_id}/questions": {
+      "get": {
+        "description": "Read a session's question set back instead of generating a new one.\n\nA reload must not cost another model call, nor hand the learner a\ndifferent set of cards half-way through a session.",
+        "operationId": "listStudySessionQuestions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionQuestionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Study Session Questions",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions/{session_id}/summary": {
+      "get": {
+        "description": "Serve the reflect route its numbers, so the client computes none of them.",
+        "operationId": "getStudySessionSummary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudySessionSummaryResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get Study Session Summary",
         "tags": [
           "study"
         ]

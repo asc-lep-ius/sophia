@@ -11,8 +11,13 @@ import {
 import type { Handle, RequestEvent } from "@sveltejs/kit";
 import { sequence } from "@sveltejs/kit/hooks";
 
+type ApiQueryValue = boolean | number | string | null | undefined;
+
 type ApiFetchInit = RequestInit & {
   headers?: HeadersInit;
+  /** Values for the `{placeholders}` in a generated OpenAPI path. */
+  params?: Record<string, number | string>;
+  query?: Record<string, ApiQueryValue>;
 };
 
 type AuthSessionResponse = components["schemas"]["AuthSessionResponse"];
@@ -93,22 +98,65 @@ export async function apiFetch(
   path: ApiPath,
   init: ApiFetchInit = {},
 ): Promise<Response> {
+  const { params, query, ...requestInit } = init;
   const headers = buildForwardedApiHeaders(event, init.headers, init.method);
-  const response = await event.fetch(resolveServerApiUrl(path), {
-    ...init,
-    headers,
-  });
+  const response = await event.fetch(
+    resolveServerApiUrl(applyPathParams(path, params), query),
+    {
+      ...requestInit,
+      headers,
+    },
+  );
   queueSetCookieReemission(event, response.headers);
   return response;
 }
 
-function resolveServerApiUrl(path: ApiPath): string {
+/**
+ * Substitute a generated path's `{placeholders}`.
+ *
+ * The literal template stays in the caller so it remains a key of the
+ * generated `paths` type — building the URL by concatenation would type-check
+ * against nothing and drift silently when a route is renamed.
+ */
+export function applyPathParams(
+  path: string,
+  params: Record<string, number | string> = {},
+): string {
+  const resolved = path.replace(/\{(\w+)\}/g, (_match, name: string) => {
+    const value = params[name];
+    if (value === undefined) {
+      throw new Error(`Missing path parameter "${name}" for ${path}`);
+    }
+    return encodeURIComponent(String(value));
+  });
+  return resolved;
+}
+
+function resolveServerApiUrl(
+  path: string,
+  query?: Record<string, ApiQueryValue>,
+): string {
+  const search = buildSearchParams(query);
+  const relative = search ? `${path}?${search}` : path;
   const baseUrl = process.env.SOPHIA_API_BASE_URL?.trim();
   if (!baseUrl) {
-    return path;
+    return relative;
   }
 
-  return new URL(path, baseUrl).toString();
+  return new URL(relative, baseUrl).toString();
+}
+
+function buildSearchParams(query?: Record<string, ApiQueryValue>): string {
+  if (!query) {
+    return "";
+  }
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== null) {
+      search.set(key, String(value));
+    }
+  }
+  return search.toString();
 }
 
 export function buildForwardedApiHeaders(

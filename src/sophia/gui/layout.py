@@ -9,6 +9,7 @@ from nicegui import ui
 
 from sophia.gui.components.course_selector import render_course_selector
 from sophia.gui.components.keyboard_shortcuts import register_keyboard_shortcuts
+from sophia.gui.routes import STUDY_SURFACE_PATH
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -108,7 +109,7 @@ _RESPONSIVE_NAV_CSS = """
 
 NAV_ITEMS: list[dict[str, str]] = [
     {"label": "Dashboard", "icon": "dashboard", "path": "/"},
-    {"label": "Study", "icon": "school", "path": "/study"},
+    {"label": "Study", "icon": "school", "path": STUDY_SURFACE_PATH},
     {"label": "Review", "icon": "rate_review", "path": "/review"},
     {"label": "Search", "icon": "search", "path": "/search"},
     {"label": "Deadlines", "icon": "schedule", "path": "/chronos"},

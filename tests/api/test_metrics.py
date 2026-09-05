@@ -67,11 +67,35 @@ def test_prometheus_metrics_do_not_use_forbidden_labels() -> None:
     assert label_names.isdisjoint(FORBIDDEN_PROMETHEUS_LABELS)
 
 
-def test_web_vitals_endpoint_is_reserved_placeholder() -> None:
-    response = TestClient(create_api_app()).post("/api/metrics/web-vitals", json={})
+def test_web_vitals_report_is_counted() -> None:
+    client = TestClient(create_api_app())
+
+    response = client.post(
+        "/api/metrics/web-vitals",
+        json={
+            "metric_name": "INP",
+            "rating": "needs_improvement",
+            "value": 187.5,
+            "navigation_type": "navigate",
+        },
+    )
+    scrape = client.get("/api/metrics")
 
     assert response.status_code == 202
     assert response.json() == {
-        "status": "reserved",
-        "code": "metrics.web_vitals.reserved",
+        "status": "accepted",
+        "code": "metrics.web_vitals.accepted",
     }
+    assert (
+        'web_vitals_reports_total{metric_name="INP",rating="needs_improvement"} 1.0' in scrape.text
+    )
+
+
+def test_web_vitals_rejects_a_metric_name_outside_the_closed_set() -> None:
+    """An open label would let a client mint unbounded Prometheus series."""
+    response = TestClient(create_api_app()).post(
+        "/api/metrics/web-vitals",
+        json={"metric_name": "MADE_UP", "rating": "good", "value": 1.0},
+    )
+
+    assert response.status_code == 422
