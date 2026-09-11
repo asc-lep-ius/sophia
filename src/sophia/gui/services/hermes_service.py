@@ -16,6 +16,7 @@ from sophia.services.hermes_manage import get_pipeline_status as _get_pipeline_s
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from sophia.domain.models import Course
     from sophia.infra.di import AppContainer
     from sophia.services.hermes_manage import EpisodeStatus
 
@@ -151,24 +152,25 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
         *(container.moodle.get_course_content(c.id) for c in courses),
     )
 
-    opencast_modules: list[tuple[str, str, int, str]] = []
+    opencast_modules: list[tuple[Course, int, str]] = []
     for course, sections in zip(courses, sections_by_course, strict=True):
         for section in sections:
             for module in section.modules:
                 if module.modname == "opencast":
-                    opencast_modules.append(
-                        (course.shortname, course.fullname, module.id, module.name),
-                    )
+                    opencast_modules.append((course, module.id, module.name))
 
     if not opencast_modules:
         return []
 
+    # course_id is what proves the module's owner to the API search scope check,
+    # so this path has to write it too — see get_lecture_module_course_id.
     async with container.session() as db:
-        for shortname, fullname, mid, _name in opencast_modules:
+        for course, mid, _name in opencast_modules:
             statement = pg_insert(lecture_modules).values(
                 module_id=mid,
-                course_name=fullname,
-                course_shortname=shortname,
+                course_name=course.fullname,
+                course_shortname=course.shortname,
+                course_id=str(course.id),
             )
             await db.execute(
                 statement.on_conflict_do_update(
@@ -176,23 +178,24 @@ async def discover_lecture_modules(container: AppContainer) -> list[DiscoveredMo
                     set_={
                         "course_name": statement.excluded.course_name,
                         "course_shortname": statement.excluded.course_shortname,
+                        "course_id": statement.excluded.course_id,
                     },
                 )
             )
 
     episode_lists = await asyncio.gather(
-        *(container.opencast.get_series_episodes(mid) for _, _, mid, _ in opencast_modules),
+        *(container.opencast.get_series_episodes(mid) for _, mid, _ in opencast_modules),
     )
 
     return [
         DiscoveredModule(
-            course_shortname=shortname,
-            course_fullname=fullname,
+            course_shortname=course.shortname,
+            course_fullname=course.fullname,
             module_id=mid,
             module_name=name,
             episode_count=len(episodes),
         )
-        for (shortname, fullname, mid, name), episodes in zip(
+        for (course, mid, name), episodes in zip(
             opencast_modules,
             episode_lists,
             strict=True,

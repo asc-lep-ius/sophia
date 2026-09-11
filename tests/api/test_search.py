@@ -4,14 +4,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+import pytest
+from sqlalchemy import insert
+
 from sophia.api.routers import search as search_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import LectureSearchResult
+from sophia.infra.schema import lecture_modules
 
+from ._db_harness import db_harness
 from ._session_helpers import FakeAppContainer, build_harness, login
 
 if TYPE_CHECKING:
-    import pytest
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -23,6 +28,18 @@ def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
         cohort_id="cohort-a",
         role="student",
     )
+
+
+def stub_module_owners(
+    monkeypatch: pytest.MonkeyPatch,
+    owners: dict[int, str],
+) -> None:
+    """Pin which learning path owns which content source, without a database."""
+
+    async def fake_owner(_db: object, module_id: int) -> str | None:
+        return owners.get(module_id)
+
+    monkeypatch.setattr(search_router, "get_lecture_module_course_id", fake_owner)
 
 
 def test_search_content_requires_authentication() -> None:
@@ -44,6 +61,7 @@ def test_search_content_returns_response_shape(monkeypatch: pytest.MonkeyPatch) 
         tenant=learning_path_tenant(),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {12: "12"})
 
     async def fake_search_lectures(
         app: AppContainer,
@@ -114,6 +132,7 @@ def test_search_content_uses_session_scope_when_learning_path_id_omitted(
         tenant=learning_path_tenant(12),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {12: "12"})
     calls: list[tuple[int, int | None]] = []
 
     async def fake_search_lectures(
@@ -190,6 +209,7 @@ def test_search_content_rejects_cross_scope_content_source_before_service_call(
         tenant=learning_path_tenant(12),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {12: "12", 99: "99"})
     calls: list[int] = []
 
     async def fake_search_lectures(
@@ -249,6 +269,7 @@ def test_search_content_maps_document_filter_to_index_source(
         tenant=learning_path_tenant(12),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {12: "12"})
 
     async def fake_search_lectures(
         _app: AppContainer,
@@ -303,3 +324,127 @@ def test_search_content_rejects_unknown_source_filter() -> None:
 
     assert response.status_code == 422
     assert response.json() == {"detail": {"code": "request.validation_failed", "params": {}}}
+
+
+def test_search_content_rejects_content_source_with_no_recorded_owner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unowned module is refused, not waved through for lack of evidence."""
+    fake_app = FakeAppContainer(db=object())
+    harness = build_harness(
+        app_container=cast("AppContainer", fake_app),
+        tenant=learning_path_tenant(12),
+    )
+    login(harness)
+    stub_module_owners(monkeypatch, {})
+    calls: list[int] = []
+
+    async def fake_search_lectures(
+        _app: AppContainer,
+        _db: object,
+        module_id: int,
+        _query: str,
+        *,
+        n_results: int = 5,
+        source_filter: str | None = None,
+        course_id: int | None = None,
+        missed_only: bool = False,
+    ) -> list[LectureSearchResult]:
+        calls.append(module_id)
+        return []
+
+    monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
+
+    response = harness.client.post(
+        "/api/search",
+        json={"content_source_id": 456, "query": "calibration"},
+    )
+
+    assert response.status_code == 403
+    assert calls == []
+
+
+@pytest.mark.postgres
+async def test_owned_content_source_is_searchable_when_ids_differ(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The regression: module 456 belongs to learning path 12, and 456 != 12."""
+    calls: list[tuple[int, int | None]] = []
+
+    async def fake_search_lectures(
+        _app: object,
+        _db: object,
+        module_id: int,
+        _query: str,
+        *,
+        n_results: int = 5,
+        source_filter: str | None = None,
+        course_id: int | None = None,
+        missed_only: bool = False,
+    ) -> list[LectureSearchResult]:
+        calls.append((module_id, course_id))
+        return []
+
+    monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
+
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_module(session, module_id=456, course_id="12")
+        await harness.login()
+
+        response = await harness.client.post(
+            "/api/search",
+            json={"content_source_id": 456, "learning_path_id": 12, "query": "calibration"},
+        )
+
+    assert response.status_code == 200
+    assert calls == [(456, 12)]
+
+
+@pytest.mark.postgres
+async def test_foreign_content_source_is_rejected_before_service_call(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[int] = []
+
+    async def fake_search_lectures(
+        _app: object,
+        _db: object,
+        module_id: int,
+        _query: str,
+        *,
+        n_results: int = 5,
+        source_filter: str | None = None,
+        course_id: int | None = None,
+        missed_only: bool = False,
+    ) -> list[LectureSearchResult]:
+        calls.append(module_id)
+        return []
+
+    monkeypatch.setattr(search_router, "search_lectures", fake_search_lectures)
+
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_module(session, module_id=789, course_id="99")
+        await harness.login()
+
+        response = await harness.client.post(
+            "/api/search",
+            json={"content_source_id": 789, "learning_path_id": 12, "query": "calibration"},
+        )
+
+    assert response.status_code == 403
+    assert calls == []
+
+
+async def _seed_module(session: AsyncSession, *, module_id: int, course_id: str) -> None:
+    await session.execute(
+        insert(lecture_modules).values(
+            module_id=module_id,
+            course_name=f"Course {course_id}",
+            course_shortname=f"C{course_id}",
+            course_id=course_id,
+        ),
+    )
