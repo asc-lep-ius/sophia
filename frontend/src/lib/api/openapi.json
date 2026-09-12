@@ -237,6 +237,10 @@
             "title": "Learning Path Id",
             "type": "integer"
           },
+          "legacy_scored": {
+            "title": "Legacy Scored",
+            "type": "boolean"
+          },
           "predicted": {
             "title": "Predicted",
             "type": "number"
@@ -258,7 +262,8 @@
           "rated_at",
           "calibration_error",
           "is_blind_spot",
-          "difficulty_level"
+          "difficulty_level",
+          "legacy_scored"
         ],
         "title": "CalibrationRatingResponse",
         "type": "object"
@@ -2424,6 +2429,7 @@
         "type": "object"
       },
       "ReviewCompletionRequest": {
+        "description": "One finished review, expressed either as a rating or as a raw score.\n\n``self_rating`` is the Again/Hard/Good/Easy button the learner pressed; the\nserver turns it into a score so no surface has to carry a copy of the\nscale. ``score`` stays for the callers that already compute one. Exactly\none of them is required: accepting both would let a client claim a rating\nand a contradicting score in the same request, and the row would record\nwhichever the server happened to prefer.",
         "properties": {
           "learning_path_id": {
             "exclusiveMinimum": 0.0,
@@ -2431,10 +2437,30 @@
             "type": "integer"
           },
           "score": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Score",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "self_rating": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Self Rating"
           },
           "topic": {
             "minLength": 1,
@@ -2444,8 +2470,7 @@
         },
         "required": [
           "learning_path_id",
-          "topic",
-          "score"
+          "topic"
         ],
         "title": "ReviewCompletionRequest",
         "type": "object"

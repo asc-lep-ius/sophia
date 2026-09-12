@@ -153,4 +153,5 @@ def _calibration_rating_response(rating: ConfidenceRating) -> CalibrationRatingR
         calibration_error=rating.calibration_error,
         is_blind_spot=rating.is_blind_spot,
         difficulty_level=difficulty.value,
+        legacy_scored=rating.legacy_scored,
     )

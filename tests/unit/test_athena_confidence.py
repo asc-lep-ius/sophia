@@ -175,6 +175,33 @@ class TestGetConfidenceRatings:
         assert by_topic["Hashing"].predicted == pytest.approx(0.5)  # pyright: ignore[reportUnknownMemberType]
 
     @pytest.mark.asyncio
+    async def test_carries_the_legacy_scored_flag(self, db: AsyncSession) -> None:
+        """A heuristic-scored row is not merely noisy, it is known-bad.
+
+        The loader has to carry the flag or every surface downstream silently
+        treats an ``actual`` of 1.0 as a measurement.
+        """
+        from sophia.services.athena_confidence import get_confidence_ratings
+
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, actual, legacy_scored)"
+            " VALUES (?, ?, ?, ?, ?)",
+            ("Sorting", 42, 0.9, 1.0, True),
+        )
+        await exec_sql(
+            db,
+            "INSERT INTO confidence_ratings (topic, course_id, predicted, actual)"
+            " VALUES (?, ?, ?, ?)",
+            ("Hashing", 42, 0.9, 0.4),
+        )
+
+        by_topic = {r.topic: r for r in await get_confidence_ratings(db, course_id=42)}
+
+        assert by_topic["Sorting"].legacy_scored is True
+        assert by_topic["Hashing"].legacy_scored is False
+
+    @pytest.mark.asyncio
     async def test_filters_by_course_id(self, db: AsyncSession) -> None:
         from sophia.services.athena_confidence import get_confidence_ratings
 

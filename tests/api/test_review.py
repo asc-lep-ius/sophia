@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 from sophia.api.routers import review as review_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ReviewSchedule
+from sophia.services.athena_review import SELF_RATING_SCORES
 
 from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
@@ -288,3 +289,84 @@ def test_review_openapi_contract_is_visible() -> None:
     assert openapi["paths"]["/api/review/schedules"]["get"]["operationId"] == "listReviewSchedules"
     assert openapi["paths"]["/api/review/schedules"]["post"]["operationId"] == "scheduleReview"
     assert openapi["paths"]["/api/review/complete"]["post"]["operationId"] == "completeReview"
+
+
+def test_complete_review_maps_self_rating_to_a_server_owned_score(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A surface may send the button the learner pressed, never a score.
+
+    The rating scale is the server's: a client that computed 0.7 for "Good"
+    would be a second FSRS input, and the two would drift the first time the
+    scale was tuned.
+    """
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(),
+    )
+    login(harness)
+    recorded: list[float] = []
+
+    async def fake_complete_review(
+        _db: object,
+        topic: str,
+        course_id: int,
+        score: float,
+    ) -> ReviewSchedule:
+        recorded.append(score)
+        return ReviewSchedule(
+            topic=topic,
+            course_id=course_id,
+            next_review_at="2026-05-28T12:00:00Z",
+            score_at_last_review=score,
+        )
+
+    monkeypatch.setattr(review_router, "complete_review", fake_complete_review)
+
+    response = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs", "self_rating": 3},
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 200
+    assert recorded == [SELF_RATING_SCORES[3]]
+    assert response.json()["schedule"]["score_at_last_review"] == SELF_RATING_SCORES[3]
+
+
+def test_complete_review_rejects_ambiguous_and_absent_grades() -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(),
+    )
+    login(harness)
+
+    both_response = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs", "score": 0.2, "self_rating": 4},
+        headers=csrf_headers(harness),
+    )
+    neither_response = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs"},
+        headers=csrf_headers(harness),
+    )
+    out_of_range_response = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs", "self_rating": 5},
+        headers=csrf_headers(harness),
+    )
+
+    assert both_response.status_code == 422
+    assert neither_response.status_code == 422
+    assert out_of_range_response.status_code == 422
+
+
+def test_review_completion_accepts_either_grade_field_in_the_contract() -> None:
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    openapi = harness.app.openapi()
+    completion = openapi["components"]["schemas"]["ReviewCompletionRequest"]
+
+    assert "self_rating" in completion["properties"]
+    assert "score" in completion["properties"]
+    assert set(completion["required"]) == {"learning_path_id", "topic"}

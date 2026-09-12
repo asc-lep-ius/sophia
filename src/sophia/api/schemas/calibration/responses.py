@@ -14,6 +14,7 @@ class CalibrationRatingResponse(ApiModel):
     calibration_error: float | None
     is_blind_spot: bool
     difficulty_level: str
+    legacy_scored: bool
 
 
 class CalibrationRatingListResponse(ApiModel):

@@ -28,6 +28,7 @@ from sophia.services.athena_review import (
     get_due_reviews,
     get_upcoming_reviews,
     schedule_review,
+    score_for_self_rating,
 )
 
 if TYPE_CHECKING:
@@ -137,9 +138,16 @@ async def complete_review_schedule(
         await request_session(request),
         payload.topic,
         payload.learning_path_id,
-        payload.score,
+        _completion_score(payload),
     )
     return ReviewScheduleResponse(schedule=_review_schedule_response(schedule))
+
+
+def _completion_score(payload: ReviewCompletionRequest) -> float:
+    if payload.self_rating is not None:
+        return score_for_self_rating(payload.self_rating)
+    # The request validator has already refused the both-None case.
+    return payload.score if payload.score is not None else 0.0
 
 
 def _review_schedule_response(schedule: ReviewSchedule) -> ReviewScheduleItemResponse:
