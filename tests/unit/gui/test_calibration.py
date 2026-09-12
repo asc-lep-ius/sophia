@@ -1,4 +1,11 @@
-"""Tests for the calibration dashboard page — pure helpers and constants."""
+"""Tests for the calibration dashboard page — pure helpers and constants.
+
+Phase 5 removal: superseded by frontend/tests/unit/calibration-page.test.ts.
+
+The NiceGUI page these cover left the learner-facing path in phase 4c
+(issue #101) and stays registered only so an existing ``/legacy/calibration``
+link resolves.
+"""
 
 from __future__ import annotations
 

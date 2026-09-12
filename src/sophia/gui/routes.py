@@ -41,3 +41,20 @@ is a different thing wearing the same name: it is where a *content source*
 comes from, by upload or by discovery. Pointing the wizard's callers at it
 would send someone looking for a GPU setting to an upload form.
 """
+
+SEARCH_SURFACE_PATH = "/app/search"
+CHRONOS_SURFACE_PATH = "/app/chronos"
+CALIBRATION_SURFACE_PATH = "/app/calibration"
+REGISTER_SURFACE_PATH = "/app/register"
+"""Where a learner is sent for the four long-tail surfaces.
+
+Phase 4c (issue #101) moved search, deadlines, calibration and TISS
+registration to SvelteKit. Same arrangement again: the NiceGUI pages stay
+registered so a ``/legacy/`` link keeps resolving, and every entry point in
+this app points at ``/app`` instead.
+
+Chronos history gets no constant. It was never a route here — the legacy page
+rendered past deadlines inside ``/chronos`` — so there is nothing in this app
+to repoint. ``/app/chronos`` links to it, which is where the entry point now
+lives.
+"""

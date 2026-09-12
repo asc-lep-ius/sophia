@@ -1,8 +1,9 @@
 """Where the legacy GUI sends a learner, and what it keeps serving.
 
-Phase 4a (issue #99) moved dashboard, quickstart and review to SvelteKit, and
-phase 4b (issue #100) moved lectures and topics. Two things have to stay true
-together: nothing in this app sends anyone to its own copy of those pages any
+Phase 4a (issue #99) moved dashboard, quickstart and review to SvelteKit,
+phase 4b (issue #100) moved lectures and topics, and phase 4c (issue #101)
+moved search, deadlines, calibration and registration. Two things have to stay
+true together: nothing in this app sends anyone to its own copy of those pages any
 more, and the pages themselves stay registered so a ``/legacy/`` link somebody
 already has keeps resolving. Retiring them is phase 5's job.
 """
@@ -22,10 +23,14 @@ from sophia.gui.pages import dashboard as dashboard_page
 from sophia.gui.pages import review as review_page
 from sophia.gui.pages import settings as settings_page
 from sophia.gui.routes import (
+    CALIBRATION_SURFACE_PATH,
+    CHRONOS_SURFACE_PATH,
     CONTENT_SURFACE_PATH,
     DASHBOARD_SURFACE_PATH,
     QUICKSTART_SURFACE_PATH,
+    REGISTER_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
+    SEARCH_SURFACE_PATH,
     STUDY_SURFACE_PATH,
     TOPICS_SURFACE_PATH,
 )
@@ -34,10 +39,14 @@ if TYPE_CHECKING:
     from sophia.config import Settings
 
 MIGRATED_SURFACES = (
+    CALIBRATION_SURFACE_PATH,
+    CHRONOS_SURFACE_PATH,
     CONTENT_SURFACE_PATH,
     DASHBOARD_SURFACE_PATH,
     QUICKSTART_SURFACE_PATH,
+    REGISTER_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
+    SEARCH_SURFACE_PATH,
     STUDY_SURFACE_PATH,
     TOPICS_SURFACE_PATH,
 )
@@ -109,9 +118,34 @@ class TestMigratedSurfacePaths:
         assert 'ui.navigate.to("/lectures/setup")' in settings_source
         assert CONTENT_SURFACE_PATH not in settings_source
 
+    def test_navigation_sends_the_learner_to_the_new_long_tail_pages(self) -> None:
+        paths = {item["path"] for item in NAV_ITEMS}
+
+        assert SEARCH_SURFACE_PATH in paths
+        assert CHRONOS_SURFACE_PATH in paths
+        assert CALIBRATION_SURFACE_PATH in paths
+        assert REGISTER_SURFACE_PATH in paths
+        # The NiceGUI originals, which the nav used to point at.
+        assert "/search" not in paths
+        assert "/chronos" not in paths
+        assert "/calibration" not in paths
+        assert "/register" not in paths
+
+    def test_chronos_history_is_not_a_surface_constant(self) -> None:
+        """There is nothing in this app to repoint at it.
+
+        The legacy page rendered past deadlines inside ``/chronos`` rather than
+        at a route of their own, so a ``CHRONOS_HISTORY_SURFACE_PATH`` here
+        would be a constant no production code could use — which
+        ``test_every_surface_constant_is_used_by_production_code`` would then
+        fail on. ``/app/chronos`` links to the migrated history instead.
+        """
+        assert not hasattr(routes, "CHRONOS_HISTORY_SURFACE_PATH")
+
     def test_keyboard_shortcuts_follow_the_navigation(self) -> None:
         assert _NAV_ROUTES["1"] == DASHBOARD_SURFACE_PATH
         assert _NAV_ROUTES["3"] == REVIEW_SURFACE_PATH
+        assert _NAV_ROUTES["4"] == SEARCH_SURFACE_PATH
 
     def test_in_page_calls_to_action_leave_this_app_too(self) -> None:
         """A repointed sidebar is no use if the buttons inside the page are not.
@@ -152,6 +186,10 @@ class TestLegacyPagesStayReachable:
         assert "/review" in route_paths
         assert "/lectures" in route_paths
         assert "/topics" in route_paths
+        assert "/search" in route_paths
+        assert "/chronos" in route_paths
+        assert "/calibration" in route_paths
+        assert "/register" in route_paths
         # The pipeline wizard is not superseded at all, so it has to survive
         # phase 5 as well as this one.
         assert "/lectures/setup" in route_paths

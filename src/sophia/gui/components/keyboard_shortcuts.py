@@ -9,6 +9,7 @@ from nicegui import ui
 from sophia.gui.routes import (
     DASHBOARD_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
+    SEARCH_SURFACE_PATH,
     STUDY_SURFACE_PATH,
 )
 
@@ -27,7 +28,7 @@ _NAV_ROUTES: Final[dict[str, str]] = {
     "1": DASHBOARD_SURFACE_PATH,
     "2": STUDY_SURFACE_PATH,
     "3": REVIEW_SURFACE_PATH,
-    "4": "/search",
+    "4": SEARCH_SURFACE_PATH,
 }
 
 

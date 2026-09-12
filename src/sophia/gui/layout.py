@@ -10,9 +10,13 @@ from nicegui import ui
 from sophia.gui.components.course_selector import render_course_selector
 from sophia.gui.components.keyboard_shortcuts import register_keyboard_shortcuts
 from sophia.gui.routes import (
+    CALIBRATION_SURFACE_PATH,
+    CHRONOS_SURFACE_PATH,
     CONTENT_SURFACE_PATH,
     DASHBOARD_SURFACE_PATH,
+    REGISTER_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
+    SEARCH_SURFACE_PATH,
     STUDY_SURFACE_PATH,
     TOPICS_SURFACE_PATH,
 )
@@ -117,12 +121,12 @@ NAV_ITEMS: list[dict[str, str]] = [
     {"label": "Dashboard", "icon": "dashboard", "path": DASHBOARD_SURFACE_PATH},
     {"label": "Study", "icon": "school", "path": STUDY_SURFACE_PATH},
     {"label": "Review", "icon": "rate_review", "path": REVIEW_SURFACE_PATH},
-    {"label": "Search", "icon": "search", "path": "/search"},
-    {"label": "Deadlines", "icon": "schedule", "path": "/chronos"},
-    {"label": "Calibration", "icon": "tune", "path": "/calibration"},
+    {"label": "Search", "icon": "search", "path": SEARCH_SURFACE_PATH},
+    {"label": "Deadlines", "icon": "schedule", "path": CHRONOS_SURFACE_PATH},
+    {"label": "Calibration", "icon": "tune", "path": CALIBRATION_SURFACE_PATH},
     {"label": "Lectures", "icon": "videocam", "path": CONTENT_SURFACE_PATH},
     {"label": "Topics", "icon": "topic", "path": TOPICS_SURFACE_PATH},
-    {"label": "Register", "icon": "how_to_reg", "path": "/register"},
+    {"label": "Register", "icon": "how_to_reg", "path": REGISTER_SURFACE_PATH},
     {"label": "Settings", "icon": "settings", "path": "/settings"},
 ]
 

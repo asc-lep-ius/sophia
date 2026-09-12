@@ -24,18 +24,19 @@ class TestNavItems:
         paths = {item["path"] for item in NAV_ITEMS}
         expected = {
             # Dashboard, study and review left this app in phases 3 and 4a,
-            # lectures and topics in 4b; the navigation follows the learner
-            # rather than keeping them here. Topics is new to this list: the
-            # NiceGUI page was only ever reachable by typing its URL.
+            # lectures and topics in 4b, and search, deadlines, calibration and
+            # registration in 4c; the navigation follows the learner rather
+            # than keeping them here. Settings is the last entry still served
+            # by this app, and phase 5 is what retires it.
             "/app/dashboard",
             "/app/study",
             "/app/review",
             "/app/content",
             "/app/topics",
-            "/search",
-            "/chronos",
-            "/calibration",
-            "/register",
+            "/app/search",
+            "/app/chronos",
+            "/app/calibration",
+            "/app/register",
             "/settings",
         }
         assert paths == expected

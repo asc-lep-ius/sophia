@@ -33,12 +33,12 @@ class TestKeyboardShortcutData:
 
     def test_nav_routes_cover_first_four_pages(self) -> None:
         assert _NAV_ROUTES == {
-            # Study left this app in phase 3, dashboard and review in phase 4a;
-            # the shortcuts follow the learner.
+            # Study left this app in phase 3, dashboard and review in phase 4a,
+            # search in phase 4c; the shortcuts follow the learner.
             "1": "/app/dashboard",
             "2": "/app/study",
             "3": "/app/review",
-            "4": "/search",
+            "4": "/app/search",
         }
 
 

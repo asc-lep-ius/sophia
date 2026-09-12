@@ -1,4 +1,11 @@
-"""E2E search flow tests — verify search page loads and input is accessible."""
+"""E2E search flow tests — verify search page loads and input is accessible.
+
+Phase 5 removal: superseded by frontend/tests/e2e/long-tail.spec.ts.
+
+That spec covers the migrated surface the same three ways this one covered
+the legacy page, and adds the debounce and no-stream assertions the
+acceptance criteria ask for.
+"""
 
 from __future__ import annotations
 

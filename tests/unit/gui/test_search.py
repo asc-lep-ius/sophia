@@ -1,4 +1,12 @@
-"""Tests for the Hermes search page — pure helpers, constants, and error handling."""
+"""Tests for the Hermes search page — pure helpers, constants, and error handling.
+
+Phase 5 removal: superseded by frontend/tests/unit/search-page.test.ts.
+
+The NiceGUI page these cover left the learner-facing path in phase 4c
+(issue #101) and stays registered only so an existing ``/legacy/search``
+link resolves. Both go together: deleting this module before the page
+would leave a served page nothing tests.
+"""
 
 from __future__ import annotations
 

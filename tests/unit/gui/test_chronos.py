@@ -1,4 +1,11 @@
-"""Tests for the Chronos deadlines page — pure helpers and constants."""
+"""Tests for the Chronos deadlines page — pure helpers and constants.
+
+Phase 5 removal: superseded by frontend/tests/unit/chronos-page.test.ts.
+
+The due-date phrasing these pin is the one thing that has to outlive the
+page, and it does: ``test_chronos_parity.py`` holds it against the same
+fixture the migrated surface is measured with, and is not marked here.
+"""
 
 from __future__ import annotations
 
