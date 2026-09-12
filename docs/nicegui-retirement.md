@@ -108,8 +108,9 @@ learner loses on the deadline surfaces. Four more go with the rest of the tree:
   A topic with no prior session and no confidence rating above the baseline was
   offered to the learner as one they could declare new, which forced the whole
   pre-test down to `DifficultyLevel.CUED` rather than asking transfer questions
-  about material never seen. This is the one dropped item that is genuinely
-  learning-design behaviour rather than an affordance, and it has no counterpart
+  about material never seen. The button was offered in single-topic sessions
+  only. This is the one dropped item that is genuinely learning-design
+  behaviour rather than an affordance, and it has no counterpart
   in the API or on `/app/study`. The rule is in git history at `22e7b71`
   (`src/sophia/gui/services/study_service.py`), and bringing it back means an
   API endpoint plus a control on the predict step — which is why it is recorded

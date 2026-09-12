@@ -50,11 +50,13 @@ Useful endpoints:
 | `http://localhost/legacy/` | `404` — retired, and checked by `tests/api/test_proxy_config.py` |
 
 GPU transcription is no longer available from a container. The image that
-provided it was `Dockerfile.gui.cuda`, a NiceGUI image, and issue #102 removed
-it along with the CUDA base layer it sat on. Run `sophia lectures transcribe`
-on a host with CUDA and `uv sync --extra hermes` instead; rebuilding a GPU
-image around the CLI is separate work, not part of the retirement. See
-[docs/nicegui-retirement.md](docs/nicegui-retirement.md).
+provided it was a NiceGUI image, and issue #102 removed it along with the CUDA
+base layer it sat on. Run `sophia lectures transcribe` on a host with CUDA,
+ffmpeg and `uv sync --extra hermes` instead — those are the three things the
+retired image supplied. Rebuilding a GPU image around the CLI is separate work,
+not part of the retirement; see
+[docs/nicegui-retirement.md](docs/nicegui-retirement.md) for which image did
+what.
 
 ## Production Compose
 

@@ -4,7 +4,7 @@
 
 A student toolkit for TU Wien that automates the tedious parts of academic life (getting a spot in the desired group, finding + aquiring textbooks, forcing yourself to confront unfamiliar fields of knowledge, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export), and a SvelteKit web interface served at `/app/` (dashboard, study sessions, review, search, deadlines, calibration analytics — WCAG 2.1 AA accessible) are functional with 1768 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
+**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export), and a SvelteKit web interface served at `/app/` (dashboard, study sessions, review, search, deadlines, calibration analytics — WCAG 2.1 AA accessible) are functional with 1782 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
 
 | Abschnitt | Inhalt |
 |-----------|--------|
@@ -1063,8 +1063,9 @@ make docker-backup                 # saves sophia-backup-YYYYMMDD.db
 
 `docker compose up -d` brings up the proxy, the SvelteKit frontend, the API,
 Postgres and Redis. The web interface is at `http://localhost/app/`; the bare
-origin redirects there. GPU transcription is driven from the CLI on the image
-built from `ci/Dockerfile.cuda-base`; see [DEPLOYMENT.md](DEPLOYMENT.md).
+origin redirects there. GPU transcription is no longer available from a
+container — run `sophia lectures transcribe` on a CUDA host; see
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
 ### CI/CD
 
