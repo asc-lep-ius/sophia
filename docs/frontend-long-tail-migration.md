@@ -79,13 +79,20 @@ countdown refresh should stay gone.
 
 ## Guardrails
 
+*(As of #102 the NiceGUI half of each pairing below is gone; the current
+guardrail is named after each.)*
+
 - `frontend/tests/fixtures/chronos-date-parity.json` is read by both
-  `frontend/tests/unit/chronos-dates.test.ts` and
-  `tests/unit/gui/test_chronos_parity.py`. The Python module is not marked for
-  phase 5 removal: once the NiceGUI page is deleted, those cases are the only
-  record of what the phrasing was.
-- `tests/unit/gui/test_surface_routes.py` holds both halves of the
-  arrangement — nothing in the legacy app navigates to its own copies, and the
-  pages stay served so a `/legacy/` link resolves.
-- `tests/unit/gui/test_phase5_retirement.py` requires every module marked for
-  deletion to name a replacement file that exists.
+  `frontend/tests/unit/chronos-dates.test.ts` and what is now
+  `tests/unit/test_chronos_parity.py`. The Python module was not marked for
+  phase 5 removal, and after the deletion its cases — plus the legacy rule it
+  now carries itself — are the only record of what the phrasing was.
+- `tests/unit/gui/test_surface_routes.py` held both halves of the
+  arrangement: nothing in the legacy app navigated to its own copies, and the
+  pages stayed served so a `/legacy/` link resolved. Both halves are moot now
+  that neither the app nor the route exists; `tests/api/test_proxy_config.py`
+  asserts the route is gone.
+- `tests/unit/gui/test_phase5_retirement.py` required every module marked for
+  deletion to name a replacement file that exists. It did its job — see
+  `docs/nicegui-retirement.md` for what each marked module was replaced by —
+  and `tests/api/test_nicegui_retirement.py` is the guard that replaces it.

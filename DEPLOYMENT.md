@@ -1,16 +1,19 @@
-# Sophia Phase 0 Deployment Guide
+# Sophia Deployment Guide
 
-Sophia Phase 0 runs three application surfaces behind Caddy:
+Sophia runs two application surfaces behind Caddy:
 
 | Route | Upstream | Purpose |
 |---|---|---|
-| `/app/*` | `frontend:3000` | SvelteKit Phase 0 shell |
+| `/app/*` | `frontend:3000` | SvelteKit web interface |
 | `/api/*` | `api:8000` | FastAPI contract surface |
-| `/legacy/*` | `sophia-gui:8080` | Transitional NiceGUI surface with prefix stripping |
-| `/` | `sophia-gui:8080` | Legacy fallback while the strangler migration is active |
+| `/` | — | `308` redirect to `/app/` |
 
-Only the proxy publishes ports in production. The API, frontend, Redis,
-and NiceGUI containers stay on internal Compose networks.
+Everything else answers `404`. `/legacy/*` and the NiceGUI service behind it
+were retired in issue #102; there is no hidden path still serving them, which
+is deliberate — see [docs/nicegui-retirement.md](docs/nicegui-retirement.md).
+
+Only the proxy publishes ports in production. The API, frontend, Redis and
+Postgres containers stay on internal Compose networks.
 
 ## Local Validation
 
@@ -31,9 +34,9 @@ make typecheck
 ## Development Compose
 
 ```bash
-docker compose up -d proxy frontend api redis sophia-gui
+docker compose up -d proxy frontend api redis postgres
 docker compose ps
-docker compose logs -f proxy api frontend sophia-gui
+docker compose logs -f proxy api frontend
 ```
 
 Useful endpoints:
@@ -42,12 +45,19 @@ Useful endpoints:
 |---|---|
 | `http://localhost/api/health` | API liveness |
 | `http://localhost/api/ready` | API readiness gate polled by Docker healthchecks |
-| `http://localhost/app/` | SvelteKit app shell |
-| `http://localhost/legacy/` | NiceGUI legacy surface |
-| `http://localhost/` | Legacy fallback |
+| `http://localhost/app/` | SvelteKit web interface |
+| `http://localhost/` | `308` redirect to `/app/` |
+| `http://localhost/legacy/` | `404` — retired, and checked by `tests/api/test_proxy_config.py` |
 
-The old direct GUI workflow remains available on `SOPHIA_GUI_PORT`, defaulting
-to `8080`, so existing GUI and GPU profiles keep working.
+GPU transcription is no longer a Compose service. It is driven from the CLI on
+an image built from `ci/Dockerfile.cuda-base`, which carries the CUDA runtime,
+ffmpeg and the Whisper stack:
+
+```bash
+docker build -f ci/Dockerfile.cuda-base -t sophia-cuda:local .
+docker run --gpus all -v sophia-data:/data sophia-cuda:local \
+  /app/.venv/bin/python -m sophia lectures transcribe <module-id>
+```
 
 ## Production Compose
 
@@ -135,7 +145,6 @@ secret manager.
 | Proxy | `curl -f https://sophia.example.com/api/health` |
 | API | Docker healthcheck polls `http://localhost:8000/api/ready` |
 | Frontend | Docker healthcheck polls `http://localhost:3000/app/` |
-| NiceGUI | Docker healthcheck polls `http://localhost:8080/ready` |
 | Redis | `redis-cli ping` |
 
 The API readiness endpoint is deliberately stricter than liveness. A `503`
@@ -265,7 +274,7 @@ The cutover is the only step that can lose writes, so it stops them first.
 1. **Stop writes.** Scale the writers to zero and leave the proxy serving a
    maintenance response:
    ```bash
-   docker compose -f docker-compose.prod.yml stop api sophia-gui
+   docker compose -f docker-compose.prod.yml stop api
    ```
 2. **Confirm the rollback image still exists** before starting, because the
    import in step 7 is the point of no return:
@@ -330,7 +339,7 @@ The cutover is the only step that can lose writes, so it stops them first.
    unset SOPHIA_DATABASE_URL
    rm -f /tmp/cutover-port.yml
    docker compose -f docker-compose.prod.yml up -d postgres   # drops the published port
-   docker compose -f docker-compose.prod.yml up -d api sophia-gui
+   docker compose -f docker-compose.prod.yml up -d api
    curl -f https://sophia.example.com/api/ready
    ```
    Confirm the port is gone before calling the cutover done — a forgotten
@@ -369,7 +378,10 @@ such a report.
 - Keep `IMAGE_TAG` pinned to the full commit SHA that passed CI.
 - Rotate `SOPHIA_SECRET_KEY_CURRENT` before sharing a production URL outside a
   trusted network.
-- Keep the old NiceGUI route and tests until the Phase 1 two-process auth bridge
-  and migrated frontend routes replace them deliberately.
+- Rolling back the NiceGUI retirement means deploying the last pre-removal
+  release tag, not re-adding a `/legacy/*` route to current mainline. The tag
+  is the one recorded in [docs/nicegui-retirement.md](docs/nicegui-retirement.md);
+  a half-retained legacy route in a newer image is unaudited behaviour nothing
+  in the current test suite covers.
 - Use `docker compose -f docker-compose.prod.yml config` as the final local
   syntax gate before deployment.
