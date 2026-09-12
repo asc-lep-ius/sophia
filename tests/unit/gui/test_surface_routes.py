@@ -10,8 +10,8 @@ already has keeps resolving. Retiring them is phase 5's job.
 
 from __future__ import annotations
 
+import ast
 import inspect
-import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -71,6 +71,58 @@ MIGRATED_SURFACES = (
     STUDY_SURFACE_PATH,
     TOPICS_SURFACE_PATH,
 )
+
+
+def _dotted_name(node: ast.expr) -> str:
+    """Render ``ui.navigate.to`` from the attribute chain the parser produced."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _retired_path_references(source: str) -> list[str]:
+    """Every retired NiceGUI path this module still names.
+
+    Parsed rather than grepped, for two reasons a regex got wrong in turn. A
+    comment mentioning a path is not a reference, and the parser drops comments
+    for free. And the reference that hid longest was indirect — the quickstart
+    wizard returned ``"/chronos"`` from ``suggest_first_action`` and navigated
+    to it two hundred lines later — so matching the literal only where it is an
+    argument of the navigation call missed it entirely. Any bare literal counts.
+
+    Two exceptions, both narrow. ``@ui.page`` registrations have to keep the
+    old routes resolving for anyone holding a ``/legacy/`` link, which is what
+    ``TestLegacyPagesStayReachable`` asserts. And ``"/"`` is only a route when
+    it is handed to a navigation: elsewhere it is a keyboard shortcut or a
+    separator, so it is checked at the call rather than as a bare literal.
+    """
+    tree = ast.parse(source)
+    exempt: set[int] = set()
+    navigated: set[int] = set()
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        called = _dotted_name(node.func)
+        constants = {id(child) for child in ast.walk(node) if isinstance(child, ast.Constant)}
+        if called == "ui.page":
+            exempt |= constants
+        elif called in {"ui.navigate.to", "ui.link"}:
+            navigated |= constants
+
+    return [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value in RETIRED_PAGE_TARGETS
+        and id(node) not in exempt
+        and (node.value != "/" or id(node) in navigated)
+    ]
 
 
 def _route_paths() -> set[str]:
@@ -163,23 +215,26 @@ class TestMigratedSurfacePaths:
         """
         assert not hasattr(routes, "CHRONOS_HISTORY_SURFACE_PATH")
 
-    def test_no_page_still_navigates_to_a_retired_nicegui_route(self) -> None:
+    def test_nothing_in_this_app_still_names_a_retired_nicegui_route(self) -> None:
         """The sweep the per-page assertions below kept missing.
 
         Repointing the sidebar and the keyboard shortcuts in this phase left
-        two buttons behind: the dashboard's empty-deadlines "Sync Deadlines"
-        and the quickstart wizard's suggested first action, both still sending
-        a learner to ``/chronos``. Enumerating every page module beats naming
-        them one at a time, because the next phase will have its own pair.
+        the dashboard's empty-deadlines "Sync Deadlines" button still sending a
+        learner to ``/chronos``, and sweeping for it turned up five more that
+        had survived phases 3, 4a and 4b. Enumerating the modules beats naming
+        the call sites, because the next phase will have its own.
+
+        The rule itself lives in ``_retired_path_references``, including why it
+        is blunter than "an argument of a navigation call" and what the two
+        exceptions are.
         """
-        pages_dir = Path(inspect.getfile(routes)).parent / "pages"
-        targets = "|".join(re.escape(path) for path in RETIRED_PAGE_TARGETS)
-        navigation = re.compile(rf'(?:ui\.navigate\.to|ui\.link)\([^)]*"({targets})"')
+        gui_dir = Path(inspect.getfile(routes)).parent
 
         offenders = [
-            f"{path.name} -> {match.group(1)}"
-            for path in sorted(pages_dir.glob("*.py"))
-            for match in navigation.finditer(path.read_text(encoding="utf-8"))
+            f"{path.relative_to(gui_dir).as_posix()} -> {target}"
+            for path in sorted(gui_dir.rglob("*.py"))
+            if path.name != "routes.py"
+            for target in _retired_path_references(path.read_text(encoding="utf-8"))
         ]
 
         assert offenders == []

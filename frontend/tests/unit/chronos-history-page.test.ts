@@ -151,6 +151,16 @@ describe("chronos history page", () => {
     expect(screen.getByRole("link", { name: "Clear filters" })).toBeTruthy();
   });
 
+  it("keeps saying the list is capped when a filter empties it", () => {
+    // Otherwise "nothing matched" reads as a fact about the whole record,
+    // when the filter only ever searched the most recent page of it.
+    render(HistoryPage, {
+      data: pageData({ limit: 2, outcome: "late", totalCount: 2 }),
+    });
+
+    expect(screen.getByText(/only the most recent 2/i)).toBeTruthy();
+  });
+
   it("names the empty history rather than blaming a filter", () => {
     render(HistoryPage, { data: pageData({}) });
 

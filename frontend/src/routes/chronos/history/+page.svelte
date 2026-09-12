@@ -81,6 +81,15 @@
         {#if data.outcome !== "all"}
           <p class="empty-title">{m.chronos_history_no_matches_title()}</p>
           <p class="empty-body">{m.chronos_history_no_matches_body()}</p>
+          <!--
+            The filter searched one page of history, not all of it. Without
+            this, "nothing matched" reads as a fact about the whole record.
+          -->
+          {#if data.totalCount >= data.limit}
+            <p class="empty-body">
+              {m.chronos_history_capped({ limit: data.limit })}
+            </p>
+          {/if}
           <a href={historyPath}>{m.content_filters_reset()}</a>
         {:else}
           <p class="empty-title">{m.chronos_history_empty_title()}</p>
