@@ -15,6 +15,8 @@ from ._session_helpers import ApiHarness, FakeAppContainer, build_harness, csrf_
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from httpx import Response
+
     from sophia.infra.di import AppContainer
 
 
@@ -284,19 +286,24 @@ def test_upload_refuses_a_payload_over_the_configured_ceiling(tmp_path: Path) ->
 
 
 def test_upload_requires_authentication_and_csrf(tmp_path: Path) -> None:
-    anonymous = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
-    anonymous.settings.data_dir = tmp_path
-    upload = {
-        "data": {"title": "Graph algorithms"},
-        "files": {"file": ("lecture-01.pdf", b"%PDF-1.7\n", "application/pdf")},
-    }
+    harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
+    harness.settings.data_dir = tmp_path
 
-    anonymous_response = anonymous.client.post("/api/content-sources/uploads", **upload)
-    login(anonymous)
-    no_csrf_response = anonymous.client.post("/api/content-sources/uploads", **upload)
+    def post_upload() -> Response:
+        return harness.client.post(
+            "/api/content-sources/uploads",
+            data={"title": "Graph algorithms"},
+            files={"file": ("lecture-01.pdf", b"%PDF-1.7\n", "application/pdf")},
+        )
+
+    anonymous_response = post_upload()
+    login(harness)
+    no_csrf_response = post_upload()
 
     assert anonymous_response.status_code == 401
     assert no_csrf_response.status_code == 403
+    # Neither refusal may have written anything: the checks run before the
+    # staging directory is created, not after.
     assert not (tmp_path / "content-uploads").exists()
 
 
