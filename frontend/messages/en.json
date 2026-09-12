@@ -11,6 +11,7 @@
   "content_back_to_catalog": "Back to the lecture catalogue",
   "content_catalog_count": "{count} lectures shown",
   "content_catalog_heading": "Lecture catalogue",
+  "content_catalog_truncated": "{count} further sources are not shown here. Narrow the course selection to reach them.",
   "content_empty_body": "Nothing has been uploaded or synced for this course. Adding a source is what fills this page.",
   "content_empty_title": "No lectures yet",
   "content_filter_query": "Search titles",

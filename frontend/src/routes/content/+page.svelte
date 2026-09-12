@@ -35,6 +35,15 @@
     data.filters.query !== "" || data.filters.status !== "all",
   );
 
+  const catalogNote = $derived.by(() => {
+    if (data.unlistedSourceCount > 0) {
+      return m.content_catalog_truncated({ count: data.unlistedSourceCount });
+    }
+    return data.groups.length > 0
+      ? m.content_catalog_count({ count: visibleCount })
+      : undefined;
+  });
+
   const statusLabels = {
     all: m.content_status_all,
     pending: m.content_status_pending,
@@ -95,9 +104,7 @@
   heading={m.content_catalog_heading()}
   status={data.sources.status}
   isEmpty={data.groups.length === 0}
-  note={data.groups.length > 0
-    ? m.content_catalog_count({ count: visibleCount })
-    : undefined}
+  note={catalogNote}
 >
   {#snippet empty()}
     <div class="empty-state">

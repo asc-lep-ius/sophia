@@ -11,6 +11,7 @@
   "content_back_to_catalog": "Zurück zum Katalog",
   "content_catalog_count": "{count} Vorlesungen sichtbar",
   "content_catalog_heading": "Vorlesungskatalog",
+  "content_catalog_truncated": "{count} weitere Quellen werden hier nicht gezeigt. Grenze die Auswahl ein, um sie zu erreichen.",
   "content_empty_body": "Für diese Lehrveranstaltung wurde noch nichts hochgeladen oder abgeglichen. Eine Quelle füllt diese Seite.",
   "content_empty_title": "Noch keine Vorlesungen",
   "content_filter_query": "Titel suchen",

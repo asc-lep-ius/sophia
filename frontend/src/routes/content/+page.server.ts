@@ -59,8 +59,11 @@ export const load: PageServerLoad = async (event) => {
     // Filtered here rather than in the component: the URL is the source of
     // truth for the filter, so the first paint has to already agree with it.
     groups: groupContent(sources.data, itemsBySource, filters),
-    sourceCount: sources.data.length,
     sources: sources as Panel<ContentSource[]>,
+    // Said out loud rather than left to look like an empty catalogue: a source
+    // whose items were never fetched contributes no group, so truncation and
+    // "this course has nothing" would otherwise render identically.
+    unlistedSourceCount: Math.max(0, sources.data.length - SOURCE_FETCH_LIMIT),
     uiLocale: event.locals.locale,
   };
 };

@@ -176,6 +176,29 @@ describe("content page", () => {
     expect(within(panel).queryByText("No lectures yet")).toBeNull();
   });
 
+  it("says when sources were left out rather than looking like an empty course", () => {
+    // A source whose items were never fetched contributes no group, so
+    // truncation and "nothing here" would otherwise render identically.
+    render(ContentPage, {
+      data: pageData({
+        groups: [
+          {
+            itemCount: 1,
+            items: [contentItem("item-ready", true)],
+            readyCount: 1,
+            source: { external_ref: "series-12", id: 12, title: "Algorithms" },
+          },
+        ],
+        unlistedSourceCount: 3,
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "Lecture catalogue" });
+    expect(
+      within(panel).getByText(/3 further sources are not shown/),
+    ).toBeTruthy();
+  });
+
   it("names the stage each item is waiting on", () => {
     render(ContentPage, {
       data: pageData({
@@ -208,7 +231,7 @@ type ContentData = {
     readyCount: number;
     source: ContentSource;
   }[];
-  sourceCount: number;
+  unlistedSourceCount: number;
   sources: Panel<ContentSource[]>;
   uiLocale: "de" | "en";
 };
@@ -237,7 +260,7 @@ function pageData(overrides: Partial<ContentData>) {
     drawerOpen: false,
     filters: { query: "", status: "all" as const },
     groups: [],
-    sourceCount: 0,
+    unlistedSourceCount: 0,
     sources: { data: [], status: "ready" } as Panel<ContentSource[]>,
     uiLocale: "en" as const,
     ...overrides,
