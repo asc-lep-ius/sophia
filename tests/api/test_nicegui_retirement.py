@@ -23,23 +23,22 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src"
 
-RETIREMENT_RECORD = REPO_ROOT / "docs" / "nicegui-retirement.md"
+DECISION_RECORDS = frozenset(
+    {
+        REPO_ROOT / "docs" / "nicegui-retirement.md",
+        REPO_ROOT / "docs" / "frontend-long-tail-migration.md",
+    }
+)
+"""The dated records of what was decided, exempt from the prose scan below.
+
+Naming the thing it removed is what a decision record is *for* — #101's note
+explains which guardrail each deleted module used to be, and this issue's own
+record quotes the retired command in full. Exempting them by identity keeps the
+scan binding on every document that tells a reader what to do, which is the
+only kind that can send someone at a file that is not there.
+"""
 
 RETIRED_PACKAGES = ("nicegui", "sophia.gui")
-RETIRED_IN_PROSE = (
-    "sophia gui",
-    "SOPHIA_GUI_",
-    "SOPHIA_AUTO_SYNC",
-    "make docker-gui",
-    "make test-gui",
-    "sophia-gui",
-)
-"""What a reader must not be told to run, type or set.
-
-The env vars matter as much as the command: `Settings` uses `extra="ignore"`,
-so a stale `SOPHIA_GUI_PORT` copied out of an example file is accepted in
-silence and does nothing, which is worse than being rejected.
-"""
 RETIRED_SOURCE_PATHS = (
     "src/sophia/gui",
     "src/sophia/cli/gui.py",
@@ -50,6 +49,29 @@ RETIRED_SOURCE_PATHS = (
     "Dockerfile.nicegui",
     "ci/Dockerfile.cuda-base",
 )
+RETIRED_IN_PROSE = (
+    "sophia gui",
+    "SOPHIA_GUI_",
+    "SOPHIA_AUTO_SYNC",
+    "make docker-gui",
+    "make test-gui",
+    "sophia-gui",
+    *RETIRED_SOURCE_PATHS,
+)
+"""What a reader must not be told to run, type, set — or build.
+
+The env vars matter as much as the command: ``Settings`` uses
+``extra="ignore"``, so a stale ``SOPHIA_GUI_PORT`` copied out of an example
+file is accepted in silence and does nothing, which is worse than being
+rejected.
+
+The deleted paths are here because checking them on disk is not the same as
+checking them in prose, and the difference cost a round of review: the README
+went on pointing at `ci/Dockerfile.cuda-base` for GPU transcription after the
+file was deleted, and every path assertion below stayed green because the file
+was, indeed, absent. Matching is case-insensitive so that "Sophia GUI" in a
+sentence trips it too.
+"""
 
 
 def _source_modules() -> list[tuple[str, ast.Module]]:
@@ -151,14 +173,14 @@ def test_ci_neither_builds_nor_deploys_a_nicegui_image() -> None:
 
 
 def _prose_files() -> list[Path]:
-    """The documents a reader is sent to, minus this retirement's own record.
+    """The documents that tell a reader what to do, minus the decision records.
 
-    `docs/nicegui-retirement.md` quotes the retired command and the retired
-    Make targets on purpose — that is what makes it a record — so it is the one
-    file excluded rather than the reason to narrow the scan.
+    Excluding two files by identity rather than narrowing the glob: the scan is
+    meant to bind on README, DEPLOYMENT and `.env.example`, which is where a
+    dangling instruction actually costs someone an afternoon.
     """
     candidates = [*REPO_ROOT.glob("*.md"), *REPO_ROOT.glob("docs/*.md"), REPO_ROOT / ".env.example"]
-    return [path for path in sorted(candidates) if path.is_file() and path != RETIREMENT_RECORD]
+    return [path for path in sorted(candidates) if path.is_file() and path not in DECISION_RECORDS]
 
 
 @pytest.mark.parametrize("retired_reference", RETIRED_IN_PROSE)
@@ -166,15 +188,18 @@ def test_no_document_still_offers_something_this_issue_deleted(retired_reference
     """Docs outlive code, and `.env.example` outlives both.
 
     A README that still offers `sophia gui launch` is a bug report waiting to
-    be filed against a command that does not exist. The first pass of #102
-    missed `.env.example` entirely — it advertised `SOPHIA_GUI_PORT`, which
-    `Settings` would silently ignore, and a Make target deleted in the same
-    branch — because the scan globbed only top-level `*.md`.
+    be filed against a command that does not exist. Two rounds of review found
+    one of these each: `.env.example` advertised `SOPHIA_GUI_PORT`, which
+    `Settings` silently ignores, and a Make target deleted on the same branch;
+    then the README went on naming `ci/Dockerfile.cuda-base` as the way to run
+    GPU transcription after that file was deleted. Hence both the widened file
+    set and the deleted paths in `RETIRED_IN_PROSE`.
     """
+    needle = retired_reference.casefold()
     offenders = [
         path.relative_to(REPO_ROOT).as_posix()
         for path in _prose_files()
-        if retired_reference in path.read_text(encoding="utf-8")
+        if needle in path.read_text(encoding="utf-8").casefold()
     ]
 
     assert offenders == []
