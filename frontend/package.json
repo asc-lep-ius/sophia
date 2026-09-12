@@ -62,9 +62,9 @@
   "size-limit": [
     {
       "path": ".svelte-kit/output/client/_app/immutable/**/*.js",
-      "limit": "108 KB",
+      "limit": "128 KB",
       "gzip": true
     }
   ],
-  "//size-limit": "Measures the built client bundle as files, not as a re-bundled library. The previous preset ran esbuild over every emitted chunk as its own entry, so shared dependencies were counted once per chunk and the figure grew with the route count rather than with what a browser downloads. The budget is set from the real transferred size with room for roughly one more surface. Phase 4b (#100) used that room: lectures, the content-source page and topics cost 8.9 kB of route code and their message keys another 4.0 kB, taking the bundle from 87.9 kB to 100.8 kB. Two figures to check before raising it again: the per-route node chunks, which run 2-3.5 kB gzipped each, and the Paraglide messages chunk, which carries every key in both locales on every page and so grows with the catalogue rather than with the route."
+  "//size-limit": "Measures the built client bundle as files, not as a re-bundled library. The previous preset ran esbuild over every emitted chunk as its own entry, so shared dependencies were counted once per chunk and the figure grew with the route count rather than with what a browser downloads. Phase 4b (#100) took the bundle from 87.9 kB to 100.8 kB against a 108 kB budget. Phase 4c (#101) adds the five long-tail surfaces and measures 122.9 kB: +14.6 kB of route code across search, chronos, chronos history, calibration and register (roughly 2.9 kB gzipped each) and +6.8 kB on the Paraglide messages chunk, which carries every key in both locales on every page. The budget is 128 kB and is deliberately not sized for another surface: #102 retires NiceGUI rather than adding routes, so the next movement here should be downwards. Two figures to check before raising it again: the per-route node chunks and that messages chunk, which grows with the catalogue rather than with the route count."
 }

@@ -19,6 +19,11 @@ const routes = [
   "/app/content",
   "/app/content/sources",
   "/app/topics",
+  "/app/search",
+  "/app/chronos",
+  "/app/chronos/history",
+  "/app/calibration",
+  "/app/register",
   "/app/login",
   "/app/settings",
 ];
