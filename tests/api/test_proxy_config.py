@@ -9,9 +9,12 @@ from typing import Any
 import pytest
 import yaml
 
+from sophia.config import Settings
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INTERNAL_API_BASE_URL = "http://api:8000"
 REDIS_URL = "redis://redis:6379/0"
+CONTENT_UPLOAD_MAX_BYTES = 512 * 1024**2
 
 
 def read_project_file(path: str) -> str:
@@ -164,6 +167,30 @@ def test_caddy_sse_matcher_covers_the_study_realtime_endpoint() -> None:
     )
 
     assert "/api/study/*/events*" in sse_matcher_line.split()
+
+
+def test_upload_ceilings_agree_across_proxy_frontend_and_api() -> None:
+    """A ceiling is only a ceiling if every hop enforces the same one.
+
+    The browser posts the upload form to SvelteKit, which forwards it to the
+    API, and Caddy sits in front of both. Three different limits would mean an
+    upload one hop accepts and the next refuses, and the learner would only
+    ever be shown the refusal.
+    """
+    caddyfile = read_project_file("proxy/Caddyfile")
+    upload_matcher_line = next(
+        line for line in active_caddy_lines(caddyfile) if line.startswith("@api_uploads path")
+    )
+
+    assert "/api/content-sources/uploads" in upload_matcher_line.split()
+    assert "max_size 512MB" in caddy_block(caddyfile, "\trequest_body @api_uploads")
+    assert Settings().content_upload_max_bytes == CONTENT_UPLOAD_MAX_BYTES
+
+    for compose_path in ("docker-compose.yml", "docker-compose.prod.yml"):
+        frontend_environment = compose_config_environment(
+            compose_services(compose_path)["frontend"],
+        )
+        assert frontend_environment["BODY_SIZE_LIMIT"] == str(CONTENT_UPLOAD_MAX_BYTES)
 
 
 def test_caddy_rate_limit_is_active_for_login_per_ip() -> None:

@@ -2,7 +2,23 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
+
 from sophia.api.schemas.common import ApiModel
+
+
+class IngestionState(StrEnum):
+    """Where an accepted upload sits in the processing that follows it.
+
+    Kept apart from the service's own state enum in the same way the topic and
+    content-language transports are: the wire contract is allowed to outlive
+    whatever the pipeline calls its stages internally.
+    """
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    FAILED = "failed"
+    READY = "ready"
 
 
 class ContentSourceResponse(ApiModel):
@@ -46,3 +62,18 @@ class DiscoveredContentSourceResponse(ApiModel):
 
 class ContentSourceDiscoveryResponse(ApiModel):
     sources: list[DiscoveredContentSourceResponse]
+
+
+class ContentSourceUploadResponse(ApiModel):
+    """An upload the ingestion boundary accepted and staged.
+
+    ``state`` is part of the accept response rather than implied by it: the
+    processing that follows an upload takes minutes, and a surface that cannot
+    tell queued from ready has no honest thing to show in between.
+    """
+
+    id: str
+    title: str
+    media_type: str
+    byte_size: int
+    state: IngestionState

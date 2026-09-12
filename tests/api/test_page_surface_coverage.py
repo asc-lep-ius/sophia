@@ -9,6 +9,7 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
         {
             "/api/content-sources",
             "/api/content-sources/discover",
+            "/api/content-sources/uploads",
             "/api/content-sources/{content_source_id}/content-items",
             "/api/content-sources/{content_source_id}/ingestion-status",
         }

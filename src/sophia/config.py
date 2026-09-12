@@ -82,6 +82,12 @@ class Settings(BaseSettings):
     database_pool_recycle: int = Field(default=1800, gt=0)
     database_echo: bool = False
 
+    # Content ingestion
+    # Matches the proxy's `@api_uploads` ceiling on purpose. Two different
+    # numbers would mean an upload the proxy accepts and the API refuses, or
+    # the reverse, and the learner would only ever see the second one.
+    content_upload_max_bytes: int = Field(default=512 * 1024**2, gt=0)
+
     # Learning process integrity
     default_content_language: Literal["de", "en"] = "de"
     learning_event_retention_days: int = Field(default=180, gt=0)

@@ -93,6 +93,9 @@ services:
       - HOST_HEADER=x-forwarded-host
       - PUBLIC_API_BASE_URL=/api
       - SOPHIA_API_BASE_URL=http://api:8000
+      # adapter-node defaults to 512 kB, which would refuse the content upload
+      # form long before the proxy's 512 MB ceiling or the API's own check.
+      - BODY_SIZE_LIMIT=536870912
     expose:
       - "3000"
     networks:

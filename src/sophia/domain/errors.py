@@ -101,3 +101,15 @@ class EngagementPolicyUnmet(AthenaError):
 
 class ChronosError(SophiaError):
     """Chronos deadline pipeline error."""
+
+
+class ContentUploadRejected(SophiaError):
+    """A learner-supplied upload failed the checks at the ingestion boundary.
+
+    ``params`` names which check refused it, so the upload form can say what to
+    change rather than only that something was wrong.
+    """
+
+    def __init__(self, message: str, params: dict[str, str | int] | None = None) -> None:
+        super().__init__(message)
+        self.params = params or {}

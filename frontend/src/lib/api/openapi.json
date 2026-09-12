@@ -731,6 +731,59 @@
         "title": "ContentSourceResponse",
         "type": "object"
       },
+      "ContentSourceUploadForm": {
+        "description": "The multipart body of a content-source upload.\n\nA model rather than loose ``Form``/``File`` parameters so the generated\ncontract carries a named component: FastAPI names an inferred multipart\nbody ``Body_<operation>``, which the schema-stability check rejects and a\ngenerated client would re-export under a name that moves whenever the\nhandler is renamed.\n\nNot an :class:`~sophia.api.schemas.common.ApiModel`: ``UploadFile`` is a\nstream handle, and freezing the model would promise an immutability the\nhandle does not have.",
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "file"
+        ],
+        "title": "ContentSourceUploadForm",
+        "type": "object"
+      },
+      "ContentSourceUploadResponse": {
+        "description": "An upload the ingestion boundary accepted and staged.\n\n``state`` is part of the accept response rather than implied by it: the\nprocessing that follows an upload takes minutes, and a surface that cannot\ntell queued from ready has no honest thing to show in between.",
+        "properties": {
+          "byte_size": {
+            "title": "Byte Size",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "media_type": {
+            "title": "Media Type",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/components/schemas/IngestionState"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "media_type",
+          "byte_size",
+          "state"
+        ],
+        "title": "ContentSourceUploadResponse",
+        "type": "object"
+      },
       "ContentTranslation": {
         "description": "A translated rendering of a content item.\n\nReserved shape. Nothing writes these until the translation pipeline ships;\nthe field exists so adding translations later is additive for clients.",
         "properties": {
@@ -1715,6 +1768,17 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "IngestionState": {
+        "description": "Where an accepted upload sits in the processing that follows it.\n\nKept apart from the service's own state enum in the same way the topic and\ncontent-language transports are: the wire contract is allowed to outlive\nwhatever the pipeline calls its stages internally.",
+        "enum": [
+          "queued",
+          "processing",
+          "failed",
+          "ready"
+        ],
+        "title": "IngestionState",
+        "type": "string"
       },
       "JsonPrimitive": {
         "anyOf": [
@@ -5143,6 +5207,64 @@
           }
         },
         "summary": "Discover Content Sources",
+        "tags": [
+          "content-sources"
+        ]
+      }
+    },
+    "/api/content-sources/uploads": {
+      "post": {
+        "description": "Accept one multipart upload, or say which check refused it.\n\nDeliberately reachable by a plain form post: the enhanced client adds\nprogress and cancellation on top, but the surface a learner without\nJavaScript sees has to reach this same handler.",
+        "operationId": "createContentSourceUpload",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentSourceUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentSourceUploadResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Content Source Upload",
         "tags": [
           "content-sources"
         ]
