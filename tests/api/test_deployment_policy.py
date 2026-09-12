@@ -376,7 +376,6 @@ def _valid_compose() -> dict[str, Any]:
             depends_on={
                 "frontend": {"condition": "service_healthy"},
                 "api": {"condition": "service_healthy"},
-                "sophia-gui": {"condition": "service_healthy"},
             },
         ),
         "frontend": _service(
@@ -391,17 +390,6 @@ def _valid_compose() -> dict[str, Any]:
                 "redis": {"condition": "service_healthy"},
                 "postgres": {"condition": "service_healthy"},
             },
-            environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
-        ),
-        "sophia-gui": _service(
-            f"registry.example/sophia/nicegui:{COMMIT_SHA}",
-            expose=["8080"],
-            volumes=[
-                "sophia-data:/data",
-                "sophia-config:/config",
-                "model-cache:/home/sophia/.cache/huggingface",
-            ],
-            depends_on={"postgres": {"condition": "service_healthy"}},
             environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
         ),
         "redis": _service(

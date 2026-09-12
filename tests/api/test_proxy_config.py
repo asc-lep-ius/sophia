@@ -125,23 +125,43 @@ def compose_environment(service_block: str) -> dict[str, str]:
     return environment
 
 
-def test_caddy_routes_app_api_and_legacy_before_fallback() -> None:
+def test_caddy_routes_app_and_api_before_the_catch_all() -> None:
     caddyfile = read_project_file("proxy/Caddyfile")
+    root_redirect = "\tredir / /app/ 308"
     exact_app_redirect = "\tredir /app /app/ 308"
     frontend_app_handle = "\thandle /app/* {"
     api_sse_handle = "\thandle @api_sse {"
     api_handle = "\thandle /api/* {"
-    legacy_redirect = "\tredir /legacy /legacy/ 308"
-    legacy_handle = "\thandle_path /legacy/* {"
-    legacy_fallback = "\thandle {"
+    catch_all = "\thandle {"
 
+    assert root_redirect in caddyfile
     assert exact_app_redirect in caddyfile
     assert caddyfile.index(exact_app_redirect) < caddyfile.index(frontend_app_handle)
-    assert caddyfile.index(frontend_app_handle) < caddyfile.index(legacy_fallback)
+    assert caddyfile.index(frontend_app_handle) < caddyfile.index(catch_all)
     assert caddyfile.index(api_sse_handle) < caddyfile.index(api_handle)
-    assert caddyfile.index(api_handle) < caddyfile.index(legacy_fallback)
-    assert caddyfile.index(legacy_redirect) < caddyfile.index(legacy_handle)
-    assert caddyfile.index(legacy_handle) < caddyfile.index(legacy_fallback)
+    assert caddyfile.index(api_handle) < caddyfile.index(catch_all)
+
+
+def test_caddy_serves_nothing_outside_app_and_api() -> None:
+    """The catch-all answers rather than proxying, which is what retires /legacy/*.
+
+    Asserted on the block's contents, not on the absence of the word "legacy":
+    a fallback that reverse-proxied anywhere would serve every path the two
+    handles above do not claim, whatever it was named.
+    """
+    caddyfile = read_project_file("proxy/Caddyfile")
+    fallback = caddy_block(caddyfile, "\thandle {")
+    body = [line.strip() for line in fallback.splitlines()[1:-1] if line.strip()]
+
+    assert body == ["respond 404"]
+
+    # Read past the comments: the block above explains what it replaced, and a
+    # word-match on the whole file would fail on the explanation.
+    directives = "\n".join(active_caddy_lines(caddyfile))
+
+    assert "/legacy" not in directives
+    assert "sophia-gui" not in directives
+    assert "_nicegui" not in directives
 
 
 def test_caddy_sse_streams_are_not_buffered_or_compressed() -> None:
@@ -281,36 +301,16 @@ def test_compose_frontend_keeps_public_api_path_and_private_ssr_origin(
 
 
 @pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
-def test_compose_gui_receives_api_redis_url_and_can_reach_redis(
-    compose_path: str,
-) -> None:
-    services = compose_services(compose_path)
-    api_environment = compose_config_environment(services["api"])
-    gui_service_names = [
-        service_name
-        for service_name in ("sophia-gui", "sophia-gui-gpu")
-        if service_name in services
-    ]
-
-    assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
-    for service_name in gui_service_names:
-        gui_environment = compose_config_environment(services[service_name])
-        assert gui_environment["SOPHIA_REDIS_URL"] == api_environment["SOPHIA_REDIS_URL"]
-        assert compose_network_names(services[service_name]) & compose_network_names(
-            services["redis"],
-        )
-
-
-@pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
 def test_compose_keeps_runtime_topology_split(compose_path: str) -> None:
     services = compose_services(compose_path)
     api_environment = compose_config_environment(services["api"])
 
-    assert {"proxy", "frontend", "api", "redis", "sophia-gui"} <= set(services)
+    assert {"proxy", "frontend", "api", "redis"} <= set(services)
+    assert not {"sophia-gui", "sophia-gui-gpu"} & set(services)
     assert "ports" not in services["frontend"]
     assert "ports" not in services["api"]
     assert "ports" not in services["redis"]
     assert "sophia.api.app:create_standalone_api_app" in services["api"].get("command", [])
     assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
     assert services["api"]["depends_on"]["redis"]["condition"] == "service_healthy"
-    assert {"frontend", "api", "sophia-gui"} <= set(services["proxy"]["depends_on"])
+    assert {"frontend", "api"} <= set(services["proxy"]["depends_on"])

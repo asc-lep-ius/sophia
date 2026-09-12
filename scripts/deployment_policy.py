@@ -16,16 +16,15 @@ PROD_COMPOSE_FILE = Path("docker-compose.prod.yml")
 PROXY_DOCKERFILE = Path("proxy/Dockerfile")
 GITLAB_CI_FILE = Path(".gitlab-ci.yml")
 DEPLOYMENT_DOC_FILE = Path("DEPLOYMENT.md")
-APPLICATION_SERVICES = frozenset({"api", "frontend", "sophia-gui"})
+APPLICATION_SERVICES = frozenset({"api", "frontend"})
 # The services that open a database session. "frontend" is excluded: it is a
 # Node app that reaches the data only through the API.
-DATABASE_CLIENT_SERVICES = frozenset({"api", "sophia-gui"})
+DATABASE_CLIENT_SERVICES = frozenset({"api"})
 DATABASE_URL_ENV_VAR = "SOPHIA_DATABASE_URL"
 DEPLOYABLE_IMAGE_SERVICES = APPLICATION_SERVICES | frozenset({"proxy"})
 REQUIRED_DEPENDENCIES = {
-    "proxy": frozenset({"api", "frontend", "sophia-gui"}),
+    "proxy": frozenset({"api", "frontend"}),
     "api": frozenset({"redis", "postgres"}),
-    "sophia-gui": frozenset({"postgres"}),
     "postgres-backup": frozenset({"postgres"}),
 }
 # Postgres is pinned by digest rather than by tag: 18.4 can be re-pushed, and a

@@ -5,6 +5,11 @@
 # Contains: CUDA runtime, Python 3.12, uv, ffmpeg, and a pre-populated
 # .venv with all heavy dependencies (torch, faster-whisper, transformers, etc.).
 #
+# Its only consumer was Dockerfile.gui.cuda, which issue #102 deleted with the
+# rest of NiceGUI. The image itself is not a GUI artefact — it is the CUDA and
+# ffmpeg stack Whisper transcription needs — so it stays as the base for GPU
+# work driven by the CLI. Nothing in Compose or CI builds it; see DEPLOYMENT.md.
+#
 # Rebuild when: pyproject.toml or uv.lock changes with new ML deps.
 #
 # Build & push:
@@ -24,7 +29,7 @@ COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
 # Default PyPI torch includes CUDA support — no custom index needed.
-RUN uv sync --extra web --extra hermes --no-dev --frozen
+RUN uv sync --extra hermes --no-dev --frozen
 
 # ── Runtime: CUDA base with pre-built venv ─────────────────────────────────
 FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04

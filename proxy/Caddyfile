@@ -40,11 +40,6 @@
 		max_size 512MB
 	}
 
-	@legacy_uploads path /_nicegui/upload* /legacy/_nicegui/upload*
-	request_body @legacy_uploads {
-		max_size 512MB
-	}
-
 	# /api/study/*/events matches the study realtime SSE endpoint explicitly:
 	# it has two path segments between /api/ and /events (study, {session_id}),
 	# which /api/*/events* alone does not reliably cover.
@@ -63,6 +58,12 @@
 		}
 	}
 
+	# The app lives under /app/, so the site root is a redirect rather than an
+	# upstream. It was the NiceGUI fallback until issue #102 retired it, and
+	# leaving it unhandled would answer a bookmark of the bare origin with a
+	# 404. Rebasing the frontend onto / is a URL change this issue does not ask
+	# for; every link, every cookie path and every e2e spec assumes /app.
+	redir / /app/ 308
 	redir /app /app/ 308
 	handle /app/* {
 		reverse_proxy frontend:3000 {
@@ -78,18 +79,10 @@
 		}
 	}
 
-	redir /legacy /legacy/ 308
-	handle_path /legacy/* {
-		reverse_proxy sophia-gui:8080 {
-			import forwarded_headers
-			header_up X-Forwarded-Prefix /legacy
-		}
-	}
-
+	# Anything else — /legacy/* above all — is not served. A hidden path kept
+	# "just in case" is the anti-pattern this issue was written against: it is
+	# unaudited behaviour that nothing tests and nobody watches.
 	handle {
-		reverse_proxy sophia-gui:8080 {
-			import forwarded_headers
-			header_up X-Forwarded-Prefix /
-		}
+		respond 404
 	}
 }

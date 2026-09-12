@@ -19,8 +19,6 @@ services:
         condition: service_healthy
       api:
         condition: service_healthy
-      sophia-gui:
-        condition: service_healthy
     networks:
       - public
       - app
@@ -95,41 +93,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-
-  sophia-gui:
-    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/nicegui:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
-    restart: unless-stopped
-    environment:
-      SOPHIA_PRODUCTION: "true"
-      SOPHIA_DATA_DIR: /data
-      SOPHIA_CONFIG_DIR: /config
-      SOPHIA_LOG_FORMAT: json
-      SOPHIA_SECRET_KEY_CURRENT: ${SOPHIA_SECRET_KEY_CURRENT:-}
-      SOPHIA_SECRET_KEY_PREVIOUS: ${SOPHIA_SECRET_KEY_PREVIOUS:-}
-      SOPHIA_GUI_HOST: 0.0.0.0
-      SOPHIA_GUI_PORT: "8080"
-      SOPHIA_DOCKER: "1"
-      SOPHIA_REDIS_URL: redis://redis:6379/0
-      SOPHIA_DATABASE_URL: postgresql+asyncpg://${SOPHIA_POSTGRES_USER}:${SOPHIA_POSTGRES_PASSWORD}@postgres:5432/${SOPHIA_POSTGRES_DB}
-      HF_HOME: /home/sophia/.cache/huggingface
-    volumes:
-      - sophia-data:/data
-      - sophia-config:/config
-      - model-cache:/home/sophia/.cache/huggingface
-    expose:
-      - "8080"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app
-      - data
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/ready')"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
 
   postgres:
     image: postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
@@ -222,7 +185,6 @@ volumes:
   postgres-backups:
   sophia-data:
   sophia-config:
-  model-cache:
   redis-data:
   caddy-data:
   caddy-config:
