@@ -141,6 +141,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/content-sources/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Content Source Upload
+         * @description Accept one multipart upload, or say which check refused it.
+         *
+         *     Deliberately reachable by a plain form post: the enhanced client adds
+         *     progress and cancellation on top, but the surface a learner without
+         *     JavaScript sees has to reach this same handler.
+         */
+        post: operations["createContentSourceUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/content-sources/{content_source_id}/content-items": {
         parameters: {
             query?: never;
@@ -1418,6 +1442,45 @@ export interface components {
             title: string;
         };
         /**
+         * ContentSourceUploadForm
+         * @description The multipart body of a content-source upload.
+         *
+         *     A model rather than loose ``Form``/``File`` parameters so the generated
+         *     contract carries a named component: FastAPI names an inferred multipart
+         *     body ``Body_<operation>``, which the schema-stability check rejects and a
+         *     generated client would re-export under a name that moves whenever the
+         *     handler is renamed.
+         *
+         *     Not an :class:`~sophia.api.schemas.common.ApiModel`: ``UploadFile`` is a
+         *     stream handle, and freezing the model would promise an immutability the
+         *     handle does not have.
+         */
+        ContentSourceUploadForm: {
+            /** File */
+            file: string;
+            /** Title */
+            title: string;
+        };
+        /**
+         * ContentSourceUploadResponse
+         * @description An upload the ingestion boundary accepted and staged.
+         *
+         *     ``state`` is part of the accept response rather than implied by it: the
+         *     processing that follows an upload takes minutes, and a surface that cannot
+         *     tell queued from ready has no honest thing to show in between.
+         */
+        ContentSourceUploadResponse: {
+            /** Byte Size */
+            byte_size: number;
+            /** Id */
+            id: string;
+            /** Media Type */
+            media_type: string;
+            state: components["schemas"]["IngestionState"];
+            /** Title */
+            title: string;
+        };
+        /**
          * ContentTranslation
          * @description A translated rendering of a content item.
          *
@@ -1775,6 +1838,16 @@ export interface components {
              */
             status: "ok";
         };
+        /**
+         * IngestionState
+         * @description Where an accepted upload sits in the processing that follows it.
+         *
+         *     Kept apart from the service's own state enum in the same way the topic and
+         *     content-language transports are: the wire contract is allowed to outlive
+         *     whatever the pipeline calls its stages internally.
+         * @enum {string}
+         */
+        IngestionState: "queued" | "processing" | "failed" | "ready";
         JsonPrimitive: string | number | boolean | null;
         /**
          * LearningEventBatchRequest
@@ -3150,6 +3223,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContentSourceDiscoveryResponse"];
+                };
+            };
+        };
+    };
+    createContentSourceUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["ContentSourceUploadForm"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentSourceUploadResponse"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
