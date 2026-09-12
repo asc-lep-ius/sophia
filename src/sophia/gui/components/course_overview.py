@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING, Final
 
 from nicegui import ui
 
-from sophia.gui.services.overview_service import health_tooltip
+from sophia.services.course_overview import health_tooltip
 
 if TYPE_CHECKING:
-    from sophia.gui.services.overview_service import CourseSummary
+    from sophia.services.course_overview import CourseSummary
 
 # Health indicator styling
 _HEALTH_COLORS: Final[dict[str, str]] = {

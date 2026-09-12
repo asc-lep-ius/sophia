@@ -6,7 +6,7 @@ from sophia.gui.components.course_overview import (
     _HEALTH_COLORS,
     _HEALTH_ICONS,
 )
-from sophia.gui.services.overview_service import CourseSummary
+from sophia.services.course_overview import CourseSummary
 
 # ---------------------------------------------------------------------------
 # Factory

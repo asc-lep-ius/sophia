@@ -8,12 +8,12 @@ import structlog
 from nicegui import ui
 
 from sophia.gui.middleware.health import get_container
-from sophia.gui.services.overview_service import get_course_summaries
 from sophia.gui.state.course_state import (
     get_current_course,
     init_course_for_tab,
     set_current_course,
 )
+from sophia.services.course_overview import get_course_summaries
 
 if TYPE_CHECKING:
     from nicegui.events import ValueChangeEventArguments

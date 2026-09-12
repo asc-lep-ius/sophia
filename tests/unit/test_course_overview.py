@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from sophia.gui.services.overview_service import (
+from sophia.services.course_overview import (
     CourseSummary,
     compute_course_health,
     compute_workload_insights,
