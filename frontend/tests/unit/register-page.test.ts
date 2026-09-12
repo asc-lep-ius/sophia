@@ -61,12 +61,12 @@ describe("register server load", () => {
   it("opens a course only once TISS is actually reachable", async () => {
     const fetch = vi.fn(fetchFixture({ connection: "session_expired" }));
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         url: `${REGISTER_URL}?course=123.ABC`,
       }) as never,
-    );
+    )) as RegisterData;
 
     expect(data.detail).toBeNull();
     expect(
@@ -77,12 +77,12 @@ describe("register server load", () => {
   it("ignores a course number that is not one, without spending a request", async () => {
     const fetch = vi.fn(fetchFixture({}));
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         url: `${REGISTER_URL}?course=${encodeURIComponent("../secrets")}`,
       }) as never,
-    );
+    )) as RegisterData;
 
     expect(data.selectedCourse).toBeNull();
     expect(
@@ -93,12 +93,12 @@ describe("register server load", () => {
   it("loads the target, its groups and its exam dates together", async () => {
     const fetch = vi.fn(fetchFixture({}));
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         url: `${REGISTER_URL}?course=123.ABC`,
       }) as never,
-    );
+    )) as RegisterData;
 
     expect(data.detail?.target?.course_number).toBe("123.ABC");
     expect(data.detail?.groups).toHaveLength(2);
@@ -112,12 +112,12 @@ describe("register server load", () => {
         : fetchFixture({})(url),
     );
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         url: `${REGISTER_URL}?course=123.ABC`,
       }) as never,
-    );
+    )) as RegisterData;
 
     expect(data.detail?.target).not.toBeNull();
     expect(data.detail?.exams).toEqual([]);
@@ -126,9 +126,9 @@ describe("register server load", () => {
   it("reports the favourites list as unavailable when TISS does not answer", async () => {
     const fetch = vi.fn(async () => new Response(null, { status: 502 }));
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: REGISTER_URL }) as never,
-    );
+    )) as RegisterData;
 
     expect(data.favorites.status).toBe("error");
   });

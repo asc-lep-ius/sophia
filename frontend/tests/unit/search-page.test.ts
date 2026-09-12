@@ -9,6 +9,7 @@ import {
   readSourceFilter,
   type SearchResult,
 } from "../../src/lib/search/results";
+import type { ContentSource } from "../../src/lib/content/filters";
 import type { Panel } from "../../src/lib/dashboard/panels";
 import {
   createLoadEvent,
@@ -49,9 +50,9 @@ describe("search server load", () => {
   it("answers a submitted query on the server, before anything hydrates", async () => {
     const fetch = vi.fn(fetchFixture());
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: `${SEARCH_URL}?q=graph` }) as never,
-    );
+    )) as SearchData;
 
     const searchCall = fetch.mock.calls.find((call) =>
       String(call[0]).includes("/api/search"),
@@ -70,9 +71,9 @@ describe("search server load", () => {
   it("asks for nothing when no query was submitted", async () => {
     const fetch = vi.fn(fetchFixture());
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: SEARCH_URL }) as never,
-    );
+    )) as SearchData;
 
     expect(
       fetch.mock.calls.some((call) => String(call[0]).includes("/api/search")),
@@ -85,12 +86,12 @@ describe("search server load", () => {
   it("refuses to forward a source the learner does not have", async () => {
     const fetch = vi.fn(fetchFixture());
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         url: `${SEARCH_URL}?q=graph&source=999`,
       }) as never,
-    );
+    )) as SearchData;
 
     expect(data.selectedSourceId).toBe(12);
     const searchCall = fetch.mock.calls.find((call) =>
@@ -128,9 +129,9 @@ describe("search server load", () => {
         : fetchFixture()(url),
     );
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: `${SEARCH_URL}?q=graph` }) as never,
-    );
+    )) as SearchData;
 
     expect(data.results?.status).toBe("error");
   });
@@ -248,7 +249,7 @@ type SearchData = {
   results: Panel<SearchResult[]> | null;
   selectedSourceId: number | null;
   sourceFilter: "all" | "document" | "transcript";
-  sources: Panel<{ id: number; title: string }[]>;
+  sources: Panel<ContentSource[]>;
 };
 
 function pageData(overrides: Partial<SearchData>) {
@@ -260,11 +261,16 @@ function pageData(overrides: Partial<SearchData>) {
     results: null,
     selectedSourceId: 12,
     sourceFilter: "all" as const,
-    sources: {
-      data: [{ id: 12, title: "Algorithmen und Datenstrukturen" }],
-      status: "ready",
-    },
+    sources: { data: [source()], status: "ready" } as Panel<ContentSource[]>,
     ...overrides,
+  };
+}
+
+function source(): ContentSource {
+  return {
+    external_ref: "series-12",
+    id: 12,
+    title: "Algorithmen und Datenstrukturen",
   };
 }
 
@@ -280,25 +286,27 @@ function result(title: string): SearchResult {
   };
 }
 
+/** Answers the way the endpoint does, including finding nothing for "nichts". */
 function fetchFixture() {
-  return async (url: string | URL): Promise<Response> => {
-    if (String(url).includes("/api/search")) {
-      return jsonResponse({
-        results: [
-          {
-            chunk_text: "Ein Graph besteht aus Knoten und Kanten.",
-            content_item_id: "item-1",
-            end_time: 128,
-            score: 0.82,
-            source: "transcript",
-            start_time: 65,
-            title: "Graphen",
-          },
-        ],
-      });
+  return async (url: string | URL, init?: RequestInit): Promise<Response> => {
+    if (!String(url).includes("/api/search")) {
+      return jsonResponse({ sources: [source()] });
     }
+    const body = JSON.parse(String(init?.body ?? "{}")) as { query?: string };
     return jsonResponse({
-      sources: [{ id: 12, title: "Algorithmen und Datenstrukturen" }],
+      results: body.query === "nichts" ? [] : [searchResponseRow()],
     });
+  };
+}
+
+function searchResponseRow() {
+  return {
+    chunk_text: "Ein Graph besteht aus Knoten und Kanten.",
+    content_item_id: "item-1",
+    end_time: 128,
+    score: 0.82,
+    source: "transcript",
+    start_time: 65,
+    title: "Graphen",
   };
 }

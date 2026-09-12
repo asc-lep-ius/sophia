@@ -50,12 +50,12 @@ describe("chronos server load", () => {
   });
 
   it("sorts the deadlines soonest first", async () => {
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch: vi.fn(fetchFixture()),
         url: CHRONOS_URL,
       }) as never,
-    );
+    )) as ChronosData;
 
     expect(data.deadlines.data.map((entry) => entry.id)).toEqual([
       "overdue",
@@ -70,12 +70,12 @@ describe("chronos server load", () => {
    * deadline as overdue without anything upstream having changed.
    */
   it("carries the server's instant rather than leaving it to the browser", async () => {
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch: vi.fn(fetchFixture()),
         url: CHRONOS_URL,
       }) as never,
-    );
+    )) as ChronosData;
 
     expect(Number.isNaN(new Date(data.now).getTime())).toBe(false);
   });
@@ -87,9 +87,9 @@ describe("chronos server load", () => {
         : fetchFixture()(url),
     );
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: CHRONOS_URL }) as never,
-    );
+    )) as ChronosData;
 
     expect(data.workload.status).toBe("error");
     expect(data.deadlines.status).toBe("ready");
@@ -99,13 +99,13 @@ describe("chronos server load", () => {
   it("asks for nothing when the workspace has no numeric learning path", async () => {
     const fetch = vi.fn();
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch,
         learningPathId: "default-learning-path",
         url: CHRONOS_URL,
       }) as never,
-    );
+    )) as ChronosData;
 
     expect(fetch).not.toHaveBeenCalled();
     expect(data.learningPathId).toBeNull();
@@ -138,7 +138,11 @@ describe("chronos actions", () => {
   });
 
   it("says a sync failed rather than reporting zero deadlines", async () => {
-    const fetch = vi.fn(async () => new Response(null, { status: 502 }));
+    const fetch = vi.fn(async (url: string | URL) =>
+      String(url).includes("/api/deadlines/sync")
+        ? new Response(null, { status: 502 })
+        : new Response(null, { status: 404 }),
+    );
 
     const result = await actions.sync?.(
       createActionEvent({ fetch, form: {}, url: CHRONOS_URL }) as never,
@@ -148,14 +152,16 @@ describe("chronos actions", () => {
   });
 
   it("completes a deadline through its own scoped route", async () => {
-    const fetch = vi.fn(async () =>
-      jsonResponse({
-        actual_hours: 4,
-        completed: true,
-        deadline_id: "dl-1",
-        feedback: "",
-        predicted_hours: 3,
-      }),
+    const fetch = vi.fn(async (url: string | URL) =>
+      String(url).includes("/complete")
+        ? jsonResponse({
+            actual_hours: 4,
+            completed: true,
+            deadline_id: "dl-1",
+            feedback: "",
+            predicted_hours: 3,
+          })
+        : new Response(null, { status: 404 }),
     );
 
     const result = await actions.complete?.(
@@ -166,9 +172,9 @@ describe("chronos actions", () => {
       }) as never,
     );
 
-    expect(String(fetch.mock.calls[0]?.[0])).toContain(
+    expect(fetch.mock.calls.map((call) => String(call[0]))).toEqual([
       "/api/deadlines/dl-1/complete",
-    );
+    ]);
     expect(result).toEqual({ completedId: "dl-1" });
   });
 

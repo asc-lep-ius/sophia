@@ -87,10 +87,9 @@ describe("calibration server load", () => {
 
     await load(createLoadEvent({ fetch, url: CALIBRATION_URL }) as never);
 
-    expect(fetch.mock.calls).toHaveLength(1);
-    expect(String(fetch.mock.calls[0]?.[0])).toContain(
+    expect(fetch.mock.calls.map((call) => String(call[0]))).toEqual([
       "/api/calibration/ratings?learning_path_id=12",
-    );
+    ]);
   });
 
   it("scopes the request on the session tenant, not on the query string", async () => {
@@ -103,15 +102,17 @@ describe("calibration server load", () => {
       }) as never,
     );
 
-    expect(String(fetch.mock.calls[0]?.[0])).not.toContain("99");
+    expect(fetch.mock.calls.map((call) => String(call[0]))).not.toContain(
+      "/api/calibration/ratings?learning_path_id=99",
+    );
   });
 
   it("reports a failed call rather than an empty calibration", async () => {
     const fetch = vi.fn(async () => new Response(null, { status: 500 }));
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: CALIBRATION_URL }) as never,
-    );
+    )) as CalibrationData;
 
     expect(data.ratings.status).toBe("error");
   });
@@ -217,12 +218,12 @@ describe("calibration page", () => {
   });
 });
 
-function pageData(
-  overrides: Partial<{
-    learningPathId: number | null;
-    ratings: Panel<CalibrationRating[]>;
-  }>,
-) {
+type CalibrationData = {
+  learningPathId: number | null;
+  ratings: Panel<CalibrationRating[]>;
+};
+
+function pageData(overrides: Partial<CalibrationData>) {
   return {
     ...layoutData,
     learningPathId: 12,
@@ -251,9 +252,11 @@ function rating(
 }
 
 function fetchFixture() {
-  return async (): Promise<Response> =>
-    jsonResponse({
-      learning_path_id: 12,
-      ratings: [rating("Graphs", 0.9, 0.4)],
-    });
+  return async (url: string | URL): Promise<Response> =>
+    String(url).includes("/api/calibration/ratings")
+      ? jsonResponse({
+          learning_path_id: 12,
+          ratings: [rating("Graphs", 0.9, 0.4)],
+        })
+      : jsonResponse({});
 }

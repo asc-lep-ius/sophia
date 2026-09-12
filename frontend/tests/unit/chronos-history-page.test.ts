@@ -38,12 +38,12 @@ describe("chronos history server load", () => {
    * never finished. It is the only classification the history data supports.
    */
   it("classifies a reflected deadline on time and an unreflected one missed", async () => {
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch: vi.fn(fetchFixture()),
         url: HISTORY_URL,
       }) as never,
-    );
+    )) as HistoryData;
 
     expect(data.rows.data.map((row) => [row.deadline.id, row.outcome])).toEqual(
       [
@@ -54,12 +54,12 @@ describe("chronos history server load", () => {
   });
 
   it("puts the most recent deadline first", async () => {
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch: vi.fn(fetchFixture()),
         url: HISTORY_URL,
       }) as never,
-    );
+    )) as HistoryData;
 
     expect(data.rows.data.map((row) => row.deadline.id)).toEqual([
       "reflected",
@@ -68,12 +68,12 @@ describe("chronos history server load", () => {
   });
 
   it("applies the outcome filter from the URL, counting what it hid", async () => {
-    const data = await load(
+    const data = (await load(
       createLoadEvent({
         fetch: vi.fn(fetchFixture()),
         url: `${HISTORY_URL}?outcome=missed`,
       }) as never,
-    );
+    )) as HistoryData;
 
     expect(data.rows.data.map((row) => row.deadline.id)).toEqual(["missed"]);
     expect(data.totalCount).toBe(2);
@@ -86,9 +86,9 @@ describe("chronos history server load", () => {
         : fetchFixture()(url),
     );
 
-    const data = await load(
+    const data = (await load(
       createLoadEvent({ fetch, url: HISTORY_URL }) as never,
-    );
+    )) as HistoryData;
 
     expect(data.rows.status).toBe("ready");
     expect(data.rows.data.every((row) => row.outcome === "missed")).toBe(true);
