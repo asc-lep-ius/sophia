@@ -226,7 +226,14 @@
     aria-label={m.study_unsaved_grades({ count: store.failedCount })}
   >
     {#each store.outboxEntries.filter((entry) => entry.status === "failed") as entry (entry.requestId)}
-      <button type="button" onclick={() => void store.retryFailed(entry.requestId)}>
+      <!-- The outbox refuses a retry while one is already in flight; a button
+           that looks live and does nothing is worse than one that is plainly
+           unavailable. -->
+      <button
+        type="button"
+        disabled={!store.canRetry(entry.requestId)}
+        onclick={() => void store.retryFailed(entry.requestId)}
+      >
         {m.study_retry_card({ position: entry.payload.queuePosition + 1 })}
       </button>
     {/each}

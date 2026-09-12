@@ -127,7 +127,16 @@
       </div>
       <!-- The same grade bar the study surface uses: one Again/Hard/Good/Easy
            scale, one set of thumb-zone targets, one set of shortcuts. -->
-      <GradeBar onGrade={(grade) => store.grade(grade)} />
+      <GradeBar disabled={store.sending} onGrade={(grade) => store.grade(grade)} />
+      {#if store.sending}
+        <!--
+          A rolled-back card comes back revealed, and the retry that is in
+          flight has taken its own button away. Without this the learner is
+          looking at a live grade bar with no sign anything is happening, and
+          pressing it would send the same review a second time.
+        -->
+        <p class="sending" role="status">{m.study_saving()}</p>
+      {/if}
     {/if}
 
     <div class="controls">
@@ -231,8 +240,14 @@
     margin: 0;
   }
 
-  .prompt {
+  .prompt,
+  .sending {
     color: var(--muted);
+  }
+
+  .sending {
+    margin: 0;
+    overflow-wrap: anywhere;
   }
 
   .own-answer {

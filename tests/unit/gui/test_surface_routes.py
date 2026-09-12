@@ -61,11 +61,13 @@ class TestMigratedSurfacePaths:
             for path in (Path(inspect.getfile(routes)).parent).rglob("*.py")
             if path.name != "routes.py"
         )
+        # Enumerated, not listed: a fifth constant added later has to be wired
+        # up too, and a hardcoded list would let it through silently.
+        constants = [name for name in dir(routes) if name.endswith("_SURFACE_PATH")]
 
-        for name in ("DASHBOARD_SURFACE_PATH", "QUICKSTART_SURFACE_PATH"):
+        assert len(constants) == len(MIGRATED_SURFACES)
+        for name in constants:
             assert name in sources, name
-        assert "REVIEW_SURFACE_PATH" in sources
-        assert "STUDY_SURFACE_PATH" in sources
 
     def test_navigation_sends_the_learner_to_the_new_dashboard_and_review(self) -> None:
         paths = {item["path"] for item in NAV_ITEMS}

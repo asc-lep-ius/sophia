@@ -72,9 +72,10 @@ describe("accent contrast across every theme", () => {
     ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL_TEXT);
   });
 
-  it("never hardcodes a colour on an accent background", () => {
-    // The accent is dark in light mode and light in the other two, so any
-    // fixed value is wrong for at least one of them. White read 1.9:1 on dark.
+  it("never hardcodes a colour literal in a component", () => {
+    // Every colour belongs to a theme. The accent in particular is dark in
+    // light mode and light in the other two, so a fixed value is wrong for at
+    // least one of them — white read 1.9:1 on dark before this landed.
     const offenders = svelteSources(join(process.cwd(), "src"))
       .filter(([, content]) => /color:\s*#[0-9a-fA-F]{3,8}\s*;/.test(content))
       .map(([path]) => path);

@@ -194,6 +194,42 @@ describe("review queue", () => {
     expect(submit).toHaveBeenCalledTimes(REVIEW_MAX_SENDS);
   });
 
+  it("refuses a grade while a submission for that card is still in flight", async () => {
+    const inFlight: { resolve: () => void; reject: (error: Error) => void }[] =
+      [];
+    const submit = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          inFlight.push({ reject, resolve });
+        }),
+    );
+    const store = queue(["Graphs", "Sorting"], submit);
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(3);
+    inFlight[0]?.reject(new Error("refused"));
+    await vi.waitFor(() => expect(store.failedCount).toBe(1));
+
+    const rejected = store.outboxEntries.find(
+      (entry) => entry.status === "failed",
+    );
+    void store.retryFailed(rejected?.requestId ?? "");
+    await vi.waitFor(() => expect(store.sending).toBe(true));
+
+    // The rolled-back card is revealed, so the grade bar is showing, and the
+    // retry that is running has taken its own button away. Grading now would
+    // put a second submission for the same topic on the wire, and
+    // /api/review/complete cannot tell the two apart.
+    expect(store.grade(4)).toBe(false);
+    expect(submit).toHaveBeenCalledTimes(2);
+    expect(store.gradedCount).toBe(1);
+    expect(store.current?.topic).toBe("Graphs");
+
+    inFlight[1]?.resolve();
+    await vi.waitFor(() => expect(store.current?.topic).toBe("Sorting"));
+    expect(store.sending).toBe(false);
+  });
+
   it("takes a review back while it is still held", () => {
     const store = new ReviewQueueStore({
       newId: () => "request-1",

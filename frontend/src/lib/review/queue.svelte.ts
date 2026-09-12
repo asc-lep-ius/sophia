@@ -46,14 +46,18 @@ export type ReviewQueueOptions = {
 export const REVIEW_MAX_SEND_ATTEMPTS = 1;
 
 /**
- * Sends per review, the learner's own retries included.
+ * Sends per submission, the learner's own retries included.
  *
- * One automatic, two deliberate. A retry only reaches the server after the
- * previous send reported failure, so the dangerous case is narrow — a request
- * the server committed and the browser never saw the answer to. This cannot
- * close that hole, only keep it from repeating: the endpoint has no request id
- * to dedupe on, and giving it one means a persisted uniqueness constraint that
- * is not this phase's to add.
+ * One automatic, two deliberate. Per *submission*, not per topic: grading a
+ * rolled-back card again is a new submission and starts a fresh count, which
+ * is right — the learner deliberately re-answered. `sending` is what stops the
+ * two overlapping.
+ *
+ * A retry only reaches the server after the previous send reported failure, so
+ * the dangerous case is narrow: a request the server committed and the browser
+ * never saw the answer to. This cannot close that hole, only keep it from
+ * repeating. Closing it means a request id on the endpoint, which means a
+ * persisted uniqueness constraint that is not this phase's to add.
  */
 export const REVIEW_MAX_SENDS = 3;
 
@@ -208,6 +212,19 @@ export class ReviewQueueStore {
     return this.#outbox.canRetry(requestId);
   }
 
+  /**
+   * Whether a submission for the card in front of the learner is on the wire.
+   *
+   * True during a manual retry, when the outbox has taken the retry button
+   * away — a rolled-back card is revealed, so the grade bar is showing with
+   * nothing to say that anything is happening. Grading it then would enqueue a
+   * second submission for the same topic, and the endpoint has no request id
+   * to fold the two together.
+   */
+  get sending(): boolean {
+    return this.#hasSubmissionAt(this.#index);
+  }
+
   /** Advance the store's view of the clock so the dwell floor can expire. */
   tick(): void {
     this.#clockMs = this.#now();
@@ -236,6 +253,13 @@ export class ReviewQueueStore {
     }
 
     const position = this.#index;
+    // `discardFailed` below only supersedes a *rejected* submission. One still
+    // in flight has to block the grade outright: both would reach the server,
+    // and it cannot tell they are the same review.
+    if (this.#hasSubmissionAt(position)) {
+      return false;
+    }
+
     const requestId = this.#newId();
     this.#outbox.discardFailed(
       (failed) => failed.payload.queuePosition === position,
@@ -280,6 +304,13 @@ export class ReviewQueueStore {
 
   dismissError(): void {
     this.#error = null;
+  }
+
+  #hasSubmissionAt(position: number): boolean {
+    return this.#outbox.entries.some(
+      (entry) =>
+        entry.payload.queuePosition === position && entry.status !== "failed",
+    );
   }
 
   #accept(position: number): void {

@@ -338,6 +338,11 @@ export class StudySessionStore {
     return true;
   }
 
+  /** Whether the outbox would take another send for this rejected grade. */
+  canRetry(requestId: string): boolean {
+    return this.#outbox.canRetry(requestId);
+  }
+
   retryFailed(requestId: string): Promise<void> {
     this.#error = null;
     return this.#outbox.retry(requestId);
