@@ -23,9 +23,11 @@ class TestNavItems:
     def test_all_expected_paths_present(self) -> None:
         paths = {item["path"] for item in NAV_ITEMS}
         expected = {
-            "/",
+            # Dashboard, study and review left this app in phases 3 and 4a; the
+            # navigation follows the learner rather than keeping them here.
+            "/app/dashboard",
             "/app/study",
-            "/review",
+            "/app/review",
             "/search",
             "/chronos",
             "/calibration",

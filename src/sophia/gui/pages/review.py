@@ -10,6 +10,7 @@ from nicegui import app, ui
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.components.review_card import review_card
 from sophia.gui.middleware.health import get_container
+from sophia.gui.routes import DASHBOARD_SURFACE_PATH
 from sophia.gui.services.review_service import (
     complete_review_item,
     compute_interval_previews,
@@ -82,7 +83,7 @@ def _render_empty_state() -> None:
         ui.icon("check_circle", color="green").classes("text-6xl")
         ui.label("All caught up!").classes("text-2xl font-bold mt-4")
         ui.label("No reviews are due right now.").classes("text-gray-500 mt-2")
-        ui.link("Dashboard", "/").classes("mt-4")
+        ui.link("Dashboard", DASHBOARD_SURFACE_PATH).classes("mt-4")
 
 
 def _render_card_stats(*, difficulty: float, stability: float) -> None:
@@ -137,7 +138,7 @@ def _render_session_summary(*, total: int, scores: list[float]) -> None:
                 ui.label("Average score").classes("text-gray-500")
                 ui.label(f"{avg:.0%}").classes("font-bold")
 
-        ui.link("Dashboard", "/").classes("mt-6")
+        ui.link("Dashboard", DASHBOARD_SURFACE_PATH).classes("mt-6")
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +273,7 @@ def _render_active_card(card: ReviewSchedule, reviews: list[ReviewSchedule]) -> 
             return
         key = e.key
         if key == "Escape":
-            ui.navigate.to("/")
+            ui.navigate.to(DASHBOARD_SURFACE_PATH)
         elif not _get_show_back() and key == " ":
             _handle_recall("")
         elif _get_show_back() and key in ("1", "2", "3", "4"):
