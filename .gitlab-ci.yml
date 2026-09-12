@@ -292,6 +292,31 @@ frontend-study-e2e:
       - frontend/playwright-report/
     expire_in: 1 week
 
+# The migrated-surface gate. Every non-study surface that carries its own
+# happy, error and mobile paths runs here rather than in the a11y job: that one
+# checks one property across many routes, this one checks many properties per
+# route, and mixing them makes a red job ambiguous.
+#
+# The spec list is explicit, as it is in the two jobs above, so a spec that is
+# never added stays invisible. That is how long-tail.spec.ts came to exist for
+# a whole phase without CI running it once. content-topics.spec.ts and
+# shell.spec.ts are still in that position and belong here too; they are left
+# out only because adopting another phase's gate inside this one risks turning
+# this job red for reasons #101 did not cause.
+frontend-surface-e2e:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend exec playwright install --with-deps chromium
+    - >
+      pnpm -C frontend run test:e2e --
+      long-tail.spec.ts
+  artifacts:
+    when: on_failure
+    paths:
+      - frontend/test-results/
+      - frontend/playwright-report/
+    expire_in: 1 week
+
 # --- Optional checks ---
 test:3.14:
   stage: check
