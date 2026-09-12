@@ -43,6 +43,36 @@ describe("content sources page", () => {
     );
   });
 
+  it("points a refusal at the field it is about", () => {
+    render(SourcesPage, {
+      data: pageData({}),
+      form: { rejection: "unsupported_type", title: "Payload" },
+    });
+
+    const file = screen.getByLabelText("File");
+    expect(file.getAttribute("aria-invalid")).toBe("true");
+    expect(file.getAttribute("aria-describedby")).toContain("upload-error");
+    // The title was fine, so it must not be marked as the problem.
+    expect(
+      screen.getByLabelText("Title").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("blames no field when the upload failed for neither", () => {
+    render(SourcesPage, {
+      data: pageData({}),
+      form: { rejection: "upload_failed", title: "Graph algorithms" },
+    });
+
+    expect(
+      screen.getByLabelText("File").getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Title").getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
   it("says an accepted upload is queued rather than finished", () => {
     render(SourcesPage, {
       data: pageData({}),

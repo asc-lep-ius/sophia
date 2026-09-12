@@ -7,10 +7,15 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from sophia.api.routers import content_sources as content_sources_router
+from sophia.services.content_uploads import staging_dir
 from sophia.services.hermes_catalog import DiscoveredLectureModule, LectureModule
 from sophia.services.hermes_manage import EpisodeStatus
 
 from ._session_helpers import ApiHarness, FakeAppContainer, build_harness, csrf_headers, login
+
+# The learning path `_session_helpers.login` puts on the session. Uploads are
+# staged under it, so the tests have to look in the same place the handler did.
+SESSION_LEARNING_PATH_ID = "course-1"
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -232,7 +237,9 @@ def test_upload_accepts_a_multipart_post_and_reports_it_queued(tmp_path: Path) -
     assert body["media_type"] == "application/pdf"
     assert body["byte_size"] == len(b"%PDF-1.7\ntrailer")
     assert body["state"] == "queued"
-    assert (tmp_path / "content-uploads" / f"{body['id']}.pdf").exists()
+    staged = staging_dir(tmp_path, SESSION_LEARNING_PATH_ID) / f"{body['id']}.pdf"
+    # Scoped to the session's own learning path, not dropped in a shared bucket.
+    assert staged.exists()
 
 
 @pytest.mark.parametrize(
@@ -282,7 +289,7 @@ def test_upload_refuses_a_payload_over_the_configured_ceiling(tmp_path: Path) ->
 
     assert response.status_code == 422
     assert response.json()["detail"]["params"] == {"reason": "too_large", "max_bytes": 16}
-    assert list((tmp_path / "content-uploads").iterdir()) == []
+    assert list(staging_dir(tmp_path, SESSION_LEARNING_PATH_ID).iterdir()) == []
 
 
 def test_upload_requires_authentication_and_csrf(tmp_path: Path) -> None:
@@ -304,7 +311,7 @@ def test_upload_requires_authentication_and_csrf(tmp_path: Path) -> None:
     assert no_csrf_response.status_code == 403
     # Neither refusal may have written anything: the checks run before the
     # staging directory is created, not after.
-    assert not (tmp_path / "content-uploads").exists()
+    assert not staging_dir(tmp_path, SESSION_LEARNING_PATH_ID).exists()
 
 
 def test_upload_body_is_a_named_multipart_component() -> None:

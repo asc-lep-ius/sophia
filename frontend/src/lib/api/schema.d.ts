@@ -157,6 +157,11 @@ export interface paths {
          *     Deliberately reachable by a plain form post: the enhanced client adds
          *     progress and cancellation on top, but the surface a learner without
          *     JavaScript sees has to reach this same handler.
+         *
+         *     The body has already been received by the time this runs — Starlette spools
+         *     a file part before the handler sees it — so the size check inside
+         *     :func:`stage_upload` bounds what is kept, not what arrives. The proxy and
+         *     the frontend container are what bound arrival; see that module's docstring.
          */
         post: operations["createContentSourceUpload"];
         delete?: never;

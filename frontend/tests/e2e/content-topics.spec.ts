@@ -61,6 +61,28 @@ test.describe("lecture upload without JavaScript", () => {
     await expect(page.getByLabel("Title")).toHaveValue("Payload");
   });
 
+  test("bytes that contradict the extension are refused by the server", async ({
+    page,
+  }) => {
+    // The allowlist case above never reaches the API — the action's own
+    // pre-check catches it. This one has to travel, because only the server
+    // sees the bytes.
+    await authenticateShell(page);
+    await page.goto("/app/content/sources");
+
+    await page.getByLabel("Title").fill("Disguised");
+    await page.getByLabel("File").setInputFiles({
+      buffer: Buffer.from([0x4d, 0x5a, 0x90, 0x00, 0x6e, 0x6f, 0x70, 0x65]),
+      mimeType: "application/pdf",
+      name: "vorlesung-02.pdf",
+    });
+    await page.getByRole("button", { name: "Upload" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "do not match its extension",
+    );
+  });
+
   test("the filters still reach the list with no client code", async ({
     page,
   }) => {
@@ -90,7 +112,9 @@ test.describe("topic filters on a phone", () => {
     // off the first screen.
     await expect(page.getByLabel("Came from")).toBeHidden();
 
-    await page.getByRole("button", { name: "Filters" }).click();
+    // Exact: "Clear filters" also contains "Filters", and it only fails to
+    // match today because it sits inside a `display: none` panel.
+    await page.getByRole("button", { name: "Filters", exact: true }).click();
     await expect(page.getByLabel("Came from")).toBeVisible();
     await expectNoHorizontalOverflow(page);
 

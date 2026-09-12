@@ -54,6 +54,35 @@ The validation itself is deliberately split:
 Restating that allowlist in a Zod schema would have added a third place for it
 to drift, not removed one.
 
+## Known constraint: the upload is buffered twice
+
+The no-JavaScript path costs memory that the enhanced path would not.
+
+A browser posts the multipart body to `?/upload` on the SvelteKit container,
+which calls `event.request.formData()` and rebuilds the file as a `FormData`
+before forwarding it to the API. Undici materialises file parts in memory, so
+one upload at the 512 MB ceiling allocates roughly 512 MB of frontend-container
+heap, and a handful of concurrent uploads will exhaust it. The API hop is not
+affected — Starlette spools a file part to disk — but the frontend hop is, and
+this phase is what exposed it: before `BODY_SIZE_LIMIT` was raised to match the
+proxy, adapter-node refused anything over its 512 kB default.
+
+This is written down rather than fixed because both available fixes are larger
+than they look:
+
+- **Stream the body through** instead of rebuilding it. That is the right
+  answer and removes the buffer entirely, but a SvelteKit form action does not
+  hand you the raw stream once `formData()` has been awaited, and reaching past
+  it means parsing multipart in the action.
+- **Lower the ceiling.** Cheap, but it is a product decision — how large a
+  lecture recording a learner may upload — and it would make the three hops
+  disagree, which `test_upload_ceilings_agree_across_proxy_frontend_and_api`
+  exists to prevent.
+
+Until one of those lands, treat the frontend container's memory limit as the
+real concurrency cap on uploads, and size it accordingly. A per-tenant upload
+quota, which the staging directory also wants, is the other half of this.
+
 ## Consequences
 
 - No new runtime dependency, and no second form pattern for a reviewer to hold

@@ -40,11 +40,18 @@
   const rejection = $derived(
     form && "rejection" in form ? (form.rejection as UploadRejection) : null,
   );
-  const accepted = $derived(
-    form && "accepted" in form ? form.accepted : null,
-  );
+  const accepted = $derived(form && "accepted" in form ? form.accepted : null);
   const rejectionMessage = $derived(
     rejection === null ? null : rejectionText(rejection),
+  );
+
+  /** Which control a refusal is about, so it can be announced on that field. */
+  const rejectedField = $derived(
+    rejection === null || rejection === "upload_failed"
+      ? null
+      : rejection.startsWith("title_")
+        ? "title"
+        : "file",
   );
 
   function rejectionText(reason: UploadRejection): string {
@@ -113,6 +120,10 @@
         type="text"
         required
         maxlength="200"
+        aria-invalid={rejectedField === "title" ? "true" : undefined}
+        aria-describedby={rejectedField === "title"
+          ? "upload-error"
+          : undefined}
         value={form && "title" in form ? String(form.title ?? "") : ""}
       />
     </div>
@@ -131,7 +142,10 @@
         type="file"
         required
         accept={acceptAttribute()}
-        aria-describedby="upload-file-hint"
+        aria-invalid={rejectedField === "file" ? "true" : undefined}
+        aria-describedby={rejectedField === "file"
+          ? "upload-file-hint upload-error"
+          : "upload-file-hint"}
       />
     </div>
 
@@ -141,7 +155,7 @@
   </form>
 
   {#if rejectionMessage}
-    <p class="error" role="alert">{rejectionMessage}</p>
+    <p id="upload-error" class="error" role="alert">{rejectionMessage}</p>
   {/if}
 
   {#if accepted}

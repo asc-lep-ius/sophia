@@ -98,14 +98,23 @@ async def create_content_source_upload(
     Deliberately reachable by a plain form post: the enhanced client adds
     progress and cancellation on top, but the surface a learner without
     JavaScript sees has to reach this same handler.
+
+    The body has already been received by the time this runs — Starlette spools
+    a file part before the handler sees it — so the size check inside
+    :func:`stage_upload` bounds what is kept, not what arrives. The proxy and
+    the frontend container are what bound arrival; see that module's docstring.
     """
-    await require_csrf(request)
+    session = await require_csrf(request)
     settings = get_settings(request)
     staged = await stage_upload(
         title=upload.title,
         filename=upload.file.filename,
         read_chunk=upload.file.read,
         data_dir=settings.data_dir,
+        # Staged under the session's own learning path, never one a caller
+        # names: the upload carries no scope of its own, and a file written
+        # without an owner cannot be given one afterwards.
+        learning_path_id=session.tenant.learning_path_id,
         max_bytes=settings.content_upload_max_bytes,
     )
     return ContentSourceUploadResponse(

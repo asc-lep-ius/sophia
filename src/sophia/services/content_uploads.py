@@ -8,14 +8,27 @@ agree with the extension. Browser-supplied metadata — the filename and the par
 header's ``Content-Type`` — decides nothing on its own, because a caller
 controls both.
 
-The stream is written in chunks and abandoned the moment it crosses the
-ceiling, so refusing an oversized upload costs the disk one chunk rather than
-the whole file.
+**Where the upload is actually bounded.** Not here. Starlette spools a whole
+file part to a temporary file before a handler sees it, so by the time
+:func:`stage_upload` reads its first chunk the body has already been received.
+What bounds receipt is the hop in front: Caddy's ``request_body max_size`` on
+``/api/content-sources/uploads``, and ``BODY_SIZE_LIMIT`` on the SvelteKit
+container for a browser posting through the form action. The check below is a
+post-receipt backstop — it stops an oversized body from being *kept*, and it is
+the only limit a caller reaching the API directly, inside the network, meets at
+all. Because ``content_upload_max_bytes`` is pinned equal to the proxy ceiling,
+it does not normally fire behind the proxy; that equality is the point, and
+``tests/api/test_proxy_config.py`` is what holds it.
+
+Staging is scoped per learning path. Nothing reads these files yet, so the
+scoping buys nothing today — but a file written without an owner cannot be
+given one later, and every other read path in this codebase is scoped.
 """
 
 from __future__ import annotations
 
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
@@ -60,31 +73,70 @@ class IngestionState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Signature:
+    """Bytes a container must carry at a fixed offset.
+
+    ``alternatives`` are read as "any of these"; a format listing several
+    :class:`Signature` entries requires *all* of them, which is what separates
+    an EPUB from any other ZIP and a WAV from any other RIFF container.
+    """
+
+    offset: int
+    alternatives: tuple[bytes, ...]
+
+    def matches(self, head: bytes) -> bool:
+        window = head[self.offset :]
+        return any(window.startswith(candidate) for candidate in self.alternatives)
+
+    @property
+    def end(self) -> int:
+        return self.offset + max(len(candidate) for candidate in self.alternatives)
+
+
+@dataclass(frozen=True, slots=True)
 class UploadFormat:
     """One accepted format: what it is called, and what its bytes start with."""
 
     media_type: str
     extension: str
-    signatures: tuple[bytes, ...]
-    signature_offset: int = 0
+    signatures: tuple[Signature, ...]
 
 
 # Ordered by how a learner is most likely to arrive: reading material first,
 # then recordings. `ftyp` sits at offset 4 in the ISO base media container,
-# which is why the offset is part of the format rather than assumed to be zero.
+# which is why an offset is part of every signature rather than assumed zero.
+#
+# EPUB and WAV each need two: their outer container is a ZIP and a RIFF, which
+# say nothing about the payload. The EPUB spec requires an uncompressed
+# `mimetype` entry first in the archive, which puts its value at offset 38;
+# RIFF puts its form type at offset 8.
 SUPPORTED_FORMATS: tuple[UploadFormat, ...] = (
-    UploadFormat("application/pdf", ".pdf", (b"%PDF-",)),
-    UploadFormat("application/epub+zip", ".epub", (b"PK\x03\x04",)),
-    UploadFormat("audio/mpeg", ".mp3", (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")),
-    UploadFormat("audio/mp4", ".m4a", (b"ftyp",), signature_offset=4),
-    UploadFormat("video/mp4", ".mp4", (b"ftyp",), signature_offset=4),
-    UploadFormat("audio/wav", ".wav", (b"RIFF",)),
+    UploadFormat("application/pdf", ".pdf", (Signature(0, (b"%PDF-",)),)),
+    UploadFormat(
+        "application/epub+zip",
+        ".epub",
+        (
+            Signature(0, (b"PK\x03\x04",)),
+            Signature(30, (b"mimetype",)),
+            Signature(38, (b"application/epub+zip",)),
+        ),
+    ),
+    UploadFormat(
+        "audio/mpeg",
+        ".mp3",
+        (Signature(0, (b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2")),),
+    ),
+    UploadFormat("audio/mp4", ".m4a", (Signature(4, (b"ftyp",)),)),
+    UploadFormat("video/mp4", ".mp4", (Signature(4, (b"ftyp",)),)),
+    UploadFormat(
+        "audio/wav",
+        ".wav",
+        (Signature(0, (b"RIFF",)), Signature(8, (b"WAVE",))),
+    ),
 )
 
 SIGNATURE_WINDOW_BYTES = max(
-    fmt.signature_offset + len(signature)
-    for fmt in SUPPORTED_FORMATS
-    for signature in fmt.signatures
+    signature.end for fmt in SUPPORTED_FORMATS for signature in fmt.signatures
 )
 
 
@@ -149,10 +201,18 @@ def accepted_extensions() -> str:
 
 def signature_matches(upload_format: UploadFormat, head: bytes) -> bool:
     """Whether the leading bytes are what this format's containers start with."""
-    return any(
-        head[upload_format.signature_offset :].startswith(signature)
-        for signature in upload_format.signatures
-    )
+    return all(signature.matches(head) for signature in upload_format.signatures)
+
+
+def staging_dir(data_dir: Path, learning_path_id: str) -> Path:
+    """Where one learning path's staged uploads live.
+
+    The id is hashed into a hex name rather than used literally: it arrives
+    from a session record as a string, and a path segment built from caller
+    data is a traversal waiting to be found.
+    """
+    scope = uuid.uuid5(uuid.NAMESPACE_OID, learning_path_id).hex
+    return data_dir / STAGING_DIR_NAME / scope
 
 
 async def stage_upload(
@@ -161,22 +221,23 @@ async def stage_upload(
     filename: str | None,
     read_chunk: Callable[[int], Awaitable[bytes]],
     data_dir: Path,
+    learning_path_id: str,
     max_bytes: int,
 ) -> StagedUpload:
     """Validate one multipart upload and stage its bytes for later ingestion.
 
-    ``read_chunk`` is the part's reader rather than its bytes: a 512 MB ceiling
-    that only applies after the whole body is already in memory is not a
-    ceiling.
+    ``read_chunk`` is the part's reader rather than its bytes, so an oversized
+    body is abandoned partway through being copied rather than after. It is not
+    what stops an oversized body being *received* — see the module docstring.
     """
     resolved_title = normalize_title(title)
     upload_format = format_for_filename(filename)
 
-    staging_dir = anyio.Path(data_dir) / STAGING_DIR_NAME
-    await staging_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    scoped = anyio.Path(staging_dir(data_dir, learning_path_id))
+    await scoped.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     upload_id = uuid.uuid4().hex
-    target = staging_dir / f"{upload_id}{upload_format.extension}"
+    target = scoped / f"{upload_id}{upload_format.extension}"
     byte_size = await _write_stream(target, read_chunk, upload_format, max_bytes)
 
     return StagedUpload(
@@ -197,6 +258,9 @@ async def _write_stream(
 ) -> int:
     byte_size = 0
     head = b""
+    # Every exit that is not a success discards the partial file, not just a
+    # refusal: a client that disconnects mid-copy, a full disk, or a cancelled
+    # task would each otherwise leave bytes behind that nothing ever reaps.
     try:
         async with await target.open("wb") as stored:
             while chunk := await read_chunk(CHUNK_BYTES):
@@ -223,7 +287,7 @@ async def _write_stream(
                     "expected": upload_format.media_type,
                 },
             )
-    except ContentUploadRejected:
+    except BaseException:
         await _discard(target)
         raise
 
@@ -231,5 +295,10 @@ async def _write_stream(
 
 
 async def _discard(target: anyio.Path) -> None:
-    """Remove a partial file, tolerating one that was never created."""
-    await target.unlink(missing_ok=True)
+    """Remove a partial file, tolerating one that was never created.
+
+    Shielded because the cancellation this runs under would otherwise cancel
+    the cleanup too, which is exactly the case that leaves bytes behind.
+    """
+    with anyio.CancelScope(shield=True), suppress(OSError):
+        await target.unlink(missing_ok=True)

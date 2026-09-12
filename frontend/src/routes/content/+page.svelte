@@ -74,7 +74,11 @@
   uiLocale={data.uiLocale}
 />
 
-<FilterDrawer action={listPath} open={data.drawerOpen} {params}>
+<FilterDrawer
+  action={listPath}
+  lang={data.contentLanguage.override}
+  open={data.drawerOpen}
+>
   {#snippet fields()}
     <div class="field">
       <label for="content-query">{m.content_filter_query()}</label>

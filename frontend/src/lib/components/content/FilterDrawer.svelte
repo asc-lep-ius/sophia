@@ -1,7 +1,7 @@
 <script lang="ts">
   import { DRAWER_PARAM } from "$lib/content/filters";
+  import { LANGUAGE_PARAM } from "$lib/content/language";
   import { m } from "$lib/paraglide/messages.js";
-  import CarriedParams from "./CarriedParams.svelte";
   import type { Snippet } from "svelte";
 
   type Props = {
@@ -9,12 +9,21 @@
     action: string;
     /** Rendered inside the form; every control must carry a `name`. */
     fields: Snippet;
+    /**
+     * The content language, which is the one piece of state this form carries
+     * without a control of its own.
+     *
+     * Deliberately this and nothing else. An earlier version took the whole
+     * filter set as hidden inputs, which put a second field of the same name
+     * beside every visible control: forms serialise in tree order and
+     * `searchParams.get` reads the first value, so changing a filter submitted
+     * the old value ahead of the new one and silently did nothing.
+     */
+    lang?: string | null;
     open: boolean;
-    /** Content language to keep across a filter change, if one was chosen. */
-    params?: Record<string, string>;
   };
 
-  let { action, fields, open, params = {} }: Props = $props();
+  let { action, fields, lang = null, open }: Props = $props();
 </script>
 
 <!--
@@ -42,7 +51,9 @@
   <form id="filter-reset" method="get" {action}></form>
 
   <form class="filter-form" method="get" {action}>
-    <CarriedParams {params} omit={DRAWER_PARAM} />
+    {#if lang}
+      <input type="hidden" name={LANGUAGE_PARAM} value={lang} />
+    {/if}
 
     <div class="filter-bar">
       <h2 id="filter-heading">{m.content_filters_heading()}</h2>

@@ -147,6 +147,32 @@ describe("topics page", () => {
     ).toBe("unrated");
   });
 
+  it("gives each filter exactly one control, so a change is not shadowed", () => {
+    // A hidden input beside a visible control of the same name submits both.
+    // Forms serialise in tree order and `searchParams.get` reads the first
+    // value, so the old filter would win and changing one would do nothing.
+    render(TopicsPage, {
+      data: pageData({
+        contentLanguage: { language: "en", origin: "override", override: "en" },
+        filters: { origin: "manual", query: "graph", rated: "unrated" },
+      }),
+    });
+
+    const form = screen
+      .getByLabelText("Search topics")
+      .closest("form") as HTMLFormElement;
+
+    for (const name of ["q", "origin", "rated"]) {
+      expect(form.querySelectorAll(`[name="${name}"]`)).toHaveLength(1);
+    }
+    // The content language is the one thing with no control of its own, so it
+    // is the one thing the form may carry as a hidden field.
+    expect(form.querySelectorAll('[name="lang"]')).toHaveLength(1);
+    expect(
+      form.querySelector<HTMLInputElement>('input[name="lang"]')?.value,
+    ).toBe("en");
+  });
+
   it("marks the topic text with the content language, not the UI locale", () => {
     render(TopicsPage, {
       data: pageData({

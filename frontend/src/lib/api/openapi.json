@@ -5214,7 +5214,7 @@
     },
     "/api/content-sources/uploads": {
       "post": {
-        "description": "Accept one multipart upload, or say which check refused it.\n\nDeliberately reachable by a plain form post: the enhanced client adds\nprogress and cancellation on top, but the surface a learner without\nJavaScript sees has to reach this same handler.",
+        "description": "Accept one multipart upload, or say which check refused it.\n\nDeliberately reachable by a plain form post: the enhanced client adds\nprogress and cancellation on top, but the surface a learner without\nJavaScript sees has to reach this same handler.\n\nThe body has already been received by the time this runs \u2014 Starlette spools\na file part before the handler sees it \u2014 so the size check inside\n:func:`stage_upload` bounds what is kept, not what arrives. The proxy and\nthe frontend container are what bound arrival; see that module's docstring.",
         "operationId": "createContentSourceUpload",
         "requestBody": {
           "content": {

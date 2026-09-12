@@ -2,13 +2,33 @@ import { render, screen, within } from "@testing-library/svelte";
 import type { RequestEvent } from "@sveltejs/kit";
 import { describe, expect, it, vi } from "vitest";
 
+import { readFileSync } from "node:fs";
+
 import ContentPage from "../../src/routes/content/+page.svelte";
 import { load } from "../../src/routes/content/+page.server";
+import { FALLBACK_CONTENT_LANGUAGE } from "../../src/lib/content/language";
 import type { ContentItem, ContentSource } from "../../src/lib/content/filters";
 import type { ContentLanguageState } from "../../src/lib/content/language";
 import type { Panel } from "../../src/lib/dashboard/panels";
 
 const TENANT_LEARNING_PATH = "12";
+
+describe("content language fallback", () => {
+  it("agrees with the deployment default it stands in for", () => {
+    // Two numbers that have to match and nothing checking them is how the
+    // upload ceiling nearly shipped wrong; the same shape closes this one. A
+    // deployment set to English would otherwise get a German fallback every
+    // time the language service was unreachable.
+    const config = readFileSync("../src/sophia/config.py", "utf8");
+    const declared =
+      /default_content_language:\s*Literal\[[^\]]*\]\s*=\s*"(de|en)"/.exec(
+        config,
+      );
+
+    expect(declared).not.toBeNull();
+    expect(FALLBACK_CONTENT_LANGUAGE).toBe(declared?.[1]);
+  });
+});
 
 describe("content server load", () => {
   it("defaults content to the course language while the chrome stays English", async () => {
@@ -146,6 +166,26 @@ describe("content page", () => {
     );
     expect(carried.length).toBeGreaterThan(0);
     expect([...carried].every((input) => input.value === "en")).toBe(true);
+  });
+
+  it("gives each filter exactly one control, so a change is not shadowed", () => {
+    // The same collision the topics page guards against: a hidden field of the
+    // same name as a visible control makes every filter change a no-op.
+    render(ContentPage, {
+      data: pageData({
+        contentLanguage: { language: "en", origin: "override", override: "en" },
+        filters: { query: "graphs", status: "ready" },
+      }),
+    });
+
+    const form = screen
+      .getByLabelText("Search titles")
+      .closest("form") as HTMLFormElement;
+
+    for (const name of ["q", "status"]) {
+      expect(form.querySelectorAll(`[name="${name}"]`)).toHaveLength(1);
+    }
+    expect(form.querySelectorAll('[name="lang"]')).toHaveLength(1);
   });
 
   it("offers the next action on an empty catalogue", () => {

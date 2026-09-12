@@ -70,7 +70,11 @@
 {#if data.learningPathId === null}
   <p class="notice">{m.dashboard_no_learning_path()}</p>
 {:else}
-  <FilterDrawer action={listPath} open={data.drawerOpen} {params}>
+  <FilterDrawer
+    action={listPath}
+    lang={data.contentLanguage.override}
+    open={data.drawerOpen}
+  >
     {#snippet fields()}
       <div class="field">
         <label for="topic-query">{m.topics_filter_query()}</label>

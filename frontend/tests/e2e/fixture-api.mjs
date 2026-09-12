@@ -694,14 +694,27 @@ function acceptUpload(raw) {
   const title = /name="title"\r?\n\r?\n([\s\S]*?)\r?\n--/.exec(raw)?.[1] ?? "";
   const filename = /name="file"; filename="([^"]*)"/.exec(raw)?.[1] ?? "";
   if (!title.trim() || !filename) {
-    return null;
+    return { reason: "file_required" };
+  }
+  // The one check worth mirroring from the real boundary: the part body has
+  // to start the way its extension claims. Without it the browser suite could
+  // not tell an accepted upload from a disguised one, because the client-side
+  // pre-check never sees the bytes.
+  const body =
+    /name="file";[^\r\n]*\r?\n(?:[^\r\n]+\r?\n)*\r?\n([\s\S]*?)\r?\n--/.exec(
+      raw,
+    )?.[1];
+  if (!body?.startsWith("%PDF-")) {
+    return { reason: "content_mismatch" };
   }
   return {
-    id: "e2e-upload-1",
-    title: title.trim(),
-    media_type: "application/pdf",
-    byte_size: Buffer.byteLength(raw),
-    state: "queued",
+    accepted: {
+      id: "e2e-upload-1",
+      title: title.trim(),
+      media_type: "application/pdf",
+      byte_size: Buffer.byteLength(raw),
+      state: "queued",
+    },
   };
 }
 
@@ -721,17 +734,17 @@ const server = createServer((request, response) => {
     url.pathname === "/api/content-sources/uploads"
   ) {
     readRawBody(request).then((raw) => {
-      const accepted = acceptUpload(raw);
-      if (accepted === null) {
+      const result = acceptUpload(raw);
+      if (result.reason) {
         send(response, 422, {
           detail: {
             code: "content.upload_rejected",
-            params: { reason: "file_required" },
+            params: { reason: result.reason },
           },
         });
         return;
       }
-      send(response, 201, accepted);
+      send(response, 201, result.accepted);
     });
     return;
   }
