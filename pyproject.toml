@@ -49,9 +49,6 @@ calibre = []
 export = [
     "bibtexparser>=1.4",
 ]
-web = [
-    "nicegui>=2.0",
-]
 hermes = [
     "faster-whisper>=1.1",
     "chromadb>=1.0",
@@ -78,9 +75,6 @@ dev = [
     "pytest-cov>=5.0",
     "pip-audit>=2.0",
     "requests>=2.33.0",
-    "playwright>=1.40",
-    "pytest-playwright>=0.5",
-    "axe-playwright-python>=0.1",
     "pre-commit>=4.0",
 ]
 
@@ -101,10 +95,8 @@ select = ["E", "F", "I", "W", "UP", "B", "SIM", "TCH"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 markers = [
-    "e2e: End-to-end GUI tests requiring Playwright",
     "postgres: Tests requiring a live Postgres (SOPHIA_TEST_DATABASE_URL)",
 ]
-addopts = "-p nicegui.testing.user_plugin -m \"not e2e\""
 
 [tool.pyright]
 pythonVersion = "3.12"
@@ -125,21 +117,6 @@ reportUnknownArgumentType = false
 reportUnknownVariableType = false
 reportUnusedFunction = false
 
-[[tool.pyright.executionEnvironments]]
-root = "src/sophia/gui"
-reportUnknownMemberType = false
-reportUnknownLambdaType = false
-reportUnknownArgumentType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportReturnType = false
-reportFunctionMemberAccess = false
-reportUnusedFunction = false
-reportArgumentType = false
-reportAssignmentType = false
-reportCallIssue = false
-reportUntypedFunctionDecorator = false
-
 [tool.coverage.run]
 omit = [
     "src/sophia/__main__.py",
@@ -149,7 +126,6 @@ omit = [
     # so bringing these under test is its own piece of work — until then, a CLI
     # command that touches the database needs a test written deliberately.
     "src/sophia/cli/*",
-    "src/sophia/gui/pages/*",
 ]
 
 [build-system]

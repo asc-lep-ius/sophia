@@ -108,7 +108,7 @@ rebuild-ci-image:
       - .cache/pip/
       - .cache/uv/
   before_script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
 
 # --- Postgres service for database-backed tests ---
 # Pinned by digest so a re-tagged 18.4 cannot change what CI proves.
@@ -335,7 +335,7 @@ test:3.14:
     paths:
       - .cache/uv/
   script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
