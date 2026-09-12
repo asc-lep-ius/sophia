@@ -23,7 +23,23 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src"
 
+RETIREMENT_RECORD = REPO_ROOT / "docs" / "nicegui-retirement.md"
+
 RETIRED_PACKAGES = ("nicegui", "sophia.gui")
+RETIRED_IN_PROSE = (
+    "sophia gui",
+    "SOPHIA_GUI_",
+    "SOPHIA_AUTO_SYNC",
+    "make docker-gui",
+    "make test-gui",
+    "sophia-gui",
+)
+"""What a reader must not be told to run, type or set.
+
+The env vars matter as much as the command: `Settings` uses `extra="ignore"`,
+so a stale `SOPHIA_GUI_PORT` copied out of an example file is accepted in
+silence and does nothing, which is worse than being rejected.
+"""
 RETIRED_SOURCE_PATHS = (
     "src/sophia/gui",
     "src/sophia/cli/gui.py",
@@ -32,6 +48,7 @@ RETIRED_SOURCE_PATHS = (
     "Dockerfile.gui",
     "Dockerfile.gui.cuda",
     "Dockerfile.nicegui",
+    "ci/Dockerfile.cuda-base",
 )
 
 
@@ -82,8 +99,9 @@ def test_no_nicegui_idiom_survives_in_source_code() -> None:
     """``app.storage`` and ``ui.<anything>`` — the two the issue names by hand.
 
     Both are how NiceGUI code reads rather than how it imports, so a module
-    that got its ``ui`` from somewhere indirect would pass the import scan and
-    fail here.
+    that rebound ``ui`` from a local alias would pass the import scan and fail
+    here. Only a bare name is reached, not ``shim.ui.label()``; the import scan
+    above is the real gate, and this is the second line of it.
     """
     offenders = [
         f"{module}: {reference}"
@@ -132,14 +150,31 @@ def test_ci_neither_builds_nor_deploys_a_nicegui_image() -> None:
     assert "Dockerfile.gui" not in ci
 
 
-def test_no_document_still_tells_a_reader_to_launch_the_gui() -> None:
-    """Docs outlive code. A README that still offers `sophia gui launch` is a
-    bug report waiting to be filed against a command that no longer exists.
+def _prose_files() -> list[Path]:
+    """The documents a reader is sent to, minus this retirement's own record.
+
+    `docs/nicegui-retirement.md` quotes the retired command and the retired
+    Make targets on purpose — that is what makes it a record — so it is the one
+    file excluded rather than the reason to narrow the scan.
+    """
+    candidates = [*REPO_ROOT.glob("*.md"), *REPO_ROOT.glob("docs/*.md"), REPO_ROOT / ".env.example"]
+    return [path for path in sorted(candidates) if path.is_file() and path != RETIREMENT_RECORD]
+
+
+@pytest.mark.parametrize("retired_reference", RETIRED_IN_PROSE)
+def test_no_document_still_offers_something_this_issue_deleted(retired_reference: str) -> None:
+    """Docs outlive code, and `.env.example` outlives both.
+
+    A README that still offers `sophia gui launch` is a bug report waiting to
+    be filed against a command that does not exist. The first pass of #102
+    missed `.env.example` entirely — it advertised `SOPHIA_GUI_PORT`, which
+    `Settings` would silently ignore, and a Make target deleted in the same
+    branch — because the scan globbed only top-level `*.md`.
     """
     offenders = [
         path.relative_to(REPO_ROOT).as_posix()
-        for path in sorted(REPO_ROOT.glob("*.md"))
-        if "sophia gui" in path.read_text(encoding="utf-8")
+        for path in _prose_files()
+        if retired_reference in path.read_text(encoding="utf-8")
     ]
 
     assert offenders == []
