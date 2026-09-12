@@ -85,12 +85,14 @@
    * from falling back to a result set for a query nobody is looking at.
    */
   const hasServerAnswer = $derived(!typed && data.results !== null);
+  /**
+   * Four states, not three: a scope the learner does not have is kept apart
+   * from a service that did not answer, the same way every panel on this
+   * surface keeps them apart. Collapsing them tells someone reading another
+   * tenant's course to try again, which will never work.
+   */
   const status = $derived(
-    hasServerAnswer
-      ? data.results?.status === "ready"
-        ? "ready"
-        : "error"
-      : controller.status,
+    hasServerAnswer ? (data.results?.status ?? "error") : controller.status,
   );
   const results = $derived(
     hasServerAnswer ? (data.results?.data ?? []) : controller.results,
@@ -160,6 +162,9 @@
     }
     if (status === "loading") {
       return m.search_status_loading();
+    }
+    if (status === "unauthorized") {
+      return m.dashboard_panel_unauthorized();
     }
     if (status === "error") {
       return m.search_status_error();
@@ -233,7 +238,7 @@
   <PanelSection
     id="search-results"
     heading={m.search_results_heading()}
-    status={status === "error" ? "error" : "ready"}
+    status={status === "error" || status === "unauthorized" ? status : "ready"}
     isEmpty={results.length === 0}
   >
     {#snippet empty()}

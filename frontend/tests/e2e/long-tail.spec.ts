@@ -11,8 +11,17 @@ import { authenticateShell } from "./shell-auth";
  * into the fixture process; `failUpstream` names the path fragment to refuse.
  */
 
-const PHONE = { width: 375, height: 667 };
-const NARROW = { width: 320, height: 667 };
+/**
+ * Both widths, for every page.
+ *
+ * A layout that fits the common phone and not the narrowest viewport the
+ * reflow criterion covers has not passed reflow, so neither width stands in
+ * for the other. `A11Y_BASELINE.md` states the same rule.
+ */
+const MOBILE_WIDTHS = [
+  { name: "375px", viewport: { width: 375, height: 667 } },
+  { name: "320px", viewport: { width: 320, height: 667 } },
+];
 const PREVIEW_ORIGIN = "http://127.0.0.1:4173";
 
 async function failUpstream(page: Page, pathFragment: string): Promise<void> {
@@ -101,14 +110,16 @@ test.describe("search", () => {
     await expect(page.getByText(/did not answer/).first()).toBeVisible();
   });
 
-  test("the search form and its results fit a phone", async ({ page }) => {
-    await page.setViewportSize(PHONE);
-    await authenticateShell(page);
-    await page.goto("/app/search?q=graph");
+  for (const { name, viewport } of MOBILE_WIDTHS) {
+    test(`the search form and its results fit ${name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticateShell(page);
+      await page.goto("/app/search?q=graph");
 
-    await expect(page.getByText("Graphen und Suchverfahren")).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-  });
+      await expect(page.getByText("Graphen und Suchverfahren")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
 
   test("a passage opens a retrieval prompt that refuses an empty answer", async ({
     page,
@@ -181,16 +192,16 @@ test.describe("chronos", () => {
     await context.close();
   });
 
-  test("the deadline list fits the narrowest supported width", async ({
-    page,
-  }) => {
-    await page.setViewportSize(NARROW);
-    await authenticateShell(page);
-    await page.goto("/app/chronos");
+  for (const { name, viewport } of MOBILE_WIDTHS) {
+    test(`the deadline list fits ${name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticateShell(page);
+      await page.goto("/app/chronos");
 
-    await expect(page.getByText("Due today")).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-  });
+      await expect(page.getByText("Due today")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
 });
 
 test.describe("chronos history", () => {
@@ -235,14 +246,17 @@ test.describe("chronos history", () => {
     await expect(history.getByRole("status")).toContainText("did not answer");
   });
 
-  test("the history and its figure fit a phone", async ({ page }) => {
-    await page.setViewportSize(PHONE);
-    await authenticateShell(page);
-    await page.goto("/app/chronos/history");
+  for (const { name, viewport } of MOBILE_WIDTHS) {
+    test(`the history and its figure fit ${name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticateShell(page);
+      await page.goto("/app/chronos/history");
 
-    await expect(page.getByText("On time")).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-  });
+      const history = page.getByRole("region", { name: "History" });
+      await expect(history.getByText("On time")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
 });
 
 test.describe("calibration", () => {
@@ -286,14 +300,16 @@ test.describe("calibration", () => {
     await expect(measured.getByRole("status")).toContainText("did not answer");
   });
 
-  test("the figure and its table fit a phone", async ({ page }) => {
-    await page.setViewportSize(PHONE);
-    await authenticateShell(page);
-    await page.goto("/app/calibration");
+  for (const { name, viewport } of MOBILE_WIDTHS) {
+    test(`the figure and its table fit ${name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticateShell(page);
+      await page.goto("/app/calibration");
 
-    await expect(page.getByText("Graphs").first()).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-  });
+      await expect(page.getByText("Graphs").first()).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
 });
 
 test.describe("register", () => {
@@ -308,7 +324,10 @@ test.describe("register", () => {
     await page.getByRole("button", { name: "Open this course" }).click();
 
     await expect(page).toHaveURL(/course=123\.ABC/);
-    await expect(page.getByText("Gruppe A")).toBeVisible();
+    // The row header, not the register button, which also carries the name.
+    await expect(
+      page.getByRole("rowheader", { name: "Gruppe A" }),
+    ).toBeVisible();
     await expect(page.getByText(/Opens in/)).toBeVisible();
     await context.close();
   });
@@ -328,6 +347,13 @@ test.describe("register", () => {
     await expect(page.getByRole("status")).toContainText(
       "Platz in Gruppe A erhalten",
     );
+    // Still on the course. A bare `?/register` action would have replaced the
+    // query string and dropped the learner back on the favourites list,
+    // unable to see whether the group filled or to try the next one.
+    await expect(page).toHaveURL(/course=123\.ABC/);
+    await expect(
+      page.getByRole("rowheader", { name: "Gruppe A" }),
+    ).toBeVisible();
     await context.close();
   });
 
@@ -356,12 +382,16 @@ test.describe("register", () => {
     );
   });
 
-  test("the groups table fits a phone", async ({ page }) => {
-    await page.setViewportSize(PHONE);
-    await authenticateShell(page);
-    await page.goto("/app/register?course=123.ABC");
+  for (const { name, viewport } of MOBILE_WIDTHS) {
+    test(`the groups table fits ${name}`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await authenticateShell(page);
+      await page.goto("/app/register?course=123.ABC");
 
-    await expect(page.getByText("Gruppe A").first()).toBeVisible();
-    await expectNoHorizontalOverflow(page);
-  });
+      await expect(
+        page.getByRole("rowheader", { name: "Gruppe A" }),
+      ).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+    });
+  }
 });

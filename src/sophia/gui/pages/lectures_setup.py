@@ -17,6 +17,7 @@ from sophia.domain.models import (
     WhisperModel,
 )
 from sophia.gui.middleware.health import get_container
+from sophia.gui.routes import CONTENT_SURFACE_PATH
 from sophia.gui.state.storage_map import USER_HERMES_SETUP_COMPLETE
 from sophia.services.hermes_setup import (
     GpuContext,
@@ -471,5 +472,5 @@ def _complete_setup(config: HermesConfig, config_dir: Path) -> None:
     save_hermes_config(config, config_dir)
     app.storage.user[USER_HERMES_SETUP_COMPLETE] = True
     ui.notify("Lecture pipeline configured successfully!", type="positive")
-    ui.navigate.to("/lectures")
+    ui.navigate.to(CONTENT_SURFACE_PATH)
     log.info("hermes_setup_complete", config=config.model_dump())

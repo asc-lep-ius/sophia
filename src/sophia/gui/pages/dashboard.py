@@ -13,7 +13,7 @@ from sophia.gui.components.course_overview import render_course_cards
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.quickstart import show_quickstart_wizard
-from sophia.gui.routes import REVIEW_SURFACE_PATH
+from sophia.gui.routes import CHRONOS_SURFACE_PATH, REVIEW_SURFACE_PATH
 from sophia.gui.services.overview_service import (
     compute_workload_insights,
     get_course_summaries,
@@ -240,7 +240,7 @@ def _render_deadlines_card(deadlines: list[Deadline]) -> None:
                 ui.button(
                     "Sync Deadlines",
                     icon="sync",
-                    on_click=lambda: ui.navigate.to("/chronos"),
+                    on_click=lambda: ui.navigate.to(CHRONOS_SURFACE_PATH),
                 ).props("flat dense").classes("mt-2")
             return
 

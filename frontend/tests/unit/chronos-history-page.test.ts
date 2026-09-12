@@ -127,6 +127,23 @@ describe("chronos history page", () => {
     expect(screen.getByText(/cannot appear here/)).toBeTruthy();
   });
 
+  /**
+   * Classifying a row costs one request per row, so the page asks for fewer
+   * than the endpoint would give it. A learner who cannot tell a capped list
+   * from a complete one reads their own history as shorter than it is.
+   */
+  it("says the list is capped once it is full, and not before", () => {
+    render(HistoryPage, {
+      data: pageData({ limit: 2, rows: rowsPanel(), totalCount: 2 }),
+    });
+    expect(screen.getByText(/only the most recent 2/i)).toBeTruthy();
+
+    render(HistoryPage, {
+      data: pageData({ limit: 25, rows: rowsPanel(), totalCount: 2 }),
+    });
+    expect(screen.queryByText(/only the most recent 25/i)).toBeNull();
+  });
+
   it("offers to clear the filter when it is the filter that emptied the list", () => {
     render(HistoryPage, { data: pageData({ outcome: "late", totalCount: 2 }) });
 
@@ -138,6 +155,18 @@ describe("chronos history page", () => {
     render(HistoryPage, { data: pageData({}) });
 
     expect(screen.getByText("No past deadlines yet")).toBeTruthy();
+  });
+
+  it("says the history is outside the account's scope rather than showing it empty", () => {
+    render(HistoryPage, {
+      data: pageData({ rows: { data: [], status: "unauthorized" } }),
+    });
+
+    const panel = screen.getByRole("region", { name: "History" });
+    expect(
+      within(panel).getByText(/outside what your account may read/),
+    ).toBeTruthy();
+    expect(within(panel).queryByText("No past deadlines yet")).toBeNull();
   });
 
   it("flags an estimation figure that rests on too few deadlines", () => {

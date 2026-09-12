@@ -4,7 +4,7 @@ This frontend pivot targets WCAG 2.2 AA for the SvelteKit surface under `/app`. 
 
 ## Automated Gate
 
-- Playwright runs `frontend/tests/e2e/a11y.spec.ts` against `/app/study`, `/app/dashboard`, `/app/review`, the four `/app/quickstart` steps, `/app/content`, `/app/content/sources`, `/app/topics`, `/app/search`, `/app/chronos`, `/app/chronos/history`, `/app/calibration`, `/app/register`, `/app/login`, and `/app/settings`.
+- Playwright runs `frontend/tests/e2e/a11y.spec.ts` against `/app/study`, `/app/dashboard`, `/app/review`, the four `/app/quickstart` steps, `/app/content`, `/app/content/sources`, `/app/topics`, `/app/search`, `/app/chronos`, `/app/chronos/history`, `/app/calibration`, `/app/register`, `/app/login`, and `/app/settings`. Search and register are scanned twice, empty and populated (`?q=` and `?course=`): an empty search box and a bare favourites list exercise neither the results list nor the five-column groups table, which are the parts most likely to violate table semantics or reflow.
 - Axe uses the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, and `wcag22aa` tag set.
 - The gate target is zero serious, critical, or structural axe violations. New route work should add that route to the same matrix before the NiceGUI migration reaches it.
 - `frontend/tests/e2e/de-overflow.spec.ts` runs the same anchor routes at a 320 px German viewport and must stay green before merge.

@@ -27,6 +27,22 @@
   const detail = $derived(data.detail);
   const available = $derived(openGroups(detail?.groups ?? []));
 
+  /**
+   * The action URL, carrying the course the form belongs to.
+   *
+   * A bare `?/register` is resolved by the browser against the page URL and
+   * replaces its whole query string, so `?course=` would be gone by the time
+   * the action answered — dropping the learner back on the bare favourites
+   * list, unable to see whether the group filled or to try the next one. The
+   * action name is a query parameter like any other, so the course travels
+   * beside it.
+   */
+  const registerAction = $derived(
+    detail === null
+      ? "?/register"
+      : `?${COURSE_PARAM}=${encodeURIComponent(detail.courseNumber)}&/register`,
+  );
+
   const countdown = $derived(
     registrationCountdown(
       detail?.target?.registration_start ?? null,
@@ -176,7 +192,7 @@
           <ul class="register-actions">
             {#each available as group (group.group_id)}
               <li>
-                <form method="post" action="?/register">
+                <form method="post" action={registerAction}>
                   <input
                     type="hidden"
                     name="course_number"

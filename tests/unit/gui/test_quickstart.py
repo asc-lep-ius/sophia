@@ -21,6 +21,7 @@ from sophia.gui.pages.quickstart import (
     format_skip_text,
     suggest_first_action,
 )
+from sophia.gui.routes import CHRONOS_SURFACE_PATH
 
 # ---------------------------------------------------------------------------
 # compute_scaffold_level
@@ -64,7 +65,7 @@ class TestSuggestFirstAction:
         msg, path = suggest_first_action(deadlines, topics=[])
         assert "Homework" in msg
         assert "day" in msg
-        assert path == "/chronos"
+        assert path == CHRONOS_SURFACE_PATH
 
     def test_with_topics_only(self) -> None:
         msg, path = suggest_first_action(deadlines=[], topics=["Linear Algebra", "Calculus"])
@@ -81,7 +82,7 @@ class TestSuggestFirstAction:
         deadlines = [{"name": "Exam", "due_at": soon}]
         msg, path = suggest_first_action(deadlines, topics=["Topic A"])
         assert "Exam" in msg
-        assert path == "/chronos"
+        assert path == CHRONOS_SURFACE_PATH
 
 
 # ---------------------------------------------------------------------------

@@ -60,16 +60,18 @@ describe("deadline due distance", () => {
 
   /**
    * The whole reason the distance is elapsed seconds rather than calendar days.
-   * Europe/Vienna springs forward at 02:00 on this date, so the "same" wall
-   * clock a day later is 23 hours away; counting seconds gives one answer in
-   * every zone, which is the server's answer.
+   *
+   * Both instants below sit on a different local calendar day from the answer
+   * a date comparison would give — `now` is half an hour before Europe/Vienna
+   * springs forward — so an implementation that subtracted dates instead of
+   * seconds fails here and nowhere else in this file.
    */
-  it("is the same number whatever the machine's timezone is", () => {
-    const dueAt = new Date(now.getTime() + 86_400_000);
-    const viennaOffsetBefore = now.getTimezoneOffset();
+  it("counts elapsed seconds, not the calendar days either instant falls in", () => {
+    const almostADay = new Date(now.getTime() + 84_600_000);
+    expect(dueDistance(almostADay, now).days).toBe(0);
 
-    expect(dueDistance(dueAt, now).days).toBe(1);
-    expect(now.getTimezoneOffset()).toBe(viennaOffsetBefore);
+    const twentyMinutesPast = new Date(now.getTime() - 1_200_000);
+    expect(dueDistance(twentyMinutesPast, now).days).toBe(-1);
   });
 });
 
@@ -129,14 +131,16 @@ describe("deadline formatting", () => {
     expect(formatHours(12)).toBe("12.0h");
   });
 
+  /**
+   * Two instants, one either side of midnight UTC, so the pair discriminates
+   * whatever zone the machine running this is in: a formatter reading local
+   * time gets the first wrong east of UTC and the second wrong west of it.
+   */
   it("prints the absolute date in UTC whatever the browser's zone is", () => {
-    // 00:30 UTC is the previous evening in New York and mid-morning in Tokyo.
-    // Both have to read the same date here, because the server stored one.
-    const formatted = formatDueDate("2026-09-02T00:30:00Z", "en");
-
-    expect(formatted).toContain("2026");
-    expect(formatted).toContain("02");
-    expect(formatted).not.toContain("01");
+    // 23:30 UTC is already the next day anywhere east of Greenwich.
+    expect(formatDueDate("2026-09-01T23:30:00Z", "en")).toContain("Sep 01");
+    // 00:30 UTC is still the previous day anywhere west of it.
+    expect(formatDueDate("2026-09-02T00:30:00Z", "en")).toContain("Sep 02");
   });
 });
 

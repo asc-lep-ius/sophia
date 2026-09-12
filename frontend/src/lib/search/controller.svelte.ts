@@ -133,7 +133,11 @@ export class SearchController {
 
     try {
       const results = await this.#options.run(query, controller.signal);
-      if (sequence !== this.#issued) {
+      // Both guards, not just the sequence. Emptying the box aborts without
+      // issuing a new run, so a `run` that resolves rather than rejecting on
+      // abort would still be the newest one — and would put results back on a
+      // screen whose search box is empty.
+      if (sequence !== this.#issued || controller.signal.aborted) {
         return;
       }
       this.#results = results;

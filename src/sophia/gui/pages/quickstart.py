@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 from nicegui import app, ui
 
-from sophia.gui.routes import STUDY_SURFACE_PATH
+from sophia.gui.routes import CHRONOS_SURFACE_PATH, STUDY_SURFACE_PATH
 from sophia.gui.services.quickstart_service import (
     get_completed_session_count,
     get_enrolled_courses,
@@ -62,7 +62,7 @@ def suggest_first_action(
         unit = "day" if days == 1 else "days"
         return (
             f"Your nearest deadline is {nearest['name']} in {days} {unit}. Head to Deadlines.",
-            "/chronos",
+            CHRONOS_SURFACE_PATH,
         )
     if topics:
         return "Try a study session on your weakest topic.", STUDY_SURFACE_PATH

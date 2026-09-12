@@ -11,6 +11,7 @@ already has keeps resolving. Retiring them is phase 5's job.
 from __future__ import annotations
 
 import inspect
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -37,6 +38,26 @@ from sophia.gui.routes import (
 
 if TYPE_CHECKING:
     from sophia.config import Settings
+
+RETIRED_PAGE_TARGETS = (
+    "/",
+    "/calibration",
+    "/chronos",
+    "/lectures",
+    "/register",
+    "/review",
+    "/search",
+    "/study",
+    "/topics",
+)
+"""The NiceGUI routes nothing in this app may navigate to any more.
+
+Spelled out rather than derived from ``MIGRATED_SURFACES`` by stripping
+``/app``: two of the pairings are not a prefix apart. The legacy dashboard is
+``/``, not ``/dashboard``, and ``/app/content`` replaced ``/lectures``.
+``/lectures/setup`` is deliberately absent — it configures Whisper and the LLM
+and is not superseded by anything.
+"""
 
 MIGRATED_SURFACES = (
     CALIBRATION_SURFACE_PATH,
@@ -141,6 +162,27 @@ class TestMigratedSurfacePaths:
         fail on. ``/app/chronos`` links to the migrated history instead.
         """
         assert not hasattr(routes, "CHRONOS_HISTORY_SURFACE_PATH")
+
+    def test_no_page_still_navigates_to_a_retired_nicegui_route(self) -> None:
+        """The sweep the per-page assertions below kept missing.
+
+        Repointing the sidebar and the keyboard shortcuts in this phase left
+        two buttons behind: the dashboard's empty-deadlines "Sync Deadlines"
+        and the quickstart wizard's suggested first action, both still sending
+        a learner to ``/chronos``. Enumerating every page module beats naming
+        them one at a time, because the next phase will have its own pair.
+        """
+        pages_dir = Path(inspect.getfile(routes)).parent / "pages"
+        targets = "|".join(re.escape(path) for path in RETIRED_PAGE_TARGETS)
+        navigation = re.compile(rf'(?:ui\.navigate\.to|ui\.link)\([^)]*"({targets})"')
+
+        offenders = [
+            f"{path.name} -> {match.group(1)}"
+            for path in sorted(pages_dir.glob("*.py"))
+            for match in navigation.finditer(path.read_text(encoding="utf-8"))
+        ]
+
+        assert offenders == []
 
     def test_keyboard_shortcuts_follow_the_navigation(self) -> None:
         assert _NAV_ROUTES["1"] == DASHBOARD_SURFACE_PATH

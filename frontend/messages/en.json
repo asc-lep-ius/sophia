@@ -41,6 +41,7 @@
   "chronos_empty_title": "No deadlines synced",
   "chronos_heading": "Deadlines",
   "chronos_history_back": "Back to deadlines",
+  "chronos_history_capped": "Only the most recent {limit} past deadlines are shown.",
   "chronos_history_count": "{shown} of {total} shown",
   "chronos_history_empty_body": "A deadline appears here once its date has passed.",
   "chronos_history_empty_title": "No past deadlines yet",

@@ -55,7 +55,7 @@
     {#snippet fields()}
       <div class="field">
         <label for="history-outcome">{m.chronos_history_filter_outcome()}</label>
-        <select id="history-outcome" name="outcome" value={data.outcome}>
+        <select id="history-outcome" name="outcome">
           {#each DEADLINE_OUTCOMES as outcome (outcome)}
             <option value={outcome} selected={outcome === data.outcome}>
               {outcomeLabels[outcome]()}
@@ -121,6 +121,15 @@
       cannot produce one, instead of concluding they have never been late.
     -->
     <p class="caveat">{m.chronos_history_late_unavailable()}</p>
+    {#if data.totalCount >= data.limit}
+      <!--
+        The list is one page deep, not the whole record. Classifying a row
+        costs one request per row, so the page asks for fewer than the
+        endpoint would give it — and a learner who cannot tell a capped list
+        from a complete one will read their own history as shorter than it is.
+      -->
+      <p class="caveat">{m.chronos_history_capped({ limit: data.limit })}</p>
+    {/if}
   </PanelSection>
 
   <PanelSection

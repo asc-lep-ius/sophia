@@ -8,6 +8,7 @@ import structlog
 from nicegui import app, ui
 
 from sophia.gui.middleware.health import get_container
+from sophia.gui.routes import DASHBOARD_SURFACE_PATH
 from sophia.gui.services.search_service import search_lectures
 from sophia.gui.state.course_state import get_current_course
 from sophia.gui.state.storage_map import (
@@ -138,7 +139,7 @@ def search_content() -> None:
         with ui.column().classes("w-full items-center py-12"):
             ui.icon("search", color="gray").classes("text-6xl")
             ui.label("Select a course from the Dashboard to begin.").classes("text-gray-500 mt-4")
-            ui.link("Go to Dashboard", "/").classes("mt-2")
+            ui.link("Go to Dashboard", DASHBOARD_SURFACE_PATH).classes("mt-2")
         return
 
     _render_header(container, course_id)

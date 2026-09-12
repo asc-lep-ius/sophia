@@ -272,6 +272,31 @@ describe("register page", () => {
     expect(buttons[0]?.textContent).toContain("12 of 30 places taken");
   });
 
+  /**
+   * A bare `?/register` is resolved against the page URL and replaces its
+   * whole query string, so the course would be gone by the time the action
+   * answered — dropping the learner back on the favourites list, unable to see
+   * whether the group filled or to try the next one.
+   */
+  it("keeps the open course in the action URL it submits to", () => {
+    render(RegisterPage, {
+      data: pageData({
+        detail: detail(),
+        favorites: { data: [favorite()], status: "ready" },
+        selectedCourse: "123.ABC",
+      }),
+      form: null,
+    });
+
+    const action = screen
+      .getAllByRole("button", { name: /^Register for/ })[0]
+      ?.closest("form")
+      ?.getAttribute("action");
+
+    expect(action).toContain("course=123.ABC");
+    expect(action).toContain("/register");
+  });
+
   it("says when the registration window has not opened yet", () => {
     render(RegisterPage, {
       data: pageData({
@@ -319,6 +344,19 @@ describe("register page", () => {
     });
 
     expect(screen.getByRole("status").textContent).toContain("Gruppe ist voll");
+  });
+
+  it("says the favourites are outside the account's scope rather than empty", () => {
+    render(RegisterPage, {
+      data: pageData({ favorites: { data: [], status: "unauthorized" } }),
+      form: null,
+    });
+
+    const panel = screen.getByRole("region", { name: "Favourites" });
+    expect(
+      within(panel).getByText(/outside what your account may read/),
+    ).toBeTruthy();
+    expect(within(panel).queryByText("No favourite courses")).toBeNull();
   });
 
   it("names an empty favourites list rather than leaving the page blank", () => {

@@ -1,5 +1,5 @@
 {
-  "note": "Parity cases for the deadline due-date phrasing, shared by two suites. tests/unit/chronos-dates.test.ts checks the migrated SvelteKit surface against them; tests/unit/gui/test_chronos_parity.py checks the legacy NiceGUI service that the surface replaces. Both have to agree, which is what makes this a parity fixture rather than two independent expectations. Offsets are plain seconds, so every case is timezone- and DST-independent by construction; the last two exist to pin that down rather than to leave it implied.",
+  "note": "Parity cases for the deadline due-date phrasing, shared by two suites. tests/unit/chronos-dates.test.ts checks the migrated SvelteKit surface against them; tests/unit/gui/test_chronos_parity.py checks the legacy NiceGUI service that the surface replaces. Both have to agree, which is what makes this a parity fixture rather than two independent expectations. Offsets are plain seconds, so every case is timezone- and DST-independent by construction. `now` is half an hour before Europe/Vienna springs forward, and the last two cases are the ones that discriminate: an implementation that compared calendar dates instead of flooring elapsed seconds would get both of them wrong, and only those two.",
   "now": "2027-03-28T00:30:00+00:00",
   "cases": [
     {
@@ -63,14 +63,14 @@
       "legacy": "overdue by 2 days"
     },
     {
-      "why": "a day across the spring-forward boundary in Europe/Vienna, which is still a day",
-      "offset_seconds": 86400,
-      "days": 1,
-      "legacy": "in 1 day"
+      "why": "23.5 hours across the Europe/Vienna spring-forward boundary: still today, though the local calendar date has already changed",
+      "offset_seconds": 84600,
+      "days": 0,
+      "legacy": "today"
     },
     {
-      "why": "a day back across the same boundary",
-      "offset_seconds": -86400,
+      "why": "20 minutes past, on the same local calendar day: already a whole day overdue, because the count floors elapsed seconds rather than comparing dates",
+      "offset_seconds": -1200,
       "days": -1,
       "legacy": "overdue by 1 day"
     }

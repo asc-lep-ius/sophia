@@ -41,6 +41,7 @@
   "chronos_empty_title": "Keine Fristen abgeglichen",
   "chronos_heading": "Fristen",
   "chronos_history_back": "Zurück zu den Fristen",
+  "chronos_history_capped": "Es werden nur die letzten {limit} vergangenen Fristen gezeigt.",
   "chronos_history_count": "{shown} von {total} sichtbar",
   "chronos_history_empty_body": "Eine Frist erscheint hier, sobald ihr Datum vorbei ist.",
   "chronos_history_empty_title": "Noch keine vergangenen Fristen",

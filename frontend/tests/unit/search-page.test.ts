@@ -201,6 +201,27 @@ describe("search page", () => {
     expect(announced).toContain("did not answer");
   });
 
+  /**
+   * A scope the learner does not have is not a service that failed. Telling
+   * someone reading another tenant's course to "try again in a moment" sends
+   * them at something that will never work.
+   */
+  it("says a refused scope is a scope, not an outage", () => {
+    render(SearchPage, {
+      data: pageData({
+        query: "graph",
+        results: { data: [], status: "unauthorized" },
+      }),
+    });
+
+    const announced = screen
+      .getAllByRole("status")
+      .map((node) => node.textContent)
+      .join(" ");
+    expect(announced).toContain("outside what your account may read");
+    expect(announced).not.toContain("did not answer");
+  });
+
   it("offers the next action when there is nothing indexed to search", () => {
     render(SearchPage, {
       data: pageData({

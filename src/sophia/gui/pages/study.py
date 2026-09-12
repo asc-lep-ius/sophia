@@ -14,6 +14,7 @@ from sophia.gui.components.flashcard import flashcard
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.components.math_input import math_input
 from sophia.gui.middleware.health import get_container
+from sophia.gui.routes import DASHBOARD_SURFACE_PATH
 from sophia.gui.services.study_service import (
     check_novel_topic,
     complete_session,
@@ -226,7 +227,7 @@ async def _study_session() -> None:
         with ui.column().classes("w-full items-center py-12"):
             ui.icon("school", color="gray").classes("text-6xl")
             ui.label("Select a course and topic first.").classes("text-gray-500 mt-4")
-            ui.link("Dashboard", "/").classes("mt-2")
+            ui.link("Dashboard", DASHBOARD_SURFACE_PATH).classes("mt-2")
         return
 
     interleaved = _get_interleaved()
@@ -772,7 +773,7 @@ async def _complete_study_session(
             log.exception("session_complete_failed", topic=t)
 
     ui.notify("Session complete!", type="positive")
-    ui.navigate.to("/")
+    ui.navigate.to(DASHBOARD_SURFACE_PATH)
 
 
 def _can_advance_from_step(step: int, *, num_topics: int) -> bool:
