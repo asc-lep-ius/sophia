@@ -50,6 +50,41 @@ const EXTEND_SESSION_ID = 501;
 /** A session whose generation failed: the predict route must be able to recover it. */
 const EMPTY_SESSION_ID = 502;
 
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * A fixed review schedule, expressed in days from now.
+ *
+ * Relative rather than absolute so the dashboard's week-ahead figure has the
+ * same shape whenever the suite runs; the one long German compound is there
+ * for the 320 px overflow gate.
+ */
+const REVIEW_TOPICS = [
+  { topic: "Graphs", dayOffset: 0, isDue: true },
+  { topic: "Sorting", dayOffset: 0, isDue: true },
+  { topic: "Hashing", dayOffset: 2, isDue: false },
+  { topic: "Dynamische Programmierungsaufgaben", dayOffset: 4, isDue: false },
+];
+
+/**
+ * Calibration rows, including one the retired scorer touched.
+ *
+ * The dashboard has to keep that row out of its figure and say so, which it
+ * can only be tested for against a fixture that has one.
+ */
+const CALIBRATION_RATINGS = [
+  { topic: "Graphs", predicted: 0.9, actual: 0.4, legacy_scored: false },
+  { topic: "Sorting", predicted: 0.5, actual: 0.6, legacy_scored: false },
+  { topic: "Hashing", predicted: 0.8, actual: 1, legacy_scored: true },
+  { topic: "Kombinatorik", predicted: 0.7, actual: null, legacy_scored: false },
+];
+
+const QUICKSTART_TOPICS = [
+  "Graphs",
+  "Sorting",
+  "Dynamische Programmierungsaufgaben",
+];
+
 const state = {
   sessions: new Map(),
   questions: new Map(),
@@ -155,7 +190,116 @@ const routes = [
   ["POST", /^\/api\/study\/predictions$/, recordPrediction],
   ["POST", /^\/api\/study\/reflections$/, recordReflection],
   ["POST", /^\/api\/events\/batch$/, ingestEvents],
+  ["GET", /^\/api\/review\/due$/, dueReviews],
+  ["GET", /^\/api\/review\/upcoming$/, upcomingReviews],
+  ["POST", /^\/api\/review\/complete$/, completeReview],
+  ["GET", /^\/api\/calibration\/ratings$/, calibrationRatings],
+  ["GET", /^\/api\/quickstart\/overview$/, quickstartOverview],
+  ["POST", /^\/api\/quickstart\/manual-topics$/, saveManualTopics],
+  ["POST", /^\/api\/quickstart\/confidence$/, saveConfidence],
 ];
+
+function reviewSchedule({ topic, dayOffset, isDue }) {
+  return {
+    topic,
+    learning_path_id: LEARNING_PATH_ID,
+    interval_index: 1,
+    interval_days: Math.max(dayOffset, 1),
+    last_reviewed_at: null,
+    next_review_at: new Date(Date.now() + dayOffset * MS_PER_DAY).toISOString(),
+    score_at_last_review: null,
+    difficulty: 0.3,
+    stability: 1.5,
+    review_count: 1,
+    is_due: isDue,
+  };
+}
+
+function dueReviews() {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    reviews: REVIEW_TOPICS.filter((entry) => entry.isDue).map(reviewSchedule),
+  };
+}
+
+function upcomingReviews(_match, _body, url) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    days_ahead: Number(url?.searchParams.get("days_ahead") ?? 3),
+    reviews: REVIEW_TOPICS.map(reviewSchedule),
+  };
+}
+
+/**
+ * Mirrors the server: the surface sends the button that was pressed and the
+ * schedule comes back. Nothing about the next date is computed in the browser,
+ * so nothing about it is asserted there either.
+ */
+function completeReview(_match, body) {
+  return {
+    schedule: reviewSchedule({
+      topic: body.topic ?? "Graphs",
+      dayOffset: (body.self_rating ?? 1) + 1,
+      isDue: false,
+    }),
+  };
+}
+
+function calibrationRatings() {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    ratings: CALIBRATION_RATINGS.map((rating) => ({
+      ...rating,
+      learning_path_id: LEARNING_PATH_ID,
+      rated_at: "2026-09-04T10:00:00Z",
+      calibration_error:
+        rating.actual === null ? null : rating.predicted - rating.actual,
+      is_blind_spot:
+        rating.actual !== null && rating.predicted - rating.actual > 0.2,
+      difficulty_level: "transfer",
+    })),
+  };
+}
+
+function quickstartTopic(topic) {
+  return {
+    topic,
+    learning_path_id: LEARNING_PATH_ID,
+    source: "transcript",
+    frequency: 2,
+  };
+}
+
+function quickstartOverview() {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    learning_paths: [
+      {
+        id: LEARNING_PATH_ID,
+        title: "Algorithmen und Datenstrukturen",
+        short_title: "AlgoDat",
+        url: null,
+      },
+    ],
+    topics: QUICKSTART_TOPICS.map(quickstartTopic),
+    nearest_deadline: null,
+    completed_session_count: 2,
+  };
+}
+
+function saveManualTopics(_match, body) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    topics: (body.topics ?? []).map(quickstartTopic),
+  };
+}
+
+function saveConfidence(_match, body) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    saved_count: Object.keys(body.ratings ?? {}).length,
+  };
+}
 
 function sessionResponse() {
   return {

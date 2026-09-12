@@ -4,10 +4,11 @@ This frontend pivot targets WCAG 2.2 AA for the SvelteKit surface under `/app`. 
 
 ## Automated Gate
 
-- Playwright runs `frontend/tests/e2e/a11y.spec.ts` against `/app/study`, `/app/dashboard`, `/app/login`, and `/app/settings`.
+- Playwright runs `frontend/tests/e2e/a11y.spec.ts` against `/app/study`, `/app/dashboard`, `/app/review`, the four `/app/quickstart` steps, `/app/login`, and `/app/settings`.
 - Axe uses the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa`, and `wcag22aa` tag set.
 - The gate target is zero serious, critical, or structural axe violations. New route work should add that route to the same matrix before the NiceGUI migration reaches it.
 - `frontend/tests/e2e/de-overflow.spec.ts` runs the same anchor routes at a 320 px German viewport and must stay green before merge.
+- `frontend/tests/e2e/high-traffic-mobile.spec.ts` runs dashboard, quickstart and review at 375 px and again at 320 px. Two widths, not one: a layout that fits the common phone and not the narrowest viewport the reflow criterion covers has not passed reflow.
 
 ## Manual and Design Requirements
 
@@ -22,6 +23,8 @@ This frontend pivot targets WCAG 2.2 AA for the SvelteKit surface under `/app`. 
 - Font baseline: Inter remains the default chrome and content stack. Atkinson Hyperlegible is reserved as an accessibility opt-in through `data-font="hyperlegible"`, using local/system availability and the same sans-serif fallbacks; no external font network fetch is required for the baseline.
 - Web-vitals status: `/api/metrics/web-vitals` is reserved only. The frontend may dynamically load `web-vitals` and make a no-body typed POST to the placeholder endpoint, but it must not send metric payloads, block rendering, or surface failures to users.
 - German overflow: long German chrome strings must remain inside the 320 px viewport.
+- Charts and figures: every figure ships a `<figcaption>`, a prose summary reached through `aria-describedby`, and a table carrying the same values. The drawn marks are `aria-hidden` because they repeat the table rather than adding to it — a screen reader that skips them misses nothing. See `docs/frontend-dashboard-charts.md`.
+- Operational states: a dashboard panel says which of ready, empty, unauthorized and failed it is in. Rendering a refused scope or a dead service as an empty panel teaches the learner to distrust the panels that do have data.
 
 ## Regression Practice
 

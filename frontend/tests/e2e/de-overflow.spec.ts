@@ -11,6 +11,11 @@ const routes = [
   "/app/study/1/act",
   "/app/study/1/reflect",
   "/app/dashboard",
+  "/app/review",
+  "/app/quickstart/welcome",
+  "/app/quickstart/topics",
+  "/app/quickstart/predict",
+  "/app/quickstart/done",
   "/app/login",
   "/app/settings",
 ];
