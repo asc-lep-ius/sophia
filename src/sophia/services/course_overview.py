@@ -19,7 +19,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
-import structlog
 from sqlalchemy import case, distinct, func, select
 
 from sophia.infra.schema import (
@@ -31,8 +30,6 @@ from sophia.infra.schema import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-log = structlog.get_logger()
 
 # Health score thresholds
 _THRESHOLD_RED = 5

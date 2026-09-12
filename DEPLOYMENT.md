@@ -49,15 +49,12 @@ Useful endpoints:
 | `http://localhost/` | `308` redirect to `/app/` |
 | `http://localhost/legacy/` | `404` — retired, and checked by `tests/api/test_proxy_config.py` |
 
-GPU transcription is no longer a Compose service. It is driven from the CLI on
-an image built from `ci/Dockerfile.cuda-base`, which carries the CUDA runtime,
-ffmpeg and the Whisper stack:
-
-```bash
-docker build -f ci/Dockerfile.cuda-base -t sophia-cuda:local .
-docker run --gpus all -v sophia-data:/data sophia-cuda:local \
-  /app/.venv/bin/python -m sophia lectures transcribe <module-id>
-```
+GPU transcription is no longer available from a container. The image that
+provided it was `Dockerfile.gui.cuda`, a NiceGUI image, and issue #102 removed
+it along with the CUDA base layer it sat on. Run `sophia lectures transcribe`
+on a host with CUDA and `uv sync --extra hermes` instead; rebuilding a GPU
+image around the CLI is separate work, not part of the retirement. See
+[docs/nicegui-retirement.md](docs/nicegui-retirement.md).
 
 ## Production Compose
 
