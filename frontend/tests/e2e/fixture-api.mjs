@@ -85,6 +85,52 @@ const QUICKSTART_TOPICS = [
   "Dynamische Programmierungsaufgaben",
 ];
 
+/**
+ * The learning path is examined in German while the chrome stays English.
+ *
+ * That pairing is the whole point of the content-language contract, so the
+ * fixture has to be the awkward case rather than the matching one.
+ */
+const CONTENT_LANGUAGE = "de";
+
+const CONTENT_SOURCES = [
+  {
+    id: 12,
+    external_ref: "series-12",
+    title: "Algorithmen und Datenstrukturen",
+  },
+];
+
+/** One finished item and one still in the pipeline, so both states render. */
+const CONTENT_ITEMS = [
+  {
+    id: "item-1",
+    title: "Graphen und Suchverfahren",
+    download_status: "completed",
+    skip_reason: null,
+    transcription_status: "completed",
+    index_status: "completed",
+    sequence_number: 1,
+    missed_at: null,
+  },
+  {
+    id: "item-2",
+    title: "Dynamische Programmierungsaufgaben",
+    download_status: "completed",
+    skip_reason: null,
+    transcription_status: "pending",
+    index_status: "pending",
+    sequence_number: 2,
+    missed_at: null,
+  },
+];
+
+const CATALOG_TOPICS = [
+  { topic: "Graphs", source: "transcript" },
+  { topic: "Sorting", source: "quiz" },
+  { topic: "Dynamische Programmierungsaufgaben", source: "manual" },
+];
+
 const state = {
   sessions: new Map(),
   questions: new Map(),
@@ -197,7 +243,96 @@ const routes = [
   ["GET", /^\/api\/quickstart\/overview$/, quickstartOverview],
   ["POST", /^\/api\/quickstart\/manual-topics$/, saveManualTopics],
   ["POST", /^\/api\/quickstart\/confidence$/, saveConfidence],
+  ["GET", /^\/api\/content-sources$/, listContentSources],
+  ["POST", /^\/api\/content-sources\/discover$/, discoverContentSources],
+  ["GET", /^\/api\/content-sources\/(\d+)\/content-items$/, listContentItems],
+  ["GET", /^\/api\/learning-paths\/(\d+)\/topics$/, listTopics],
+  [
+    "GET",
+    /^\/api\/learning-paths\/(\d+)\/topics\/confidence$/,
+    listTopicConfidence,
+  ],
+  [
+    "GET",
+    /^\/api\/learning-paths\/(\d+)\/content-language$/,
+    readContentLanguage,
+  ],
 ];
+
+function listContentSources() {
+  return { sources: CONTENT_SOURCES };
+}
+
+function discoverContentSources() {
+  return {
+    sources: [
+      {
+        id: 12,
+        title: "Vorlesungsaufzeichnungen",
+        learning_path_title: "Algorithmen und Datenstrukturen",
+        learning_path_short_title: "AlgoDat",
+        content_item_count: CONTENT_ITEMS.length,
+      },
+    ],
+  };
+}
+
+function listContentItems(match) {
+  return {
+    content_source_id: Number(match[1]),
+    items: CONTENT_ITEMS,
+  };
+}
+
+function catalogTopic({ topic, source }) {
+  return {
+    topic,
+    learning_path_id: LEARNING_PATH_ID,
+    source,
+    frequency: 2,
+  };
+}
+
+function listTopics(match) {
+  return {
+    learning_path_id: Number(match[1]),
+    topics: CATALOG_TOPICS.map(catalogTopic),
+  };
+}
+
+/** Only the first topic is rated, so the unrated filter has something to find. */
+function listTopicConfidence(match) {
+  return {
+    learning_path_id: Number(match[1]),
+    ratings: [
+      {
+        topic: CATALOG_TOPICS[0].topic,
+        learning_path_id: LEARNING_PATH_ID,
+        predicted: 0.9,
+        actual: null,
+        rated_at: "2026-09-04T10:00:00Z",
+        calibration_error: null,
+        is_blind_spot: false,
+      },
+    ],
+  };
+}
+
+/**
+ * Mirrors the server's fallback ladder: an explicit `?lang=` wins, otherwise
+ * the learning path's own language answers. The UI locale is never consulted,
+ * here or there.
+ */
+function readContentLanguage(match, _body, url) {
+  const override = url?.searchParams.get("lang");
+  const language = override === "de" || override === "en" ? override : null;
+  return {
+    learning_path_id: Number(match[1]),
+    content_language: language ?? CONTENT_LANGUAGE,
+    resolved_from: language === null ? "learning_path" : "override",
+    available_translations: [],
+  };
+}
 
 function reviewSchedule({ topic, dayOffset, isDue }) {
   return {
@@ -546,6 +681,30 @@ function streamEvents(response) {
   response.on("close", () => clearInterval(heartbeat));
 }
 
+/**
+ * The one multipart route, kept out of the JSON table.
+ *
+ * Everything else here answers a JSON body; this answers a `multipart/form-data`
+ * one, and the shared reader would only ever see an unparseable string. The
+ * fields are read out of the raw body with a regex rather than a real parser:
+ * the fixture only has to prove the browser's own form post reaches the API
+ * intact, which is what the no-JavaScript upload path rests on.
+ */
+function acceptUpload(raw) {
+  const title = /name="title"\r?\n\r?\n([\s\S]*?)\r?\n--/.exec(raw)?.[1] ?? "";
+  const filename = /name="file"; filename="([^"]*)"/.exec(raw)?.[1] ?? "";
+  if (!title.trim() || !filename) {
+    return null;
+  }
+  return {
+    id: "e2e-upload-1",
+    title: title.trim(),
+    media_type: "application/pdf",
+    byte_size: Buffer.byteLength(raw),
+    state: "queued",
+  };
+}
+
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
 
@@ -554,6 +713,26 @@ const server = createServer((request, response) => {
     /^\/api\/study\/\d+\/events$/.test(url.pathname)
   ) {
     streamEvents(response);
+    return;
+  }
+
+  if (
+    request.method === "POST" &&
+    url.pathname === "/api/content-sources/uploads"
+  ) {
+    readRawBody(request).then((raw) => {
+      const accepted = acceptUpload(raw);
+      if (accepted === null) {
+        send(response, 422, {
+          detail: {
+            code: "content.upload_rejected",
+            params: { reason: "file_required" },
+          },
+        });
+        return;
+      }
+      send(response, 201, accepted);
+    });
     return;
   }
 
@@ -583,15 +762,19 @@ function send(response, status, payload) {
   response.end(serialized);
 }
 
-async function readBody(request) {
-  if (request.method === "GET" || request.method === "HEAD") {
-    return {};
-  }
+async function readRawBody(request) {
   const chunks = [];
   for await (const chunk of request) {
     chunks.push(chunk);
   }
-  const raw = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function readBody(request) {
+  if (request.method === "GET" || request.method === "HEAD") {
+    return {};
+  }
+  const raw = await readRawBody(request);
   if (!raw) {
     return {};
   }

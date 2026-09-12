@@ -16,6 +16,9 @@ const routes = [
   "/app/quickstart/topics",
   "/app/quickstart/predict",
   "/app/quickstart/done",
+  "/app/content",
+  "/app/content/sources",
+  "/app/topics",
   "/app/login",
   "/app/settings",
 ];
