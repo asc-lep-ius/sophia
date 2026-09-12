@@ -1,0 +1,78 @@
+{
+  "note": "Parity cases for the deadline due-date phrasing, shared by two suites. tests/unit/chronos-dates.test.ts checks the migrated SvelteKit surface against them; tests/unit/gui/test_chronos_parity.py checks the legacy NiceGUI service that the surface replaces. Both have to agree, which is what makes this a parity fixture rather than two independent expectations. Offsets are plain seconds, so every case is timezone- and DST-independent by construction; the last two exist to pin that down rather than to leave it implied.",
+  "now": "2027-03-28T00:30:00+00:00",
+  "cases": [
+    {
+      "why": "a whole month out",
+      "offset_seconds": 2583000,
+      "days": 29,
+      "legacy": "in 29 days"
+    },
+    {
+      "why": "three and a half days out",
+      "offset_seconds": 302400,
+      "days": 3,
+      "legacy": "in 3 days"
+    },
+    {
+      "why": "exactly two days out",
+      "offset_seconds": 172800,
+      "days": 2,
+      "legacy": "in 2 days"
+    },
+    {
+      "why": "exactly one day out",
+      "offset_seconds": 86400,
+      "days": 1,
+      "legacy": "in 1 day"
+    },
+    {
+      "why": "a day and a half out",
+      "offset_seconds": 129600,
+      "days": 1,
+      "legacy": "in 1 day"
+    },
+    {
+      "why": "later today",
+      "offset_seconds": 43200,
+      "days": 0,
+      "legacy": "today"
+    },
+    {
+      "why": "due this instant",
+      "offset_seconds": 0,
+      "days": 0,
+      "legacy": "today"
+    },
+    {
+      "why": "half a day past, which floors to a whole day overdue",
+      "offset_seconds": -43200,
+      "days": -1,
+      "legacy": "overdue by 1 day"
+    },
+    {
+      "why": "exactly a day past",
+      "offset_seconds": -86400,
+      "days": -1,
+      "legacy": "overdue by 1 day"
+    },
+    {
+      "why": "a day and a half past",
+      "offset_seconds": -129600,
+      "days": -2,
+      "legacy": "overdue by 2 days"
+    },
+    {
+      "why": "a day across the spring-forward boundary in Europe/Vienna, which is still a day",
+      "offset_seconds": 86400,
+      "days": 1,
+      "legacy": "in 1 day"
+    },
+    {
+      "why": "a day back across the same boundary",
+      "offset_seconds": -86400,
+      "days": -1,
+      "legacy": "overdue by 1 day"
+    }
+  ]
+}
