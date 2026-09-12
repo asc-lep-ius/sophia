@@ -1,10 +1,10 @@
 """Where the legacy GUI sends a learner, and what it keeps serving.
 
-Phase 4a (issue #99) moved dashboard, quickstart and review to SvelteKit. Two
-things have to stay true together: nothing in this app sends anyone to its own
-copy of those pages any more, and the pages themselves stay registered so a
-``/legacy/`` link somebody already has keeps resolving. Retiring them is phase
-5's job.
+Phase 4a (issue #99) moved dashboard, quickstart and review to SvelteKit, and
+phase 4b (issue #100) moved lectures and topics. Two things have to stay true
+together: nothing in this app sends anyone to its own copy of those pages any
+more, and the pages themselves stay registered so a ``/legacy/`` link somebody
+already has keeps resolving. Retiring them is phase 5's job.
 """
 
 from __future__ import annotations
@@ -22,20 +22,24 @@ from sophia.gui.pages import dashboard as dashboard_page
 from sophia.gui.pages import review as review_page
 from sophia.gui.pages import settings as settings_page
 from sophia.gui.routes import (
+    CONTENT_SURFACE_PATH,
     DASHBOARD_SURFACE_PATH,
     QUICKSTART_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
     STUDY_SURFACE_PATH,
+    TOPICS_SURFACE_PATH,
 )
 
 if TYPE_CHECKING:
     from sophia.config import Settings
 
 MIGRATED_SURFACES = (
+    CONTENT_SURFACE_PATH,
     DASHBOARD_SURFACE_PATH,
     QUICKSTART_SURFACE_PATH,
     REVIEW_SURFACE_PATH,
     STUDY_SURFACE_PATH,
+    TOPICS_SURFACE_PATH,
 )
 
 
@@ -78,6 +82,33 @@ class TestMigratedSurfacePaths:
         assert "/" not in paths
         assert "/review" not in paths
 
+    def test_navigation_sends_the_learner_to_the_new_lectures_and_topics(self) -> None:
+        """Topics gains an entry it never had in this app.
+
+        The NiceGUI ``/topics`` page was only ever reachable by typing the URL.
+        A migrated surface with no way in is a redirect nobody made, which is
+        exactly what ``test_every_surface_constant_is_used_by_production_code``
+        was written to catch.
+        """
+        paths = {item["path"] for item in NAV_ITEMS}
+
+        assert CONTENT_SURFACE_PATH in paths
+        assert TOPICS_SURFACE_PATH in paths
+        assert "/lectures" not in paths
+        assert "/topics" not in paths
+
+    def test_the_pipeline_wizard_is_not_repointed_at_the_upload_page(self) -> None:
+        """``/lectures/setup`` configures Whisper and the LLM, not content.
+
+        ``/app/content/sources`` wears the same name and does something else:
+        it is where a content source arrives from. Sending the wizard's callers
+        there would answer a question about GPU settings with an upload form.
+        """
+        settings_source = inspect.getsource(settings_page)
+
+        assert 'ui.navigate.to("/lectures/setup")' in settings_source
+        assert CONTENT_SURFACE_PATH not in settings_source
+
     def test_keyboard_shortcuts_follow_the_navigation(self) -> None:
         assert _NAV_ROUTES["1"] == DASHBOARD_SURFACE_PATH
         assert _NAV_ROUTES["3"] == REVIEW_SURFACE_PATH
@@ -119,3 +150,8 @@ class TestLegacyPagesStayReachable:
 
         assert "/" in route_paths
         assert "/review" in route_paths
+        assert "/lectures" in route_paths
+        assert "/topics" in route_paths
+        # The pipeline wizard is not superseded at all, so it has to survive
+        # phase 5 as well as this one.
+        assert "/lectures/setup" in route_paths

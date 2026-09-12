@@ -1,4 +1,12 @@
-"""Tests for the Lectures landing page — setup-complete gate logic & pure helpers."""
+"""Tests for the Lectures landing page — setup-complete gate logic & pure helpers.
+
+Phase 5 removal: superseded by frontend/tests/unit/content-page.test.ts.
+
+The NiceGUI page these cover left the learner-facing path in phase 4b
+(issue #100) and stays registered only so an existing ``/legacy/lectures``
+link resolves. Both go together: deleting this module before the page
+would leave a served page nothing tests.
+"""
 
 from __future__ import annotations
 

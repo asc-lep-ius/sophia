@@ -1,4 +1,12 @@
-"""Tests for the Topics management page — pure helpers and constants."""
+"""Tests for the Topics management page — pure helpers and constants.
+
+Phase 5 removal: superseded by frontend/tests/unit/topics-page.test.ts.
+
+The NiceGUI page these cover left the learner-facing path in phase 4b
+(issue #100) and stays registered only so an existing ``/legacy/topics``
+link resolves. Both go together: deleting this module before the page
+would leave a served page nothing tests.
+"""
 
 from __future__ import annotations
 

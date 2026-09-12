@@ -18,20 +18,23 @@ if TYPE_CHECKING:
 
 class TestNavItems:
     def test_nav_items_count(self) -> None:
-        assert len(NAV_ITEMS) == 9
+        assert len(NAV_ITEMS) == 10
 
     def test_all_expected_paths_present(self) -> None:
         paths = {item["path"] for item in NAV_ITEMS}
         expected = {
-            # Dashboard, study and review left this app in phases 3 and 4a; the
-            # navigation follows the learner rather than keeping them here.
+            # Dashboard, study and review left this app in phases 3 and 4a,
+            # lectures and topics in 4b; the navigation follows the learner
+            # rather than keeping them here. Topics is new to this list: the
+            # NiceGUI page was only ever reachable by typing its URL.
             "/app/dashboard",
             "/app/study",
             "/app/review",
+            "/app/content",
+            "/app/topics",
             "/search",
             "/chronos",
             "/calibration",
-            "/lectures",
             "/register",
             "/settings",
         }

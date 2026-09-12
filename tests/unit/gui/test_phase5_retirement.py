@@ -22,7 +22,9 @@ EXPECTED_MARKED_MODULES = {
     "tests/unit/gui/test_dashboard.py",
     "tests/unit/gui/test_quickstart.py",
     "tests/unit/gui/test_review.py",
+    "tests/unit/gui/test_lectures.py",
     "tests/unit/gui/test_review_card.py",
+    "tests/unit/gui/test_topics.py",
 }
 
 
