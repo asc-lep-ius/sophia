@@ -146,8 +146,15 @@ async def complete_review_schedule(
 def _completion_score(payload: ReviewCompletionRequest) -> float:
     if payload.self_rating is not None:
         return score_for_self_rating(payload.self_rating)
-    # The request validator has already refused the both-None case.
-    return payload.score if payload.score is not None else 0.0
+    if payload.score is None:
+        # Unreachable: the request validator refuses the both-None case and
+        # ApiModel is frozen. Raising rather than defaulting because the only
+        # sensible default is 0.0, which is the "Again" score — if the
+        # invariant ever broke, the failure would be a silently worst-cased
+        # schedule rather than a 500 somebody notices.
+        msg = "ReviewCompletionRequest passed validation with neither grade."
+        raise ValueError(msg)
+    return payload.score
 
 
 def _review_schedule_response(schedule: ReviewSchedule) -> ReviewScheduleItemResponse:

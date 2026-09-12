@@ -11,6 +11,7 @@ from nicegui import app, ui
 from sophia.adapters.auth import clear_session, load_session, session_path
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.lectures import is_hermes_setup_complete
+from sophia.gui.routes import QUICKSTART_SURFACE_PATH
 from sophia.gui.services.job_registry import JobEntry, JobRegistry
 from sophia.gui.state.storage_map import (
     USER_HERMES_SETUP_COMPLETE,
@@ -355,9 +356,11 @@ def _render_quickstart_section() -> None:
         if is_complete or is_skipped:
 
             def _rerun() -> None:
-                app.storage.user[USER_QUICKSTART_COMPLETED] = False
-                app.storage.user[USER_QUICKSTART_SKIPPED] = False
-                ui.navigate.to("/")
+                # Straight to the SvelteKit wizard, and the NiceGUI flags stay
+                # as they are. Clearing them used to be how this page re-armed
+                # the modal on "/"; that page is no longer navigated to, so
+                # clearing them now would only re-arm something nobody sees.
+                ui.navigate.to(QUICKSTART_SURFACE_PATH)
 
             ui.button("Re-run Quickstart", icon="refresh", on_click=_rerun).classes(
                 "mt-3",

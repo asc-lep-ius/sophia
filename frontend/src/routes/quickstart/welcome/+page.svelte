@@ -60,7 +60,7 @@
     border: 1px solid var(--accent-strong);
     border-radius: 6px;
     background: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     padding: 0.55rem 0.9rem;
     text-decoration: none;
     overflow-wrap: anywhere;

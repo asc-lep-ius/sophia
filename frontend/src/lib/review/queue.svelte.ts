@@ -28,20 +28,34 @@ export type ReviewQueueOptions = {
   pacing: ReviewPacing;
   submit: (submission: ReviewSubmission, requestId: string) => Promise<void>;
   /**
-   * Retry tuning. The shipping default sends once and no more: unlike a study
-   * attempt, `/api/review/complete` carries no request id, so a retry the
-   * server already accepted would advance the schedule a second time. A
-   * rejected review rolls back and offers the learner a button instead.
+   * Retry tuning. The shipping default never resends on its own: unlike a
+   * study attempt, `/api/review/complete` carries no request id, so a resend
+   * the server already accepted would advance the schedule a second time. A
+   * rejected review rolls back and offers the learner a button, and that
+   * button is bounded too — see `REVIEW_MAX_SENDS`.
    */
   retry?: Pick<
     OutboxOptions<ReviewSubmission>,
-    "maxAttempts" | "retryDelayMs" | "holdMs" | "wait"
+    "maxAttempts" | "maxSends" | "retryDelayMs" | "holdMs" | "wait"
   >;
   now?: () => number;
   newId?: () => string;
 };
 
+/** No automatic resend: the loop runs once and then reports failure. */
 export const REVIEW_MAX_SEND_ATTEMPTS = 1;
+
+/**
+ * Sends per review, the learner's own retries included.
+ *
+ * One automatic, two deliberate. A retry only reaches the server after the
+ * previous send reported failure, so the dangerous case is narrow — a request
+ * the server committed and the browser never saw the answer to. This cannot
+ * close that hole, only keep it from repeating: the endpoint has no request id
+ * to dedupe on, and giving it one means a persisted uniqueness constraint that
+ * is not this phase's to add.
+ */
+export const REVIEW_MAX_SENDS = 3;
 
 /**
  * The queue of topics due for review.
@@ -59,10 +73,20 @@ export const REVIEW_MAX_SEND_ATTEMPTS = 1;
 export class ReviewQueueStore {
   #cards = $state<ReviewCard[]>([]);
   #index = $state(0);
-  #graded = $state(0);
+  /**
+   * Queue positions the server has taken.
+   *
+   * The outbox drops an entry once it is accepted, which makes "accepted" and
+   * "cancelled" look identical afterwards. Without this record the queue
+   * cannot tell that a card behind the cursor is already durable, and both
+   * recovery paths — a successful manual retry, and a rollback rewinding over
+   * a neighbour that succeeded — put that card back in front of the learner to
+   * be graded a second time.
+   */
+  #accepted = $state<number[]>([]);
   #promptShownAt = $state(0);
   #clockMs = $state(0);
-  #lastGrade = $state<string | null>(null);
+  #lastGrade = $state<{ requestId: string; position: number } | null>(null);
   #error = $state<string | null>(null);
   #options: ReviewQueueOptions;
   #outbox: SubmissionOutbox<ReviewSubmission>;
@@ -82,7 +106,9 @@ export class ReviewQueueStore {
     this.#clockMs = this.#promptShownAt;
     this.#outbox = new SubmissionOutbox<ReviewSubmission>({
       maxAttempts: REVIEW_MAX_SEND_ATTEMPTS,
+      maxSends: REVIEW_MAX_SENDS,
       ...options.retry,
+      onAccepted: (entry) => this.#accept(entry.payload.queuePosition),
       rollback: (entry) => this.#rollback(entry),
       submit: (payload, requestId) => this.#options.submit(payload, requestId),
     });
@@ -104,8 +130,16 @@ export class ReviewQueueStore {
     return Math.max(this.#cards.length - this.#index, 0);
   }
 
+  /**
+   * Reviews this sitting has put through.
+   *
+   * Derived rather than counted by hand: what the server has taken, plus what
+   * is still on its way. A rejected review is in neither, which is the point —
+   * the old hand-incremented counter could disagree with the outbox after a
+   * rollback and tell the learner they had reviewed something they had not.
+   */
   get gradedCount(): number {
-    return this.#graded;
+    return this.#accepted.length + this.#outbox.pendingCount;
   }
 
   get finished(): boolean {
@@ -163,7 +197,15 @@ export class ReviewQueueStore {
 
   /** Whether the last grade is still inside its cancel window. */
   get canUndo(): boolean {
-    return this.#lastGrade !== null && this.#outbox.canCancel(this.#lastGrade);
+    return (
+      this.#lastGrade !== null &&
+      this.#outbox.canCancel(this.#lastGrade.requestId)
+    );
+  }
+
+  /** Whether this rejected review may be sent again; see `REVIEW_MAX_SENDS`. */
+  canRetry(requestId: string): boolean {
+    return this.#outbox.canRetry(requestId);
   }
 
   /** Advance the store's view of the clock so the dwell floor can expire. */
@@ -198,8 +240,7 @@ export class ReviewQueueStore {
     this.#outbox.discardFailed(
       (failed) => failed.payload.queuePosition === position,
     );
-    this.#lastGrade = requestId;
-    this.#graded += 1;
+    this.#lastGrade = { position, requestId };
     this.#advance();
     this.#outbox.enqueue(requestId, {
       queuePosition: position,
@@ -211,13 +252,15 @@ export class ReviewQueueStore {
   }
 
   undo(): boolean {
-    const requestId = this.#lastGrade;
-    if (requestId === null || !this.#outbox.cancel(requestId)) {
+    const grade = this.#lastGrade;
+    if (grade === null || !this.#outbox.cancel(grade.requestId)) {
       return false;
     }
     this.#lastGrade = null;
-    this.#graded = Math.max(this.#graded - 1, 0);
-    this.#index = Math.max(this.#index - 1, 0);
+    // Back to the card that grade belonged to, not one step back: a card the
+    // server accepted while this one was held may have moved the cursor
+    // further than a single position.
+    this.#index = grade.position;
     const card = this.current;
     if (card) {
       card.revealed = true;
@@ -239,8 +282,37 @@ export class ReviewQueueStore {
     this.#error = null;
   }
 
+  #accept(position: number): void {
+    if (!this.#accepted.includes(position)) {
+      this.#accepted.push(position);
+    }
+    // A retry that succeeds has to move the queue on. Without this the card
+    // the server just took is still the current one, revealed, with the grade
+    // bar showing — and grading it again is the obvious next action.
+    this.#seek();
+  }
+
   #advance(): void {
     this.#index += 1;
+    this.#restartPrompt();
+    this.#seek();
+  }
+
+  /** Step over any card the server already holds. */
+  #seek(): void {
+    const before = this.#index;
+    while (
+      this.#index < this.#cards.length &&
+      this.#accepted.includes(this.#index)
+    ) {
+      this.#index += 1;
+    }
+    if (this.#index !== before) {
+      this.#restartPrompt();
+    }
+  }
+
+  #restartPrompt(): void {
     this.#promptShownAt = this.#now();
     this.#clockMs = this.#promptShownAt;
   }
@@ -250,7 +322,6 @@ export class ReviewQueueStore {
     if (card) {
       card.revealed = true;
     }
-    this.#graded = Math.max(this.#graded - 1, 0);
     // Rewind only backwards, and only to the earliest rejected card: with two
     // reviews in flight a later rollback must not undo an earlier one's
     // restoration, and neither may drag a learner forwards.
@@ -261,6 +332,9 @@ export class ReviewQueueStore {
       entry.payload.queuePosition,
     );
     this.#index = Math.min(this.#index, earliestRejected);
+    // The rewind may have passed over a neighbour the server accepted in the
+    // meantime; seeking again is what stops that one being graded twice.
+    this.#seek();
     this.#error = "review.grade_rejected";
   }
 }

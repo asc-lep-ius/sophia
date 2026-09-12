@@ -310,6 +310,6 @@
   a.primary {
     border-color: var(--accent-strong);
     background: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
   }
 </style>

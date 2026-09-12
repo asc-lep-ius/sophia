@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { completeReview } from "../../src/lib/api/review";
 import ReviewCard from "../../src/lib/components/review/ReviewCard.svelte";
-import { ReviewQueueStore } from "../../src/lib/review/queue.svelte";
+import {
+  REVIEW_MAX_SENDS,
+  ReviewQueueStore,
+} from "../../src/lib/review/queue.svelte";
 import { load as reviewLoad } from "../../src/routes/review/+page.server";
 import GradeBar from "../../src/lib/components/study/GradeBar.svelte";
 
@@ -104,6 +107,91 @@ describe("review queue", () => {
     // A retried completion the server already took would advance the FSRS
     // schedule a second time; the learner gets a button instead.
     expect(submit).toHaveBeenCalledTimes(1);
+  });
+
+  it("moves the queue on when a retry finally succeeds", async () => {
+    let refuse = true;
+    const submit = vi.fn(async () => {
+      if (refuse) {
+        throw new Error("refused");
+      }
+    });
+    const store = queue(["Graphs", "Sorting"], submit);
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(3);
+    await vi.waitFor(() => expect(store.failedCount).toBe(1));
+    expect(store.current?.topic).toBe("Graphs");
+
+    refuse = false;
+    const rejected = store.outboxEntries.find(
+      (entry) => entry.status === "failed",
+    );
+    await store.retryFailed(rejected?.requestId ?? "");
+
+    // The server now holds Graphs. Leaving it in front of the learner,
+    // revealed and with the grade bar showing, makes grading it twice the
+    // obvious next action — and the endpoint has no request id to fold the
+    // second one back into the first.
+    expect(store.current?.topic).toBe("Sorting");
+    expect(store.gradedCount).toBe(1);
+  });
+
+  it("does not rewind onto a topic the server already took", async () => {
+    const inFlight: { resolve: () => void; reject: (error: Error) => void }[] =
+      [];
+    const submit = vi.fn(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          inFlight.push({ reject, resolve });
+        }),
+    );
+    const store = queue(["Graphs", "Sorting", "Hashing"], submit);
+
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(3);
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(3);
+
+    inFlight[1]?.resolve();
+    await vi.waitFor(() => expect(store.gradedCount).toBe(2));
+    inFlight[0]?.reject(new Error("refused"));
+    await vi.waitFor(() => expect(store.failedCount).toBe(1));
+
+    expect(store.current?.topic).toBe("Graphs");
+
+    // Rewinding to the rejected card stepped back over Sorting, which the
+    // server accepted while Graphs was in flight. Regrading Graphs must not
+    // land the learner on it again.
+    store.grade(4);
+    expect(store.current?.topic).toBe("Hashing");
+  });
+
+  it("stops offering a retry once the send ceiling is reached", async () => {
+    const submit = vi.fn(async () => {
+      throw new Error("refused");
+    });
+    const store = queue(["Graphs"], submit);
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(3);
+    await vi.waitFor(() => expect(store.failedCount).toBe(1));
+
+    const requestId =
+      store.outboxEntries.find((entry) => entry.status === "failed")
+        ?.requestId ?? "";
+    expect(store.canRetry(requestId)).toBe(true);
+    await store.retryFailed(requestId);
+    await store.retryFailed(requestId);
+
+    // Three sends in total. Each one is a write the endpoint cannot dedupe,
+    // so the button goes quiet rather than staying live and doing nothing.
+    expect(submit).toHaveBeenCalledTimes(REVIEW_MAX_SENDS);
+    expect(store.canRetry(requestId)).toBe(false);
+    await store.retryFailed(requestId);
+    expect(submit).toHaveBeenCalledTimes(REVIEW_MAX_SENDS);
   });
 
   it("takes a review back while it is still held", () => {
@@ -203,8 +291,17 @@ describe("review grading stays on the server", () => {
       expect(content, path).not.toMatch(
         /\b(stability|difficulty|interval_days)\s*[*+/-]/,
       );
-      expect(content, path).not.toMatch(/0\.3\s*,\s*0\.7/);
-      expect(content, path).not.toMatch(/\bcompute_?[Ff]srs/);
+      // Loose enough to catch the shape the constant is really written in,
+      // `{1: 0.0, 2: 0.3, 3: 0.7, 4: 1.0}`, not just an array literal — the
+      // earlier pattern required `0.3` and `0.7` to be adjacent and so would
+      // have missed the most likely copy.
+      expect(content, path).not.toMatch(/0\.3\s*[,:][^\n]{0,16}0\.7/);
+      // Names that imply a score *mapping*. `self_rating` itself is not in
+      // the list: sending the pressed button over the wire is the whole point,
+      // and matching it would fail on the one call that is correct.
+      expect(content, path).not.toMatch(
+        /\bcompute_?fsrs|rating_?scores|selfratingscore|ratingtoscore/i,
+      );
     }
     expect(sources.length).toBeGreaterThan(0);
   });

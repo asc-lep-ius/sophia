@@ -10,14 +10,17 @@ copy of those pages any more, and the pages themselves stay registered so a
 from __future__ import annotations
 
 import inspect
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from starlette.routing import Mount, Route, WebSocketRoute
 
+from sophia.gui import routes
 from sophia.gui.components.keyboard_shortcuts import _NAV_ROUTES
 from sophia.gui.layout import NAV_ITEMS
 from sophia.gui.pages import dashboard as dashboard_page
 from sophia.gui.pages import review as review_page
+from sophia.gui.pages import settings as settings_page
 from sophia.gui.routes import (
     DASHBOARD_SURFACE_PATH,
     QUICKSTART_SURFACE_PATH,
@@ -47,6 +50,23 @@ class TestMigratedSurfacePaths:
         for path in MIGRATED_SURFACES:
             assert path.startswith("/app/")
 
+    def test_every_surface_constant_is_used_by_production_code(self) -> None:
+        """A constant only the tests reference is a redirect nobody made.
+
+        ``QUICKSTART_SURFACE_PATH`` was defined a phase before anything
+        navigated to it, which read as done and was not.
+        """
+        sources = "".join(
+            path.read_text(encoding="utf-8")
+            for path in (Path(inspect.getfile(routes)).parent).rglob("*.py")
+            if path.name != "routes.py"
+        )
+
+        for name in ("DASHBOARD_SURFACE_PATH", "QUICKSTART_SURFACE_PATH"):
+            assert name in sources, name
+        assert "REVIEW_SURFACE_PATH" in sources
+        assert "STUDY_SURFACE_PATH" in sources
+
     def test_navigation_sends_the_learner_to_the_new_dashboard_and_review(self) -> None:
         paths = {item["path"] for item in NAV_ITEMS}
 
@@ -69,12 +89,17 @@ class TestMigratedSurfacePaths:
         """
         dashboard_source = inspect.getsource(dashboard_page)
         review_source = inspect.getsource(review_page)
+        settings_source = inspect.getsource(settings_page)
 
         assert 'ui.navigate.to("/review")' not in dashboard_source
         assert "REVIEW_SURFACE_PATH" in dashboard_source
         assert 'ui.link("Dashboard", "/")' not in review_source
         assert 'ui.navigate.to("/")' not in review_source
         assert "DASHBOARD_SURFACE_PATH" in review_source
+        # Settings' "Re-run Quickstart" is the wizard's only entry point that
+        # is not the legacy dashboard's auto-opening modal.
+        assert 'ui.navigate.to("/")' not in settings_source
+        assert "QUICKSTART_SURFACE_PATH" in settings_source
 
 
 class TestLegacyPagesStayReachable:

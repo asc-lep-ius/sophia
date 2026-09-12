@@ -19,6 +19,14 @@
   --accent: #0f766e;
   --accent-strong: #115e59;
   --accent-soft: #d9f3ee;
+  /*
+    Text that sits on --accent, per theme.
+    The accent is dark in this theme and light in the other two, so a single
+    hardcoded white reads at 5.5:1 here and 1.9:1 on dark — a WCAG 1.4.3
+    failure the axe gate cannot see, because the e2e fixture only ever serves
+    the light theme. Each theme states its own; the value below is 5.47:1.
+  */
+  --on-accent: #ffffff;
   --warning: #a16207;
   --danger: #b42318;
   --focus: #2563eb;
@@ -36,6 +44,8 @@
   --accent: #2dd4bf;
   --accent-strong: #5eead4;
   --accent-soft: #123d3a;
+  /* 9.17:1 on --accent. */
+  --on-accent: #05201d;
   --warning: #facc15;
   --danger: #f87171;
   --focus: #93c5fd;
@@ -53,6 +63,8 @@
   --accent: #22c55e;
   --accent-strong: #86efac;
   --accent-soft: #08240f;
+  /* 7.50:1 on --accent. */
+  --on-accent: #04210d;
   --warning: #fde047;
   --danger: #fb7185;
   --focus: #f9a8d4;

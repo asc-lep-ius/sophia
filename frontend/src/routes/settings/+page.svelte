@@ -222,7 +222,7 @@
     border: 1px solid var(--accent-strong);
     border-radius: 6px;
     background: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
     padding: 0.65rem 0.9rem;
   }
 

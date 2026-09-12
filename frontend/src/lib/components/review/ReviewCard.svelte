@@ -162,7 +162,17 @@
     aria-label={m.study_unsaved_grades({ count: store.failedCount })}
   >
     {#each store.outboxEntries.filter((entry) => entry.status === "failed") as entry (entry.requestId)}
-      <button type="button" onclick={() => void store.retryFailed(entry.requestId)}>
+      <!--
+        Disabled rather than silently ignored once the send ceiling is reached:
+        a control that looks live and does nothing teaches the learner to press
+        it harder, and every press here is another write to an endpoint that
+        cannot fold duplicates.
+      -->
+      <button
+        type="button"
+        disabled={!store.canRetry(entry.requestId)}
+        onclick={() => void store.retryFailed(entry.requestId)}
+      >
         {m.review_retry_topic({ topic: entry.payload.topic })}
       </button>
     {/each}

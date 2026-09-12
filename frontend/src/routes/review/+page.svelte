@@ -16,11 +16,16 @@
     data.due.data.filter((review) => review.is_due).map((review) => review.topic),
   );
 
+  // A string, not the array it came from: `dueTopics` is a `$derived` that
+  // returns a fresh array every time it runs, so depending on it directly
+  // would rebuild the queue on any invalidation at all.
+  const queueKey = $derived(dueTopics.join("|"));
+
   // Rebuilt only when the queue itself changes, never when an unrelated
   // `invalidateAll` hands the page a fresh data object — that would throw away
   // a recall attempt the learner is part-way through writing.
   const store = $derived.by(() => {
-    void dueTopics.join("|");
+    void queueKey;
     return untrack(
       () =>
         new ReviewQueueStore({
@@ -139,6 +144,6 @@
   a.primary {
     border-color: var(--accent-strong);
     background: var(--accent);
-    color: #ffffff;
+    color: var(--on-accent);
   }
 </style>
