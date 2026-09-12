@@ -31,25 +31,50 @@ export const load: PageServerLoad = async (event) => {
 
   const filters = readTopicFilters(event.url);
   const override = readLanguageOverride(event.url);
-  const drawerOpen = readDrawerOpen(event.url);
   // Straight from the session tenant, never from the query string: a filter
   // that could name a learning path would be a way to read another one.
   const learningPathId = numericLearningPathId(
     event.locals.tenant.learning_path_id,
   );
 
-  if (learningPathId === null) {
-    return {
-      contentLanguage: fallbackContentLanguage(override),
-      drawerOpen,
-      filters,
-      learningPathId: null,
-      rows: unavailablePanel<TopicRow[]>([]),
-      totalCount: 0,
-      uiLocale: event.locals.locale,
-    };
-  }
+  const scoped =
+    learningPathId === null
+      ? unscopedTopics(override)
+      : await loadScopedTopics(event, learningPathId, override, filters);
 
+  return {
+    contentLanguage: scoped.contentLanguage,
+    drawerOpen: readDrawerOpen(event.url),
+    filters,
+    learningPathId,
+    rows: scoped.rows,
+    totalCount: scoped.totalCount,
+    uiLocale: event.locals.locale,
+  };
+};
+
+type ScopedTopics = {
+  contentLanguage: ContentLanguageState;
+  rows: Panel<TopicRow[]>;
+  totalCount: number;
+};
+
+function unscopedTopics(
+  override: ReturnType<typeof readLanguageOverride>,
+): ScopedTopics {
+  return {
+    contentLanguage: fallbackContentLanguage(override),
+    rows: unavailablePanel<TopicRow[]>([]),
+    totalCount: 0,
+  };
+}
+
+async function loadScopedTopics(
+  event: ApiEvent,
+  learningPathId: number,
+  override: ReturnType<typeof readLanguageOverride>,
+  filters: ReturnType<typeof readTopicFilters>,
+): Promise<ScopedTopics> {
   const [topics, ratings, contentLanguage] = await Promise.all([
     loadTopics(event, learningPathId),
     loadRatings(event, learningPathId),
@@ -59,16 +84,12 @@ export const load: PageServerLoad = async (event) => {
   const rows = topicRows(topics.data, ratings.data);
   return {
     contentLanguage,
-    drawerOpen,
-    filters,
-    learningPathId,
     // The panel's status comes from the topic list: a missing confidence list
     // means nothing is rated yet, which is a legitimate state, not a failure.
     rows: { data: filterTopicRows(rows, filters), status: topics.status },
     totalCount: rows.length,
-    uiLocale: event.locals.locale,
   };
-};
+}
 
 async function loadTopics(
   event: ApiEvent,

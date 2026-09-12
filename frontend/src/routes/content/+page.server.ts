@@ -9,7 +9,6 @@ import {
   groupContent,
   readContentFilters,
   readDrawerOpen,
-  type ContentGroup,
   type ContentItem,
   type ContentSource,
 } from "$lib/content/filters";
@@ -63,14 +62,6 @@ export const load: PageServerLoad = async (event) => {
     sourceCount: sources.data.length,
     sources: sources as Panel<ContentSource[]>,
     uiLocale: event.locals.locale,
-  } satisfies {
-    contentLanguage: ContentLanguageState;
-    drawerOpen: boolean;
-    filters: ReturnType<typeof readContentFilters>;
-    groups: ContentGroup[];
-    sourceCount: number;
-    sources: Panel<ContentSource[]>;
-    uiLocale: string;
   };
 };
 
