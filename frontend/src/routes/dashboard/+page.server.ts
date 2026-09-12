@@ -117,6 +117,16 @@ async function loadCalibration(
   );
 }
 
+/**
+ * Sessions, for what is unfinished — never for an outcome figure.
+ *
+ * The list carries `pre_test_score`, `post_test_score` and `improvement`, and
+ * unlike a calibration rating it carries no `legacy_scored` flag, so there is
+ * no way to tell a measured session from one the retired scorer touched. #99
+ * asks for known-bad rows to be excluded or flagged; with nothing to flag them
+ * by, the panel shows what a session *is* rather than what it scored. Widening
+ * the list response is what a later phase would need to change first.
+ */
 async function loadSessions(
   event: ApiEvent,
   learningPathId: number,
