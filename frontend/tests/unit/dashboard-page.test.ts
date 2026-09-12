@@ -187,12 +187,27 @@ type DashboardData = {
   upcoming: Panel<ReviewItem[]>;
 };
 
+/** What the root layout load contributes to every page's data. */
+const layoutData = {
+  authenticated: true,
+  locale: "en",
+  settings: null,
+  tenant: {
+    learning_path_id: TENANT_LEARNING_PATH,
+    org_id: "tu-wien",
+    role: "student",
+  },
+  theme: "light",
+  user: null,
+} as const;
+
 function readyPanel<T>(data: T): Panel<T> {
   return { data, status: "ready" };
 }
 
-function pageData(overrides: Partial<DashboardData>): DashboardData {
+function pageData(overrides: Partial<DashboardData>) {
   return {
+    ...layoutData,
     calibration: readyPanel<CalibrationRating[]>([]),
     due: readyPanel<ReviewItem[]>([]),
     learningPathId: 12,
