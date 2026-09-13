@@ -53,12 +53,6 @@ class Settings(BaseSettings):
     # Typst (optional, auto-detected)
     typst_path: str = "typst"
 
-    # GUI
-    gui_host: str = "127.0.0.1"
-    gui_port: int = 8080
-    gui_reload: bool = False
-    auto_sync: bool = True
-
     # API/session security
     production: bool = False
     secret_key: str = ""
@@ -71,9 +65,6 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = True
     session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
-    # Session health
-    session_keepalive_interval: int = 300
-
     # Persistence
     database_url: str = "postgresql+asyncpg://sophia:sophia@localhost:5432/sophia"
     database_pool_size: int = Field(default=5, gt=0)
@@ -81,6 +72,12 @@ class Settings(BaseSettings):
     database_pool_timeout: int = Field(default=30, gt=0)
     database_pool_recycle: int = Field(default=1800, gt=0)
     database_echo: bool = False
+
+    # Content ingestion
+    # Matches the proxy's `@api_uploads` ceiling on purpose. Two different
+    # numbers would mean an upload the proxy accepts and the API refuses, or
+    # the reverse, and the learner would only ever see the second one.
+    content_upload_max_bytes: int = Field(default=512 * 1024**2, gt=0)
 
     # Learning process integrity
     default_content_language: Literal["de", "en"] = "de"
@@ -107,14 +104,6 @@ class Settings(BaseSettings):
     sentry_release: str = ""
     sentry_environment: str = "development"
     sentry_traces_sample_rate: float = Field(default=0.0, ge=0.0, le=1.0)
-
-    @field_validator("session_keepalive_interval")
-    @classmethod
-    def _keepalive_at_least_60(cls, value: int) -> int:
-        if value < 60:
-            msg = "session_keepalive_interval must be at least 60 seconds"
-            raise ValueError(msg)
-        return value
 
     @field_validator("redis_url")
     @classmethod
@@ -222,10 +211,6 @@ class Settings(BaseSettings):
         if self.secret_key:
             return self.secret_key
         return _LOCAL_DEVELOPMENT_SECRET_KEY
-
-    def nicegui_storage_secret(self) -> str:
-        """Return the secret used by NiceGUI browser-backed storage."""
-        return self.session_signing_key()
 
     def session_verification_keys(self) -> tuple[str, ...]:
         """Return unique keys accepted for session verification."""

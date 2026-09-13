@@ -1,8 +1,8 @@
 # Study Surface Specification
 
 The SvelteKit study surface implements the Equilibration Cycle: predict, act,
-reflect. It is the surface at `/app/study`; the NiceGUI page it replaces stays
-reachable at `/legacy/study` until phase 5 removes it, but nothing links there.
+reflect. It is the only study surface: the NiceGUI page it replaced was deleted
+by issue #102, and `/legacy/study` now answers `404`.
 
 Where this document and issue #98 disagreed, the issue won and this document
 was corrected: an earlier draft described a reveal-and-grade loop in which a

@@ -9,9 +9,12 @@ from typing import Any
 import pytest
 import yaml
 
+from sophia.config import Settings
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INTERNAL_API_BASE_URL = "http://api:8000"
 REDIS_URL = "redis://redis:6379/0"
+CONTENT_UPLOAD_MAX_BYTES = 512 * 1024**2
 
 
 def read_project_file(path: str) -> str:
@@ -122,23 +125,43 @@ def compose_environment(service_block: str) -> dict[str, str]:
     return environment
 
 
-def test_caddy_routes_app_api_and_legacy_before_fallback() -> None:
+def test_caddy_routes_app_and_api_before_the_catch_all() -> None:
     caddyfile = read_project_file("proxy/Caddyfile")
+    root_redirect = "\tredir / /app/ 308"
     exact_app_redirect = "\tredir /app /app/ 308"
     frontend_app_handle = "\thandle /app/* {"
     api_sse_handle = "\thandle @api_sse {"
     api_handle = "\thandle /api/* {"
-    legacy_redirect = "\tredir /legacy /legacy/ 308"
-    legacy_handle = "\thandle_path /legacy/* {"
-    legacy_fallback = "\thandle {"
+    catch_all = "\thandle {"
 
+    assert root_redirect in caddyfile
     assert exact_app_redirect in caddyfile
     assert caddyfile.index(exact_app_redirect) < caddyfile.index(frontend_app_handle)
-    assert caddyfile.index(frontend_app_handle) < caddyfile.index(legacy_fallback)
+    assert caddyfile.index(frontend_app_handle) < caddyfile.index(catch_all)
     assert caddyfile.index(api_sse_handle) < caddyfile.index(api_handle)
-    assert caddyfile.index(api_handle) < caddyfile.index(legacy_fallback)
-    assert caddyfile.index(legacy_redirect) < caddyfile.index(legacy_handle)
-    assert caddyfile.index(legacy_handle) < caddyfile.index(legacy_fallback)
+    assert caddyfile.index(api_handle) < caddyfile.index(catch_all)
+
+
+def test_caddy_serves_nothing_outside_app_and_api() -> None:
+    """The catch-all answers rather than proxying, which is what retires /legacy/*.
+
+    Asserted on the block's contents, not on the absence of the word "legacy":
+    a fallback that reverse-proxied anywhere would serve every path the two
+    handles above do not claim, whatever it was named.
+    """
+    caddyfile = read_project_file("proxy/Caddyfile")
+    fallback = caddy_block(caddyfile, "\thandle {")
+    body = [line.strip() for line in fallback.splitlines()[1:-1] if line.strip()]
+
+    assert body == ["respond 404"]
+
+    # Read past the comments: the block above explains what it replaced, and a
+    # word-match on the whole file would fail on the explanation.
+    directives = "\n".join(active_caddy_lines(caddyfile))
+
+    assert "/legacy" not in directives
+    assert "sophia-gui" not in directives
+    assert "_nicegui" not in directives
 
 
 def test_caddy_sse_streams_are_not_buffered_or_compressed() -> None:
@@ -164,6 +187,30 @@ def test_caddy_sse_matcher_covers_the_study_realtime_endpoint() -> None:
     )
 
     assert "/api/study/*/events*" in sse_matcher_line.split()
+
+
+def test_upload_ceilings_agree_across_proxy_frontend_and_api() -> None:
+    """A ceiling is only a ceiling if every hop enforces the same one.
+
+    The browser posts the upload form to SvelteKit, which forwards it to the
+    API, and Caddy sits in front of both. Three different limits would mean an
+    upload one hop accepts and the next refuses, and the learner would only
+    ever be shown the refusal.
+    """
+    caddyfile = read_project_file("proxy/Caddyfile")
+    upload_matcher_line = next(
+        line for line in active_caddy_lines(caddyfile) if line.startswith("@api_uploads path")
+    )
+
+    assert "/api/content-sources/uploads" in upload_matcher_line.split()
+    assert "max_size 512MB" in caddy_block(caddyfile, "\trequest_body @api_uploads")
+    assert Settings().content_upload_max_bytes == CONTENT_UPLOAD_MAX_BYTES
+
+    for compose_path in ("docker-compose.yml", "docker-compose.prod.yml"):
+        frontend_environment = compose_config_environment(
+            compose_services(compose_path)["frontend"],
+        )
+        assert frontend_environment["BODY_SIZE_LIMIT"] == str(CONTENT_UPLOAD_MAX_BYTES)
 
 
 def test_caddy_rate_limit_is_active_for_login_per_ip() -> None:
@@ -254,36 +301,16 @@ def test_compose_frontend_keeps_public_api_path_and_private_ssr_origin(
 
 
 @pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
-def test_compose_gui_receives_api_redis_url_and_can_reach_redis(
-    compose_path: str,
-) -> None:
-    services = compose_services(compose_path)
-    api_environment = compose_config_environment(services["api"])
-    gui_service_names = [
-        service_name
-        for service_name in ("sophia-gui", "sophia-gui-gpu")
-        if service_name in services
-    ]
-
-    assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
-    for service_name in gui_service_names:
-        gui_environment = compose_config_environment(services[service_name])
-        assert gui_environment["SOPHIA_REDIS_URL"] == api_environment["SOPHIA_REDIS_URL"]
-        assert compose_network_names(services[service_name]) & compose_network_names(
-            services["redis"],
-        )
-
-
-@pytest.mark.parametrize("compose_path", ["docker-compose.yml", "docker-compose.prod.yml"])
 def test_compose_keeps_runtime_topology_split(compose_path: str) -> None:
     services = compose_services(compose_path)
     api_environment = compose_config_environment(services["api"])
 
-    assert {"proxy", "frontend", "api", "redis", "sophia-gui"} <= set(services)
+    assert {"proxy", "frontend", "api", "redis"} <= set(services)
+    assert not {"sophia-gui", "sophia-gui-gpu"} & set(services)
     assert "ports" not in services["frontend"]
     assert "ports" not in services["api"]
     assert "ports" not in services["redis"]
     assert "sophia.api.app:create_standalone_api_app" in services["api"].get("command", [])
     assert api_environment["SOPHIA_REDIS_URL"] == REDIS_URL
     assert services["api"]["depends_on"]["redis"]["condition"] == "service_healthy"
-    assert {"frontend", "api", "sophia-gui"} <= set(services["proxy"]["depends_on"])
+    assert {"frontend", "api"} <= set(services["proxy"]["depends_on"])

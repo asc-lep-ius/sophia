@@ -17,6 +17,19 @@ const routes = [
   "/app/quickstart/topics",
   "/app/quickstart/predict",
   "/app/quickstart/done",
+  "/app/content",
+  "/app/content/sources",
+  "/app/topics",
+  "/app/search",
+  // Both variants of the two surfaces whose interesting markup only appears
+  // once something is selected: an empty search box and a favourites list
+  // exercise neither the results list nor the five-column groups table.
+  "/app/search?q=graph",
+  "/app/chronos",
+  "/app/chronos/history",
+  "/app/calibration",
+  "/app/register",
+  "/app/register?course=123.ABC",
   "/app/login",
   "/app/settings",
 ];

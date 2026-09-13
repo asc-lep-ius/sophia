@@ -227,12 +227,3 @@ async def test_reconciliation_runs_after_topic_extraction(db: AsyncSession) -> N
     rows = list(cursor.fetchall())
     assert len(rows) == 1
     assert rows[0][0] == "Algebra"
-
-
-# ── Storage key test ───────────────────────────────────────────────────────
-
-
-def test_reconciliation_dismissed_key_exists() -> None:
-    from sophia.gui.state.storage_map import USER_RECONCILIATION_DISMISSED
-
-    assert USER_RECONCILIATION_DISMISSED == "reconciliation_dismissed"

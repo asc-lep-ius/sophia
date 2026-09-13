@@ -17,6 +17,7 @@ from sophia.domain.errors import (
     AthenaError,
     AuthError,
     ChronosError,
+    ContentUploadRejected,
     EngagementPolicyUnmet,
     HermesError,
     MoodleError,
@@ -49,6 +50,10 @@ _DOMAIN_ERROR_SPECS: tuple[tuple[type[SophiaError], ErrorSpec], ...] = (
     (
         EngagementPolicyUnmet,
         ErrorSpec("engagement.policy_unmet", HTTPStatus.PRECONDITION_FAILED),
+    ),
+    (
+        ContentUploadRejected,
+        ErrorSpec("content.upload_rejected", HTTPStatus.UNPROCESSABLE_ENTITY),
     ),
     (MoodleError, ErrorSpec("moodle.failed", HTTPStatus.BAD_GATEWAY)),
     (TissError, ErrorSpec("tiss.failed", HTTPStatus.BAD_GATEWAY)),

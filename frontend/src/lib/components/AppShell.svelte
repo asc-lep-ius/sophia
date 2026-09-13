@@ -22,12 +22,18 @@
 
   type RouteId =
     | "/"
+    | "/calibration"
+    | "/chronos"
+    | "/content"
     | "/dashboard"
     | "/login"
     | "/quickstart"
+    | "/register"
     | "/review"
+    | "/search"
     | "/settings"
-    | "/study";
+    | "/study"
+    | "/topics";
 
   type Props = {
     activePath: string;
@@ -54,6 +60,12 @@
     { path: "/dashboard", label: m.nav_dashboard },
     { path: "/study", label: m.nav_study },
     { path: "/review", label: m.nav_review },
+    { path: "/content", label: m.nav_content },
+    { path: "/topics", label: m.nav_topics },
+    { path: "/search", label: m.nav_search },
+    { path: "/chronos", label: m.nav_chronos },
+    { path: "/calibration", label: m.nav_calibration },
+    { path: "/register", label: m.nav_register },
     { path: "/quickstart", label: m.nav_quickstart },
     { path: "/settings", label: m.nav_settings },
     { path: "/login", label: m.nav_login },

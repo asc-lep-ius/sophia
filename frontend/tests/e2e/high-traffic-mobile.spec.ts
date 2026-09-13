@@ -26,6 +26,9 @@ for (const route of [
   "/app/quickstart/topics",
   "/app/quickstart/predict",
   "/app/review",
+  "/app/content",
+  "/app/content/sources",
+  "/app/topics",
 ]) {
   test(`${route} fits a 375px phone and a 320px one`, async ({ page }) => {
     await authenticateShell(page);

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Path, Request, status
+from fastapi import APIRouter, Form, HTTPException, Path, Request, status
 
 from sophia.api.deps import (
     current_session_record,
     get_app_container,
+    get_settings,
     request_session,
     require_csrf,
 )
@@ -19,16 +20,21 @@ from sophia.api.schemas.content_sources import (
     ContentSourceIngestionStatusResponse,
     ContentSourceListResponse,
     ContentSourceResponse,
+    ContentSourceUploadForm,
+    ContentSourceUploadResponse,
     DiscoveredContentSourceResponse,
+    IngestionState,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.transactions import TransactionalRoute
+from sophia.services.content_uploads import stage_upload
 from sophia.services.hermes_catalog import discover_lecture_modules, get_lecture_modules
 from sophia.services.hermes_manage import EpisodeStatus, get_pipeline_status
 
 router = APIRouter(tags=["content-sources"], route_class=TransactionalRoute)
 
 ContentSourceIdPath = Annotated[int, Path(gt=0)]
+UploadBody = Annotated[ContentSourceUploadForm, Form(media_type="multipart/form-data")]
 
 
 @router.get(
@@ -73,6 +79,50 @@ async def discover_content_sources(request: Request) -> ContentSourceDiscoveryRe
             )
             for module in modules
         ],
+    )
+
+
+@router.post(
+    "/content-sources/uploads",
+    response_model=ContentSourceUploadResponse,
+    operation_id="createContentSourceUpload",
+    status_code=status.HTTP_201_CREATED,
+    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope}},
+)
+async def create_content_source_upload(
+    request: Request,
+    upload: UploadBody,
+) -> ContentSourceUploadResponse:
+    """Accept one multipart upload, or say which check refused it.
+
+    Deliberately reachable by a plain form post: the enhanced client adds
+    progress and cancellation on top, but the surface a learner without
+    JavaScript sees has to reach this same handler.
+
+    The body has already been received by the time this runs — Starlette spools
+    a file part before the handler sees it — so the size check inside
+    :func:`stage_upload` bounds what is kept, not what arrives. The proxy and
+    the frontend container are what bound arrival; see that module's docstring.
+    """
+    session = await require_csrf(request)
+    settings = get_settings(request)
+    staged = await stage_upload(
+        title=upload.title,
+        filename=upload.file.filename,
+        read_chunk=upload.file.read,
+        data_dir=settings.data_dir,
+        # Staged under the session's own learning path, never one a caller
+        # names: the upload carries no scope of its own, and a file written
+        # without an owner cannot be given one afterwards.
+        learning_path_id=session.tenant.learning_path_id,
+        max_bytes=settings.content_upload_max_bytes,
+    )
+    return ContentSourceUploadResponse(
+        id=staged.upload_id,
+        title=staged.title,
+        media_type=staged.media_type,
+        byte_size=staged.byte_size,
+        state=IngestionState(staged.state.value),
     )
 
 
