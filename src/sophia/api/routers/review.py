@@ -28,6 +28,7 @@ from sophia.services.athena_review import (
     get_due_reviews,
     get_upcoming_reviews,
     schedule_review,
+    score_for_self_rating,
 )
 
 if TYPE_CHECKING:
@@ -137,9 +138,23 @@ async def complete_review_schedule(
         await request_session(request),
         payload.topic,
         payload.learning_path_id,
-        payload.score,
+        _completion_score(payload),
     )
     return ReviewScheduleResponse(schedule=_review_schedule_response(schedule))
+
+
+def _completion_score(payload: ReviewCompletionRequest) -> float:
+    if payload.self_rating is not None:
+        return score_for_self_rating(payload.self_rating)
+    if payload.score is None:
+        # Unreachable: the request validator refuses the both-None case and
+        # ApiModel is frozen. Raising rather than defaulting because the only
+        # sensible default is 0.0, which is the "Again" score — if the
+        # invariant ever broke, the failure would be a silently worst-cased
+        # schedule rather than a 500 somebody notices.
+        msg = "ReviewCompletionRequest passed validation with neither grade."
+        raise ValueError(msg)
+    return payload.score
 
 
 def _review_schedule_response(schedule: ReviewSchedule) -> ReviewScheduleItemResponse:

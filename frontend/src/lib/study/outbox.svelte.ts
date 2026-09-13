@@ -15,7 +15,25 @@ export type OutboxEntry<T> = {
 export type OutboxOptions<T> = {
   submit: (payload: T, requestId: string) => Promise<void>;
   rollback: (entry: OutboxEntry<T>, error: unknown) => void;
+  /**
+   * Called the moment the server takes a submission, before the entry is
+   * dropped.
+   *
+   * The entry disappearing is otherwise indistinguishable from it being
+   * cancelled, and a surface that has to know which cards the server already
+   * holds cannot tell the difference after the fact.
+   */
+  onAccepted?: (entry: OutboxEntry<T>) => void;
   maxAttempts?: number;
+  /**
+   * Hard ceiling on sends per entry, manual retries included.
+   *
+   * `maxAttempts` only governs the automatic loop, so without this a retry
+   * button is an unbounded send button. That is harmless for an endpoint that
+   * folds duplicates on a request id and is not harmless for one that does
+   * not. Unlimited by default, which is the behaviour study relies on.
+   */
+  maxSends?: number;
   retryDelayMs?: number;
   /** How long an entry can still be cancelled before it is sent. */
   holdMs?: number;
@@ -158,13 +176,39 @@ export class SubmissionOutbox<T> {
     }
   }
 
+  /**
+   * Whether a retry would be taken now.
+   *
+   * Exposed so a button can be disabled rather than silently ignored: a
+   * control that looks live and does nothing teaches the learner to press it
+   * harder.
+   */
+  canRetry(requestId: string): boolean {
+    const entry = this.#entries.find((item) => item.requestId === requestId);
+    return entry !== undefined && this.#canSend(entry);
+  }
+
   async retry(requestId: string): Promise<void> {
     const entry = this.#entries.find((item) => item.requestId === requestId);
-    if (!entry) {
+    if (!entry || !this.#canSend(entry)) {
       return;
     }
     entry.status = "retrying";
     await this.#send(entry);
+  }
+
+  /**
+   * Whether another send is allowed for this entry.
+   *
+   * "retrying" means one is already in flight. Without that check five taps on
+   * a retry button are five concurrent requests, and an endpoint with no
+   * request id has no way to fold them back together afterwards.
+   */
+  #canSend(entry: OutboxEntry<T>): boolean {
+    return (
+      entry.status !== "retrying" &&
+      entry.attempts < (this.#options.maxSends ?? Number.POSITIVE_INFINITY)
+    );
   }
 
   async #send(entry: OutboxEntry<T>): Promise<void> {
@@ -175,6 +219,9 @@ export class SubmissionOutbox<T> {
       entry.attempts += 1;
       try {
         await this.#options.submit(entry.payload, entry.requestId);
+        // Announced before the entry is dropped: afterwards there is nothing
+        // left to say which submission the server took.
+        this.#options.onAccepted?.(entry);
         this.#remove(entry.requestId);
         return;
       } catch (error) {

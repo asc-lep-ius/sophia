@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import structlog
 from sqlalchemy import select
@@ -22,6 +22,27 @@ log = structlog.get_logger()
 # FSRS default parameters
 FSRS_DEFAULT_DIFFICULTY = 0.3
 FSRS_DEFAULT_STABILITY = 1.0
+
+SELF_RATING_SCORES: Final[dict[int, float]] = {1: 0.0, 2: 0.3, 3: 0.7, 4: 1.0}
+"""Again/Hard/Good/Easy -> the score FSRS schedules against.
+
+Owned here rather than by any surface. A client that mapped the scale itself
+would be a second FSRS input nobody could change without finding every copy;
+callers send the rating the learner pressed and let this module say what it is
+worth.
+"""
+
+
+def score_for_self_rating(rating: int) -> float:
+    """Map a 1-4 post-recall self-rating to an FSRS score.
+
+    Raises ``ValueError`` outside 1-4.
+    """
+    score = SELF_RATING_SCORES.get(rating)
+    if score is None:
+        msg = f"Review self-rating must be 1-4, got {rating}"
+        raise ValueError(msg)
+    return score
 
 
 def compute_fsrs_interval(

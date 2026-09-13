@@ -256,11 +256,17 @@ frontend-size:
   script:
     - pnpm -C frontend run size-limit
 
+# The reflow and accessibility gate. high-traffic-mobile.spec.ts belongs with
+# the other two rather than with the study specs: it checks the same property
+# at 375 px that de-overflow checks at 320 px, and a page that passes axe on a
+# desktop and overflows on a phone has not passed anything.
 frontend-a11y:
   extends: .frontend-job
   script:
     - pnpm -C frontend exec playwright install --with-deps chromium
-    - pnpm -C frontend run test:e2e -- a11y.spec.ts de-overflow.spec.ts
+    - >
+      pnpm -C frontend run test:e2e --
+      a11y.spec.ts de-overflow.spec.ts high-traffic-mobile.spec.ts
   artifacts:
     when: on_failure
     paths:

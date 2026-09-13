@@ -87,6 +87,7 @@ def test_calibration_read_routes_return_response_shapes(monkeypatch: pytest.Monk
         "calibration_error": 0.25,
         "is_blind_spot": True,
         "difficulty_level": "transfer",
+        "legacy_scored": False,
     }
     assert ratings_response.status_code == 200
     assert ratings_response.json() == {"learning_path_id": 12, "ratings": [expected_rating]}
@@ -172,6 +173,7 @@ def test_rate_confidence_returns_saved_rating(monkeypatch: pytest.MonkeyPatch) -
             "calibration_error": None,
             "is_blind_spot": False,
             "difficulty_level": "transfer",
+            "legacy_scored": False,
         },
     }
 
@@ -297,3 +299,36 @@ def test_calibration_openapi_contract_is_visible() -> None:
         openapi["paths"]["/api/calibration/actual-score"]["patch"]["operationId"]
         == "updateCalibrationActualScore"
     )
+
+
+def test_calibration_ratings_flag_legacy_scored_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A dashboard cannot exclude what the API never tells it about.
+
+    Rows scored by the retired heuristic report an ``actual`` of 1.0 for
+    anything submitted, so a blind-spot widget built on them is confidently
+    wrong. The flag travels with the rating so the surface can drop or mark it.
+    """
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(),
+    )
+    login(harness)
+
+    async def fake_get_blind_spots(_db: object, _course_id: int) -> list[ConfidenceRating]:
+        return [
+            ConfidenceRating(
+                topic="Graphs",
+                course_id=12,
+                predicted=0.9,
+                actual=1.0,
+                rated_at="2026-05-26T12:00:00Z",
+                legacy_scored=True,
+            ),
+        ]
+
+    monkeypatch.setattr(calibration_router, "get_blind_spots", fake_get_blind_spots)
+
+    response = harness.client.get("/api/calibration/blind-spots?learning_path_id=12")
+
+    assert response.status_code == 200
+    assert response.json()["ratings"][0]["legacy_scored"] is True

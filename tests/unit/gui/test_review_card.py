@@ -1,4 +1,12 @@
-"""Tests for the review card component."""
+"""Tests for the review card component.
+
+Phase 5 removal: superseded by frontend/tests/unit/review-page.test.ts.
+
+The NiceGUI page these cover left the learner-facing path in phase 4a
+(issue #99) and stays registered only so an existing ``/legacy/`` link
+resolves. Both go together: deleting this module before the page would
+leave a served page nothing tests.
+"""
 
 from __future__ import annotations
 

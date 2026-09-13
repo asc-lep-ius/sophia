@@ -245,3 +245,23 @@ class TestGetAllSchedules:
         assert results[0].topic == "Hashing"
         assert results[1].topic == "Sorting"
         assert results[2].topic == "Graphs"
+
+
+class TestSelfRatingScores:
+    """The Again/Hard/Good/Easy scale is owned here, not by a surface."""
+
+    @pytest.mark.parametrize(
+        ("rating", "expected"),
+        [(1, 0.0), (2, 0.3), (3, 0.7), (4, 1.0)],
+    )
+    def test_maps_each_button_to_its_score(self, rating: int, expected: float) -> None:
+        from sophia.services.athena_review import score_for_self_rating
+
+        assert score_for_self_rating(rating) == expected
+
+    @pytest.mark.parametrize("rating", [0, 5, -1])
+    def test_rejects_ratings_outside_the_scale(self, rating: int) -> None:
+        from sophia.services.athena_review import score_for_self_rating
+
+        with pytest.raises(ValueError, match="1-4"):
+            score_for_self_rating(rating)

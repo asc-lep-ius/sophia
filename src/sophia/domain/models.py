@@ -646,6 +646,13 @@ class ConfidenceRating(BaseModel, frozen=True):
     predicted: float  # 0.0 to 1.0 (from student's 1-5 rating mapped to 0-1)
     actual: float | None = None  # populated later from card recall or quiz score
     rated_at: str = ""  # ISO timestamp
+    legacy_scored: bool = False
+    """Whether ``actual`` came from the retired heuristic scorer.
+
+    Those rows report an ``actual`` of 1.0 for anything the learner submitted,
+    so a calibration figure built on them is confidently wrong rather than
+    merely noisy. Surfaces must exclude or visibly flag them.
+    """
 
     @property
     def calibration_error(self) -> float | None:

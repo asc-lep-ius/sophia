@@ -171,6 +171,7 @@ def _row_to_rating(row: Row[tuple[object, ...]]) -> ConfidenceRating:
         predicted=row.predicted,
         actual=row.actual,
         rated_at=row.rated_at.isoformat() if row.rated_at else "",
+        legacy_scored=bool(row.legacy_scored),
     )
 
 

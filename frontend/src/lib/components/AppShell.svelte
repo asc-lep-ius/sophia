@@ -20,7 +20,14 @@
     name?: string | null;
   };
 
-  type RouteId = "/" | "/dashboard" | "/login" | "/settings" | "/study";
+  type RouteId =
+    | "/"
+    | "/dashboard"
+    | "/login"
+    | "/quickstart"
+    | "/review"
+    | "/settings"
+    | "/study";
 
   type Props = {
     activePath: string;
@@ -44,8 +51,10 @@
 
   const navItems = [
     { path: "/", label: m.nav_home },
-    { path: "/study", label: m.nav_study },
     { path: "/dashboard", label: m.nav_dashboard },
+    { path: "/study", label: m.nav_study },
+    { path: "/review", label: m.nav_review },
+    { path: "/quickstart", label: m.nav_quickstart },
     { path: "/settings", label: m.nav_settings },
     { path: "/login", label: m.nav_login },
   ] satisfies { path: RouteId; label: () => string }[];

@@ -1218,6 +1218,8 @@ export interface components {
             is_blind_spot: boolean;
             /** Learning Path Id */
             learning_path_id: number;
+            /** Legacy Scored */
+            legacy_scored: boolean;
             /** Predicted */
             predicted: number;
             /** Rated At */
@@ -2045,12 +2047,24 @@ export interface components {
              */
             status: "ready" | "not_ready";
         };
-        /** ReviewCompletionRequest */
+        /**
+         * ReviewCompletionRequest
+         * @description One finished review, expressed either as a rating or as a raw score.
+         *
+         *     ``self_rating`` is the Again/Hard/Good/Easy button the learner pressed; the
+         *     server turns it into a score so no surface has to carry a copy of the
+         *     scale. ``score`` stays for the callers that already compute one. Exactly
+         *     one of them is required: accepting both would let a client claim a rating
+         *     and a contradicting score in the same request, and the row would record
+         *     whichever the server happened to prefer.
+         */
         ReviewCompletionRequest: {
             /** Learning Path Id */
             learning_path_id: number;
             /** Score */
-            score: number;
+            score?: number | null;
+            /** Self Rating */
+            self_rating?: number | null;
             /** Topic */
             topic: string;
         };

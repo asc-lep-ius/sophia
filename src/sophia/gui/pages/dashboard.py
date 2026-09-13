@@ -13,6 +13,7 @@ from sophia.gui.components.course_overview import render_course_cards
 from sophia.gui.components.loading import loading_spinner, skeleton_card
 from sophia.gui.middleware.health import get_container
 from sophia.gui.pages.quickstart import show_quickstart_wizard
+from sophia.gui.routes import REVIEW_SURFACE_PATH
 from sophia.gui.services.overview_service import (
     compute_workload_insights,
     get_course_summaries,
@@ -213,7 +214,10 @@ def _render_due_reviews_card(reviews: list[ReviewSchedule]) -> None:
                     topics = ", ".join(r.topic for r in due[:3])
                     ui.label(topics).classes("text-sm text-gray-500")
         if due:
-            ui.button("Start Review", on_click=lambda: ui.navigate.to("/review")).classes("mt-2")
+            ui.button(
+                "Start Review",
+                on_click=lambda: ui.navigate.to(REVIEW_SURFACE_PATH),
+            ).classes("mt-2")
         else:
             ui.label("All caught up!").classes("text-sm mt-2").style(f"color: {COLOR_RETAINED}")
 
