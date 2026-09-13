@@ -2,15 +2,62 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
 import pytest
 
-from sophia.gui.services.overview_service import (
+from sophia.services.course_overview import (
     CourseSummary,
     compute_course_health,
     compute_workload_insights,
+    get_course_summaries,
     health_tooltip,
     rank_by_urgency,
 )
+
+from .._sql import exec_sql
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+_COURSE_ID = 7
+
+
+async def _insert_deadline(db: AsyncSession, deadline_id: str, due_at: datetime) -> None:
+    await exec_sql(
+        db,
+        "INSERT INTO deadline_cache (id, name, course_id, course_name, deadline_type, due_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (deadline_id, deadline_id, _COURSE_ID, "Analysis 1", "assignment", due_at.isoformat()),
+    )
+
+
+async def _insert_rating(db: AsyncSession, topic: str, *, predicted: float, actual: float) -> None:
+    await exec_sql(
+        db,
+        "INSERT INTO confidence_ratings (topic, course_id, predicted, actual) VALUES (?, ?, ?, ?)",
+        (topic, _COURSE_ID, predicted, actual),
+    )
+
+
+async def _insert_topic(db: AsyncSession, topic: str) -> None:
+    await exec_sql(
+        db,
+        "INSERT INTO topic_mappings (topic, course_id) VALUES (?, ?)",
+        (topic, _COURSE_ID),
+    )
+
+
+async def _insert_session(db: AsyncSession, *, started: datetime, hours: float | None) -> None:
+    completed = None if hours is None else started + timedelta(hours=hours)
+    await exec_sql(
+        db,
+        "INSERT INTO study_sessions (course_id, topic, started_at, completed_at)"
+        " VALUES (?, ?, ?, ?)",
+        (_COURSE_ID, "Limits", started, completed),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Factory helper
@@ -178,3 +225,77 @@ class TestWorkloadInsights:
         s1 = _make_summary(course_name="A", hours_this_week=20.0)
         insights = compute_workload_insights([s1])
         assert not any("rebalancing" in i.lower() for i in insights)
+
+
+# ---------------------------------------------------------------------------
+# get_course_summaries — against a real database
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.postgres
+class TestGetCourseSummaries:
+    """The aggregation had never been executed, only mocked.
+
+    The NiceGUI course selector patched ``get_course_summaries`` wholesale, so
+    the five queries below it were typechecked and never run. Promoting the
+    module out of the GUI tree in #102 is the moment to find out whether they
+    still compile against the schema — `deadline_cache.due_at` is text and
+    `study_sessions.started_at` is a timestamp, and the function compares one
+    to an ISO string and subtracts the other.
+    """
+
+    async def test_no_deadlines_means_no_courses(self, db: AsyncSession) -> None:
+        assert await get_course_summaries(db) == []
+
+    async def test_aggregates_one_course_across_all_five_queries(
+        self,
+        db: AsyncSession,
+    ) -> None:
+        now = datetime.now(UTC)
+        await _insert_deadline(db, "past", now - timedelta(days=3))
+        await _insert_deadline(db, "soon", now + timedelta(days=1))
+        await _insert_deadline(db, "later", now + timedelta(days=9))
+        # predicted well above actual: a blind spot by the 0.2 threshold.
+        await _insert_rating(db, "Limits", predicted=0.9, actual=0.4)
+        await _insert_rating(db, "Series", predicted=0.5, actual=0.5)
+        await _insert_topic(db, "Limits")
+        await _insert_topic(db, "Series")
+        await _insert_topic(db, "Continuity")
+        await _insert_session(db, started=now - timedelta(days=1, hours=2), hours=2.0)
+
+        summaries = await get_course_summaries(db)
+
+        assert len(summaries) == 1
+        summary = summaries[0]
+        assert (summary.course_id, summary.course_name) == (_COURSE_ID, "Analysis 1")
+        assert (summary.upcoming_count, summary.overdue_count) == (2, 1)
+        assert summary.days_until_nearest == 0  # 1 day out, truncated by `.days`
+        assert summary.blind_spot_count == 1
+        assert summary.avg_calibration_error == pytest.approx(0.25)
+        assert (summary.topics_total, summary.topics_rated) == (3, 2)
+        assert summary.hours_this_week == pytest.approx(2.0)
+        assert summary.health == "red"
+
+    async def test_a_session_older_than_a_week_is_not_this_week(
+        self,
+        db: AsyncSession,
+    ) -> None:
+        now = datetime.now(UTC)
+        await _insert_deadline(db, "soon", now + timedelta(days=5))
+        await _insert_session(db, started=now - timedelta(days=9), hours=6.0)
+
+        summaries = await get_course_summaries(db)
+
+        assert summaries[0].hours_this_week == 0.0
+
+    async def test_an_unfinished_session_contributes_no_hours(
+        self,
+        db: AsyncSession,
+    ) -> None:
+        now = datetime.now(UTC)
+        await _insert_deadline(db, "soon", now + timedelta(days=5))
+        await _insert_session(db, started=now - timedelta(hours=3), hours=None)
+
+        summaries = await get_course_summaries(db)
+
+        assert summaries[0].hours_this_week == 0.0

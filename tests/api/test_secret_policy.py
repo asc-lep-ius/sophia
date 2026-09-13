@@ -20,16 +20,19 @@ def test_secret_policy_passes_repository() -> None:
 
 
 def test_secret_policy_catches_python_storage_secret_literal(tmp_path: Path) -> None:
-    source_dir = tmp_path / "src" / "sophia" / "gui"
+    """``storage_secret`` arrived with NiceGUI; the rule outlives it deliberately.
+
+    Nothing in the tree passes one any more, so this builds a synthetic module
+    rather than naming a real path: the policy is about the keyword, and the
+    next library to want a browser-storage secret should still be caught.
+    """
+    source_dir = tmp_path / "src" / "sophia" / "web"
     source_dir.mkdir(parents=True)
-    (source_dir / "app.py").write_text(
+    (source_dir / "server.py").write_text(
         textwrap.dedent(
             """
-            from nicegui import ui
-
-
             def run() -> None:
-                ui.run(storage_secret="hard-coded-gui-storage-secret")
+                serve(storage_secret="hard-coded-browser-storage-secret")
             """
         )
     )
@@ -37,7 +40,7 @@ def test_secret_policy_catches_python_storage_secret_literal(tmp_path: Path) -> 
     result = _run_policy(tmp_path)
 
     assert result.returncode == 1
-    assert "src/sophia/gui/app.py" in result.stderr
+    assert "src/sophia/web/server.py" in result.stderr
     assert "storage_secret" in result.stderr
 
 

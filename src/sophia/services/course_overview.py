@@ -1,4 +1,17 @@
-"""Course overview service — aggregated health metrics per course."""
+"""Course overview — aggregated health metrics per course.
+
+Promoted out of ``sophia.gui.services.overview_service`` by issue #102, which
+retires NiceGUI. The health score, the urgency ranking and the cross-course
+insights are domain heuristics rather than rendering: they answer "which course
+is in trouble, and why", and the answer is the same whoever asks. Deleting them
+with the page that happened to call them is the misuse case #102 names.
+
+Nothing calls this yet. The migrated ``/app/dashboard`` composes a different set
+of panels — reviews due, calibration, recent sessions — and does not ask for a
+per-course verdict. The module and its tests are here so that when a surface
+does ask, the thresholds are the ones that were in use rather than a second
+guess at them.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +19,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
-import structlog
 from sqlalchemy import case, distinct, func, select
 
 from sophia.infra.schema import (
@@ -18,8 +30,6 @@ from sophia.infra.schema import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
-
-log = structlog.get_logger()
 
 # Health score thresholds
 _THRESHOLD_RED = 5
