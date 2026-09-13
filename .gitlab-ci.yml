@@ -108,7 +108,7 @@ rebuild-ci-image:
       - .cache/pip/
       - .cache/uv/
   before_script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
 
 # --- Postgres service for database-backed tests ---
 # Pinned by digest so a re-tagged 18.4 cannot change what CI proves.
@@ -335,7 +335,7 @@ test:3.14:
     paths:
       - .cache/uv/
   script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
@@ -392,57 +392,6 @@ docker-frontend-build:
       allow_failure: true
     - when: never
 
-docker-nicegui-build:
-  stage: build
-  extends: .docker-build
-  script:
-    - docker buildx build --file Dockerfile.nicegui --cache-from type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache,mode=max --tag ${LOCAL_REGISTRY}/nicegui:${CI_COMMIT_SHA} --push .
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: true
-    - if: '$CI_COMMIT_BRANCH == "master"'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - Dockerfile.nicegui
-        - docker-compose.yml
-        - docker-compose.prod.yml
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - when: never
-
-docker-gui-build-gpu:
-  stage: build
-  extends: .docker-build
-  timeout: 3h
-  script:
-    - GPU_HASH=$(cat Dockerfile.gui.cuda pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - docker buildx build --file Dockerfile.gui.cuda --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH} --tag ${LOCAL_REGISTRY}/gui-cuda:latest --push .
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: true
-    - if: '$CI_COMMIT_BRANCH == "master"'
-      changes:
-        - Dockerfile.gui.cuda
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - Dockerfile.gui.cuda
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - when: never
-
 docker-proxy-build:
   stage: build
   extends: .docker-build
@@ -471,7 +420,6 @@ deploy:production:
     - docker-proxy-build
     - docker-api-build
     - docker-frontend-build
-    - docker-nicegui-build
   variables:
     IMAGE_TAG: $CI_COMMIT_SHA
   before_script:

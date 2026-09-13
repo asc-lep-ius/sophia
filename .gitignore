@@ -26,9 +26,6 @@ htmlcov/
 *.db
 downloads/
 
-# NiceGUI auto-generated
-.nicegui/
-
 # Frontend
 frontend/.svelte-kit/
 frontend/build/

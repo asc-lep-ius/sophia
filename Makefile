@@ -1,4 +1,4 @@
-.PHONY: db.up db.down db.migrate db.downgrade db.revision db.import db.verify db.backup db.restore dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-nicegui deploy-config test-gui test-gui-e2e test-gui-a11y test-all docker-gui-build docker-gui-up docker-gui-down docker-gui-logs docker-gui-build-gpu docker-gui-up-gpu docker-gui-down-gpu
+.PHONY: db.up db.down db.migrate db.downgrade db.revision db.import db.verify db.backup db.restore dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend deploy-config test-all
 
 PROD_IMAGE_TAG ?= $(shell git rev-parse --verify HEAD)
 SOPHIA_SMOKE_BASE_URL ?= http://localhost
@@ -108,9 +108,6 @@ docker-build-api:                ## Build API Docker image
 docker-build-frontend:           ## Build frontend Docker image
 	docker compose build frontend
 
-docker-build-nicegui:            ## Build transitional NiceGUI Docker image
-	docker build -f Dockerfile.nicegui -t sophia-nicegui:latest .
-
 docker-up:                       ## Start services (detached)
 	docker compose up -d
 
@@ -130,35 +127,4 @@ docker-validate: docker-config docker-prod-config deployment-policy ## Validate 
 
 deploy-config: docker-prod-config ## Alias for deployment configuration validation
 
-test-gui:                        ## Run GUI unit tests
-	uv run pytest tests/unit/gui/ -v
-
-test-gui-e2e:                    ## Run GUI E2E tests (Playwright)
-	uv run pytest tests/integration/gui/ -m e2e -v
-
-test-gui-a11y:                   ## Run accessibility tests
-	uv run pytest tests/integration/gui/ -m e2e -k accessibility -v
-
-test-all:                        ## Run all tests (unit + E2E)
-	uv run pytest --tb=short -q && uv run pytest -m e2e --tb=short -q
-
-docker-gui-build:                ## Build GUI Docker image
-	docker compose build sophia-gui
-
-docker-gui-up:                   ## Start GUI service (detached)
-	docker compose up -d
-
-docker-gui-down:                 ## Stop GUI service
-	docker compose down
-
-docker-gui-logs:                 ## Tail GUI service logs
-	docker compose logs -f sophia-gui
-
-docker-gui-build-gpu:            ## Build GPU Docker image (requires NVIDIA Container Toolkit)
-	docker compose build sophia-gui-gpu
-
-docker-gui-up-gpu:               ## Start GPU service (detached, requires NVIDIA Container Toolkit)
-	docker compose --profile gpu up -d sophia-gui-gpu
-
-docker-gui-down-gpu:             ## Stop GPU service
-	docker compose --profile gpu down
+test-all: test frontend.test     ## Run the backend suite and the frontend suite

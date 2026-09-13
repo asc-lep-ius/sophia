@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Pre-built CI image for sophia — contains all dev dependencies + Playwright.
+# Pre-built CI image for sophia — contains all dev dependencies.
 # Rebuilt automatically by the pipeline when deps change (content-addressed tag).
 
 FROM python:3.12-slim AS builder
@@ -15,7 +15,7 @@ ENV UV_LINK_MODE=copy \
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 
-RUN uv sync --frozen --extra web --extra test --group dev --no-install-project
+RUN uv sync --frozen --extra test --group dev --no-install-project
 
 FROM python:3.12-slim
 
@@ -33,6 +33,3 @@ ENV UV_LINK_MODE=copy \
 
 COPY --from=builder /app/.venv .venv
 COPY pyproject.toml uv.lock README.md ./
-
-# Pre-install Playwright chromium so E2E jobs don't download it each time
-RUN .venv/bin/python -m playwright install --with-deps chromium
