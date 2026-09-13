@@ -44,3 +44,7 @@ frontend/test-results/
 *.swp
 *.swo
 *~
+
+# Claude Code
+.claude/state/
+.claude/settings.local.json
