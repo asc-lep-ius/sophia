@@ -9,11 +9,12 @@ from typing import TYPE_CHECKING
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from sophia.infra.schema import lecture_downloads, lecture_modules
+from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from sophia.domain.models import Course
     from sophia.infra.di import AppContainer
 
 
@@ -66,6 +67,22 @@ async def get_lecture_modules(session: AsyncSession) -> list[LectureModule]:
     ]
 
 
+async def get_lecture_module_course_id(session: AsyncSession, module_id: int) -> str | None:
+    """Return the course a lecture module belongs to, as persisted at discovery.
+
+    ``None`` means the owner is unknown — either the module has no metadata row
+    at all, or its row predates course scoping and still carries
+    :data:`DEFAULT_SCOPE`. Callers deciding access must treat both as unowned
+    rather than as a wildcard; rediscovery repopulates the scope.
+    """
+    course_id = await session.scalar(
+        select(lecture_modules.c.course_id).where(lecture_modules.c.module_id == module_id),
+    )
+    if course_id is None or str(course_id) == DEFAULT_SCOPE:
+        return None
+    return str(course_id)
+
+
 async def discover_lecture_modules(
     container: AppContainer,
     session: AsyncSession,
@@ -79,23 +96,24 @@ async def discover_lecture_modules(
         *(container.moodle.get_course_content(course.id) for course in courses),
     )
 
-    opencast_modules: list[tuple[str, str, int, str]] = []
+    opencast_modules: list[tuple[Course, int, str]] = []
     for course, sections in zip(courses, sections_by_course, strict=True):
         for section in sections:
             for module in section.modules:
                 if module.modname == "opencast":
-                    opencast_modules.append(
-                        (course.shortname, course.fullname, module.id, module.name),
-                    )
+                    opencast_modules.append((course, module.id, module.name))
 
     if not opencast_modules:
         return []
 
-    for shortname, fullname, module_id, _module_name in opencast_modules:
+    # course_id is what proves a module's owner to the search scope check; a row
+    # left at DEFAULT_SCOPE reads as unowned, so discovery has to write it.
+    for course, module_id, _module_name in opencast_modules:
         statement = pg_insert(lecture_modules).values(
             module_id=module_id,
-            course_name=fullname,
-            course_shortname=shortname,
+            course_name=course.fullname,
+            course_shortname=course.shortname,
+            course_id=str(course.id),
         )
         await session.execute(
             statement.on_conflict_do_update(
@@ -103,6 +121,7 @@ async def discover_lecture_modules(
                 set_={
                     "course_name": statement.excluded.course_name,
                     "course_shortname": statement.excluded.course_shortname,
+                    "course_id": statement.excluded.course_id,
                 },
             )
         )
@@ -110,19 +129,19 @@ async def discover_lecture_modules(
     episode_lists = await asyncio.gather(
         *(
             container.opencast.get_series_episodes(module_id)
-            for _, _, module_id, _ in opencast_modules
+            for _, module_id, _ in opencast_modules
         ),
     )
 
     return [
         DiscoveredLectureModule(
-            course_shortname=shortname,
-            course_fullname=fullname,
+            course_shortname=course.shortname,
+            course_fullname=course.fullname,
             module_id=module_id,
             module_name=module_name,
             episode_count=len(episodes),
         )
-        for (shortname, fullname, module_id, module_name), episodes in zip(
+        for (course, module_id, module_name), episodes in zip(
             opencast_modules,
             episode_lists,
             strict=True,

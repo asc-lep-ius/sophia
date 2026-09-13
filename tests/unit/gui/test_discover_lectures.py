@@ -64,6 +64,22 @@ class TestDiscoverLectureModules:
         ]
 
     @pytest.mark.asyncio
+    async def test_persists_the_owning_course_id(self) -> None:
+        """The upsert has to carry course_id, or API search reads the module as unowned."""
+        sections = [CourseSection(id=1, name="S1", summary="", modules=[_OC_MODULE])]
+        container = _make_container(
+            courses=[_COURSE_A],
+            sections_by_course=[sections],
+            episodes_by_module={100: [_EP1, _EP2]},
+        )
+
+        await discover_lecture_modules(container)
+
+        db = container.session.return_value.__aenter__.return_value
+        statement = db.execute.await_args.args[0]
+        assert statement.compile().params["course_id"] == "1"
+
+    @pytest.mark.asyncio
     async def test_returns_empty_when_no_courses(self) -> None:
         container = _make_container(courses=[])
         assert await discover_lecture_modules(container) == []

@@ -15,9 +15,12 @@ from sophia.api.schemas.search import (
     ContentSearchSourceFilter,
 )
 from sophia.api.transactions import TransactionalRoute
+from sophia.services.hermes_catalog import get_lecture_module_course_id
 from sophia.services.hermes_index import search_lectures
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.domain.models import LectureSearchResult
 
 router = APIRouter(tags=["search"], route_class=TransactionalRoute)
@@ -45,13 +48,14 @@ async def search_content(
         request,
         payload.learning_path_id,
     )
-    # Content source ownership is not persisted yet, so this keeps the pre-existing
-    # scope equality check rather than relaxing it. See #103.
-    if payload.content_source_id != effective_learning_path_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    db = await _owned_content_source_session(
+        request,
+        payload.content_source_id,
+        effective_learning_path_id,
+    )
     results = await search_lectures(
         get_app_container(request),
-        await request_session(request),
+        db,
         payload.content_source_id,
         payload.query,
         n_results=payload.n_results,
@@ -60,6 +64,26 @@ async def search_content(
         missed_only=payload.missed_only,
     )
     return ContentSearchResponse(results=[_search_result_response(result) for result in results])
+
+
+async def _owned_content_source_session(
+    request: Request,
+    content_source_id: int,
+    effective_learning_path_id: int,
+) -> AsyncSession:
+    """Return the request session once the content source is proven in scope.
+
+    The content source id is a lecture module id, a different domain from the
+    learning path id, so ownership has to come from the persisted module
+    metadata rather than from comparing the two numbers. A module with no
+    recorded owner is refused rather than allowed: search would otherwise read
+    another learning path's transcripts.
+    """
+    db = await request_session(request)
+    owner_id = await get_lecture_module_course_id(db, content_source_id)
+    if owner_id != str(effective_learning_path_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    return db
 
 
 def _index_source_filter(source_filter: ContentSearchSourceFilter | None) -> str | None:
