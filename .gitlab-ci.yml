@@ -108,7 +108,7 @@ rebuild-ci-image:
       - .cache/pip/
       - .cache/uv/
   before_script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
 
 # --- Postgres service for database-backed tests ---
 # Pinned by digest so a re-tagged 18.4 cannot change what CI proves.
@@ -292,6 +292,31 @@ frontend-study-e2e:
       - frontend/playwright-report/
     expire_in: 1 week
 
+# The migrated-surface gate. Every non-study surface that carries its own
+# happy, error and mobile paths runs here rather than in the a11y job: that one
+# checks one property across many routes, this one checks many properties per
+# route, and mixing them makes a red job ambiguous.
+#
+# The spec list is explicit, as it is in the two jobs above, so a spec that is
+# never added stays invisible. That is how long-tail.spec.ts came to exist for
+# a whole phase without CI running it once. content-topics.spec.ts and
+# shell.spec.ts are still in that position and belong here too; they are left
+# out only because adopting another phase's gate inside this one risks turning
+# this job red for reasons #101 did not cause.
+frontend-surface-e2e:
+  extends: .frontend-job
+  script:
+    - pnpm -C frontend exec playwright install --with-deps chromium
+    - >
+      pnpm -C frontend run test:e2e --
+      long-tail.spec.ts
+  artifacts:
+    when: on_failure
+    paths:
+      - frontend/test-results/
+      - frontend/playwright-report/
+    expire_in: 1 week
+
 # --- Optional checks ---
 test:3.14:
   stage: check
@@ -310,7 +335,7 @@ test:3.14:
     paths:
       - .cache/uv/
   script:
-    - uv sync --frozen --extra web --extra test --group dev
+    - uv sync --frozen --extra test --group dev
     - uv run pytest tests/ -x --tb=short
   allow_failure: true
 
@@ -367,57 +392,6 @@ docker-frontend-build:
       allow_failure: true
     - when: never
 
-docker-nicegui-build:
-  stage: build
-  extends: .docker-build
-  script:
-    - docker buildx build --file Dockerfile.nicegui --cache-from type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/nicegui-cache,mode=max --tag ${LOCAL_REGISTRY}/nicegui:${CI_COMMIT_SHA} --push .
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: true
-    - if: '$CI_COMMIT_BRANCH == "master"'
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - Dockerfile.nicegui
-        - docker-compose.yml
-        - docker-compose.prod.yml
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - when: never
-
-docker-gui-build-gpu:
-  stage: build
-  extends: .docker-build
-  timeout: 3h
-  script:
-    - GPU_HASH=$(cat Dockerfile.gui.cuda pyproject.toml uv.lock | sha256sum | cut -c1-16)
-    - docker buildx build --file Dockerfile.gui.cuda --cache-from type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/gui-cuda-cache,mode=max --tag ${LOCAL_REGISTRY}/gui-cuda:${GPU_HASH} --tag ${LOCAL_REGISTRY}/gui-cuda:latest --push .
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "web"'
-      when: manual
-      allow_failure: true
-    - if: '$CI_COMMIT_BRANCH == "master"'
-      changes:
-        - Dockerfile.gui.cuda
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - Dockerfile.gui.cuda
-        - pyproject.toml
-        - uv.lock
-        - src/**/*
-      when: manual
-      allow_failure: true
-    - when: never
-
 docker-proxy-build:
   stage: build
   extends: .docker-build
@@ -446,7 +420,6 @@ deploy:production:
     - docker-proxy-build
     - docker-api-build
     - docker-frontend-build
-    - docker-nicegui-build
   variables:
     IMAGE_TAG: $CI_COMMIT_SHA
   before_script:

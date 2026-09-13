@@ -125,6 +125,153 @@ const CONTENT_ITEMS = [
   },
 ];
 
+/**
+ * Deadlines placed relative to the request, so the due phrases are fixed.
+ *
+ * The offsets are half-days on purpose. The relative phrase floors the elapsed
+ * days, so a deadline exactly N days out sits on the boundary between two
+ * phrasings and would flip on a slow machine; half a day past the boundary
+ * pins each one to a single sentence.
+ */
+const DEADLINES = [
+  {
+    id: "dl-overdue",
+    name: "Abgabe 1: Graphen",
+    deadline_type: "assignment",
+    // Floored, so a day and a half past reads as two days overdue.
+    dayOffset: -1.5,
+    grade_weight: 0.25,
+    submission_status: "not_submitted",
+  },
+  {
+    id: "dl-today",
+    name: "Quiz 3",
+    deadline_type: "quiz",
+    dayOffset: 0.5,
+    grade_weight: null,
+    submission_status: null,
+  },
+  {
+    id: "dl-week",
+    name: "Pruefung: Dynamische Programmierungsaufgaben",
+    deadline_type: "exam",
+    dayOffset: 5.5,
+    grade_weight: 0.5,
+    submission_status: null,
+  },
+];
+
+/** One reflected on and one not, so both history outcomes render. */
+const PAST_DEADLINES = [
+  {
+    id: "past-reflected",
+    name: "Abgabe 0: Sortieren",
+    deadline_type: "assignment",
+    dayOffset: -12.5,
+    grade_weight: 0.1,
+    submission_status: "submitted",
+    reflected: true,
+  },
+  {
+    id: "past-missed",
+    name: "Kreuzerlübung 2",
+    deadline_type: "checkmark",
+    dayOffset: -20.5,
+    grade_weight: null,
+    submission_status: null,
+    reflected: false,
+  },
+];
+
+/** One domain with enough finished deadlines to read, one without. */
+const EFFORT_CALIBRATION = [
+  {
+    domain: "assignment",
+    sample_count: 4,
+    mean_error: 1.25,
+    mean_absolute_error: 1.5,
+  },
+  {
+    domain: "exam",
+    sample_count: 1,
+    mean_error: -0.5,
+    mean_absolute_error: 0.5,
+  },
+];
+
+const TISS_SEMESTER = "2026W";
+const TISS_COURSE_NUMBER = "123.ABC";
+
+const TISS_FAVORITES = [
+  {
+    course_number: TISS_COURSE_NUMBER,
+    title: "Algorithmen und Datenstrukturen",
+    course_type: "VU",
+    semester: TISS_SEMESTER,
+    hours: 4,
+    ects: 6,
+    lva_registered: true,
+    group_registered: false,
+    exam_registered: false,
+  },
+];
+
+const TISS_GROUPS = [
+  {
+    group_id: "grp-1",
+    name: "Gruppe A",
+    day: "Mo",
+    time_start: "10:00",
+    time_end: "12:00",
+    location: "Freihaus HS 1",
+    capacity: 30,
+    enrolled: 12,
+    status: "open",
+  },
+  {
+    group_id: "grp-2",
+    name: "Gruppe B",
+    day: "Do",
+    time_start: "14:00",
+    time_end: "16:00",
+    location: "Freihaus HS 2",
+    capacity: 30,
+    enrolled: 30,
+    status: "full",
+  },
+];
+
+/**
+ * Search answers, keyed by what the page asks for.
+ *
+ * `nichts` returns nothing so the empty state is reachable, and any other
+ * query returns the same two passages: the debounce and out-of-order tests
+ * care about how many requests arrive and in what order, not about relevance.
+ */
+const SEARCH_RESULTS = [
+  {
+    content_item_id: "item-1",
+    title: "Graphen und Suchverfahren",
+    chunk_text: "Ein Graph besteht aus Knoten und Kanten.",
+    start_time: 65,
+    end_time: 128,
+    score: 0.82,
+    source: "transcript",
+  },
+  {
+    content_item_id: "item-2",
+    title: "Dynamische Programmierungsaufgaben",
+    chunk_text: "Teilprobleme werden einmal geloest und wiederverwendet.",
+    start_time: 3725,
+    end_time: 3800,
+    score: 0.51,
+    source: "document",
+  },
+];
+
+/** Requests the fixture is asked to fail, so error states are reachable. */
+const FAIL_COOKIE = "sophia-e2e-fail";
+
 const CATALOG_TOPICS = [
   { topic: "Graphs", source: "transcript" },
   { topic: "Sorting", source: "quiz" },
@@ -257,7 +404,228 @@ const routes = [
     /^\/api\/learning-paths\/(\d+)\/content-language$/,
     readContentLanguage,
   ],
+  ["POST", /^\/api\/search$/, searchContent],
+  ["GET", /^\/api\/deadlines$/, listDeadlines],
+  ["GET", /^\/api\/deadlines\/workload$/, deadlineWorkload],
+  ["POST", /^\/api\/deadlines\/sync$/, syncDeadlines],
+  ["POST", /^\/api\/deadlines\/([^/]+)\/complete$/, completeDeadline],
+  ["GET", /^\/api\/deadline-history$/, listPastDeadlines],
+  ["GET", /^\/api\/deadline-history\/calibration$/, effortCalibration],
+  ["GET", /^\/api\/deadline-history\/([^/]+)\/reflection$/, deadlineReflection],
+  [
+    "GET",
+    /^\/api\/integrations\/tiss\/registration\/favorites$/,
+    tissFavorites,
+  ],
+  [
+    "GET",
+    /^\/api\/integrations\/tiss\/registration\/targets\/([^/]+)$/,
+    tissTarget,
+  ],
+  [
+    "GET",
+    /^\/api\/integrations\/tiss\/registration\/targets\/([^/]+)\/groups$/,
+    tissGroups,
+  ],
+  [
+    "GET",
+    /^\/api\/integrations\/tiss\/registration\/targets\/([^/]+)\/exam-dates$/,
+    tissExamDates,
+  ],
+  ["POST", /^\/api\/integrations\/tiss\/registration\/attempts$/, tissAttempt],
 ];
+
+function deadlineResponse(entry) {
+  return {
+    id: entry.id,
+    name: entry.name,
+    learning_path_id: LEARNING_PATH_ID,
+    learning_path_name: "Algorithmen und Datenstrukturen",
+    deadline_type: entry.deadline_type,
+    due_at: new Date(Date.now() + entry.dayOffset * MS_PER_DAY).toISOString(),
+    grade_weight: entry.grade_weight,
+    submission_status: entry.submission_status,
+    url: null,
+    extra: {},
+  };
+}
+
+function listDeadlines(_match, _body, url) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    horizon_days: Number(url?.searchParams.get("horizon_days") ?? 14),
+    deadlines: DEADLINES.map(deadlineResponse),
+  };
+}
+
+function deadlineWorkload(_match, _body, url) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    horizon_days: Number(url?.searchParams.get("horizon_days") ?? 14),
+    total_estimated_hours: 9.5,
+    total_tracked_hours: 4,
+    remaining_hours: 5.5,
+    deadline_count: DEADLINES.length,
+    per_day: [],
+  };
+}
+
+function syncDeadlines() {
+  return {
+    synced_count: DEADLINES.length,
+    deadlines: DEADLINES.map(deadlineResponse),
+  };
+}
+
+function completeDeadline(match) {
+  return {
+    deadline_id: match[1],
+    predicted_hours: 3,
+    actual_hours: 4,
+    feedback: "Vier Stunden statt drei.",
+    completed: true,
+  };
+}
+
+function listPastDeadlines(_match, _body, url) {
+  return {
+    learning_path_id: LEARNING_PATH_ID,
+    limit: Number(url?.searchParams.get("limit") ?? 50),
+    deadlines: PAST_DEADLINES.map(deadlineResponse),
+  };
+}
+
+function effortCalibration() {
+  return { learning_path_id: LEARNING_PATH_ID, metrics: EFFORT_CALIBRATION };
+}
+
+/**
+ * 404 for a deadline nobody reflected on, which is what the real route does.
+ *
+ * The history surface classifies an outcome from exactly this distinction, so
+ * a fixture that answered 200 for everything would make every past deadline
+ * look reflected on and the outcome filter untestable.
+ */
+function deadlineReflection(match) {
+  const past = PAST_DEADLINES.find((entry) => entry.id === match[1]);
+  if (!past?.reflected) {
+    return null;
+  }
+  return {
+    deadline_id: match[1],
+    reflection: {
+      predicted_hours: 3,
+      actual_hours: 4.5,
+      reflection_text: "Die Beispiele haben laenger gedauert als gedacht.",
+      reflected_at: "2026-09-01T10:00:00Z",
+    },
+  };
+}
+
+function searchContent(_match, body) {
+  const query = String(body.query ?? "");
+  return {
+    results: query.toLowerCase().includes("nichts") ? [] : SEARCH_RESULTS,
+  };
+}
+
+function tissConnection(url) {
+  return url?.searchParams.get("connection") ?? "connected";
+}
+
+function tissFavorites(_match, _body, url) {
+  return {
+    connection: tissConnection(url),
+    semester: TISS_SEMESTER,
+    favorites: TISS_FAVORITES,
+  };
+}
+
+function tissTarget(match) {
+  return {
+    connection: "connected",
+    course_number: match[1],
+    semester: TISS_SEMESTER,
+    target: {
+      course_number: match[1],
+      semester: TISS_SEMESTER,
+      registration_type: "group",
+      title: "Algorithmen und Datenstrukturen",
+      // Far enough out that the countdown never flips to "open" mid-run.
+      registration_start: "31.12.2099 08:00",
+      registration_end: "31.12.2099 20:00",
+      status: "open",
+      groups: TISS_GROUPS,
+    },
+  };
+}
+
+function tissGroups(match) {
+  return {
+    connection: "connected",
+    course_number: match[1],
+    semester: TISS_SEMESTER,
+    groups: TISS_GROUPS,
+  };
+}
+
+function tissExamDates(match) {
+  return {
+    course_number: match[1],
+    exams: [
+      {
+        exam_id: "exam-1",
+        course_number: match[1],
+        title: "1. Pruefungstermin",
+        date_start: "15.01.2027 09:00",
+        date_end: "15.01.2027 11:00",
+        registration_start: "01.12.2026 08:00",
+        registration_end: "10.01.2027 23:59",
+        mode: "written",
+      },
+    ],
+  };
+}
+
+/**
+ * Refuses the full group and accepts the open one.
+ *
+ * The refusal is a 200 carrying `success: false`, not an HTTP error: TISS
+ * answering "that group is full" is a successful call, and a surface that
+ * rendered it as a transport failure would tell the learner to try again.
+ */
+function tissAttempt(_match, body) {
+  const group = TISS_GROUPS.find((entry) => entry.group_id === body.group_id);
+  const success = group?.status === "open";
+  return {
+    connection: "connected",
+    course_number: body.course_number,
+    semester: TISS_SEMESTER,
+    result: {
+      course_number: body.course_number,
+      registration_type: "group",
+      success,
+      group_name: group?.name ?? "",
+      message: success ? "Platz in Gruppe A erhalten" : "Gruppe ist voll",
+      attempted_at: "2026-09-12T10:00:00Z",
+    },
+  };
+}
+
+/**
+ * Which upstream call this run wants to fail, carried by a cookie.
+ *
+ * The frontend forwards the browser's cookie header to the API verbatim, so a
+ * cookie is the only channel a Playwright test has into this process. Every
+ * migrated surface has an error state that is otherwise unreachable from a
+ * fixture that always succeeds.
+ */
+function failedPath(request, pathname) {
+  const cookies = request.headers.cookie ?? "";
+  const match = new RegExp(`${FAIL_COOKIE}=([^;]+)`).exec(cookies);
+  const target = match?.[1] ? decodeURIComponent(match[1]) : "";
+  return target !== "" && pathname.includes(target);
+}
 
 function listContentSources() {
   return { sources: CONTENT_SOURCES };
@@ -745,6 +1113,13 @@ const server = createServer((request, response) => {
         return;
       }
       send(response, 201, result.accepted);
+    });
+    return;
+  }
+
+  if (failedPath(request, url.pathname)) {
+    send(response, 503, {
+      detail: { code: "http.unavailable", params: {} },
     });
     return;
   }
