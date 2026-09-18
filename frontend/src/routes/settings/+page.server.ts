@@ -1,7 +1,7 @@
 import { fail, redirect, type Actions, type RequestEvent } from "@sveltejs/kit";
 
 import type { components } from "$lib/api/schema";
-import { normalizeLocale } from "$lib/i18n/locale";
+import { normalizeLocale, persistLocaleCookie } from "$lib/i18n/locale";
 import { normalizeTheme } from "$lib/theme";
 import { apiFetch } from "../../hooks.server";
 import type { PageServerLoad } from "./$types";
@@ -56,9 +56,23 @@ export const actions: Actions = {
       });
     }
 
-    return {
-      settings: normalizeSettingsResponse(await response.json(), event),
-    };
+    const saved = normalizeSettingsResponse(await response.json(), event);
+
+    // The cookie is the authority for the rendered language and the session
+    // record is storage, per docs/frontend-paraglide-decision.md. Pinning it on
+    // every save keeps an explicit choice from being re-negotiated out of
+    // `Accept-Language` on the next request.
+    const savedLocale = normalizeLocale(saved.locale) ?? event.locals.locale;
+    persistLocaleCookie(event.cookies, savedLocale, event.url);
+    if (savedLocale !== event.locals.locale) {
+      // Paraglide resolved this request's locale before the action ran, so this
+      // response is already committed to the old language — only a fresh
+      // request can render the new one. The page coming back translated is the
+      // confirmation, which is why it carries no saved banner.
+      redirect(303, "/app/settings");
+    }
+
+    return { settings: saved };
   },
 };
 

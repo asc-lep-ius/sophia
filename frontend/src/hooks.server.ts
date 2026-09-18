@@ -76,7 +76,12 @@ const contextHandle: Handle = async ({ event, resolve }) => {
   return response;
 };
 
-const paraglideHandle: Handle = ({ event, resolve }) =>
+/**
+ * Exported so a test can drive the locale negotiation without `sequence()`,
+ * which reads SvelteKit's internal per-request store and so only runs inside a
+ * real server. This is the handle that decides what language a page renders in.
+ */
+export const paraglideHandle: Handle = ({ event, resolve }) =>
   paraglideMiddleware(
     event.request,
     ({ request: localizedRequest, locale }) => {

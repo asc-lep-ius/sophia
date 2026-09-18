@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import PageHeader from "$lib/components/PageHeader.svelte";
+  import { normalizeLocale, type Locale } from "$lib/i18n/locale";
   import { m } from "$lib/paraglide/messages.js";
   import { normalizeTheme, persistTheme, type Theme } from "$lib/theme";
 
@@ -35,16 +36,24 @@
   const localeOptions = [
     { label: m.settings_locale_english, value: "en" },
     { label: m.settings_locale_german, value: "de" },
-  ] satisfies { label: () => string; value: string }[];
+  ] satisfies { label: () => string; value: Locale }[];
 
   const settings = $derived(
     form?.settings ?? data.settings ?? fallbackSettings(data),
   );
   const persistedTheme = $derived(normalizeTheme(settings.theme));
-  const selectedLocale = $derived(settings.locale);
   const selectedLearningPathId = $derived(settings.selected_learning_path_id ?? "");
 
+  /**
+   * The language on the page, not the one on the session record. The two are
+   * separate sources of truth and the Paraglide cookie wins
+   * (docs/frontend-paraglide-decision.md), so anchoring the highlight to the
+   * record would leave it pointing at a language the learner is not reading.
+   */
+  const renderedLocale = $derived(normalizeLocale(data.locale) ?? "en");
+
   let selectedTheme = $derived<Theme>(persistedTheme);
+  let selectedLocale = $derived<Locale>(renderedLocale);
 
   function selectTheme(theme: Theme) {
     selectedTheme = theme;
@@ -109,6 +118,7 @@
           <input
             checked={selectedLocale === locale.value}
             name="locale"
+            onchange={() => (selectedLocale = locale.value)}
             type="radio"
             value={locale.value}
           />
