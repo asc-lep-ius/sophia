@@ -115,6 +115,28 @@ def _resolve_username() -> str:
     raise SystemExit(msg)
 
 
+def _warn_if_study_unreachable(tenant: SessionTenant) -> None:
+    """Say at mint time when this session cannot reach the study surface.
+
+    `frontend/src/routes/study/+page.server.ts:13` coerces learning_path_id with
+    `Number()` and bails unless the result is a positive integer, so the
+    non-numeric `default-learning-path` sentinel every real login gets makes
+    /app/study unreachable. That is #106, and it is reproduced here rather than
+    papered over — see the module docstring. Printing it is what keeps it from
+    being discovered halfway through a walk.
+    """
+    raw = tenant.learning_path_id
+    if raw.isdigit() and int(raw) > 0:
+        return
+    print(
+        f"warning: learning_path_id is {raw!r}, not a positive integer, so "
+        "/app/study is unreachable for this session — that is #106, not a "
+        "fault in the walk. Settings, auth and language flows are unaffected. "
+        "--learning-path-id gets past it; name that in proof.md if you use it.",
+        file=sys.stderr,
+    )
+
+
 async def _mint(learning_path_id: str | None) -> str:
     # Before Settings(), which reads SOPHIA_* out of the environment.
     _load_env_file()
@@ -133,6 +155,7 @@ async def _mint(learning_path_id: str | None) -> str:
     tenant = (
         SessionTenant(learning_path_id=learning_path_id) if learning_path_id else SessionTenant()
     )
+    _warn_if_study_unreachable(tenant)
     record = create_session_record(
         user=SessionUser(id=_resolve_username()),
         tenant=tenant,
