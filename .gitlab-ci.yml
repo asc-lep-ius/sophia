@@ -93,6 +93,40 @@ rebuild-ci-image:
     - CI_HASH=$(cat ci/Dockerfile.ci pyproject.toml uv.lock | sha256sum | cut -c1-16)
     - docker buildx build --file ci/Dockerfile.ci --cache-from type=registry,ref=${LOCAL_REGISTRY}/ci-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/ci-cache,mode=max --tag ${LOCAL_REGISTRY}/ci:${CI_HASH} --tag ${LOCAL_REGISTRY}/ci:latest --push .
 
+# --- Frontend CI image rebuild ---
+.frontend-ci-rebuild-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+      allow_failure: true
+    # allow_failure for the same reason as .ci-rebuild-rules: this stage runs
+    # first, so a registry outage must not skip the checks behind it. What a
+    # stale image costs differs, though. A stale ci:latest only makes the
+    # Python jobs slower; a stale frontend-ci:latest carries a Chromium the
+    # lockfile did not ask for, so the browser jobs refuse it up front --
+    # guard:playwright-browser names this job as the fix.
+    - if: '$CI_COMMIT_BRANCH == "master"'
+      changes:
+        - ci/Dockerfile.frontend
+        - frontend/pnpm-lock.yaml
+      allow_failure: true
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - ci/Dockerfile.frontend
+        - frontend/pnpm-lock.yaml
+      when: manual
+      allow_failure: true
+    - when: never
+
+rebuild-frontend-ci-image:
+  stage: rebuild-ci
+  extends:
+    - .docker-build
+    - .frontend-ci-rebuild-rules
+  script:
+    - CI_HASH=$(cat ci/Dockerfile.frontend frontend/pnpm-lock.yaml | sha256sum | cut -c1-16)
+    - docker buildx build --file ci/Dockerfile.frontend --cache-from type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache,mode=max --tag ${LOCAL_REGISTRY}/frontend-ci:${CI_HASH} --tag ${LOCAL_REGISTRY}/frontend-ci:latest --push .
+
 # --- Pre-built CI image template ---
 .python-job:
   image: "${LOCAL_REGISTRY}/ci:latest"
@@ -206,10 +240,19 @@ compose-config:
 
 .frontend-job:
   stage: check
-  # The runner's allowed_images does not include mcr.microsoft.com, and only the
-  # a11y job needs a browser, so the shared base is plain Node and that one job
-  # installs Chromium for itself.
-  image: node:24-bookworm-slim
+  # The runner's allowed_images still does not include mcr.microsoft.com, so the
+  # official Playwright image cannot be pulled here -- ci/Dockerfile.frontend
+  # builds the equivalent into the local registry instead. Three jobs need a
+  # browser now rather than one, and on pipeline 469 the Chromium download and
+  # its apt install were paid three times over for 54% of the pipeline's job
+  # time, so the browser belongs in the shared base.
+  image:
+    name: "${LOCAL_REGISTRY}/frontend-ci:latest"
+    # :latest moves whenever rebuild-frontend-ci-image runs, and the runners'
+    # default policy would keep serving whatever they pulled first. The
+    # if-not-present fallback keeps a registry outage from failing jobs a
+    # runner already has the image for.
+    pull_policy: [always, if-not-present]
   tags: [hephaestus]
   cache:
     key:
@@ -256,17 +299,12 @@ frontend-size:
   script:
     - pnpm -C frontend run size-limit
 
-# The reflow and accessibility gate. high-traffic-mobile.spec.ts belongs with
-# the other two rather than with the study specs: it checks the same property
-# at 375 px that de-overflow checks at 320 px, and a page that passes axe on a
-# desktop and overflows on a phone has not passed anything.
-frontend-a11y:
+# The three browser jobs. Chromium comes from the image rather than from a
+# per-run install; `test:e2e` checks it is the build this lockfile's Playwright
+# expects before it starts. All this adds is the traces to read when a spec
+# fails, which was copied into each of the three.
+.playwright-job:
   extends: .frontend-job
-  script:
-    - pnpm -C frontend exec playwright install --with-deps chromium
-    - >
-      pnpm -C frontend run test:e2e --
-      a11y.spec.ts de-overflow.spec.ts high-traffic-mobile.spec.ts
   artifacts:
     when: on_failure
     paths:
@@ -274,23 +312,27 @@ frontend-a11y:
       - frontend/playwright-report/
     expire_in: 1 week
 
+# The reflow and accessibility gate. high-traffic-mobile.spec.ts belongs with
+# the other two rather than with the study specs: it checks the same property
+# at 375 px that de-overflow checks at 320 px, and a page that passes axe on a
+# desktop and overflows on a phone has not passed anything.
+frontend-a11y:
+  extends: .playwright-job
+  script:
+    - >
+      pnpm -C frontend run test:e2e --
+      a11y.spec.ts de-overflow.spec.ts high-traffic-mobile.spec.ts
+
 # The pedagogy gate. study-pacing.spec.ts fails when productive friction is
 # shortened, and study-latency.spec.ts measures the keyboard flow under CPU
 # throttling against a fixed fixture deck — neither number means anything
 # without the other job's, so they run together.
 frontend-study-e2e:
-  extends: .frontend-job
+  extends: .playwright-job
   script:
-    - pnpm -C frontend exec playwright install --with-deps chromium
     - >
       pnpm -C frontend run test:e2e --
       study-pacing.spec.ts study-latency.spec.ts study-mobile.spec.ts
-  artifacts:
-    when: on_failure
-    paths:
-      - frontend/test-results/
-      - frontend/playwright-report/
-    expire_in: 1 week
 
 # The migrated-surface gate. Every non-study surface that carries its own
 # happy, error and mobile paths runs here rather than in the a11y job: that one
@@ -304,18 +346,11 @@ frontend-study-e2e:
 # out only because adopting another phase's gate inside this one risks turning
 # this job red for reasons #101 did not cause.
 frontend-surface-e2e:
-  extends: .frontend-job
+  extends: .playwright-job
   script:
-    - pnpm -C frontend exec playwright install --with-deps chromium
     - >
       pnpm -C frontend run test:e2e --
       long-tail.spec.ts
-  artifacts:
-    when: on_failure
-    paths:
-      - frontend/test-results/
-      - frontend/playwright-report/
-    expire_in: 1 week
 
 # --- Optional checks ---
 test:3.14:

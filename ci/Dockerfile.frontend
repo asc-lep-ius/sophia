@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+
+# Pre-built frontend CI image for sophia — Node, pnpm and the Chromium build
+# that this repo's pinned Playwright expects.
+#
+# The runner's allowed_images does not include mcr.microsoft.com, so the
+# official Playwright image cannot be pulled here; this builds the equivalent
+# into the local registry instead.
+#
+# The Playwright version is deliberately not written in this file. It is read
+# out of frontend/package.json at build time and checked against the lockfile,
+# so there is no second place to bump and no way for the image to carry a
+# browser the suite does not ask for. Rebuilt by rebuild-frontend-ci-image
+# when this file or frontend/pnpm-lock.yaml changes (content-addressed tag).
+
+FROM node:24-bookworm-slim
+
+# A fixed path rather than the default ~/.cache/ms-playwright: the browser has
+# to be findable whichever user a job runs as, and the jobs never install it.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+
+COPY frontend/package.json frontend/pnpm-lock.yaml /build/
+
+RUN set -eux; \
+    cd /build; \
+    corepack enable; \
+    corepack prepare "$(node -p "require('./package.json').packageManager")" --activate; \
+    playwright_version="$(node -p "require('./package.json').devDependencies['@playwright/test']")"; \
+    if ! grep -q "'@playwright/test@${playwright_version}':" pnpm-lock.yaml; then \
+        echo "pnpm-lock.yaml does not resolve @playwright/test to ${playwright_version} from package.json — run pnpm install" >&2; \
+        exit 1; \
+    fi; \
+    npx --yes "playwright@${playwright_version}" install --with-deps chromium; \
+    chmod -R 777 "${PLAYWRIGHT_BROWSERS_PATH}"; \
+    cd /; \
+    rm -rf /build /root/.npm /var/lib/apt/lists/*
+
+WORKDIR /
