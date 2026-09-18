@@ -68,10 +68,17 @@ backend at all, so its scheduled re-auth cannot work.
     export SOPHIA_KEYRING_PASSWORD='<master password for the encrypted store>'
     export SOPHIA_TUWEL_USERNAME='<matriculation number>'
 
-These are needed on **every** unattended run — the mint script and `job_runner`,
-not just the login — so they have to be ambient, not typed once. Put them in
-`~/.config/sophia/env` at mode 600 and source it, the same way the glab token
-lives at mode 600 in `~/.config/glab-cli/config.yml` on hephaestus.
+These are needed on **every** unattended run, not just the login. Put them in
+`~/.config/sophia/env` at mode 600, the same way the glab token lives at mode 600
+in `~/.config/glab-cli/config.yml` on hephaestus.
+
+`scripts/mint_session.py` **reads that file itself** (`SOPHIA_ENV_FILE`
+overrides), so nothing has to source it and `SOPHIA_KEYRING_PASSWORD` never
+enters any other process's environment. `/ship` runs `SESSION_CMD` in an
+environment that has sourced no profile at all, which is why this is read rather
+than inherited. Anything already set in the environment wins, so `gates.sh` and
+an explicit override still do. For `sophia auth login` and other CLI work you do
+still source it by hand.
 
 **`export`, and single quotes, both matter.** Without `export`, sourcing sets a
 shell variable that never reaches `uv run python scripts/mint_session.py`, which

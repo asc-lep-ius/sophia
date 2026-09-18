@@ -100,9 +100,10 @@ READY_URL="http://127.0.0.1:5173/api/ready"
 # course_materials, lecture_modules and topic_mappings stay empty until a TUWEL
 # sync has run, so it could not exercise the study surface at all.
 #
-# It needs SOPHIA_TUWEL_USERNAME, or SOPHIA_KEYRING_PASSWORD so the username can
-# be read back. Both belong in ~/.config/sophia/env at mode 600, not here and not
-# in a repo .env — see docs/run-contract-setup.md.
+# It reads ~/.config/sophia/env itself rather than relying on a sourced profile,
+# because this runs in an environment that has never sourced anything. That is
+# also why SOPHIA_KEYRING_PASSWORD is not exported anywhere: only the one script
+# that needs it ever holds it. See docs/run-contract-setup.md.
 #
 # The harness reads no secret: the keyring touch is inside the project's own
 # code, where job_runner already does it, and this line names no credential

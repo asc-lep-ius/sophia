@@ -14,6 +14,12 @@ It does not re-run the interactive login. `ensure_valid_session` checks the
 stored session and, when it has expired, re-authenticates from the keyring with
 no MFA code, exactly as the scheduled job runner does.
 
+It reads `~/.config/sophia/env` itself (`SOPHIA_ENV_FILE` overrides) rather than
+relying on a sourced shell profile, because `/ship` runs SESSION_CMD in an
+environment that has never sourced anything. That also keeps
+SOPHIA_KEYRING_PASSWORD out of every other process's environment. Anything
+already set in the environment wins.
+
 The tenant is left at its real default on purpose. `SessionTenant()` gives
 `learning_path_id="default-learning-path"`, the non-numeric sentinel every real
 login gets and every consumer coerces with `Number()` — the #106 bug. Seeding a
@@ -27,10 +33,13 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import stat
 import sys
+from pathlib import Path
 from typing import cast
 
 import redis.asyncio as redis_asyncio
+from platformdirs import user_config_dir
 from redis.exceptions import ConnectionError as RedisConnectionError
 
 from sophia.adapters.auth import (
@@ -52,6 +61,45 @@ from sophia.config import Settings
 from sophia.services.job_runner import ensure_valid_session
 
 
+def _load_env_file() -> Path | None:
+    """Read the operator's env file, so only this script ever holds its secrets.
+
+    `/ship` runs SESSION_CMD in whatever environment the harness has, which has
+    never sourced this file. Reading it here rather than from a shell profile
+    keeps SOPHIA_KEYRING_PASSWORD out of the environment of every other process.
+
+    Anything already set wins, so gates.sh and an explicit override still do.
+    """
+    override = os.environ.get("SOPHIA_ENV_FILE")
+    config_dir = os.environ.get("SOPHIA_CONFIG_DIR") or user_config_dir("sophia")
+    path = Path(override) if override else Path(config_dir) / "env"
+    if not path.is_file():
+        return None
+
+    mode = path.stat().st_mode
+    if mode & (stat.S_IRWXG | stat.S_IRWXO):
+        print(
+            f"warning: {path} is readable beyond its owner — chmod 600 it",
+            file=sys.stderr,
+        )
+
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        key, sep, value = line.removeprefix("export ").strip().partition("=")
+        if not sep:
+            continue
+        value = value.strip()
+        # Quotes are stripped here because this is not a shell: an unquoted
+        # password containing & would have been mangled by one, which is the
+        # whole reason this file is read rather than sourced.
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        os.environ.setdefault(key.strip(), value)
+    return path
+
+
 def _resolve_username() -> str:
     """The learner id the session is minted for, never their password."""
     from_env = os.environ.get("SOPHIA_TUWEL_USERNAME")
@@ -68,6 +116,8 @@ def _resolve_username() -> str:
 
 
 async def _mint(learning_path_id: str | None) -> str:
+    # Before Settings(), which reads SOPHIA_* out of the environment.
+    _load_env_file()
     settings = Settings()
 
     if not await ensure_valid_session(settings.config_dir, settings.tuwel_host, settings.tiss_host):
