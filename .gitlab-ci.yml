@@ -243,15 +243,24 @@ compose-config:
   # The runner's allowed_images still does not include mcr.microsoft.com, so the
   # official Playwright image cannot be pulled here -- ci/Dockerfile.frontend
   # builds the equivalent into the local registry instead. Three jobs need a
-  # browser now rather than one, and on pipeline 469 the Chromium download and
-  # its apt install were paid three times over for 54% of the pipeline's job
-  # time, so the browser belongs in the shared base.
+  # browser now rather than one. On pipeline 469 those three jobs were 550.3s of
+  # the pipeline's 1012s of job time -- 54% -- and each paid the Chromium
+  # download and its apt install separately. That install is what moves into the
+  # image; the specs themselves still cost what they cost.
   image:
     name: "${LOCAL_REGISTRY}/frontend-ci:latest"
     # :latest moves whenever rebuild-frontend-ci-image runs, and the runners'
     # default policy would keep serving whatever they pulled first. The
     # if-not-present fallback keeps a registry outage from failing jobs a
     # runner already has the image for.
+    #
+    # This requires allowed_pull_policies on the hephaestus runner to include
+    # "always". Left unset, that allowlist defaults to the runner's own
+    # pull_policy -- ["if-not-present"] here -- and a job asking for anything
+    # outside it is refused before it starts, so every frontend job fails at
+    # startup rather than running with the wrong image. Recorded here for the
+    # same reason the allowed_images note above is: it is a constraint of the
+    # machine, and nothing in this repo enforces it.
     pull_policy: [always, if-not-present]
   tags: [hephaestus]
   cache:

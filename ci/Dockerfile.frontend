@@ -27,12 +27,11 @@ RUN set -eux; \
     corepack prepare "$(node -p "require('./package.json').packageManager")" --activate; \
     playwright_version="$(node -p "require('./package.json').devDependencies['@playwright/test']")"; \
     if ! grep -q "'@playwright/test@${playwright_version}':" pnpm-lock.yaml; then \
-        echo "pnpm-lock.yaml does not resolve @playwright/test to ${playwright_version} from package.json — run pnpm install" >&2; \
+        echo "package.json asks for @playwright/test ${playwright_version}, and pnpm-lock.yaml does not resolve it." >&2; \
+        echo "This lookup needs the exact pin package.json carries today, not a range: fix the pin, then run pnpm install." >&2; \
         exit 1; \
     fi; \
     npx --yes "playwright@${playwright_version}" install --with-deps chromium; \
     chmod -R 777 "${PLAYWRIGHT_BROWSERS_PATH}"; \
     cd /; \
     rm -rf /build /root/.npm /var/lib/apt/lists/*
-
-WORKDIR /
