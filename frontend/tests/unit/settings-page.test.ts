@@ -61,12 +61,12 @@ describe("settings route", () => {
       },
     });
 
-    await expect(settingsAction(event)).resolves.toEqual({
-      settings: {
-        locale: "de",
-        selected_learning_path_id: "course-2",
-        theme: "oled",
-      },
+    // Saving "de" over an English session reloads the page in German; what this
+    // test is about is the PATCH underneath it. settings-locale.test.ts covers
+    // the reload and the cookie behind it.
+    await expect(settingsAction(event)).rejects.toMatchObject({
+      location: "/app/settings",
+      status: 303,
     });
 
     const init = fetch.mock.calls[0]?.[1] as RequestInit;
@@ -146,7 +146,7 @@ function createEvent({
   }
 
   return {
-    cookies: { get: () => undefined },
+    cookies: { get: () => undefined, set: () => undefined },
     fetch,
     locals: {
       apiSetCookies: [],
@@ -178,6 +178,7 @@ function createEvent({
       body: form ? formData : undefined,
       method: form ? "POST" : "GET",
     }),
+    url: new URL("http://localhost/app/settings"),
   } as unknown as RequestEvent;
 }
 
