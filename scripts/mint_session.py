@@ -31,6 +31,7 @@ import sys
 from typing import cast
 
 import redis.asyncio as redis_asyncio
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from sophia.adapters.auth import (
     load_credentials_from_keyring,
@@ -115,6 +116,16 @@ async def _mint(learning_path_id: str | None) -> str:
     try:
         core = create_session_core(settings, cast("RedisSessionBackend", client))
         cookie = await core.create(record)
+    except RedisConnectionError as exc:
+        # Run by hand this is almost always "the stack is not up", and a
+        # connection traceback buries that under forty lines.
+        msg = (
+            f"cannot reach Redis at {settings.redis_url}: {exc}\n"
+            "Start the stack first (scripts/run_stack.sh), and set "
+            "SOPHIA_REDIS_URL to the same Redis it uses — .claude/gates.sh "
+            "exports both so /ship keeps them in step."
+        )
+        raise SystemExit(msg) from None
     finally:
         await client.aclose()
 

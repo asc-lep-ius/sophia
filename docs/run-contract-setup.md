@@ -62,15 +62,26 @@ reads as the backend simply not existing.
 For the deployed container this is unsolved — see #111. The image installs no
 backend at all, so its scheduled re-auth cannot work.
 
-### 3. Persist both environment variables
+### 3. Persist the environment variables
 
-    PYTHON_KEYRING_BACKEND=keyrings.alt.file.EncryptedKeyring
-    SOPHIA_KEYRING_PASSWORD=<master password for the encrypted store>
+    export PYTHON_KEYRING_BACKEND=keyrings.alt.file.EncryptedKeyring
+    export SOPHIA_KEYRING_PASSWORD='<master password for the encrypted store>'
+    export SOPHIA_TUWEL_USERNAME='<matriculation number>'
 
 These are needed on **every** unattended run — the mint script and `job_runner`,
 not just the login — so they have to be ambient, not typed once. Put them in
 `~/.config/sophia/env` at mode 600 and source it, the same way the glab token
 lives at mode 600 in `~/.config/glab-cli/config.yml` on hephaestus.
+
+**`export`, and single quotes, both matter.** Without `export`, sourcing sets a
+shell variable that never reaches `uv run python scripts/mint_session.py`, which
+runs in a fresh shell — `SESSION_CMD` would then mint for the wrong user or fail
+to find one. Without quotes, a password containing `&`, `$`, a space or a
+backtick is parsed as shell: a `&` backgrounds the assignment at that point, so
+the variable silently takes only the fragment before it and the remainder is
+executed as a command — printing part of the password to the terminal. That
+happened here. If it happens, treat the password as disclosed and rotate it:
+delete `~/.local/share/python_keyring/crypted_pass.cfg` and log in again.
 
 Not in a repo `.env`: `.env` is on `verify-run-contract.sh`'s ambiguous-pattern
 list and is a refusal on a `SESSION_CMD` line.
