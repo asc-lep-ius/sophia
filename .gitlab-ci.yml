@@ -13,6 +13,26 @@ workflow:
 
 variables:
   LOCAL_REGISTRY: "gitlab.hephaestus:5050/mipkovich/sophia"
+  # The frontend CI image this commit expects: the first 16 hex of the sha256 of
+  # ci/Dockerfile.frontend and frontend/pnpm-lock.yaml concatenated.
+  #
+  # Written down rather than published by the job that builds it -- and not
+  # because a computed value cannot reach `image:`. It can: a dotenv variable
+  # from an earlier job is in the payload the runner receives, and the runner
+  # expands `image:` from all of it. The reasons are duller than that.
+  #
+  #   - The publisher would have to run in every pipeline, while the job that
+  #     knows the hash runs only when the two files change.
+  #   - It would sit in this same stage, so anything consuming it would need its
+  #     own `needs:` rather than relying on stage order.
+  #   - An unset value expands to `frontend-ci:` and dies as `invalid reference
+  #     format`, which is the opaque failure the checker below exists to replace.
+  #   - A value in this file is greppable and shows up in a diff. One that exists
+  #     only inside a pipeline does neither.
+  #
+  # Nobody has to remember to bump it: scripts/frontend_ci_image.py --check
+  # recomputes the hash on every pipeline and prints the value to paste.
+  FRONTEND_CI_TAG: "62f69fa2ab0c6276"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
   PNPM_STORE_PATH: "$CI_PROJECT_DIR/.cache/pnpm"
@@ -99,12 +119,17 @@ rebuild-ci-image:
     - if: '$CI_PIPELINE_SOURCE == "web"'
       when: manual
       allow_failure: true
-    # allow_failure for the same reason as .ci-rebuild-rules: this stage runs
-    # first, so a registry outage must not skip the checks behind it. What a
-    # stale image costs differs, though. A stale ci:latest only makes the
-    # Python jobs slower; a stale frontend-ci:latest carries a Chromium the
-    # lockfile did not ask for, so the browser jobs refuse it up front --
-    # guard:playwright-browser names this job as the fix.
+    # The same two files FRONTEND_CI_TAG is the hash of: when they move the tag
+    # moves, and the image that tag names does not exist until this job builds
+    # it. So the merge request arm runs on its own rather than waiting to be
+    # clicked -- a branch that bumps the lockfile cannot go green without it,
+    # and there is no longer a shared tag for that build to disturb.
+    #
+    # allow_failure survives from .ci-rebuild-rules, with a narrower meaning
+    # worth stating: it no longer keeps the frontend jobs running, since a build
+    # that failed leaves nothing for them to pull. What it still does is let
+    # lint, typecheck, test:3.12 and the policy jobs report, instead of one
+    # registry outage in the first stage costing every signal in the pipeline.
     - if: '$CI_COMMIT_BRANCH == "master"'
       changes:
         - ci/Dockerfile.frontend
@@ -114,7 +139,6 @@ rebuild-ci-image:
       changes:
         - ci/Dockerfile.frontend
         - frontend/pnpm-lock.yaml
-      when: manual
       allow_failure: true
     - when: never
 
@@ -124,8 +148,11 @@ rebuild-frontend-ci-image:
     - .docker-build
     - .frontend-ci-rebuild-rules
   script:
-    - CI_HASH=$(cat ci/Dockerfile.frontend frontend/pnpm-lock.yaml | sha256sum | cut -c1-16)
-    - docker buildx build --file ci/Dockerfile.frontend --cache-from type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache,mode=max --tag ${LOCAL_REGISTRY}/frontend-ci:${CI_HASH} --tag ${LOCAL_REGISTRY}/frontend-ci:latest --push .
+    # One tag, and no :latest. A moving tag is the whole of #113: a branch that
+    # rebuilt used to overwrite what master's next pipeline would pull, handing
+    # master a browser set master's own lockfile never asked for and reddening
+    # three jobs for something master did not do.
+    - docker buildx build --file ci/Dockerfile.frontend --cache-from type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache --cache-to type=registry,ref=${LOCAL_REGISTRY}/frontend-ci-cache,mode=max --tag ${LOCAL_REGISTRY}/frontend-ci:${FRONTEND_CI_TAG} --push .
 
 # --- Pre-built CI image template ---
 .python-job:
@@ -222,6 +249,19 @@ deployment-policy:
   script:
     - uv run python scripts/deployment_policy.py --check
 
+# On .python-job, not .frontend-job: a job whose whole purpose is to report that
+# the frontend image tag is wrong cannot be one that has to pull that image to
+# start. test:3.12 covers the same check through tests/api/test_frontend_ci_image.py,
+# but it is a two-minute job, and a stale tag otherwise surfaces as nine jobs
+# failing to pull a tag that "does not exist" -- true, unhelpful, and 30 seconds
+# from the answer this prints.
+frontend-image-tag:
+  stage: check
+  tags: [hephaestus]
+  extends: .python-job
+  script:
+    - uv run python scripts/frontend_ci_image.py --check
+
 compose-config:
   stage: check
   image: docker:27-cli
@@ -247,21 +287,17 @@ compose-config:
   # the pipeline's 1012s of job time -- 54% -- and each paid the Chromium
   # download and its apt install separately. That install is what moves into the
   # image; the specs themselves still cost what they cost.
-  image:
-    name: "${LOCAL_REGISTRY}/frontend-ci:latest"
-    # :latest moves whenever rebuild-frontend-ci-image runs, and the runners'
-    # default policy would keep serving whatever they pulled first. The
-    # if-not-present fallback keeps a registry outage from failing jobs a
-    # runner already has the image for.
-    #
-    # This requires allowed_pull_policies on the hephaestus runner to include
-    # "always". Left unset, that allowlist defaults to the runner's own
-    # pull_policy -- ["if-not-present"] here -- and a job asking for anything
-    # outside it is refused before it starts, so every frontend job fails at
-    # startup rather than running with the wrong image. Recorded here for the
-    # same reason the allowed_images note above is: it is a constraint of the
-    # machine, and nothing in this repo enforces it.
-    pull_policy: [always, if-not-present]
+  # No pull_policy, and stating none is the point. The tag names one build, so
+  # every policy fetches the same bytes and the job has nothing to gain by
+  # asking -- while asking is what costs. `allowed_pull_policies` defaults to the
+  # runner's own `pull_policy`, which itself defaults to `always`, so a job
+  # asking for if-not-present is refused outright by an unconfigured runner.
+  # Saying nothing skips that check: hephaestus pulls if-not-present because its
+  # config says so, an unconfigured runner pulls always, and both are correct.
+  #
+  # That is what retires the allowed_pull_policies prerequisite #112 placed on
+  # the hephaestus runner. `always` was only ever needed because :latest moved.
+  image: "${LOCAL_REGISTRY}/frontend-ci:${FRONTEND_CI_TAG}"
   tags: [hephaestus]
   cache:
     key:
