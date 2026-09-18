@@ -5,10 +5,14 @@
 # Called by /ship step 2. Safe to run by hand at any time.
 #
 #   --base <ref>   the ref the diff is scoped against, as /ship step 1
-#                  established it. Only parity reads it, and only to decide
-#                  whether either side of the contract moved; without it the
+#                  established it. Two things read it now. Parity, to decide
+#                  whether either side of the contract moved — without it the
 #                  scope is origin/HEAD, which on a stacked branch is six other
-#                  issues wide and triggers parity on all of them.
+#                  issues wide and triggers parity on all of them. And the CI
+#                  policy, to tell whether this branch is the one the stack
+#                  collapses onto; without it the line can only say
+#                  `tip-unknown`, because "every configured check ran" is a
+#                  claim and nothing here would have the evidence for it.
 set -uo pipefail
 
 BASE=""
@@ -48,7 +52,13 @@ if ! run_parity "$BASE"; then
     exit 1
 fi
 
-record_gates_pass "$STATE" "$FP" "$PARITY_RESULT"
+# The forge half of the CI policy, and the only network call in this script that
+# is not PARITY_CMD's own. Best effort: an unreachable forge leaves the MR facts
+# unknown, and unknown never produces a recorded skip.
+read_mr_facts
+CI_POLICY=$(ci_policy_outcome "$BASE")
+
+record_gates_pass "$STATE" "$FP" "$PARITY_RESULT" "$CI_POLICY"
 echo "Gates passed for tree ${FP:0:12}:"
 [[ -n "$LINT_CMD" ]] && echo "  lint  ${LINT_CMD}"
 [[ -n "$TYPE_CMD" ]] && echo "  types ${TYPE_CMD}"
@@ -58,6 +68,10 @@ echo "Gates passed for tree ${FP:0:12}:"
 # passed" and "parity was never re-triggered this ship" are different facts and
 # stopped being the same silence here.
 echo "  parity ${PARITY_RESULT} — ${PARITY_OUTPUT}"
+# Printed on every run for parity's reason, and `unconfigured` is a value rather
+# than a blank: a check skipped by policy and a check that passed are the same
+# silence until something names the skip where it happened.
+echo "  ci-policy ${CI_POLICY} — $(ci_policy_gloss "$CI_POLICY" "$BASE")"
 # Printed, and that is the whole of it. A gate that failed for being slow is a
 # gate somebody turns off on the first loaded machine, so the number says what
 # the run cost and leaves the decision to whoever reads it.
