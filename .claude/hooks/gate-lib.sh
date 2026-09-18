@@ -50,6 +50,17 @@ baseline_head()        { sed -n '2p' "$1" 2>/dev/null; }
 # somebody once hoped they would cost.
 GATE_BUDGET_DEFAULT_S=60
 
+# How long the milestone runner may stand watching a pushed branch's pipeline
+# before it records a timeout, for a project whose gates.sh never names the key.
+# 1800 because it is comfortably past both pipelines anybody here has measured —
+# sophia's ~500s median and tame-swarm's ~992s, both on 2026-09-18 — and a wait
+# that ends early would record a timeout for a pipeline that was about to pass.
+CI_WAIT_TIMEOUT_DEFAULT_S=1800
+
+# The MR label that forces the full suite on a branch policy would have tiered,
+# for a gates.sh that names no label of its own.
+CI_TIP_LABEL_DEFAULT="full-ci"
+
 # Per-project gate commands and run contract. Anything left empty is skipped.
 # Reads .claude/gates.sh relative to the current directory — the hooks cd to the
 # repo root first. $GATES_FILE points it at a candidate file instead, which is
@@ -62,6 +73,8 @@ load_gates() {
     RUN_CMD=""; STOP_CMD=""; READY_URL=""; SESSION_CMD=""; SURFACE_PATHS=""
     DECISION_DOCS=""
     PARITY_CMD=""; PARITY_PATHS=""
+    CI_WAIT=""; CI_WAIT_TIMEOUT=""
+    CI_MR_SECONDS=""; CI_IS_ONLY_GATE=""; CI_TIP_LABEL=""; CI_TIER_PATHS=""
     local gates="${GATES_FILE:-.claude/gates.sh}"
     if [[ -f "$gates" ]]; then
         # shellcheck disable=SC1090,SC1091
@@ -80,6 +93,32 @@ load_gates() {
     # and reads as 0, so it is advisory on every run. Both ends defeat the same
     # thing, and this key is one the template invites projects to hand-edit.
     [[ "$GATE_BUDGET_S" =~ ^[0-9]+$ ]] || GATE_BUDGET_S="$GATE_BUDGET_DEFAULT_S"
+    # Both CI keys fail towards doing nothing, for the budget key's reason and
+    # one more: what is on the other side of this value is a runner standing
+    # still. An unset, misspelt or empty CI_WAIT is `never`, so a project that
+    # has not declared a pipeline — or has declared one with a typo — is not
+    # made to wait half an hour for it. `tip-only` and `always` have to be
+    # spelled to be meant.
+    case "$CI_WAIT" in
+        always|tip-only|never) ;;
+        *) CI_WAIT="never" ;;
+    esac
+    # `10#` after the regex, because `(( ))` reads a leading zero as octal and
+    # a duration written `0600` is a plausible thing to type: it would become
+    # 384 seconds, and a wait that ended early would record a timeout for a
+    # pipeline that was about to pass.
+    if [[ "$CI_WAIT_TIMEOUT" =~ ^[0-9]+$ ]]; then
+        CI_WAIT_TIMEOUT=$(( 10#$CI_WAIT_TIMEOUT ))
+    else
+        CI_WAIT_TIMEOUT="$CI_WAIT_TIMEOUT_DEFAULT_S"
+    fi
+    # The one key here that fails *closed*, and the only reason CI_IS_ONLY_GATE
+    # is worth having: anything but a spelled-out `no` means the pipeline may be
+    # this project's only check, so a configured skip is refused rather than
+    # applied. tame-swarm has no .claude/ at all today, and a policy block copied
+    # from sophia would skip its only gate.
+    [[ "$CI_IS_ONLY_GATE" == "no" ]] || CI_IS_ONLY_GATE="yes"
+    [[ -n "$CI_TIP_LABEL" ]] || CI_TIP_LABEL="$CI_TIP_LABEL_DEFAULT"
 }
 
 # The list decision-doc-context.sh matches against when gates.sh names none.
@@ -431,6 +470,12 @@ run_all_gates() {
 # argument is that outcome stated outright, which is what run-gates.sh passes
 # after run_parity has actually run the command.
 #
+# `ci-policy=` is recorded here and never decided here, exactly as `parity=` is:
+# the Stop hook writes this marker and must not touch the forge, so the default
+# classification knows only what gates.sh says and nothing about a draft or a
+# label. The optional fourth argument is the outcome stated outright, which is
+# what run-gates.sh passes after `read_mr_facts` has asked the forge.
+#
 # `inert=` says what justified a skip, for the same reason: without it a marker
 # written over a tree nothing ran against is indistinguishable from one written
 # after every gate passed, and both read as "this tree is clean". `inert=none` is
@@ -443,12 +488,14 @@ run_all_gates() {
 # returned by the time they are written.
 record_gates_pass() {
     local state="$1" fp="$2" parity="${3:-$(parity_outcome)}"
+    local policy="${4:-$(ci_policy_outcome)}"
     {
         echo "passed_at=$(date -Iseconds)"
         echo "lint=${LINT_CMD}"
         echo "types=${TYPE_CMD}"
         echo "tests=${TEST_CMD}"
         echo "parity=${parity}"
+        echo "ci-policy=${policy}"
         echo "inert=$(inert_line)"
         echo "lint_s=${GATE_ELAPSED_LINT}"
         echo "types_s=${GATE_ELAPSED_TYPES}"
@@ -822,6 +869,194 @@ surface_specs() { glob_specs "$SURFACE_PATHS"; }
 # Call after load_gates, and guard the call with a non-empty RUN_CMD: a project
 # with no runnable surface has nothing to walk whatever its globs match.
 changed_surface() { changed_under "$SURFACE_PATHS" "${1:-}"; }
+
+# --- CI policy: a skip is written down where it happens -------------------------
+# A check skipped by policy and a check that passed reach a ledger as the same
+# silence unless something records the skip at the moment it happens. `parity=`
+# exists because "parity passed" and "parity never ran this ship" used to render
+# identically; this is that fix in the second place it is needed, and it ships
+# before any project's CI is tiered because tiering without it is the thing a
+# council vetoed twice on 2026-09-18.
+#
+# Four keys in gates.sh, and one line in the gates marker. Nothing here changes
+# what CI runs — `.gitlab-ci.yml` decides that — and nothing here is a verdict:
+# `ci-policy=` is a record, and no caller reads it to decide anything.
+
+# Every key below is read with `:-`, the way `parity_outcome` reads PARITY_CMD:
+# this file is a library, the Stop hook runs under `set -u`, and a caller that
+# reaches `record_gates_pass` by some path that did not `load_gates` first should
+# get the fail-closed answer rather than kill the hook.
+
+# The names this project defers to the tip, as the line prints them.
+ci_tiered_names() {
+    # Newlines folded first, for `decision_doc`'s reason: `read` stops at the
+    # first one, so a value wrapped across lines for readability would lose
+    # every name after the first — silently, in the line whose whole job is
+    # naming them. `read -ra` and not an unquoted expansion, because that is
+    # pathname-expanded as well as split and this runs from the repo root.
+    local raw="${CI_TIER_PATHS:-}"
+    local -a names
+    read -ra names <<<"${raw//$'\n'/ }"
+    (( ${#names[@]} )) || return 0
+    ( IFS=','; printf '%s' "${names[*]}" ) | sed 's/,/, /g'
+}
+
+# Is this branch the one the stack collapses onto — the branch whose MR targets
+# the default branch?
+#
+#   0  it is the tip        1  it is stacked on another branch
+#   2  nothing here can tell
+#
+# **The third answer is the whole point**, and it is `parity_base`'s discipline
+# in this file's other half. An unnamed base means `origin/HEAD` for
+# `changed_under` and `surface_base`, and that is right there, because those
+# answer *what changed* — a scope. This answers *was everything checked* — a
+# claim. A claim from an unresolved input is the veto's failure wearing a label,
+# which is why `parity_outcome` says `pending` rather than `not-triggered` when
+# its base will not resolve, and why this says `tip-unknown` rather than `full`.
+#
+# Both unknown paths are real rather than theoretical. The Stop hook calls
+# `record_gates_pass` with no base at all and has no /ship step 1 behind it to
+# get one from, so without this every mid-stack branch would record `full` from
+# one hook and `tip-only` from the other about one tree.
+# Which of the two unknowns it was, for the gloss to name the remedy that can
+# actually work. Telling a reader to pass `--base` when they already did is the
+# kind of advice that teaches people to stop reading the line.
+#
+# **Read back by re-running `ci_at_tip`, never carried across from the outcome
+# call.** Every caller computes the outcome in a command substitution, so a
+# variable set in there dies with the subshell — which is how the first draft of
+# this printed the wrong remedy, and the same shape as the `--stop` the pipeline
+# wait used to swallow. One `git symbolic-ref` is cheaper than a state channel
+# that only works from some callers.
+CI_TIP_UNKNOWN_WHY=""
+
+ci_at_tip() {  # ci_at_tip [base]
+    local base="${1:-}" default
+    CI_TIP_UNKNOWN_WHY=""
+    # No base named: the caller has not said what this branch is stacked on, and
+    # on the Stop hook's path nothing could have.
+    [[ -n "$base" ]] || { CI_TIP_UNKNOWN_WHY="no-base"; return 2; }
+    # A base was named and there is nothing to compare it against. Not evidence
+    # for the tip — if anything the opposite, since a caller that named a base
+    # knows something this does not.
+    default=$(git symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null)
+    [[ -n "$default" ]] || { CI_TIP_UNKNOWN_WHY="no-default"; return 2; }
+    [[ "${base#origin/}" == "${default#origin/}" ]]
+}
+
+ci_has_tip_label() {
+    [[ -n "${CI_MR_LABELS:-}" ]] || return 1
+    [[ ",${CI_MR_LABELS}," == *",${CI_TIP_LABEL:-},"* ]]
+}
+
+# What the gates marker records about CI policy, without touching the forge:
+#
+#   full                        every configured check ran for this tree
+#   tip-only (skipped: <names>) the named checks were deferred to the stack tip
+#                               by policy, and this branch is not the tip
+#   tip-unknown                 checks are deferred to the tip and nothing here
+#                               could establish whether this branch is it. Says
+#                               so rather than claiming `full`, for the reason
+#                               `parity=pending` exists
+#   draft-skipped               the MR is a draft and this project declared
+#                               CI_IS_ONLY_GATE=no
+#   refused (only-gate)         a skip was configured and refused, because this
+#                               project has not declared a local gate to fall
+#                               back on
+#   unconfigured                no CI policy declared — this project tiers
+#                               nothing, and nothing about it changes
+#
+# The forge half — whether the MR is a draft, and what labels it carries — is
+# `read_mr_facts`, which only /ship's side of the gate calls. Unset means
+# unknown, and unknown never produces `draft-skipped`: a skip is recorded
+# because it was known to happen, never inferred.
+ci_policy_outcome() {  # ci_policy_outcome [base]
+    local draft="${CI_MR_DRAFT:-unknown}" at
+    [[ -n "${CI_POLICY_RESULT:-}" ]] && { printf '%s' "$CI_POLICY_RESULT"; return 0; }
+    if [[ -z "${CI_TIER_PATHS:-}" && "$draft" != "yes" ]]; then
+        printf 'unconfigured'; return 0
+    fi
+    if [[ "${CI_IS_ONLY_GATE:-}" != "no" ]]; then
+        [[ -n "${CI_TIER_PATHS:-}" ]] && { printf 'refused (only-gate)'; return 0; }
+        # A draft on a project that refuses skips is a draft whose pipeline ran.
+        printf 'full'; return 0
+    fi
+    # Ordered strongest skip first: a draft's pipeline is skipped whole, so what
+    # tiering would have deferred never came up.
+    [[ "$draft" == "yes" ]] && { printf 'draft-skipped'; return 0; }
+    ci_has_tip_label && { printf 'full'; return 0; }
+    # `if`, not `ci_at_tip …; at=$?`: the second form aborts under `set -e` on
+    # the `return 1` that means "stacked on another branch", which is an answer
+    # rather than a failure. No caller sets -e today — every one reaches this
+    # through a command substitution — but this file is a library sourced by
+    # run.sh, verify-run-contract.sh and every hook, and the repo already has
+    # `set -euo pipefail` scripts in it.
+    if ci_at_tip "${1:-}"; then at=0; else at=$?; fi
+    case "$at" in
+        0) printf 'full' ;;
+        1) printf 'tip-only (skipped: %s)' "$(ci_tiered_names)" ;;
+        *) printf 'tip-unknown' ;;
+    esac
+}
+
+# One sentence per value, for the caller that prints the line to a person. The
+# value is what gets carried verbatim; this is the gloss beside it, and it says
+# `full` two different ways on purpose — "nothing was deferred" and "this branch
+# is the tip" are the same word and different facts.
+ci_policy_gloss() {  # ci_policy_gloss <value> [base]
+    case "$1" in
+        unconfigured)
+            printf 'no CI policy in .claude/gates.sh; this project tiers nothing' ;;
+        refused*)
+            printf 'CI_TIER_PATHS is set but CI_IS_ONLY_GATE is not `no`, so nothing was skipped' ;;
+        draft-skipped)
+            printf 'the MR is a draft and this project declared CI_IS_ONLY_GATE=no' ;;
+        tip-only*)
+            printf 'deferred to the branch that targets the default branch' ;;
+        tip-unknown)
+            ci_at_tip "${2:-}" || true
+            printf '%s deferred to the tip, and ' "$(ci_tiered_names)"
+            case "${CI_TIP_UNKNOWN_WHY:-}" in
+                no-base)    printf 'no base was named to tell whether this branch is it — pass run-gates.sh --base <ref>' ;;
+                no-default) printf 'origin/HEAD is unset, so the named base cannot be compared to anything — git remote set-head origin -a' ;;
+                *)          printf 'nothing established whether this branch is it — pass run-gates.sh --base <ref>, and check origin/HEAD is set' ;;
+            esac ;;
+        full)
+            if [[ -z "${CI_TIER_PATHS:-}" ]]; then
+                printf 'every configured check ran'
+            else
+                printf 'every configured check ran for this tree — this branch is the tip, or carries %s' \
+                    "${CI_TIP_LABEL:-}"
+            fi ;;
+        *) printf 'unrecognised' ;;
+    esac
+}
+
+# The forge half of the policy. **Never reachable from the Stop hook**, for
+# run_parity's reason: it makes a network call, and the Stop hook has to stay
+# offline and credential-free. Best effort throughout — a forge that cannot be
+# reached leaves both facts unknown, and unknown never produces a skip.
+read_mr_facts() {  # read_mr_facts [branch]
+    local branch="${1:-}" mr draft
+    CI_MR_DRAFT="unknown"; CI_MR_LABELS=""
+    # No skip is possible, so nothing the forge could say would change the
+    # outcome. "Unset changes nothing anywhere" has to include not reaching the
+    # network on every gate run of every project that declared no policy.
+    [[ "${CI_IS_ONLY_GATE:-}" == "no" || -n "${CI_TIER_PATHS:-}" ]] || return 0
+    command -v glab >/dev/null 2>&1 || return 0
+    command -v jq   >/dev/null 2>&1 || return 0
+    [[ -n "$branch" ]] || branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+    [[ -n "$branch" ]] || return 0
+    mr=$(glab mr list --source-branch "$branch" --output json 2>/dev/null) || return 0
+    draft=$(jq -r 'if length > 0 then ((.[0].draft // .[0].work_in_progress // false) | tostring)
+                   else "" end' <<<"$mr" 2>/dev/null)
+    [[ -n "$draft" ]] || return 0
+    if [[ "$draft" == "true" ]]; then CI_MR_DRAFT="yes"; else CI_MR_DRAFT="no"; fi
+    CI_MR_LABELS=$(jq -r 'if length > 0 then ((.[0].labels // []) | join(",")) else "" end' \
+        <<<"$mr" 2>/dev/null)
+    return 0
+}
 
 # --- parity: a double pinned to the server it stands in for --------------------
 # PARITY_CMD runs the same contract cases against the test double and against

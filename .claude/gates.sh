@@ -135,3 +135,90 @@ SURFACE_PATHS="frontend/src/routes/** frontend/src/lib/components/** frontend/sr
 # real server refused with 412, and forty green tests said nothing was wrong.
 PARITY_CMD=""
 PARITY_PATHS=""
+
+# --- the pipeline this project pushes into ------------------------------------
+# Who waits for the branch's pipeline, and for how long. **Nothing here runs a
+# pipeline or changes what CI does** — these only say whether something is
+# allowed to stand still watching one, and where that standing still happens.
+#
+# The wait used to sit inside the model's turn, at /ship step 9, which spent the
+# rolling five-hour session window on a poll that produces no tokens: a
+# fourteen-issue milestone burned roughly two hours of window on sophia's ~500s
+# median pipeline and nearly four on tame-swarm's ~992s. `skills/milestone/run.sh`
+# now does the waiting between issues, where wall clock is all it costs.
+#
+# CI_WAIT
+#   always     wait for every phase's pipeline
+#   tip-only   wait only for the branch that targets the default branch — the one
+#              the stack collapses onto, and so the one whose pipeline is the
+#              one standing between this work and master
+#   never      never wait
+# **Empty is `never`**, and deliberately: a project that never declared a
+# pipeline is not one to be made to wait for one. A value that is none of the
+# three is `never` too — a typo in this file must not hang a run for half an hour.
+CI_WAIT="tip-only"
+
+# How long that wait may take, in seconds, before it is recorded as a timeout.
+# Empty or non-numeric is 1800. A timeout is recorded as a timeout and never
+# resolves to green: "the pipeline passed" and "nothing ever watched a pipeline"
+# reaching the reader as the same silence is the failure `parity=` already exists
+# to end, and the milestone ledger's `pipeline=` field is that fix in the second
+# place it was needed.
+CI_WAIT_TIMEOUT=""
+
+# The rest of the CI policy, and the reason it is declared here at all: a check
+# skipped by policy and a check that passed reach a ledger as the same silence
+# unless something writes the skip down at the moment it happens. Every `/ship`
+# run prints `ci-policy=` beside the three gates and `parity=`, and it is written
+# into `.claude/state/gates-<fingerprint>.ok` so the distinction outlives the
+# turn. **Unset changes nothing anywhere** — a project with no block reads
+# `ci-policy=unconfigured` and behaves exactly as it did before the key existed.
+#
+# CI_MR_SECONDS — the observed median MR pipeline, with the date it was measured.
+# /project-setup writes it from this project's own pipeline history. Nothing
+# reads it to decide anything; it is what a proposal to tier this project's CI
+# has to argue against.
+#   CI_MR_SECONDS="500  # median of the last 50 MR pipelines, 2026-09-18"
+CI_MR_SECONDS="489  # median of 26 successful MR pipelines, 2026-09-18"
+
+# CI_IS_ONLY_GATE — yes | no. Is the pipeline the only thing checking this
+# project? **Empty is `yes`**, and it is the one key here that fails closed: a
+# project that has never declared a local gate is not one we may skip CI on. With
+# `yes`, a configured skip is *refused* rather than applied, and the line says
+# `refused (only-gate)` so that the refusal is visible rather than being a value
+# that quietly did nothing.
+#
+# Left empty here, and the answer is genuinely mixed rather than obvious. The
+# frontend has a real local gate -- TEST_CMD above runs 349 unit tests on every
+# tree change. The backend does not: the full Python suite was deliberately kept
+# off the Stop hook (see the note above TEST_CMD), so CI's `test:3.12` with its
+# --cov-fail-under=85 is the only thing that runs it. Empty is `yes`, which is
+# the safe half of that split, and it is inert either way while CI_TIER_PATHS is
+# empty. Answer it properly before tiering anything.
+CI_IS_ONLY_GATE=""
+
+# CI_TIP_LABEL — the MR label that forces the full suite on a mid-stack branch,
+# for the case the tiering did not anticipate. Empty is `full-ci`.
+CI_TIP_LABEL=""
+
+# CI_TIER_PATHS — the jobs or paths this project defers to the stack tip, named
+# so the `ci-policy=` line can name them. Space-separated. Empty means nothing is
+# deferred and every configured check ran, which is `ci-policy=full`.
+#
+# The line reads `tip-unknown` where a caller could not establish whether this
+# branch is the tip — the Stop hook, which has no base to name. That is
+# deliberate and it is `parity=pending`'s rule: "every configured check ran" is a
+# claim, and a claim from an unresolved input is exactly the false all-clear this
+# key exists to prevent. `/ship` always names a base, so a ship run resolves it.
+#
+# Setting this does not tier anything on its own: what CI runs is decided in
+# `.gitlab-ci.yml`, and this is the declaration that lets a skip be recorded
+# where somebody will read it. A skip nobody recorded is how a stale value once
+# passed a Playwright suite over on a mid-stack phase, the ledger read all-green
+# at 5am, and the broken flow rode the frozen branch to master.
+#   CI_TIER_PATHS="playwright-e2e gpu-smoke"
+# Empty because .gitlab-ci.yml defers nothing today. Tiering the three Playwright
+# jobs to the stack tip is #112's explicit non-goal -- separate, and blocked on
+# mipkovich/claude-config#36 -- so this project reads `ci-policy=unconfigured`
+# and behaves exactly as it did before these keys existed.
+CI_TIER_PATHS=""
