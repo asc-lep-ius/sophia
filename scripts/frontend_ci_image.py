@@ -1,16 +1,16 @@
 """Verify FRONTEND_CI_TAG names the image this commit's inputs actually build.
 
-`.frontend-job` pulls `frontend-ci:$FRONTEND_CI_TAG`, and that tag is written
-into `.gitlab-ci.yml` by hand rather than computed in the pipeline. It has to
-be: GitLab Runner expands `image:` from `.gitlab-ci.yml`, project and
-predefined variables only, so a value an earlier job computed -- a dotenv
-artifact -- is not visible at the point the image name is resolved.
+`.frontend-job` pulls `frontend-ci:$FRONTEND_CI_TAG`, a tag written into
+`.gitlab-ci.yml` by hand rather than published by the job that builds it. Not
+because a computed value could not reach `image:` -- a dotenv variable from an
+earlier job does reach it -- but because the publisher would have to run in
+every pipeline, would need its own `needs:` to be seen from its own stage, and
+expands to `invalid reference format` when unset. `.gitlab-ci.yml` carries that
+reasoning in full.
 
-Writing it down is what makes the tag immutable, which is the point. A tag that
-moved let a branch's rebuild overwrite what master's next pipeline pulled. What
-a written-down tag risks instead is going stale, so this recomputes the hash
-from the same two files the rebuild job builds from and fails when they differ,
-printing the value to paste.
+What a hand-written tag risks instead is going stale, and this is the answer to
+it: recompute the hash from the same two files the rebuild job builds from, and
+fail with the value to paste when they differ.
 """
 
 from __future__ import annotations

@@ -16,11 +16,19 @@ variables:
   # The frontend CI image this commit expects: the first 16 hex of the sha256 of
   # ci/Dockerfile.frontend and frontend/pnpm-lock.yaml concatenated.
   #
-  # Written down rather than computed, because the runner expands `image:` from
-  # .gitlab-ci.yml variables, project/group variables and predefined ones only.
-  # A value handed over by an earlier job is a dotenv *artifact*, which is not in
-  # that set -- GitLab's documented way to get a computed name into `image:` is a
-  # dynamic child pipeline, which is a great deal of machinery for one tag.
+  # Written down rather than published by the job that builds it -- and not
+  # because a computed value cannot reach `image:`. It can: a dotenv variable
+  # from an earlier job is in the payload the runner receives, and the runner
+  # expands `image:` from all of it. The reasons are duller than that.
+  #
+  #   - The publisher would have to run in every pipeline, while the job that
+  #     knows the hash runs only when the two files change.
+  #   - It would sit in this same stage, so anything consuming it would need its
+  #     own `needs:` rather than relying on stage order.
+  #   - An unset value expands to `frontend-ci:` and dies as `invalid reference
+  #     format`, which is the opaque failure the checker below exists to replace.
+  #   - A value in this file is greppable and shows up in a diff. One that exists
+  #     only inside a pipeline does neither.
   #
   # Nobody has to remember to bump it: scripts/frontend_ci_image.py --check
   # recomputes the hash on every pipeline and prints the value to paste.
@@ -279,15 +287,17 @@ compose-config:
   # the pipeline's 1012s of job time -- 54% -- and each paid the Chromium
   # download and its apt install separately. That install is what moves into the
   # image; the specs themselves still cost what they cost.
-  image:
-    name: "${LOCAL_REGISTRY}/frontend-ci:${FRONTEND_CI_TAG}"
-    # if-not-present, and that is now the whole story. The tag names one
-    # immutable image, so re-checking the registry every job would only confirm
-    # what a runner already holds. `always` was needed while this said :latest,
-    # and with it goes the allowed_pull_policies prerequisite #112 put on the
-    # hephaestus runner: if-not-present is the runner's own default, so a fresh
-    # runner needs no configuration to run these jobs.
-    pull_policy: [if-not-present]
+  # No pull_policy, and stating none is the point. The tag names one build, so
+  # every policy fetches the same bytes and the job has nothing to gain by
+  # asking -- while asking is what costs. `allowed_pull_policies` defaults to the
+  # runner's own `pull_policy`, which itself defaults to `always`, so a job
+  # asking for if-not-present is refused outright by an unconfigured runner.
+  # Saying nothing skips that check: hephaestus pulls if-not-present because its
+  # config says so, an unconfigured runner pulls always, and both are correct.
+  #
+  # That is what retires the allowed_pull_policies prerequisite #112 placed on
+  # the hephaestus runner. `always` was only ever needed because :latest moved.
+  image: "${LOCAL_REGISTRY}/frontend-ci:${FRONTEND_CI_TAG}"
   tags: [hephaestus]
   cache:
     key:
