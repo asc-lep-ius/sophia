@@ -1,16 +1,23 @@
 import type { Cookies } from "@sveltejs/kit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import "../../src/hooks.client";
 import {
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  SOPHIA_LOCALE_COOKIE,
   negotiateLocale,
   normalizeLocale,
   persistLocaleCookie,
 } from "../../src/lib/i18n/locale";
 import {
+  LOCALE_ALIAS_STRATEGY,
+  aliasLocale,
+} from "../../src/lib/i18n/locale-alias";
+import {
   cookieMaxAge,
   cookieName,
+  getLocaleForUrl,
   strategy,
 } from "../../src/lib/paraglide/runtime";
 
@@ -76,5 +83,52 @@ describe("locale cookie", () => {
       "en",
       expect.objectContaining({ secure: true }),
     );
+  });
+});
+
+describe("sophia-locale alias", () => {
+  afterEach(() => {
+    for (const name of [LOCALE_COOKIE, SOPHIA_LOCALE_COOKIE]) {
+      document.cookie = `${name}=; path=/; max-age=0`;
+    }
+  });
+
+  /**
+   * The name is the compatibility promise in
+   * docs/frontend-paraglide-decision.md item 4, so it is pinned literally: a
+   * rename would leave every existing setup writing a cookie nothing reads.
+   */
+  it("keeps the documented name and sits between Paraglide's cookie and the browser", () => {
+    expect(SOPHIA_LOCALE_COOKIE).toBe("sophia-locale");
+    expect(strategy).toEqual([
+      "cookie",
+      LOCALE_ALIAS_STRATEGY,
+      "preferredLanguage",
+      "baseLocale",
+    ]);
+  });
+
+  it("answers only when Paraglide's own cookie does not", () => {
+    expect(aliasLocale(`${SOPHIA_LOCALE_COOKIE}=de`)).toBe("de");
+    expect(aliasLocale(`theme=dark; ${SOPHIA_LOCALE_COOKIE}=DE-at`)).toBe("de");
+    expect(
+      aliasLocale(`${LOCALE_COOKIE}=en; ${SOPHIA_LOCALE_COOKIE}=de`),
+    ).toBeUndefined();
+    expect(aliasLocale(`${SOPHIA_LOCALE_COOKIE}=fr`)).toBeUndefined();
+    expect(aliasLocale(null)).toBeUndefined();
+  });
+
+  it("still answers when Paraglide's cookie holds nothing it can use", () => {
+    expect(aliasLocale(`${LOCALE_COOKIE}=fr; ${SOPHIA_LOCALE_COOKIE}=de`)).toBe(
+      "de",
+    );
+  });
+
+  it("resolves on the client the way the server rendered", () => {
+    document.cookie = `${SOPHIA_LOCALE_COOKIE}=de; path=/`;
+    expect(getLocaleForUrl("http://localhost/app/settings")).toBe("de");
+
+    document.cookie = `${LOCALE_COOKIE}=en; path=/`;
+    expect(getLocaleForUrl("http://localhost/app/settings")).toBe("en");
   });
 });
