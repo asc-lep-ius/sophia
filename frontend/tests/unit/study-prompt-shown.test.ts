@@ -1,7 +1,11 @@
-import { cleanup, render } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StudyPacing, StudyQuestion } from "../../src/lib/api/study";
+import type {
+  LearningEventInput,
+  StudyPacing,
+  StudyQuestion,
+} from "../../src/lib/api/study";
 import type { LearningEventDraft } from "../../src/lib/study/learningEvents";
 
 // The act route holds an SSE connection open for the life of the card; jsdom
@@ -32,6 +36,7 @@ vi.mock("../../src/lib/api/study", async (importOriginal) => {
 
 const { LearningEventBatcher } =
   await import("../../src/lib/study/learningEvents");
+const { ingestLearningEvents } = await import("../../src/lib/api/study");
 const { default: ActPage } =
   await import("../../src/routes/study/[sessionId]/act/+page.svelte");
 const { default: PredictPage } =
@@ -141,5 +146,53 @@ describe("idle dwell clock vs prompt_shown", () => {
 
     await vi.advanceTimersByTimeAsync(2_000);
     expect(promptShownCount(recordSpy)).toBe(1);
+  });
+
+  /**
+   * The server's engagement policy takes the *highest* prompt_shown dwell_ms
+   * it has seen for a question (src/sophia/services/engagement_policy.py) and
+   * requires it to clear the pacing floor. The mount-time record above only
+   * ever carries a near-zero dwell now that it no longer ticks — so without a
+   * second, real-dwell prompt_shown at reveal time, every graded card would
+   * be rejected 412. This pins that the reveal-time record carries enough.
+   */
+  it("carries a dwell that clears the floor once the card is revealed", async () => {
+    render(ActPage, {
+      data: {
+        attemptedQuestionIds: [],
+        csrfToken: "csrf",
+        learningPathId: 12,
+        pacing,
+        questions: [question("anchor"), question("q-1")],
+        sessionId: 7,
+        summary,
+      } as never,
+      form: null,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: {
+        value: "An answer long enough to clear the elaboration floor.",
+      },
+    });
+    await vi.advanceTimersByTimeAsync(pacing.prompt_min_dwell_ms);
+    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
+
+    // Past the outbox's cancel window, so the grade — and the event batch
+    // ahead of it — has actually gone out.
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    const sent = vi
+      .mocked(ingestLearningEvents)
+      .mock.calls.flatMap(([, events]) => events as LearningEventInput[]);
+    const dwellsSeen = sent
+      .filter((event) => event.event_type === "prompt_shown")
+      .map((event) => Number(event.payload?.dwell_ms ?? 0));
+
+    expect(Math.max(...dwellsSeen)).toBeGreaterThanOrEqual(
+      pacing.prompt_min_dwell_ms,
+    );
   });
 });

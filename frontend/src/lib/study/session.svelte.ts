@@ -265,6 +265,15 @@ export class StudySessionStore {
     }
     card.revealed = true;
     this.#state = "revealed";
+    // canReveal already required dwellMs to clear the policy's floor, so this
+    // is where the server's engagement check gets a prompt_shown worth
+    // trusting: the mount-time one from recordPromptShown carries a near-zero
+    // dwell, and the server takes the max it has seen for the question.
+    this.#options.learningEvents?.record({
+      eventType: "prompt_shown",
+      questionId: card.question.id,
+      payload: { dwell_ms: this.dwellMs },
+    });
     this.#options.learningEvents?.record({
       eventType: "answer_revealed",
       questionId: card.question.id,
@@ -384,13 +393,18 @@ export class StudySessionStore {
   }
 
   /**
-   * Report how long the prompt has been on screen, for the server's policy.
+   * Mark that the prompt is on screen, for the server's required-events check.
    *
    * Reads `#now()` and `#promptShownAt` directly rather than `dwellMs`: that
    * getter goes through `#observedNow()`, which reads the reactive `#clockMs`
    * tick so `canReveal` stays live. A caller inside an `$effect` that read
    * `dwellMs` here would re-run on every 250ms tick, tearing down and
    * rebuilding the batcher along with it.
+   *
+   * This fires once, at mount, so its dwell is always near zero — it is
+   * `reveal()`'s own `prompt_shown` record that carries a dwell able to clear
+   * the pacing floor, since the server takes the highest one it has seen for
+   * the question. Do not `untrack` that call away too: it is not this bug.
    */
   recordPromptShown(): void {
     const card = this.current;
