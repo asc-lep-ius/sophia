@@ -199,4 +199,29 @@ describe("session layout load", () => {
     expect(routeReads).toBeGreaterThan(0);
     expect(depends).toHaveBeenCalledWith(STUDY_PROGRESS);
   });
+
+  // #108: this load now re-runs on every step change, and a failed read of
+  // the deck used to come back as an empty one — the stepper fell back to
+  // Predict alone and the page offered to generate cards the session had.
+  it("reports a failed read of the deck rather than calling it empty", async () => {
+    const fetch = vi.fn(async (url: string) =>
+      String(url).endsWith("/questions")
+        ? new Response(null, { status: 503 })
+        : Response.json({}),
+    );
+    const event = {
+      ...createLoadEvent({
+        fetch,
+        url: `http://localhost/app/study/${SESSION_ID}/act`,
+      }),
+      depends: vi.fn(),
+      params: { sessionId: String(SESSION_ID) },
+      route: { id: "/study/[sessionId]/act" },
+    };
+
+    await expect(load(event as never)).rejects.toMatchObject({
+      status: 502,
+      body: { message: "study.api_unavailable" },
+    });
+  });
 });

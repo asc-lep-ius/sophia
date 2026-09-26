@@ -89,16 +89,12 @@ async function readQuestions(
     "/api/study/sessions/{session_id}/questions",
     { params: { session_id: sessionId } },
   );
+  // A session with no cards is a 200 with an empty list, and the page offers
+  // to generate some. A failure is not that: read as an empty deck it put the
+  // stepper back to Predict alone and offered to generate cards for a session
+  // that already had them — and this load re-runs on every step change.
   if (!response.ok) {
-    // An empty deck rather than an error: the page can say "no cards" and
-    // offer to generate some. The learning path is a placeholder nothing
-    // reads — every route takes it from the session's own tenant.
-    return {
-      session_id: sessionId,
-      learning_path_id: 0,
-      questions: [],
-      attempted_question_ids: [],
-    };
+    error(502, "study.api_unavailable");
   }
   return (await response.json()) as SessionQuestions;
 }
