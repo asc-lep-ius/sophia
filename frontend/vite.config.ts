@@ -28,7 +28,14 @@ export default defineConfig({
     paraglideVitePlugin({
       project: "./project.inlang",
       outdir: "./src/lib/paraglide",
-      strategy: ["cookie", "preferredLanguage", "baseLocale"],
+      // `custom-sophiaLocale` is the `sophia-locale` alias, defined in
+      // src/lib/i18n/locale-alias.ts and registered by both hooks files.
+      strategy: [
+        "cookie",
+        "custom-sophiaLocale",
+        "preferredLanguage",
+        "baseLocale",
+      ],
     }),
     svelteTesting(),
   ],
