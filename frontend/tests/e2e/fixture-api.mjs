@@ -49,6 +49,13 @@ const EXTEND_DECK_SIZE = 2;
 const EXTEND_SESSION_ID = 501;
 /** A session whose generation failed: the predict route must be able to recover it. */
 const EMPTY_SESSION_ID = 502;
+/**
+ * The sessions a spec walks through the predict route, whose pre-test is still
+ * open. Every other seeded session starts with its anchor answered, because
+ * the act route sends a session without a pre-test back to predict (#107) and
+ * the specs that open act directly are measuring the cards, not that step.
+ */
+const PREDICT_WALK_SESSION_IDS = new Set([1, 13, 16]);
 
 const MS_PER_DAY = 86_400_000;
 
@@ -314,6 +321,17 @@ function ensureSession(id) {
     cards: deckSizeFor(id),
     policy: paced ? PACED_POLICY : UNGATED_POLICY,
   });
+  const anchor = state.questions.get(id)?.[0];
+  if (anchor && !PREDICT_WALK_SESSION_IDS.has(id)) {
+    submitAttempt(null, {
+      session_id: id,
+      request_id: "seeded-pre-test",
+      question_id: anchor.id,
+      answer_text: "Answered on the predict route before this spec began.",
+      self_rating: 2,
+      phase: "pre_test",
+    });
+  }
 }
 
 function buildQuestion({ id, sessionId, topic, position, policy }) {

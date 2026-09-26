@@ -7,7 +7,7 @@
   import StudyCard from "$lib/components/study/StudyCard.svelte";
   import { recordPrediction } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
-  import { anchorCard, remainingCards } from "$lib/study/deck";
+  import { anchorCard, preTestAnswered, remainingCards } from "$lib/study/deck";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
 
@@ -26,9 +26,8 @@
   const anchorQuestion = $derived(anchorCard(data.questions));
   // Already answered on a previous visit: the pre-test is done, and asking
   // again would write a second attempt into the pre-test mean.
-  const preTestAnswered = $derived(
-    anchorQuestion !== undefined &&
-      data.attemptedQuestionIds.includes(anchorQuestion.id),
+  const answeredEarlier = $derived(
+    preTestAnswered(data.questions, data.attemptedQuestionIds),
   );
 
   // Rebuilt when the session changes, or when its deck grows — and not when
@@ -61,7 +60,7 @@
   let predictionError = $state(false);
 
   const preTestDone = $derived(
-    preTestAnswered || (runtime !== null && runtime.store.remaining === 0),
+    answeredEarlier || (runtime !== null && runtime.store.remaining === 0),
   );
   // The pre-test grade is held for a moment like any other, but unlike any
   // other card this one is not re-presented if it never lands: the flow has

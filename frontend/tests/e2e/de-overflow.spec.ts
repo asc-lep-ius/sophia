@@ -8,7 +8,8 @@ import {
 const routes = [
   "/app/study",
   "/app/study/1/predict",
-  "/app/study/1/act",
+  // Not session 1: that one is audited before its pre-test, on predict.
+  "/app/study/2/act",
   "/app/study/1/reflect",
   "/app/dashboard",
   "/app/review",
