@@ -1,4 +1,5 @@
 import { fail } from "@sveltejs/kit";
+import { selectedLearningPathId } from "$lib/learningPath";
 import { generateSessionDeck } from "$lib/server/studyDeck";
 import type { Actions } from "./$types";
 
@@ -12,15 +13,11 @@ export const actions: Actions = {
    */
   extend: async (event) => {
     const sessionId = Number(event.params.sessionId);
-    const learningPathId = Number(event.locals.tenant.learning_path_id);
+    const learningPathId = selectedLearningPathId(event.locals.tenant);
     const form = await event.request.formData();
     const topic = String(form.get("topic") ?? "").trim();
 
-    if (
-      !Number.isInteger(sessionId) ||
-      !Number.isInteger(learningPathId) ||
-      !topic
-    ) {
+    if (!Number.isInteger(sessionId) || learningPathId === null || !topic) {
       return fail(400, { error: "study.extend_failed" });
     }
 

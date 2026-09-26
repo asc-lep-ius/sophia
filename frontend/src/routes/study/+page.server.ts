@@ -2,6 +2,7 @@ import { fail, redirect } from "@sveltejs/kit";
 import { resolve } from "$app/paths";
 import { apiFetch } from "../../hooks.server";
 import type { components } from "$lib/api/schema";
+import { selectedLearningPathId } from "$lib/learningPath";
 import { generateSessionDeck } from "$lib/server/studyDeck";
 import type { Actions, PageServerLoad } from "./$types";
 
@@ -9,9 +10,9 @@ type SessionList = components["schemas"]["StudySessionListResponse"];
 type StudySession = components["schemas"]["StudySessionItemResponse"];
 
 export const load: PageServerLoad = async (event) => {
-  const learningPathId = Number(event.locals.tenant.learning_path_id);
-  if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
-    return { learningPathId: null, sessions: [] as StudySession[] };
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
+    return { learningPathId, sessions: [] as StudySession[] };
   }
 
   return {
@@ -27,8 +28,8 @@ export const actions: Actions = {
    * hydrated, and the redirect lands the learner on the predict route.
    */
   start: async (event) => {
-    const learningPathId = Number(event.locals.tenant.learning_path_id);
-    if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
+    const learningPathId = selectedLearningPathId(event.locals.tenant);
+    if (learningPathId === null) {
       return fail(409, { error: "study.learning_path_not_numeric" });
     }
 

@@ -1,5 +1,6 @@
 import { fail, redirect, type Actions, type RequestEvent } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   unavailablePanel,
@@ -26,9 +27,7 @@ export const load: PageServerLoad = async (event) => {
   requireAuthenticated(event);
 
   const override = readLanguageOverride(event.url);
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
   const [sources, contentLanguage] = await Promise.all([
     loadSources(event),
     loadContentLanguage(event, learningPathId, override),
@@ -230,9 +229,4 @@ function safeFailureStatus(status: number): 400 | 401 | 403 | 422 | 502 {
     return 400;
   }
   return 502;
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }

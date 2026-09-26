@@ -1,5 +1,6 @@
 import { fail, redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import { readConfidenceRatings } from "$lib/quickstart/topics";
 import type { Actions } from "./$types";
 
@@ -13,8 +14,8 @@ export const actions: Actions = {
    * is later built on.
    */
   save: async (event) => {
-    const learningPathId = Number(event.locals.tenant.learning_path_id);
-    if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
+    const learningPathId = selectedLearningPathId(event.locals.tenant);
+    if (learningPathId === null) {
       return fail(409, { error: "quickstart.no_learning_path" });
     }
 

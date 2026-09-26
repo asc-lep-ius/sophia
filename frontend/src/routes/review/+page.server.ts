@@ -8,6 +8,7 @@ import {
   type Panel,
   type ReviewItem,
 } from "$lib/dashboard/panels";
+import { selectedLearningPathId } from "$lib/learningPath";
 import type { PageServerLoad } from "./$types";
 
 type Pacing = components["schemas"]["StudyPacingResponse"];
@@ -30,12 +31,12 @@ export const load: PageServerLoad = async (event) => {
     redirect(303, "/app/login");
   }
 
-  const learningPathId = Number(event.locals.tenant.learning_path_id);
-  if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
     return {
       csrfToken: event.locals.csrfToken,
       due: unavailablePanel<ReviewItem[]>([]),
-      learningPathId: null,
+      learningPathId,
       pacing: FALLBACK_PACING,
     };
   }

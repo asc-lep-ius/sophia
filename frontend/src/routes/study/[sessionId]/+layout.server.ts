@@ -1,6 +1,7 @@
 import { error } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
 import type { components } from "$lib/api/schema";
+import { selectedLearningPathId } from "$lib/learningPath";
 import type { LayoutServerLoad } from "./$types";
 
 type SessionSummary = components["schemas"]["StudySessionSummaryResponse"];
@@ -14,8 +15,8 @@ export const load: LayoutServerLoad = async (event) => {
     error(404, "study.session_not_found");
   }
 
-  const learningPathId = Number(event.locals.tenant.learning_path_id);
-  if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
     error(409, "study.learning_path_not_numeric");
   }
 

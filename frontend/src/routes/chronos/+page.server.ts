@@ -1,5 +1,6 @@
 import { fail, redirect, type Actions, type RequestEvent } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   unavailablePanel,
@@ -20,9 +21,7 @@ type ApiEvent = Parameters<typeof apiFetch>[0];
 export const load: PageServerLoad = async (event) => {
   requireAuthenticated(event);
 
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
   if (learningPathId === null) {
     return {
       deadlines: unavailablePanel<Deadline[]>([]),
@@ -90,9 +89,7 @@ export const actions: Actions = {
   complete: async (event) => {
     requireAuthenticated(event);
 
-    const learningPathId = numericLearningPathId(
-      event.locals.tenant.learning_path_id,
-    );
+    const learningPathId = selectedLearningPathId(event.locals.tenant);
     const formData = await event.request.formData();
     const deadlineId = readFormString(formData, "deadline_id");
     if (deadlineId === "" || learningPathId === null) {
@@ -195,9 +192,4 @@ function safeFailureStatus(status: number): 400 | 401 | 403 | 422 | 502 {
     return 400;
   }
   return 502;
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }

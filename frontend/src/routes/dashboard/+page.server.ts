@@ -1,5 +1,6 @@
 import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   readCalibrationList,
@@ -29,9 +30,7 @@ export const load: PageServerLoad = async (event) => {
   // dashboard filter that could name a learning path would be a way to read
   // another one. The API refuses out-of-scope ids as well, and the surface
   // never gives anyone the chance to try.
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
   if (learningPathId === null) {
     return {
       calibration: unavailablePanel<CalibrationRating[]>([]),
@@ -151,9 +150,4 @@ async function panel<T>(
   } catch {
     return unavailablePanel(empty);
   }
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
