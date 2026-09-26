@@ -1921,6 +1921,96 @@
         "title": "LearningEventType",
         "type": "string"
       },
+      "LearningPathListResponse": {
+        "properties": {
+          "learning_path_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
+          },
+          "learning_paths": {
+            "items": {
+              "$ref": "#/components/schemas/LearningPathResponse"
+            },
+            "title": "Learning Paths",
+            "type": "array"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "learning_paths"
+        ],
+        "title": "LearningPathListResponse",
+        "type": "object"
+      },
+      "LearningPathResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "short_title": {
+            "title": "Short Title",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "short_title",
+          "url"
+        ],
+        "title": "LearningPathResponse",
+        "type": "object"
+      },
+      "LearningPathSelectionRequest": {
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id"
+        ],
+        "title": "LearningPathSelectionRequest",
+        "type": "object"
+      },
+      "LearningPathSelectionResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id"
+        ],
+        "title": "LearningPathSelectionResponse",
+        "type": "object"
+      },
       "ManualTopicRequest": {
         "properties": {
           "topic": {
@@ -7220,6 +7310,146 @@
         "summary": "List Tiss Registration Groups",
         "tags": [
           "integrations-tiss"
+        ]
+      }
+    },
+    "/api/learning-paths": {
+      "get": {
+        "operationId": "listLearningPaths",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningPathListResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Learning Paths Route",
+        "tags": [
+          "learning-paths"
+        ]
+      }
+    },
+    "/api/learning-paths/selection": {
+      "put": {
+        "operationId": "selectLearningPath",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LearningPathSelectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearningPathSelectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Gateway",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Select Learning Path",
+        "tags": [
+          "learning-paths"
         ]
       }
     },

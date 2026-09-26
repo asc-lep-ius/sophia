@@ -143,8 +143,8 @@ class SessionRecord:
     settings: SessionSettings = field(default_factory=SessionSettings)
     tuwel_credentials: SessionCredential | None = None
     tiss_credentials: SessionCredential | None = None
-    created_at: str = field(default_factory=lambda: _utc_now_iso())
-    updated_at: str = field(default_factory=lambda: _utc_now_iso())
+    created_at: str = field(default_factory=lambda: utc_now_iso())
+    updated_at: str = field(default_factory=lambda: utc_now_iso())
 
     def __post_init__(self) -> None:
         _require_non_empty("session_id", self.session_id)
@@ -216,7 +216,7 @@ def create_session_record(
     tiss_credentials: SessionCredential | None = None,
 ) -> SessionRecord:
     """Build a new session record with fresh opaque and CSRF tokens."""
-    created_at = _utc_now_iso()
+    created_at = utc_now_iso()
     return SessionRecord(
         session_id=generate_session_id(),
         user=user,
@@ -570,5 +570,5 @@ def _require_non_empty(name: str, value: str) -> None:
         raise ValueError(msg)
 
 
-def _utc_now_iso() -> str:
+def utc_now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")

@@ -629,6 +629,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Learning Paths Route */
+        get: operations["listLearningPaths"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning-paths/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Select Learning Path */
+        put: operations["selectLearningPath"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning-paths/{learning_path_id}/content-language": {
         parameters: {
             query?: never;
@@ -1912,6 +1946,34 @@ export interface components {
          * @enum {string}
          */
         LearningEventType: "prompt_shown" | "prediction_made" | "elaboration_written" | "hint_requested" | "answer_revealed" | "self_explanation_written" | "reflection_written";
+        /** LearningPathListResponse */
+        LearningPathListResponse: {
+            /** Learning Path Id */
+            learning_path_id: number | null;
+            /** Learning Paths */
+            learning_paths: components["schemas"]["LearningPathResponse"][];
+        };
+        /** LearningPathResponse */
+        LearningPathResponse: {
+            /** Id */
+            id: number;
+            /** Short Title */
+            short_title: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string | null;
+        };
+        /** LearningPathSelectionRequest */
+        LearningPathSelectionRequest: {
+            /** Learning Path Id */
+            learning_path_id: number;
+        };
+        /** LearningPathSelectionResponse */
+        LearningPathSelectionResponse: {
+            /** Learning Path Id */
+            learning_path_id: number;
+        };
         /** ManualTopicRequest */
         ManualTopicRequest: {
             /** Topic */
@@ -4289,6 +4351,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    listLearningPaths: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathListResponse"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    selectLearningPath: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LearningPathSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["LearningPathSelectionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Bad Gateway */

@@ -103,6 +103,14 @@ def cache_session_record(request: Request, record: SessionRecord | None) -> None
     setattr(request.state, _SESSION_RECORD_STATE_ATTR, record)
 
 
+async def save_session_record(request: Request, record: SessionRecord) -> None:
+    """Persist an updated session record, or 401 if it expired in the meantime."""
+    if not await get_session_core(request).store.save(record):
+        cache_session_record(request, None)
+        raise AuthError("Authentication required")
+    cache_session_record(request, record)
+
+
 async def require_csrf(request: Request) -> SessionRecord:
     session = await current_session_record(request)
     requested_with = request.headers.get("x-requested-with", "").strip().lower()

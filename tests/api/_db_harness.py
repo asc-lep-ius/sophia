@@ -32,7 +32,7 @@ from sophia.api.sessions import (
 from sophia.config import Settings
 from sophia.infra.engine import create_session_factory, session_scope
 
-from ._session_helpers import VALID_SESSION_KEY, FakeRedis
+from ._session_helpers import VALID_SESSION_KEY, FakeMoodle, FakeRedis
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Mapping
@@ -56,6 +56,7 @@ class DbContainer:
 
     session_factory: async_sessionmaker[AsyncSession]
     settings: Settings = field(default_factory=Settings)
+    moodle: FakeMoodle = field(default_factory=FakeMoodle)
 
     def session(self, *, org_id: str | None = None):
         return session_scope(self.session_factory, org_id=org_id)
@@ -101,8 +102,15 @@ async def db_harness(
     *,
     tenant: SessionTenant | None = None,
     settings_overrides: Mapping[str, Any] | None = None,
+    moodle: FakeMoodle | None = None,
+    real_login: bool = False,
 ) -> AsyncIterator[DbHarness]:
-    """Serve the API against a real engine, with a logged-in-capable client."""
+    """Serve the API against a real engine, with a logged-in-capable client.
+
+    ``real_login`` sends POST /api/auth/login through the production
+    ``default_login_authenticator`` instead of one handing back ``tenant``; the
+    caller stubs the TUWEL/TISS network flow underneath it.
+    """
     settings = Settings(
         session_ttl_seconds=600,
         database_url=engine.url.render_as_string(hide_password=False),
@@ -116,11 +124,12 @@ async def db_harness(
     container = DbContainer(
         session_factory=create_session_factory(engine),
         settings=settings,
+        moodle=moodle or FakeMoodle(),
     )
     app = create_api_app(
         settings=settings,
         session_core=core,
-        login_authenticator=_login_as(tenant or learning_path_tenant()),
+        login_authenticator=None if real_login else _login_as(tenant or learning_path_tenant()),
         app_container=cast("AppContainer", container),
     )
 

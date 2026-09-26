@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
-from typing import cast
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, cast
 
+import httpx
+import structlog
 from fastapi import APIRouter, Request, Response, status
 
 from sophia.adapters.auth import (
@@ -40,6 +42,14 @@ from sophia.api.sessions import (
 )
 from sophia.api.transactions import TransactionalRoute
 from sophia.config import Settings
+from sophia.domain.errors import AuthError, MoodleError
+from sophia.services.learning_paths import default_learning_path, list_learning_paths
+
+if TYPE_CHECKING:
+    from sophia.domain.models import Course
+    from sophia.infra.di import AppContainer
+
+log = structlog.get_logger()
 
 router = APIRouter(tags=["auth"], route_class=TransactionalRoute)
 
@@ -71,7 +81,7 @@ async def login(
     identity = await _login_authenticator(request)(payload, settings)
     record = create_session_record(
         user=identity.user,
-        tenant=identity.tenant,
+        tenant=await _with_default_learning_path(request, identity.tenant),
         settings=identity.settings,
         tuwel_credentials=identity.tuwel_credentials,
         tiss_credentials=identity.tiss_credentials,
@@ -115,6 +125,29 @@ async def default_login_authenticator(
         tuwel_credentials=_tuwel_credential(tuwel_credentials),
         tiss_credentials=_tiss_credential(tiss_credentials),
     )
+
+
+async def _with_default_learning_path(request: Request, tenant: SessionTenant) -> SessionTenant:
+    """Select the learner's only enrolment when login brought no selection.
+
+    Best effort: a failed enrolment lookup leaves the choice to the picker on
+    /app/study rather than refusing a login whose credentials were fine.
+    """
+    app_container = cast("AppContainer | None", getattr(request.app.state, "app_container", None))
+    if tenant.learning_path_id is not None or app_container is None:
+        return tenant
+    try:
+        learning_paths = await list_learning_paths(app_container)
+    except (AuthError, MoodleError, httpx.HTTPError) as exc:
+        log.warning("login_learning_path_lookup_failed", error=type(exc).__name__)
+        return tenant
+    return _tenant_selecting(tenant, default_learning_path(learning_paths))
+
+
+def _tenant_selecting(tenant: SessionTenant, learning_path: Course | None) -> SessionTenant:
+    if learning_path is None:
+        return tenant
+    return replace(tenant, learning_path_id=str(learning_path.id))
 
 
 def _login_authenticator(request: Request) -> LoginAuthenticator:

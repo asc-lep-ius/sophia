@@ -23,6 +23,7 @@ from sophia.api.routers import (
     health,
     integrations_tiss,
     learning_events,
+    learning_paths,
     metrics,
     quickstart,
     reserved,
@@ -99,6 +100,7 @@ def create_api_app(
     api_app.include_router(settings_router.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(content_sources.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(search.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(learning_paths.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(topics.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(study.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(

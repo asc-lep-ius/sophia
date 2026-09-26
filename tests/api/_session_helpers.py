@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from fastapi.testclient import TestClient
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
 
     from sophia.api.routers.auth import LoginAuthenticator
     from sophia.api.schemas.auth import AuthLoginRequest
+    from sophia.domain.models import Course
     from sophia.infra.di import AppContainer
 
 VALID_SESSION_KEY = "api-test-session-signing-key-32-bytes"
@@ -191,6 +192,20 @@ def csrf_headers(harness: ApiHarness) -> dict[str, str]:
     return {"X-Requested-With": "fetch", "X-CSRF-Token": csrf_cookie}
 
 
+@dataclass
+class FakeMoodle:
+    """The one TUWEL read the learning-path routes and login make: enrolments."""
+
+    courses: list[Course] = field(default_factory=list)
+    error: Exception | None = None
+
+    async def get_enrolled_courses(self, classification: str = "inprogress") -> list[Course]:
+        del classification
+        if self.error is not None:
+            raise self.error
+        return list(self.courses)
+
+
 @contextlib.asynccontextmanager
 async def _fake_session_scope(db: object) -> AsyncIterator[object]:
     yield db
@@ -209,6 +224,7 @@ class FakeAppContainer:
     # engine as "nothing to ask", which is only ever true of a test double —
     # AppContainer declares engine, so production always has one.
     engine: object | None = None
+    moodle: FakeMoodle = field(default_factory=FakeMoodle)
 
     def session(self, **_kwargs: object) -> AbstractAsyncContextManager[object]:
         return _fake_session_scope(self.db)
