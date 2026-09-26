@@ -49,6 +49,7 @@ describe("frontend scaffold smoke", () => {
       data: {
         ...layoutData,
         learningPathId: 12,
+        learningPaths: null,
         sessions: [
           {
             id: 5,
@@ -73,12 +74,20 @@ describe("frontend scaffold smoke", () => {
     ).toBe("/app/study/5/act");
   });
 
-  it("says so plainly when the workspace has no numeric learning path", () => {
+  it("asks for a course instead of offering a session when none is selected", () => {
     render(StudyPage, {
-      data: { ...layoutData, learningPathId: null, sessions: [] },
+      data: {
+        ...layoutData,
+        learningPathId: null,
+        learningPaths: { status: "ready", data: [] },
+        sessions: [],
+      },
       form: null,
     });
 
     expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Choose a course to study" }),
+    ).toBeTruthy();
   });
 });

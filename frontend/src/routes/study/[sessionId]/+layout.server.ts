@@ -17,7 +17,7 @@ export const load: LayoutServerLoad = async (event) => {
 
   const learningPathId = selectedLearningPathId(event.locals.tenant);
   if (learningPathId === null) {
-    error(409, "study.learning_path_not_numeric");
+    error(409, "study.learning_path_required");
   }
 
   const summary = await loadSummary(event, sessionId);
