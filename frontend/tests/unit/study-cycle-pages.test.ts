@@ -203,9 +203,9 @@ describe("study cycle across step changes", () => {
     ).toBe(ANSWER);
   });
 
-  // Operator pre-mortem: the act route will not rebuild its runtime on an
-  // unrelated reload, and that must not stop the stepper hearing about a
-  // deck that drained without a navigation.
+  // Operator pre-mortem: a deck that drains without a navigation must still
+  // reach the stepper. Nothing reloads the layout for it but the act route's
+  // own invalidate(STUDY_PROGRESS), fired once the last grade has landed.
   it("reloads the session's progress once the last grade is on the server", async () => {
     openAct(["anchor"]);
     await write(ANSWER);
