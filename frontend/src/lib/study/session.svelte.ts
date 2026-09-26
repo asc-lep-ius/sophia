@@ -383,7 +383,15 @@ export class StudySessionStore {
     this.#error = null;
   }
 
-  /** Report how long the prompt has been on screen, for the server's policy. */
+  /**
+   * Report how long the prompt has been on screen, for the server's policy.
+   *
+   * Reads `#now()` and `#promptShownAt` directly rather than `dwellMs`: that
+   * getter goes through `#observedNow()`, which reads the reactive `#clockMs`
+   * tick so `canReveal` stays live. A caller inside an `$effect` that read
+   * `dwellMs` here would re-run on every 250ms tick, tearing down and
+   * rebuilding the batcher along with it.
+   */
   recordPromptShown(): void {
     const card = this.current;
     if (!card) {
@@ -392,7 +400,7 @@ export class StudySessionStore {
     this.#options.learningEvents?.record({
       eventType: "prompt_shown",
       questionId: card.question.id,
-      payload: { dwell_ms: this.dwellMs },
+      payload: { dwell_ms: Math.max(this.#now() - this.#promptShownAt, 0) },
     });
   }
 
