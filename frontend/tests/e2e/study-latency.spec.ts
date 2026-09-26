@@ -44,8 +44,7 @@ test("keyboard-only study stays inside the interaction budget", async ({
     rate: CPU_THROTTLE_RATE,
   });
 
-  await page.goto(`/app/study/${LATENCY_SESSION}/act`);
-  await expect(page.getByLabel("Your answer")).toBeVisible();
+  await openHydratedAct(page, LATENCY_SESSION);
   await startInteractionRecording(page);
 
   for (let card = 0; card < CARDS_TO_WORK; card += 1) {
@@ -74,7 +73,7 @@ test("keyboard-only study stays inside the interaction budget", async ({
 
 test("the whole session is reachable without a pointer", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${KEYBOARD_SESSION}/act`);
+  await openHydratedAct(page, KEYBOARD_SESSION);
 
   await page.getByLabel("Your answer").fill("An answer for this card.");
   await page.keyboard.press("Tab");
@@ -97,6 +96,26 @@ test("the whole session is reachable without a pointer", async ({ page }) => {
     page.getByRole("dialog", { name: "Keyboard shortcuts" }),
   ).toBeVisible();
 });
+
+/**
+ * Open the act route and return once it has hydrated.
+ *
+ * The card is server-rendered whole, with an enabled Reveal on these ungated
+ * decks, and `goto` returns before `kit.start()` has finished hydrating. A key
+ * press in that window reaches a button with no handler, and hydration then
+ * resets the textarea to the store's empty answer: nothing is revealed and the
+ * text is gone, which is how this failed in CI and never on a warm local run.
+ * `study-pacing.spec.ts` proves hydration through the elaboration hint; these
+ * decks have no floor and so no hint, so the proof here is the stream status,
+ * which the server renders as `idle` and only the mounted page moves off it.
+ */
+async function openHydratedAct(page: Page, sessionId: number): Promise<void> {
+  await page.goto(`/app/study/${sessionId}/act`);
+  await expect(page.locator(".stream")).not.toHaveAttribute(
+    "data-status",
+    "idle",
+  );
+}
 
 async function startInteractionRecording(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -130,7 +149,7 @@ test("a drained queue can be extended without leaving the session", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${EXTEND_SESSION}/act`);
+  await openHydratedAct(page, EXTEND_SESSION);
 
   await page.getByLabel("Your answer").fill("The one card in this deck.");
   await page.getByRole("button", { name: "Reveal" }).click();
