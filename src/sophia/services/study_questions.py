@@ -56,6 +56,8 @@ log = structlog.get_logger()
 FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
 FALLBACK_GENERATOR_REF = "fallback-template"
 
+# PREDICTION_MADE is met once per study session, not per question — see
+# SESSION_SCOPED_EVENT_TYPES in services/engagement_policy.py.
 ELABORATION_REQUIRED_EVENTS = (
     LearningEventType.PROMPT_SHOWN,
     LearningEventType.PREDICTION_MADE,

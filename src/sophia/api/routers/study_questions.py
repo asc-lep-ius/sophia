@@ -36,8 +36,11 @@ from sophia.domain.learning import ContentLanguage as DomainContentLanguage
 from sophia.services.athena_confidence import update_actual_score
 from sophia.services.athena_session import get_session_scope
 from sophia.services.content_language import resolve_content_language
-from sophia.services.engagement_policy import evaluate_elaboration_policy
-from sophia.services.learning_events import get_question_trace
+from sophia.services.engagement_policy import (
+    SESSION_SCOPED_EVENT_TYPES,
+    evaluate_elaboration_policy,
+)
+from sophia.services.learning_events import get_question_trace, get_session_trace
 from sophia.services.provenance import get_provenance_map
 from sophia.services.study_events import append_event
 from sophia.services.study_questions import (
@@ -139,7 +142,7 @@ async def submit_attempt(
         db, session.user.id, payload.learning_path_id, payload.session_id
     )
 
-    await _enforce_engagement_policy(db, question, session.user.id)
+    await _enforce_engagement_policy(db, question, session.user.id, payload.session_id)
     result = await save_attempt(
         db,
         payload.learning_path_id,
@@ -192,13 +195,17 @@ async def _enforce_engagement_policy(
     db: AsyncSession,
     question: GeneratedQuestion,
     user_id: str,
+    session_id: int,
 ) -> None:
     policy = question.elaboration_policy
     if policy is None:
         return
 
     trace = await get_question_trace(db, question.course_id, question.id, user_id)
-    outcome = evaluate_elaboration_policy(policy, trace)
+    session_trace = await get_session_trace(
+        db, question.course_id, session_id, user_id, SESSION_SCOPED_EVENT_TYPES
+    )
+    outcome = evaluate_elaboration_policy(policy, trace, session_trace)
     if not outcome.met:
         msg = "answer submitted without the required learning process"
         raise EngagementPolicyUnmet(msg, outcome.params)
