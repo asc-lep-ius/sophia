@@ -3,13 +3,20 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import insert, select
 
 from sophia.api import create_api_app
 from sophia.api.routers import study_questions as questions_router
+from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import ContentLanguage, LearningPathSettings, StoredContentOrigin
+from sophia.domain.models import KnowledgeChunk
+from sophia.infra.schema import content_provenance, content_source_spans, lecture_downloads
+from sophia.services import study_questions as study_questions_service
 from sophia.services.athena_session import start_study_session
+from sophia.services.athena_study import GroundedQuestion
 from sophia.services.content_language import save_learning_path_settings
 from sophia.services.study_questions import (
     FALLBACK_GENERATOR_REF,
@@ -30,9 +37,23 @@ pytestmark = pytest.mark.postgres
 
 LEARNING_PATH_ID = 12
 SCHEMA_REF_PREFIX = "#/components/schemas/"
+MODEL_GENERATOR_REF = "test-provider:test-model"
+LECTURE_CHUNK = KnowledgeChunk(
+    chunk_id="ep-001_0",
+    episode_id="ep-001",
+    chunk_index=0,
+    text="Every s-t cut has capacity at least the value of any flow from s to t.",
+    start_time=12.5,
+    end_time=27.0,
+)
 
 
-def stub_prompts(monkeypatch: pytest.MonkeyPatch, prompts: list[str]) -> None:
+def stub_prompts(
+    monkeypatch: pytest.MonkeyPatch,
+    prompts: list[str],
+    *,
+    sources: tuple[KnowledgeChunk, ...] = (),
+) -> None:
     async def fake_generate(
         _app: object,
         _session: object,
@@ -41,13 +62,61 @@ def stub_prompts(monkeypatch: pytest.MonkeyPatch, prompts: list[str]) -> None:
         *,
         count: int = 3,
         difficulty: str = "explain",
-    ) -> list[str]:
-        return prompts[:count]
+    ) -> list[GroundedQuestion]:
+        return [GroundedQuestion(prompt=prompt, sources=sources) for prompt in prompts[:count]]
 
     monkeypatch.setattr(
-        "sophia.services.study_questions.generate_study_questions",
+        "sophia.services.study_questions.generate_grounded_questions",
         fake_generate,
     )
+
+
+def stub_lecture_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+    chunks: list[KnowledgeChunk],
+    generated: list[str | Exception],
+) -> None:
+    """Replace the embedder, the vector store and the model, and nothing else.
+
+    The episode lookup, the grounding and the provenance write stay real, so a
+    span can only reach the database the way a synced course's would.
+    """
+    embedder = MagicMock()
+    embedder.embed_query.return_value = [0.1, 0.2]
+    store = MagicMock()
+    store.search.return_value = [(chunk, 0.9) for chunk in chunks]
+    extractor = MagicMock()
+    extractor.generate_question = AsyncMock(side_effect=generated)
+
+    monkeypatch.setattr(
+        "sophia.services.athena_study._get_or_create_embedder", lambda _config: embedder
+    )
+    monkeypatch.setattr("sophia.services.athena_study._get_or_create_store", lambda _s: store)
+    monkeypatch.setattr(
+        "sophia.services.athena_study._create_topic_extractor", lambda _app: extractor
+    )
+    monkeypatch.setattr(study_questions_service, "_generator_ref", lambda _app: MODEL_GENERATOR_REF)
+
+
+async def stored_spans(
+    db: AsyncSession, question_id: str
+) -> list[tuple[str, int | None, int | None, str | None]]:
+    """The source spans joined to one question's provenance record."""
+    rows = await db.execute(
+        select(
+            content_source_spans.c.content_item_id,
+            content_source_spans.c.start_ms,
+            content_source_spans.c.end_ms,
+            content_source_spans.c.excerpt,
+        )
+        .join(content_provenance, content_provenance.c.id == content_source_spans.c.provenance_id)
+        .where(
+            content_provenance.c.content_kind == "question",
+            content_provenance.c.content_id == question_id,
+        )
+        .order_by(content_source_spans.c.id)
+    )
+    return [tuple(row) for row in rows.all()]
 
 
 def test_question_union_discriminates_on_response_format() -> None:
@@ -104,6 +173,82 @@ async def test_generated_questions_are_persisted_with_their_policy(
     assert stored is not None
     assert stored.elaboration_policy is not None
     assert stored.elaboration_policy.min_elaboration_chars == 80
+
+
+async def test_a_grounded_question_records_the_lecture_chunks_it_came_from(
+    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reveal shows these spans, so the proof is in the rows, not the copy (#109).
+
+    The second question is the template padding a short model batch: nothing
+    grounded it, and its provenance must say so rather than borrow the first
+    question's material or credit the model with it.
+    """
+    stub_lecture_retrieval(
+        monkeypatch,
+        [LECTURE_CHUNK],
+        ["Why does a minimum cut bound maximum flow?", TopicExtractionError("model gave up")],
+    )
+    await db.execute(
+        insert(lecture_downloads).values(
+            episode_id=LECTURE_CHUNK.episode_id,
+            module_id=LEARNING_PATH_ID,
+            title="Lecture 3: Flows",
+            track_url="https://example.com/a.mp3",
+            track_mimetype="audio/mpeg",
+            status="completed",
+        )
+    )
+    container = DbContainer(session_factory=session_factory)
+
+    grounded, padded = await generate_and_store_questions(
+        cast("AppContainer", container),
+        db,
+        LEARNING_PATH_ID,
+        "Graphs",
+        count=2,
+        content_language=ContentLanguage.EN,
+        policy=default_elaboration_policy(min_elaboration_chars=80, min_prompt_dwell_ms=5000),
+    )
+
+    assert await stored_spans(db, grounded.id) == [
+        ("ep-001", 12_500, 27_000, LECTURE_CHUNK.text),
+    ]
+    assert await stored_spans(db, padded.id) == []
+    provenance_rows = await db.execute(
+        select(content_provenance.c.content_id, content_provenance.c.generator_ref)
+    )
+    generator_refs = {row.content_id: row.generator_ref for row in provenance_rows}
+    assert generator_refs == {
+        grounded.id: MODEL_GENERATOR_REF,
+        padded.id: FALLBACK_GENERATOR_REF,
+    }
+
+
+async def test_a_question_with_no_lecture_data_records_no_spans(
+    db: AsyncSession,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without synced lectures every card is the template, and is free recall."""
+    monkeypatch.setattr(study_questions_service, "_generator_ref", lambda _app: MODEL_GENERATOR_REF)
+    container = DbContainer(session_factory=session_factory)
+
+    questions = await generate_and_store_questions(
+        cast("AppContainer", container),
+        db,
+        LEARNING_PATH_ID,
+        "Graphs",
+        count=1,
+        content_language=ContentLanguage.EN,
+        policy=default_elaboration_policy(min_elaboration_chars=80, min_prompt_dwell_ms=5000),
+    )
+
+    assert await stored_spans(db, questions[0].id) == []
+    generator_ref = (await db.execute(select(content_provenance.c.generator_ref))).scalar_one()
+    assert generator_ref == FALLBACK_GENERATOR_REF
 
 
 async def test_generation_route_returns_provenance_and_resolved_language(
@@ -173,13 +318,12 @@ async def test_template_fallback_is_not_attributed_to_a_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Provenance must not credit an LLM for a question a template produced."""
-    from sophia.domain.errors import TopicExtractionError
 
-    async def failing_generate(*_args: object, **_kwargs: object) -> list[str]:
+    async def failing_generate(*_args: object, **_kwargs: object) -> list[GroundedQuestion]:
         raise TopicExtractionError("no llm configured")
 
     monkeypatch.setattr(
-        "sophia.services.study_questions.generate_study_questions",
+        "sophia.services.study_questions.generate_grounded_questions",
         failing_generate,
     )
 
@@ -281,7 +425,9 @@ async def test_generation_binds_a_batch_to_the_learners_own_session(
     clean_engine: AsyncEngine,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    stub_prompts(monkeypatch, ["Why does a minimum cut bound maximum flow?"])
+    stub_prompts(
+        monkeypatch, ["Why does a minimum cut bound maximum flow?"], sources=(LECTURE_CHUNK,)
+    )
 
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
@@ -306,3 +452,6 @@ async def test_generation_binds_a_batch_to_the_learners_own_session(
     assert stored.status_code == 200
     assert len(stored.json()["questions"]) == 1
     assert stored.json()["attempted_question_ids"] == []
+    # What the study card reveals: the deck read back carries the material.
+    [span] = stored.json()["questions"][0]["provenance"]["source_spans"]
+    assert span["excerpt"] == LECTURE_CHUNK.text

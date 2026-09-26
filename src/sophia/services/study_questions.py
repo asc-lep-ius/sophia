@@ -34,6 +34,7 @@ from sophia.domain.learning import (
     QuestionAttempt,
     QuestionKind,
     QuestionOption,
+    SourceSpan,
     StoredContentOrigin,
 )
 from sophia.infra.schema import generated_questions, question_attempts
@@ -41,7 +42,7 @@ from sophia.services.athena_confidence import (
     get_confidence_ratings,
     get_topic_difficulty_level,
 )
-from sophia.services.athena_study import generate_study_questions
+from sophia.services.athena_study import GroundedQuestion, generate_grounded_questions
 from sophia.services.hermes_setup import load_hermes_config
 from sophia.services.provenance import record_provenance
 
@@ -49,12 +50,14 @@ if TYPE_CHECKING:
     from sqlalchemy import Row
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from sophia.domain.models import KnowledgeChunk
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
 
 FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
 FALLBACK_GENERATOR_REF = "fallback-template"
+MS_PER_SECOND = 1000
 
 # PREDICTION_MADE is met once per study session, not per question — see
 # SESSION_SCOPED_EVENT_TYPES in services/engagement_policy.py.
@@ -111,9 +114,12 @@ async def generate_and_store_questions(
     back by :func:`get_session_questions` instead of regenerated: a reload must
     not cost another model call, nor hand the learner a different card set
     half-way through a session.
+
+    Each question's provenance carries the lecture chunks it was generated from:
+    they are what the study card reveals for the learner to grade against.
     """
     difficulty = await _adaptive_difficulty(app, session, course_id, topic, user_id=user_id)
-    prompts, generator_ref = await _generate_prompts(
+    grounded, generator_ref = await _generate_prompts(
         app,
         session,
         course_id,
@@ -129,17 +135,17 @@ async def generate_and_store_questions(
             course_id=course_id,
             topic=topic,
             kind=QuestionKind.OPEN_RESPONSE,
-            prompt=prompt,
+            prompt=item.prompt,
             difficulty=difficulty,
             content_language=content_language,
             elaboration_policy=policy,
             session_id=session_id,
             created_at=generated_at,
         )
-        for prompt in prompts
+        for item in grounded
     ]
 
-    for question in questions:
+    for question, item in zip(questions, grounded, strict=True):
         await _insert_question(session, question)
         await record_provenance(
             session,
@@ -149,8 +155,10 @@ async def generate_and_store_questions(
                 course_id=course_id,
                 origin=StoredContentOrigin.TUWEL,
                 generated_by=ProvenanceAgent.MODEL,
-                generator_ref=generator_ref,
+                # A template padding out a short model batch is not the model's.
+                generator_ref=generator_ref if item.sources else FALLBACK_GENERATOR_REF,
                 generated_at=generated_at,
+                source_spans=tuple(_source_span(chunk) for chunk in item.sources),
             ),
         )
 
@@ -353,14 +361,14 @@ async def _generate_prompts(
     *,
     count: int,
     difficulty: str,
-) -> tuple[list[str], str]:
-    """Return the prompts and the generator that actually produced them.
+) -> tuple[list[GroundedQuestion], str]:
+    """Return the questions and the generator that actually produced them.
 
     The generator is recorded as provenance, so a template fallback must not be
     attributed to a model the learner never went near.
     """
     try:
-        prompts = await generate_study_questions(
+        questions = await generate_grounded_questions(
             app,
             session,
             course_id,
@@ -370,8 +378,19 @@ async def _generate_prompts(
         )
     except TopicExtractionError:
         log.warning("study_question_generation_failed", course_id=course_id, topic=topic)
-        return [FALLBACK_QUESTION.format(topic=topic)] * count, FALLBACK_GENERATOR_REF
-    return prompts, _generator_ref(app)
+        fallback = GroundedQuestion(prompt=FALLBACK_QUESTION.format(topic=topic))
+        return [fallback] * count, FALLBACK_GENERATOR_REF
+    return questions, _generator_ref(app)
+
+
+def _source_span(chunk: KnowledgeChunk) -> SourceSpan:
+    """Locate a retrieved lecture chunk the way the search surface does, by episode."""
+    return SourceSpan(
+        content_item_id=chunk.episode_id,
+        start_ms=round(chunk.start_time * MS_PER_SECOND),
+        end_ms=round(chunk.end_time * MS_PER_SECOND),
+        excerpt=chunk.text,
+    )
 
 
 def _generator_ref(app: AppContainer) -> str:
