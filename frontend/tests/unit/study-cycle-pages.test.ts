@@ -45,6 +45,8 @@ const { default: ActPage } =
   await import("../../src/routes/study/[sessionId]/act/+page.svelte");
 const { default: PredictPage } =
   await import("../../src/routes/study/[sessionId]/predict/+page.svelte");
+const { default: ReflectPage } =
+  await import("../../src/routes/study/[sessionId]/reflect/+page.svelte");
 
 const SESSION_ID = 7;
 const ANSWER = "Every path from source to sink crosses the cut.";
@@ -111,6 +113,15 @@ function openPredict(attemptedQuestionIds: string[]) {
   });
 }
 
+/** On reflect with the post-test behind the learner, so the reflection is open. */
+function openReflect() {
+  const data = pageData(["anchor"]) as {
+    summary: { attempts: { post_test: number } };
+  };
+  data.summary.attempts.post_test = 1;
+  return render(ReflectPage, { props: { data: data as never } });
+}
+
 function answerField(): HTMLTextAreaElement {
   return screen.getByLabelText("Your answer") as HTMLTextAreaElement;
 }
@@ -175,6 +186,21 @@ describe("study cycle across step changes", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false);
+  });
+
+  it("gives the reflection its text back after the learner steps away", async () => {
+    const first = openReflect();
+    await fireEvent.input(screen.getByLabelText(/still feels unfinished/), {
+      target: { value: ANSWER },
+    });
+    first.unmount();
+
+    openReflect();
+
+    expect(
+      (screen.getByLabelText(/still feels unfinished/) as HTMLTextAreaElement)
+        .value,
+    ).toBe(ANSWER);
   });
 
   // Operator pre-mortem: the act route will not rebuild its runtime on an
