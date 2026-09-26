@@ -447,6 +447,7 @@
   "study_start": "Sitzung starten",
   "study_start_heading": "Sitzung starten",
   "study_step_act": "Arbeiten",
+  "study_step_completed": "(abgeschlossen)",
   "study_step_position": "Schritt {step} von {total}",
   "study_step_predict": "Vorhersage",
   "study_step_reflect": "Reflexion",

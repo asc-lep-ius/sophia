@@ -1,6 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
-  import { goto } from "$app/navigation";
+  import { goto, invalidate } from "$app/navigation";
   import { untrack } from "svelte";
   import { resolve } from "$app/paths";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -8,6 +8,7 @@
   import { recordPrediction } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard, preTestAnswered, remainingCards } from "$lib/study/deck";
+  import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
 
@@ -71,6 +72,15 @@
       (runtime.store.pendingCount === 0 && runtime.store.failedCount === 0),
   );
   const canContinue = $derived(predictionSaved && preTestDone && preTestSettled);
+
+  // The pre-test landed without a navigation: Work is open now, and the
+  // stepper only learns so when the layout reloads. The reload answers the
+  // anchor, which leaves no runtime behind to fire this a second time.
+  $effect(() => {
+    if (runtime !== null && preTestDone && preTestSettled) {
+      void invalidate(STUDY_PROGRESS);
+    }
+  });
 
   $effect(() => {
     const current = runtime;

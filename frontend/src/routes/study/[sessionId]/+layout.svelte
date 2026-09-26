@@ -2,6 +2,7 @@
   import { page } from "$app/state";
   import { resolve } from "$app/paths";
   import { m } from "$lib/paraglide/messages.js";
+  import { cycleProgress } from "$lib/study/progress";
   import type { Snippet } from "svelte";
   import type { LayoutData } from "./$types";
 
@@ -20,10 +21,11 @@
 
   const currentStep = $derived(
     Math.max(
-      steps.findIndex((step) => page.url.pathname.endsWith(`/${step.slug}`)),
+      steps.findIndex((step) => page.route.id === step.route),
       0,
     ),
   );
+  const progress = $derived(cycleProgress(data));
 </script>
 
 <nav class="cycle" aria-label={m.study_heading()}>
@@ -32,18 +34,25 @@
   </p>
   <ol>
     {#each steps as step, index (step.slug)}
+      {@const completed = progress.completed.has(step.slug)}
       <li>
         <!--
           A step the learner has not reached is not a link: the cycle only
           means anything in order, and skipping the prediction would leave
-          nothing to compare the result against.
+          nothing to compare the result against. Reached is the session's
+          progress on the server, not the page the learner happens to be on,
+          so stepping back never closes a step already opened.
         -->
-        {#if index <= currentStep}
+        {#if progress.reachable.has(step.slug)}
           <a
             href={resolve(step.route, { sessionId: String(data.sessionId) })}
             aria-current={index === currentStep ? "step" : undefined}
           >
             {step.label()}
+            {#if completed}
+              <span class="done" aria-hidden="true">✓</span>
+              <span class="sr-only">{m.study_step_completed()}</span>
+            {/if}
           </a>
         {:else}
           <span>{step.label()}</span>
@@ -82,7 +91,7 @@
   }
 
   a,
-  span {
+  li > span {
     display: inline-flex;
     min-height: 2.25rem;
     align-items: center;
@@ -99,8 +108,24 @@
     color: var(--accent-strong);
   }
 
-  span {
+  li > span {
     color: var(--muted);
+  }
+
+  .done {
+    margin-inline-start: 0.35rem;
+    color: var(--accent-strong);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .position,

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidate } from "$app/navigation";
   import { untrack } from "svelte";
   import { resolve } from "$app/paths";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -7,6 +8,7 @@
   import { m } from "$lib/paraglide/messages.js";
   import { StudyEventStream, type StudyStreamStatus } from "$lib/study/events";
   import { practiceCards } from "$lib/study/deck";
+  import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
 
@@ -41,6 +43,21 @@
   let streamStatus = $state<StudyStreamStatus>("idle");
 
   const queueEmpty = $derived(runtime.store.remaining === 0);
+  // Drained here, with every grade on the server: Work is done, and the
+  // stepper only learns so when the layout reloads. `total` is what stops the
+  // reload repeating — the runtime rebuilt from it has no cards left to drain.
+  const drainedInPlace = $derived(
+    queueEmpty &&
+      runtime.store.total > 0 &&
+      runtime.store.pendingCount === 0 &&
+      runtime.store.failedCount === 0,
+  );
+
+  $effect(() => {
+    if (drainedInPlace) {
+      void invalidate(STUDY_PROGRESS);
+    }
+  });
 
   $effect(() => {
     const current = runtime;

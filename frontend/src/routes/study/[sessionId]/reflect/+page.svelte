@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invalidate } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { untrack } from "svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -12,6 +13,7 @@
   } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard } from "$lib/study/deck";
+  import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { PageData } from "./$types";
 
@@ -127,6 +129,9 @@
       });
       await completeSession(context);
       summary = await loadSessionSummary(data.sessionId);
+      // The session closed without a navigation; the stepper marks Reflect
+      // done only once the layout has reloaded.
+      void invalidate(STUDY_PROGRESS);
     } catch (error) {
       // A 412 is the server holding the pacing floor, not an outage: telling
       // the learner to "try again shortly" would be both wrong and rude.

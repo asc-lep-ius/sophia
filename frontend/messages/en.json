@@ -447,6 +447,7 @@
   "study_start": "Start session",
   "study_start_heading": "Start a session",
   "study_step_act": "Work",
+  "study_step_completed": "(completed)",
   "study_step_position": "Step {step} of {total}",
   "study_step_predict": "Predict",
   "study_step_reflect": "Reflect",

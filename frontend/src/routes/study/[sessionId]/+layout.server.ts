@@ -2,6 +2,7 @@ import { error } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
 import type { components } from "$lib/api/schema";
 import { selectedLearningPathId } from "$lib/learningPath";
+import { STUDY_PROGRESS } from "$lib/study/progress";
 import type { LayoutServerLoad } from "./$types";
 
 type SessionSummary = components["schemas"]["StudySessionSummaryResponse"];
@@ -19,6 +20,13 @@ export const load: LayoutServerLoad = async (event) => {
   if (learningPathId === null) {
     error(409, "study.learning_path_required");
   }
+
+  // Both are here for the stepper, whose progress is only as fresh as this
+  // load. Reading the route makes SvelteKit re-run it on every step change:
+  // otherwise a layout loaded on predict kept its attempted ids for the rest
+  // of the visit, and the way back to Work re-presented cards already graded.
+  event.depends(STUDY_PROGRESS);
+  void event.route.id;
 
   const summary = await loadSummary(event, sessionId);
   const pacing = await loadPacing(event);
