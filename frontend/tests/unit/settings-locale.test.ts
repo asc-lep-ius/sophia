@@ -6,6 +6,7 @@ import { paraglideHandle } from "../../src/hooks.server";
 import {
   LOCALE_COOKIE,
   LOCALE_COOKIE_MAX_AGE,
+  SOPHIA_LOCALE_COOKIE,
 } from "../../src/lib/i18n/locale";
 import { m } from "../../src/lib/paraglide/messages.js";
 import { getLocale, overwriteGetLocale } from "../../src/lib/paraglide/runtime";
@@ -152,6 +153,45 @@ describe("locale cookie on the next request", () => {
 });
 
 /**
+ * #114: the rows of the issue's table, through the same handle. The alias used
+ * to be read by `contextHandle` and then overwritten here, so the first row
+ * rendered in English.
+ */
+describe("sophia-locale alias on the next request", () => {
+  it("renders in the language the alias names over the browser's preference", async () => {
+    const event = hookEvent(`${SOPHIA_LOCALE_COOKIE}=de`, "en");
+
+    const { localeLabel, transformed } = await renderThrough(event);
+
+    expect(event.locals.locale).toBe("de");
+    expect(localeLabel).toBe("Sprache");
+    expect(transformed).toContain('lang="de"');
+  });
+
+  it("yields to the Paraglide cookie", async () => {
+    const event = hookEvent(
+      `${LOCALE_COOKIE}=en; ${SOPHIA_LOCALE_COOKIE}=de`,
+      "de",
+    );
+
+    const { localeLabel, transformed } = await renderThrough(event);
+
+    expect(event.locals.locale).toBe("en");
+    expect(localeLabel).toBe("Language");
+    expect(transformed).toContain('lang="en"');
+  });
+
+  it("falls through to the browser's preference when it names no locale", async () => {
+    const event = hookEvent(`${SOPHIA_LOCALE_COOKIE}=fr`, "de-AT,de;q=0.9");
+
+    const { localeLabel } = await renderThrough(event);
+
+    expect(event.locals.locale).toBe("de");
+    expect(localeLabel).toBe("Sprache");
+  });
+});
+
+/**
  * Drives the real locale handle, capturing what a page render would have seen.
  *
  * `handle` itself cannot be called here: `sequence()` reads SvelteKit's internal
@@ -272,7 +312,10 @@ function actionEvent({
   };
 }
 
-function hookEvent(cookieHeader?: string): RequestEvent {
+function hookEvent(
+  cookieHeader?: string,
+  acceptLanguage?: string,
+): RequestEvent {
   const jar = new Map(
     (cookieHeader ?? "")
       .split("; ")
@@ -288,7 +331,10 @@ function hookEvent(cookieHeader?: string): RequestEvent {
     fetch: vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
     locals: { locale: "en" },
     request: new Request("http://localhost/app/settings", {
-      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+      headers: {
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+        ...(acceptLanguage ? { "accept-language": acceptLanguage } : {}),
+      },
     }),
   } as unknown as RequestEvent;
 }

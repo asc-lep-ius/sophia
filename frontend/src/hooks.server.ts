@@ -8,8 +8,11 @@ import {
   negotiateLocale,
   type Locale,
 } from "$lib/i18n/locale";
+import { defineServerLocaleAlias } from "$lib/i18n/locale-alias";
 import type { Handle, RequestEvent } from "@sveltejs/kit";
 import { sequence } from "@sveltejs/kit/hooks";
+
+defineServerLocaleAlias();
 
 type ApiQueryValue = boolean | number | string | null | undefined;
 
