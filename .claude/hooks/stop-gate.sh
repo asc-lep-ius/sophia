@@ -129,7 +129,7 @@ This gate will not block again for this tree. To bypass it deliberately, the
 user can: echo 'why' > ${STATE}/skip-${SESSION_ID}
 
 The bypass is allowed either way and recorded either way — the line written
-there is the reason it is recorded with, and the doctor prints it back." >&2
+there is the reason it is recorded with, and the foreman prints it back." >&2
     exit 2
 fi
 

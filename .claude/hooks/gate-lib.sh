@@ -275,7 +275,7 @@ inert_line() { printf '%s' "${GATE_INERT_SKIPPED:-none}" | tr '\n' ' '; }
 # reason is asked for where it is cheap to give and never required.
 #
 # One number, read from both ends: session-start.sh deletes these markers at
-# STATE_RETENTION_DAYS and the doctor counts over the same window. Two numbers
+# STATE_RETENTION_DAYS and the foreman counts over the same window. Two numbers
 # would make the row lie at the edge — counting rows that have already been
 # swept and reporting a fall in bypasses that never happened. `find`'s `-7` and
 # `+7` leave one day between them uncounted and unswept rather than overlapping,
@@ -286,7 +286,7 @@ BYPASS_UNSTATED="unstated"
 bypass_marker() { printf '%s/bypass-%s-%s.json' "$1" "$2" "$3"; }
 
 # The first non-blank line, trimmed and capped: this ends up as one column of one
-# doctor row, so a skip file somebody redirected a stack trace into must not
+# foreman row, so a skip file somebody redirected a stack trace into must not
 # become the table.
 bypass_reason() {
     local line
@@ -323,7 +323,7 @@ bypass_markers() {  # bypass_markers <state>
          -mtime "-${STATE_RETENTION_DAYS}" 2>/dev/null
 }
 
-# One TSV line for the doctor: how many bypasses somebody chose, how many the
+# One TSV line for the foreman: how many bypasses somebody chose, how many the
 # milestone runner took, then the newest chosen one's route, date and reason.
 # Non-zero when there is nothing to report.
 #
@@ -417,7 +417,7 @@ bypass_entries() {  # bypass_entries <state> [session]
 # file are taking deadlines against.
 #
 # Empty is "nobody measured", and it stays distinguishable from `0` all the way
-# to the doctor's row. A marker written by a hook older than this key, and one
+# to the foreman's row. A marker written by a hook older than this key, and one
 # written for a tree whose gates never ran because every path in it was inert,
 # are both unmeasured; reading either as a free gate would drag the reported
 # maximum down, which is the one direction this number must never err in.
@@ -505,13 +505,13 @@ record_gates_pass() {
 }
 
 # The markers still on disk, over the window session-start.sh sweeps them on —
-# `bypass_markers`' constant, for its reason: the doctor counting over a wider
+# `bypass_markers`' constant, for its reason: the foreman counting over a wider
 # window than the sweep would report a fall in cost that was only a deletion.
 # Trailing arguments are handed to `find` as further actions, which is how
 # `gate_cost_summary` gets them newest-first without a second listing that could
 # disagree with this one about which markers are in the window. `-printf` is GNU
 # findutils, as `date +%s%N` above is GNU coreutils; on a find without it this
-# lists nothing and the doctor's row reads "nothing measured" over markers that
+# lists nothing and the foreman's row reads "nothing measured" over markers that
 # do carry one.
 gate_markers() {  # gate_markers <state> [find action...]
     local state="$1"; shift
@@ -530,7 +530,7 @@ gate_cost_of() {  # gate_cost_of <marker>
     printf '%s' "$v"
 }
 
-# One TSV line for the doctor: the newest measured run, the most expensive one,
+# One TSV line for the foreman: the newest measured run, the most expensive one,
 # and how many markers in the window carry no measurement at all. Non-zero when
 # none of them does — the row then says nothing was measured, which is not the
 # same sentence as `0s` and must never collapse into it.
@@ -818,6 +818,144 @@ session_for_browser() {
         SESSION_STATUS="header printed"
     fi
     return 0
+}
+
+# --- the walk -----------------------------------------------------------------
+# One driver on every box: playwright-cli, headless. Claude in Chrome needs
+# Chrome and its extension on the machine the claude process runs on, and
+# hephaestus has neither a display nor a Chrome, so a proof that depended on it
+# was a proof only one machine could take (#42).
+#
+# walk_open carries SESSION_VALUE into the browser itself because the CLI echoes
+# the code it ran: a `cookie-set` typed by the model prints the value straight
+# back into the transcript. The value reaches playwright-cli as an argument and
+# nothing it prints is kept.
+
+walk_cli() {  # walk_cli <arg>... — bounded like SESSION_CMD, for the same reason
+    if command -v timeout >/dev/null 2>&1; then
+        timeout -k 5 "${WALK_TIMEOUT:-60}" playwright-cli "$@"
+    else
+        playwright-cli "$@"
+    fi
+}
+
+# READY_URL's host, without scheme, credentials, port or path: a cookie's
+# domain. Not `url_host`, because foreman.sh sources this file and has its own.
+ready_url_host() {
+    local rest="${1#*://}"
+    rest="${rest%%/*}"; rest="${rest##*@}"
+    if [[ "$rest" == \[* ]]; then rest="${rest%%]*}]"; else rest="${rest%%:*}"; fi
+    printf '%s' "$rest"
+}
+
+# READY_URL's host and port the way a URL's `host` reports them, default port
+# dropped: what the header route below is matched against.
+ready_url_hostport() {
+    local scheme="${1%%://*}" rest="${1#*://}"
+    rest="${rest%%/*}"; rest="${rest##*@}"
+    [[ "$scheme" == http && "$rest" == *:80 ]] && rest="${rest%:80}"
+    [[ "$scheme" == https && "$rest" == *:443 ]] && rest="${rest%:443}"
+    printf '%s' "$rest"
+}
+
+# The line of a failed CLI call worth quoting. A launch failure is a Node stack
+# trace that ends in `}` and `Node.js v24…`; the line that says what to do —
+# `Error: Browser "chromium" is not installed … Run playwright-cli
+# install-browser chromium` — is in the middle of it.
+cli_error() {  # cli_error <output>
+    local line
+    line=$(printf '%s\n' "$1" | grep -E '^Error: ' | grep -v 'Daemon pid=' | head -1)
+    [[ -n "$line" ]] || line=$(printf '%s\n' "$1" | grep -v '^[[:space:]]*$' | tail -1)
+    printf '%s' "$line"
+}
+
+# A cookie goes in the way the server would set it: HttpOnly, on READY_URL's
+# host, and Secure where its prefix or scheme demands it. A __Host- or __Secure-
+# cookie without Secure is dropped silently, and Chromium counts loopback over
+# http as a secure context, so it sticks.
+walk_carry_cookie() {  # walk_carry_cookie <session> <name> <value> <host>
+    local -a flags=(--domain="$4" --path=/ --httpOnly)
+    [[ "$2" == __Host-* || "$2" == __Secure-* || "$READY_URL" == https://* ]] \
+        && flags+=(--secure)
+    walk_cli -s="$1" cookie-set "$2" "$3" "${flags[@]}" >/dev/null 2>&1
+}
+
+# A header goes on requests to READY_URL's host and port, and nowhere else. The
+# context-wide extraHTTPHeaders would send it to every origin the page loads
+# from — an image, a font, somebody's analytics — and a bearer token is not
+# theirs. allHeaders(), because headers() leaves out the cookies.
+walk_carry_header() {  # walk_carry_header <session> <name> <value> <host:port>
+    local code
+    command -v jq >/dev/null 2>&1 || return 1
+    code=$(jq -rn --arg h "$4" --arg k "$2" --arg v "$3" '
+        "async page => { await page.context().route(u => u.host === \($h | tojson), "
+        + "async r => r.continue({ headers: { ...(await r.request().allHeaders()), "
+        + "[\($k | tojson)]: \($v | tojson) } })); }"') || return 1
+    walk_cli -s="$1" run-code "$code" >/dev/null 2>&1
+}
+
+# Open a headless session carrying SESSION_VALUE, with everything the CLI writes
+# kept under <proof-dir>/cli. Left to itself it writes a snapshot per command to
+# `.playwright-cli/` in the working directory, and an untracked directory in the
+# repo moves the fingerprint the proof is named after.
+#   0  open, carrying SESSION_VALUE — WALK_SESSION names it
+#   1  no playwright-cli, it would not open, or the session could not be carried
+#   3  open, but anonymously: there was no SESSION_VALUE to carry. Whether the
+#      flow may be walked that way is step 2c's call, not this helper's
+# shellcheck disable=SC2034  # WALK_SESSION and WALK_STATUS are set for the caller
+walk_open() {  # walk_open <session> <proof-dir>
+    local name="$1" dir="$2" out key value host
+    load_gates
+    WALK_SESSION=""; WALK_STATUS=""
+    if [[ ! "$name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+        WALK_STATUS="session name '${name}' is not [A-Za-z0-9._-]"; return 1
+    fi
+    if ! command -v playwright-cli >/dev/null 2>&1; then
+        WALK_STATUS="no playwright-cli on PATH — docs/hephaestus-runbook.md installs it"; return 1
+    fi
+    if [[ -n "$SESSION_VALUE" && -z "$(ready_url_host "$READY_URL")" ]]; then
+        WALK_STATUS="no READY_URL to scope the session to"; return 1
+    fi
+    mkdir -p "$dir/cli" && dir=$(cd "$dir" && pwd) || { WALK_STATUS="cannot write ${dir}"; return 1; }
+    # A session an earlier walk left open still holds that walk's cookies.
+    walk_cli -s="$name" close >/dev/null 2>&1 || true
+    if ! out=$(PLAYWRIGHT_MCP_OUTPUT_DIR="$dir/cli" walk_cli -s="$name" open 2>&1); then
+        WALK_STATUS="playwright-cli would not open: $(cli_error "$out")"; return 1
+    fi
+    WALK_SESSION="$name"
+    if [[ -z "$SESSION_VALUE" ]]; then
+        WALK_STATUS="open as ${name}, anonymously: no SESSION_VALUE"; return 3
+    fi
+    if [[ "$SESSION_VALUE" =~ ^([A-Za-z0-9_.~-]+)=([^;]*) ]]; then
+        key="${BASH_REMATCH[1]}"; value="${BASH_REMATCH[2]}"; host=$(ready_url_host "$READY_URL")
+        if walk_carry_cookie "$name" "$key" "$value" "$host"; then
+            WALK_STATUS="open as ${name}, carrying cookie ${key} for ${host}"; return 0
+        fi
+    else
+        key="${SESSION_VALUE%%:*}"; host=$(ready_url_hostport "$READY_URL")
+        value=$(printf '%s' "${SESSION_VALUE#*:}" | sed 's/^[[:space:]]*//')
+        if walk_carry_header "$name" "$key" "$value" "$host"; then
+            WALK_STATUS="open as ${name}, carrying header ${key} to ${host} only"; return 0
+        fi
+    fi
+    walk_cli -s="$name" close >/dev/null 2>&1 || true
+    WALK_SESSION=""
+    WALK_STATUS="could not carry ${key} into ${name}; the session was closed again"
+    return 1
+}
+
+#   0  closed, or was not open — the CLI answers both the same way
+#   1  no playwright-cli, or the close itself failed
+# shellcheck disable=SC2034  # WALK_STATUS is set for the caller
+walk_close() {  # walk_close <session>
+    WALK_STATUS=""
+    command -v playwright-cli >/dev/null 2>&1 || { WALK_STATUS="no playwright-cli on PATH"; return 1; }
+    if walk_cli -s="$1" close >/dev/null 2>&1; then
+        WALK_STATUS="closed $1"
+        return 0
+    fi
+    WALK_STATUS="playwright-cli could not close $1"
+    return 1
 }
 
 # --- what counts as a user-facing surface -------------------------------------

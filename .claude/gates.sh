@@ -12,8 +12,9 @@
 # its own tools fails every turn and reads as "your code is broken".
 export PATH="$HOME/.local/bin:$PATH"
 
-# Measured on hephaestus, 2026-09-12, warm caches:
-#   lint ~7s · types ~20s · tests ~7s · total ~34s
+# Measured on hephaestus, 2026-09-25, warm caches:
+#   lint 8.0s · types 20.1s · tests 10.4s (365 tests) · total ~38s
+# It was ~34s on 2026-09-12; the unit suite is what grew.
 LINT_CMD="uv run ruff check . && uv run ruff format --check . && pnpm -C frontend run lint"
 TYPE_CMD="uv run pyright && pnpm -C frontend run check"
 
@@ -39,12 +40,36 @@ TYPE_CMD="uv run pyright && pnpm -C frontend run check"
 # settings.json to match — and expect headless /ship turns to start failing.
 TEST_CMD="pnpm -C frontend run test:unit"
 
+# The budget one full gate run is expected to fit in, in seconds. project-foreman
+# prints `last · max · budget` from the past week's markers, advisory only. 60 is
+# gate-lib's default and sits clear of the ~38s measured above, so a row that
+# turns yellow means the gates really got slower, not that the line was drawn
+# tight.
+GATE_BUDGET_S=60
+
+# Paths a tree change may skip the gates for. Empty, so nothing is skippable,
+# because the obvious candidate is not inert here:
+# frontend/tests/unit/paraglide-decision.test.ts reads
+# docs/frontend-paraglide-decision.md, so docs/** is covered by TEST_CMD. Name a
+# path only after checking that no gate reads it.
+GATE_INERT_PATHS=""
+
 # Python only. The frontend has its own formatter (prettier, via `pnpm lint`),
 # but post-edit-lint.sh applies a single command to a single file, and one
 # slot cannot serve both languages.
 FORMAT_CMD="uv run ruff format"
 LINT_FILE_CMD="uv run ruff check --fix"
 FORMAT_EXTENSIONS="py"
+
+# What decision-doc-context.sh treats as a product decision. The hook's fallback,
+# `*SPEC*.md docs/decisions/** DECISIONS.md`, matched STUDY_SURFACE_SPEC.md and
+# nothing in docs/, so the accepted records there (paraglide, form writes,
+# charts, long-tail scope, NiceGUI retirement) could be rewritten inside a branch
+# without the hook saying a word, which CLAUDE.md says it does. docs/** also
+# matches run-contract-setup.md, which is a checklist. The hook only adds context,
+# so that over-match costs one sentence, and a new record added to docs/ is
+# covered without anyone having to remember this line.
+DECISION_DOCS="*SPEC*.md docs/**"
 
 # Opt-in only, never part of run_all_gates. Left unset until someone picks the
 # modules worth mutating — scoring, scheduling and the authorisation guards are
@@ -179,7 +204,7 @@ CI_WAIT_TIMEOUT=""
 # reads it to decide anything; it is what a proposal to tier this project's CI
 # has to argue against.
 #   CI_MR_SECONDS="500  # median of the last 50 MR pipelines, 2026-09-18"
-CI_MR_SECONDS="489  # median of 26 successful MR pipelines, 2026-09-18"
+CI_MR_SECONDS="459  # median of 30 successful MR pipelines, 2026-09-25; was 489 over 26 on 2026-09-18"
 
 # CI_IS_ONLY_GATE — yes | no. Is the pipeline the only thing checking this
 # project? **Empty is `yes`**, and it is the one key here that fails closed: a
