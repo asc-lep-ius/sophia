@@ -5,6 +5,7 @@ import {
   type StudyPacing,
   type StudyQuestion,
 } from "$lib/api/study";
+import { sessionDrafts, type DraftStore } from "$lib/study/drafts";
 import { LearningEventBatcher } from "$lib/study/learningEvents";
 import { StudySessionStore } from "$lib/study/session.svelte";
 
@@ -15,6 +16,8 @@ export type StudyRuntimeOptions = {
   questions: StudyQuestion[];
   pacing: StudyPacing;
   phase: StudyAttemptPhase;
+  /** Defaults to this tab's drafts for the session and phase. */
+  drafts?: DraftStore;
   onGraded?: (attempt: StudyAttempt) => void;
 };
 
@@ -48,6 +51,7 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
     pacing: options.pacing,
     phase: options.phase,
     learningEvents: events,
+    drafts: options.drafts ?? sessionDrafts(options.sessionId, options.phase),
     submit: async (submission, requestId) => {
       await events.flushNow();
       const attempt = await submitAttempt(

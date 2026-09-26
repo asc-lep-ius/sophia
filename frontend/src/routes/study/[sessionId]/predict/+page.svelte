@@ -8,6 +8,7 @@
   import { recordPrediction } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard, preTestAnswered, remainingCards } from "$lib/study/deck";
+  import { sessionDrafts } from "$lib/study/drafts";
   import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
@@ -56,8 +57,18 @@
     });
   });
 
-  let rating = $state<number | null>(null);
-  let predictionSaved = $state(false);
+  // Only a rating the server took is kept, so one that comes back was saved:
+  // a learner returning from Work finds their prediction where they left it
+  // rather than an unticked scale and a Continue that asks for it again.
+  const predictionDraft = untrack(() =>
+    sessionDrafts(data.sessionId, "predict"),
+  );
+  const keptRating =
+    RATINGS.find(
+      (option) => String(option.value) === predictionDraft.read("rating"),
+    )?.value ?? null;
+  let rating = $state<number | null>(keptRating);
+  let predictionSaved = $state(keptRating !== null);
   let predictionError = $state(false);
 
   const preTestDone = $derived(
@@ -128,6 +139,7 @@
         },
       );
       predictionSaved = true;
+      predictionDraft.write("rating", String(value));
     } catch {
       predictionSaved = false;
       predictionError = true;

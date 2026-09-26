@@ -132,6 +132,51 @@ describe("study cycle across step changes", () => {
     vi.useRealTimers();
   });
 
+  // #108: act -> predict -> act rebuilt the runtime, which seeded every card
+  // with an empty answer.
+  it("gives a practice card its answer back after the learner steps away", async () => {
+    const first = openAct(["anchor"]);
+    await write(ANSWER);
+    first.unmount();
+
+    openAct(["anchor"]);
+
+    expect(answerField().value).toBe(ANSWER);
+  });
+
+  it("gives the pre-test its answer back after a reload of the predict route", async () => {
+    const first = openPredict([]);
+    await write(ANSWER);
+    first.unmount();
+
+    openPredict([]);
+
+    expect(answerField().value).toBe(ANSWER);
+  });
+
+  // The acceptance's own path, predict -> act -> predict: the scale came back
+  // unticked and Continue asked for a prediction the server already had.
+  it("comes back to the prediction the learner made, with Continue open", async () => {
+    const first = openPredict([]);
+    await fireEvent.click(screen.getByRole("radio", { name: "Somewhat" }));
+    await vi.advanceTimersByTimeAsync(0);
+    first.unmount();
+
+    openPredict(["anchor"]);
+
+    expect(
+      (screen.getByRole("radio", { name: "Somewhat" }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Start studying",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+
   // Operator pre-mortem: the act route will not rebuild its runtime on an
   // unrelated reload, and that must not stop the stepper hearing about a
   // deck that drained without a navigation.

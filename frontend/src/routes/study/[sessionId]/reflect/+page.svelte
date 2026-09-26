@@ -13,6 +13,7 @@
   } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard } from "$lib/study/deck";
+  import { sessionDrafts } from "$lib/study/drafts";
   import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { PageData } from "./$types";
@@ -58,7 +59,10 @@
     });
   });
 
-  let reflection = $state("");
+  const reflectionDraft = untrack(() =>
+    sessionDrafts(data.sessionId, "reflection"),
+  );
+  let reflection = $state(reflectionDraft.read("text") ?? "");
   let elapsedSeconds = $state(0);
   let summary = $state<StudySessionSummary | null>(null);
   let submitting = $state(false);
@@ -128,6 +132,7 @@
         requestId: crypto.randomUUID(),
       });
       await completeSession(context);
+      reflectionDraft.clear("text");
       summary = await loadSessionSummary(data.sessionId);
       // The session closed without a navigation; the stepper marks Reflect
       // done only once the layout has reloaded.
@@ -190,6 +195,8 @@
       id="study-reflection"
       rows="6"
       bind:value={reflection}
+      oninput={(event) =>
+        reflectionDraft.write("text", event.currentTarget.value)}
       aria-describedby="study-reflection-status"
     ></textarea>
     <p id="study-reflection-status" class="status" aria-live="polite">
