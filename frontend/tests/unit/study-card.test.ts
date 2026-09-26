@@ -36,9 +36,30 @@ const question: StudyQuestion = {
   },
 };
 
-function renderCard(submitted: string[] = []) {
+const ANSWER = "A cut is a partition whose removal disconnects them.";
+const EXCERPT =
+  "Every s-t cut has capacity at least the value of any flow from s to t.";
+
+const groundedQuestion: StudyQuestion = {
+  ...question,
+  provenance: {
+    ...question.provenance,
+    source_spans: [
+      {
+        content_item_id: "ep-001",
+        start_char: null,
+        end_char: null,
+        start_ms: 0,
+        end_ms: 15_000,
+        excerpt: EXCERPT,
+      },
+    ],
+  },
+};
+
+function renderCard(submitted: string[] = [], card: StudyQuestion = question) {
   const store = new StudySessionStore({
-    questions: [question],
+    questions: [card],
     pacing,
     submit: async (submission) => {
       submitted.push(`${submission.questionId}:${submission.selfRating}`);
@@ -118,6 +139,40 @@ describe("study card", () => {
 
     await fireEvent.keyDown(window, { key: " " });
     expect(store.current?.revealed).toBe(true);
+  });
+
+  it("reveals the material the question was generated from", async () => {
+    renderCard([], groundedQuestion);
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+
+    expect(
+      screen.getByRole("region", {
+        name: "What this question was generated from",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(EXCERPT)).toBeTruthy();
+    // The answer stays in the field; the reveal must not echo it back as if
+    // it were something to compare against.
+    expect(screen.queryByText(ANSWER)).toBeNull();
+  });
+
+  it("says a question with no source material is free recall", async () => {
+    renderCard();
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+
+    expect(screen.getByText(/^Free recall: /)).toBeTruthy();
+    expect(
+      screen.queryByRole("region", {
+        name: "What this question was generated from",
+      }),
+    ).toBeNull();
+    expect(screen.queryByText(ANSWER)).toBeNull();
   });
 
   it("announces a pause without losing the card", async () => {

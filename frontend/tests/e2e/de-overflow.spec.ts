@@ -92,7 +92,9 @@ test("a revealed German study card fits the 320px viewport", async ({
   await page.goto("/app/study/402/act");
   await page.getByLabel("Deine Antwort").fill("Eine Antwort zum Aufdecken.");
   await page.getByRole("button", { name: "Aufdecken" }).click();
-  await expect(page.getByText("Was du geschrieben hast")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Woraus diese Frage erzeugt wurde" }),
+  ).toBeVisible();
 
   await expectNoHorizontalOverflow(page);
 });

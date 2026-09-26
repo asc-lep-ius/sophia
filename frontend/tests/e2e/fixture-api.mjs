@@ -350,7 +350,18 @@ function buildQuestion({ id, sessionId, topic, position, policy }) {
       generated_at: "2026-09-04T10:00:00Z",
       verified_by: null,
       verified_at: null,
-      source_spans: [],
+      // What the card reveals. Shaped like a lecture chunk the real generator
+      // records: located by episode and time, carrying the transcript text.
+      source_spans: [
+        {
+          content_item_id: "fixture-episode",
+          start_char: null,
+          end_char: null,
+          start_ms: 12_500,
+          end_ms: 27_000,
+          excerpt: `In the lecture on ${topic}, the worked example traces each step before generalising it.`,
+        },
+      ],
     },
     engagement_policy: policy,
     session_id: sessionId,
