@@ -18,7 +18,10 @@ if TYPE_CHECKING:
 SESSION_SALT = "sophia.api.session"
 SESSION_COOKIE_CLAIM = "session_id"
 SESSION_KEY_NAMESPACE = "sophia:session"
-SESSION_RECORD_VERSION = 2
+# 3: tenant.learning_path_id became nullable and settings lost its write-only
+# selected_learning_path_id (#106). A v2 record still carries the old
+# "default-learning-path" sentinel, so it reads as "sign in again".
+SESSION_RECORD_VERSION = 3
 _TOKEN_BYTES = 32
 
 type JsonScalar = str | int | float | bool | None
@@ -87,13 +90,16 @@ class SessionTenant:
     """Org and learning-path scope carried by a server-side session."""
 
     org_id: str = "local"
-    learning_path_id: str = "default-learning-path"
+    # None until the learner selects one, or login selects their only
+    # enrolment. It is the one place the selection lives.
+    learning_path_id: str | None = None
     cohort_id: str | None = None
     role: str = "student"
 
     def __post_init__(self) -> None:
         _require_non_empty("tenant.org_id", self.org_id)
-        _require_non_empty("tenant.learning_path_id", self.learning_path_id)
+        if self.learning_path_id is not None:
+            _require_non_empty("tenant.learning_path_id", self.learning_path_id)
         _require_non_empty("tenant.role", self.role)
         if self.cohort_id is not None:
             _require_non_empty("tenant.cohort_id", self.cohort_id)
@@ -105,16 +111,10 @@ class SessionSettings:
 
     theme: str = "system"
     locale: str = "en"
-    selected_learning_path_id: str | None = None
 
     def __post_init__(self) -> None:
         _require_non_empty("settings.theme", self.theme)
         _require_non_empty("settings.locale", self.locale)
-        if self.selected_learning_path_id is not None:
-            _require_non_empty(
-                "settings.selected_learning_path_id",
-                self.selected_learning_path_id,
-            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,7 +275,6 @@ def serialize_session_record(record: SessionRecord) -> JsonObject:
         "settings": {
             "theme": record.settings.theme,
             "locale": record.settings.locale,
-            "selected_learning_path_id": record.settings.selected_learning_path_id,
         },
         "tuwel_credentials": _serialize_credential(record.tuwel_credentials),
         "tiss_credentials": _serialize_credential(record.tiss_credentials),
@@ -461,7 +460,7 @@ def _deserialize_user(payload: Mapping[str, object]) -> SessionUser:
 def _deserialize_tenant(payload: Mapping[str, object]) -> SessionTenant:
     return SessionTenant(
         org_id=_required_string(payload, "org_id"),
-        learning_path_id=_required_string(payload, "learning_path_id"),
+        learning_path_id=_optional_string(payload, "learning_path_id"),
         cohort_id=_optional_string(payload, "cohort_id"),
         role=_required_string(payload, "role"),
     )
@@ -471,7 +470,6 @@ def _deserialize_settings(payload: Mapping[str, object]) -> SessionSettings:
     return SessionSettings(
         theme=_required_string(payload, "theme"),
         locale=_required_string(payload, "locale"),
-        selected_learning_path_id=_optional_string(payload, "selected_learning_path_id"),
     )
 
 

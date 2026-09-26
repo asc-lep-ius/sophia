@@ -16,7 +16,7 @@ export type LoadEventOptions = {
   authenticated?: boolean;
   fetch: ReturnType<typeof vi.fn>;
   /** Overrides the tenant's learning path, for the "nothing selected" case. */
-  learningPathId?: string;
+  learningPathId?: string | null;
   locale?: "de" | "en";
   url: string;
 };

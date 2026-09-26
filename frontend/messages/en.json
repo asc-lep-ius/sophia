@@ -450,6 +450,7 @@
   "study_unsaved_grades": "{count} not saved",
   "study_your_answer": "What you wrote",
   "tenant_course": "Course",
+  "tenant_course_none": "None selected",
   "tenant_label": "Tenant",
   "tenant_org": "Organization",
   "tenant_role": "Role",

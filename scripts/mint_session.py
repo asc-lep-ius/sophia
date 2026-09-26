@@ -20,12 +20,12 @@ environment that has never sourced anything. That also keeps
 SOPHIA_KEYRING_PASSWORD out of every other process's environment. Anything
 already set in the environment wins.
 
-The tenant is left at its real default on purpose. `SessionTenant()` gives
-`learning_path_id="default-learning-path"`, the non-numeric sentinel every real
-login gets and every consumer coerces with `Number()` — the #106 bug. Seeding a
-numeric id here would hide it again, which is what `tests/e2e/shell-auth.ts`
-does. Pass --learning-path-id only when a walk genuinely needs to get past it,
-and say so in proof.md.
+The tenant is left unselected on purpose, which is what a real login leaves
+when the learner has several enrolments: /app/study then shows the learning-path
+picker, the flow #106 added, and the walk has to choose a course the way a
+person does. Seeding an id here skips that picker, which is what
+`tests/e2e/shell-auth.ts` does. Pass --learning-path-id only when a walk
+genuinely needs to start past it, and say so in proof.md.
 """
 
 from __future__ import annotations
@@ -115,28 +115,6 @@ def _resolve_username() -> str:
     raise SystemExit(msg)
 
 
-def _warn_if_study_unreachable(tenant: SessionTenant) -> None:
-    """Say at mint time when this session cannot reach the study surface.
-
-    `frontend/src/routes/study/+page.server.ts:13` coerces learning_path_id with
-    `Number()` and bails unless the result is a positive integer, so the
-    non-numeric `default-learning-path` sentinel every real login gets makes
-    /app/study unreachable. That is #106, and it is reproduced here rather than
-    papered over — see the module docstring. Printing it is what keeps it from
-    being discovered halfway through a walk.
-    """
-    raw = tenant.learning_path_id
-    if raw.isdigit() and int(raw) > 0:
-        return
-    print(
-        f"warning: learning_path_id is {raw!r}, not a positive integer, so "
-        "/app/study is unreachable for this session — that is #106, not a "
-        "fault in the walk. Settings, auth and language flows are unaffected. "
-        "--learning-path-id gets past it; name that in proof.md if you use it.",
-        file=sys.stderr,
-    )
-
-
 async def _mint(learning_path_id: str | None) -> str:
     # Before Settings(), which reads SOPHIA_* out of the environment.
     _load_env_file()
@@ -152,13 +130,9 @@ async def _mint(learning_path_id: str | None) -> str:
         raise SystemExit(msg)
     tiss = load_tiss_session(tiss_session_path(settings.config_dir))
 
-    tenant = (
-        SessionTenant(learning_path_id=learning_path_id) if learning_path_id else SessionTenant()
-    )
-    _warn_if_study_unreachable(tenant)
     record = create_session_record(
         user=SessionUser(id=_resolve_username()),
-        tenant=tenant,
+        tenant=SessionTenant(learning_path_id=learning_path_id or None),
         tuwel_credentials=SessionCredential(
             payload={
                 "moodle_session": tuwel.moodle_session,
@@ -202,7 +176,8 @@ async def _mint(learning_path_id: str | None) -> str:
     finally:
         await client.aclose()
 
-    print(f"minted for {record.user.id}, tenant {record.tenant.learning_path_id}", file=sys.stderr)
+    selection = record.tenant.learning_path_id or "unselected"
+    print(f"minted for {record.user.id}, learning path {selection}", file=sys.stderr)
     return f"{settings.session_cookie_name}={cookie}"
 
 
@@ -210,7 +185,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--learning-path-id",
-        help="override the real default; hides #106, so name it in proof.md",
+        help="preselect a learning path, skipping the picker; name it in proof.md",
     )
     args = parser.parse_args()
     print(asyncio.run(_mint(args.learning_path_id)))

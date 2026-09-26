@@ -12,6 +12,7 @@ from sophia.api.deps import (
     get_settings,
     request_session,
     require_csrf,
+    require_selected_learning_path_id,
 )
 from sophia.api.schemas.content_sources import (
     ContentItemListResponse,
@@ -114,7 +115,7 @@ async def create_content_source_upload(
         # Staged under the session's own learning path, never one a caller
         # names: the upload carries no scope of its own, and a file written
         # without an owner cannot be given one afterwards.
-        learning_path_id=session.tenant.learning_path_id,
+        learning_path_id=require_selected_learning_path_id(session),
         max_bytes=settings.content_upload_max_bytes,
     )
     return ContentSourceUploadResponse(

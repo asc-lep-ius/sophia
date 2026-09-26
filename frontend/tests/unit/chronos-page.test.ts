@@ -96,13 +96,13 @@ describe("chronos server load", () => {
     expect(data.deadlines.data).toHaveLength(3);
   });
 
-  it("asks for nothing when the workspace has no numeric learning path", async () => {
+  it("asks for nothing when the workspace has no learning path selected", async () => {
     const fetch = vi.fn();
 
     const data = (await load(
       createLoadEvent({
         fetch,
-        learningPathId: "default-learning-path",
+        learningPathId: null,
         url: CHRONOS_URL,
       }) as never,
     )) as ChronosData;

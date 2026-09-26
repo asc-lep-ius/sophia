@@ -30,7 +30,6 @@ type SettingsResponse = components["schemas"]["SettingsResponse"];
 type SophiaRole = "student" | "peer_instructor" | "ta" | "instructor";
 
 const DEFAULT_ORG_ID = "local";
-const DEFAULT_LEARNING_PATH_ID = "default-learning-path";
 const DEFAULT_ROLE = "student";
 const CSRF_COOKIE = "__Host-sophia_csrf";
 const E2E_AUTH_COOKIE = "sophia-e2e-auth";
@@ -55,7 +54,7 @@ const contextHandle: Handle = async ({ event, resolve }) => {
   event.locals.user = null;
   event.locals.org_id = event.cookies.get("sophia-org-id") ?? DEFAULT_ORG_ID;
   event.locals.learning_path_id =
-    event.cookies.get("sophia-learning-path-id") ?? DEFAULT_LEARNING_PATH_ID;
+    event.cookies.get("sophia-learning-path-id") ?? null;
   event.locals.role = DEFAULT_ROLE;
   event.locals.locale = locale;
   event.locals.csrfToken = csrfTokenFromCookie(event);
@@ -227,7 +226,6 @@ function applyE2eAuthLocals(event: RequestEvent): void {
   };
   event.locals.sessionSettings = {
     locale: event.locals.locale,
-    selected_learning_path_id: event.locals.learning_path_id,
     theme: "light",
   };
 }
@@ -311,7 +309,8 @@ function isSessionTenantResponse(
   return (
     isRecord(value) &&
     typeof value.org_id === "string" &&
-    typeof value.learning_path_id === "string" &&
+    (value.learning_path_id === null ||
+      typeof value.learning_path_id === "string") &&
     typeof value.role === "string" &&
     (value.cohort_id === null ||
       value.cohort_id === undefined ||
@@ -323,10 +322,7 @@ function isSettingsResponse(value: unknown): value is SettingsResponse {
   return (
     isRecord(value) &&
     typeof value.theme === "string" &&
-    typeof value.locale === "string" &&
-    (value.selected_learning_path_id === null ||
-      value.selected_learning_path_id === undefined ||
-      typeof value.selected_learning_path_id === "string")
+    typeof value.locale === "string"
   );
 }
 

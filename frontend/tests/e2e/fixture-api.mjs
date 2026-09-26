@@ -822,7 +822,6 @@ function sessionResponse() {
     settings: {
       theme: "light",
       locale: "en",
-      selected_learning_path_id: String(LEARNING_PATH_ID),
     },
   };
 }

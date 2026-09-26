@@ -9,7 +9,7 @@
 
   type Tenant = {
     org_id: string;
-    learning_path_id: string;
+    learning_path_id: string | null;
     role: string;
   };
 
@@ -89,6 +89,9 @@
   );
   const sessionState = $derived(
     authenticated ? m.session_signed_in() : m.session_guest(),
+  );
+  const courseLabel = $derived(
+    tenant.learning_path_id ?? m.tenant_course_none(),
   );
   const filteredCommands = $derived.by(() => {
     const query = commandSearch.trim().toLocaleLowerCase(locale);
@@ -310,7 +313,7 @@
       </div>
       <div>
         <dt>{m.tenant_course()}</dt>
-        <dd>{tenant.learning_path_id}</dd>
+        <dd>{courseLabel}</dd>
       </div>
       <div>
         <dt>{m.tenant_role()}</dt>
@@ -340,7 +343,7 @@
       <dl class="shell-metadata" aria-label={m.tenant_label()}>
         <div>
           <dt>{m.tenant_course()}</dt>
-          <dd>{tenant.learning_path_id}</dd>
+          <dd>{courseLabel}</dd>
         </div>
         <div>
           <dt>{m.theme_label()}</dt>
@@ -410,7 +413,7 @@
       </div>
       <div>
         <dt>{m.tenant_course()}</dt>
-        <dd>{tenant.learning_path_id}</dd>
+        <dd>{courseLabel}</dd>
       </div>
     </dl>
   </dialog>

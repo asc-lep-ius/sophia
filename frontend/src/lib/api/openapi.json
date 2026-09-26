@@ -2683,8 +2683,15 @@
             "title": "Cohort Id"
           },
           "learning_path_id": {
-            "title": "Learning Path Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
           },
           "org_id": {
             "title": "Org Id",
@@ -2740,18 +2747,6 @@
             ],
             "title": "Locale"
           },
-          "selected_learning_path_id": {
-            "anyOf": [
-              {
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Learning Path Id"
-          },
           "theme": {
             "anyOf": [
               {
@@ -2773,17 +2768,6 @@
           "locale": {
             "title": "Locale",
             "type": "string"
-          },
-          "selected_learning_path_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Selected Learning Path Id"
           },
           "theme": {
             "title": "Theme",

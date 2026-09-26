@@ -163,7 +163,7 @@ async def test_session_store_preserves_ttl_on_save_and_refreshes_explicitly() ->
 
     updated_record = replace(
         record,
-        settings=SessionSettings(theme="dark", locale="de", selected_learning_path_id="course-2"),
+        settings=SessionSettings(theme="dark", locale="de"),
     )
     assert await store.save(updated_record) is True
 
@@ -283,7 +283,7 @@ def _session_record(
             cohort_id="cohort-a",
             role="student",
         ),
-        settings=SessionSettings(theme="system", locale="en", selected_learning_path_id="course-1"),
+        settings=SessionSettings(theme="system", locale="en"),
         tuwel_credentials=tuwel_credentials,
         tiss_credentials=tiss_credentials,
         created_at="2026-05-25T00:00:00Z",
@@ -292,6 +292,8 @@ def _session_record(
 
 
 def test_stale_session_record_version_reads_as_invalid_token() -> None:
+    # A v2 record carries the "default-learning-path" sentinel #106 removed;
+    # reading it as a fresh sign-in is what keeps the sentinel out of the store.
     stale_payload = json.dumps(
         {
             "version": SESSION_RECORD_VERSION - 1,
@@ -299,12 +301,16 @@ def test_stale_session_record_version_reads_as_invalid_token() -> None:
             "user": {"id": "learner", "display_name": "Learner One", "email": ""},
             "tenant": {
                 "org_id": "tu-wien",
-                "course_id": "course-1",
+                "learning_path_id": "default-learning-path",
                 "cohort_id": None,
                 "role": "student",
             },
             "csrf_token": "csrf-token",
-            "settings": {"theme": "system", "locale": "en", "selected_course_id": "course-1"},
+            "settings": {
+                "theme": "system",
+                "locale": "en",
+                "selected_learning_path_id": None,
+            },
             "tuwel_credentials": None,
             "tiss_credentials": None,
             "created_at": "2026-05-26T10:00:00Z",
@@ -314,6 +320,21 @@ def test_stale_session_record_version_reads_as_invalid_token() -> None:
 
     with pytest.raises(InvalidSessionToken):
         loads_session_record(stale_payload)
+
+
+def test_unselected_learning_path_round_trips_as_null() -> None:
+    record = create_session_record(user=SessionUser(id="learner"))
+
+    payload = serialize_session_record(record)
+
+    assert record.tenant.learning_path_id is None
+    assert cast("JsonObject", payload["tenant"])["learning_path_id"] is None
+    assert loads_session_record(dumps_session_record(record)) == record
+
+
+def test_tenant_rejects_an_empty_learning_path_id() -> None:
+    with pytest.raises(ValueError, match="learning_path_id"):
+        SessionTenant(learning_path_id="")
 
 
 def test_corrupt_session_record_reads_as_invalid_token() -> None:

@@ -74,20 +74,8 @@ def _patched_settings(
         theme = payload.theme
     if "locale" in fields and payload.locale is not None:
         locale = payload.locale
-    return SessionSettings(
-        theme=theme,
-        locale=locale,
-        selected_learning_path_id=(
-            payload.selected_learning_path_id
-            if "selected_learning_path_id" in fields
-            else current_settings.selected_learning_path_id
-        ),
-    )
+    return SessionSettings(theme=theme, locale=locale)
 
 
 def _settings_response(settings: SessionSettings) -> SettingsResponse:
-    return SettingsResponse(
-        theme=settings.theme,
-        locale=settings.locale,
-        selected_learning_path_id=settings.selected_learning_path_id,
-    )
+    return SettingsResponse(theme=settings.theme, locale=settings.locale)

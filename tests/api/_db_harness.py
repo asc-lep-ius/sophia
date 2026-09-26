@@ -138,11 +138,7 @@ def _login_as(tenant: SessionTenant):
                 email=f"{payload.username}@example.test",
             ),
             tenant=tenant,
-            settings=SessionSettings(
-                theme="system",
-                locale="en",
-                selected_learning_path_id=tenant.learning_path_id,
-            ),
+            settings=SessionSettings(theme="system", locale="en"),
             tuwel_credentials=SessionCredential(
                 reference="tuwel:test-session",
                 payload={"username": payload.username},

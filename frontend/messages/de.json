@@ -450,6 +450,7 @@
   "study_unsaved_grades": "{count} nicht gespeichert",
   "study_your_answer": "Was du geschrieben hast",
   "tenant_course": "Kurs",
+  "tenant_course_none": "Keiner ausgewählt",
   "tenant_label": "Mandant",
   "tenant_org": "Organisation",
   "tenant_role": "Rolle",

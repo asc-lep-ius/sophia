@@ -71,7 +71,7 @@ study-surface e2e test as evidence about the fixture until a parity suite exists
 **`SOPHIA_E2E_AUTH=1` plus the `sophia-e2e-auth` cookie**
 (`frontend/src/hooks.server.ts:33`) bypasses sign-in entirely, and
 `tests/e2e/shell-auth.ts` hardcodes a numeric `sophia-learning-path-id`. That
-seeded id is why #106 went unnoticed: a real login gets the non-numeric sentinel
+seeded id is why #106 went unnoticed: a real login got the non-numeric sentinel
 `"default-learning-path"`, which every consumer coerces with `Number()` to `NaN`.
 Never use this path to demonstrate that a flow works.
 

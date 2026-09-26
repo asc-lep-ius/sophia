@@ -73,12 +73,9 @@ describe("dashboard server load", () => {
     });
   });
 
-  it("says plainly when the workspace has no numeric learning path", async () => {
+  it("says plainly when the workspace has no learning path selected", async () => {
     const fetch = vi.fn();
-    const event = createEvent({
-      fetch,
-      learningPathId: "default-learning-path",
-    });
+    const event = createEvent({ fetch, learningPathId: null });
 
     const data = (await load(event as never)) as DashboardData;
 
@@ -281,7 +278,7 @@ function createEvent({
 }: {
   authenticated?: boolean;
   fetch: ReturnType<typeof vi.fn>;
-  learningPathId?: string;
+  learningPathId?: string | null;
   url?: string;
 }): RequestEvent {
   return {

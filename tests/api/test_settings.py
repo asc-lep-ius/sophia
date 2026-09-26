@@ -32,11 +32,7 @@ def test_authenticated_get_returns_session_settings() -> None:
     response = harness.client.get("/api/settings")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "theme": "system",
-        "locale": "en",
-        "selected_learning_path_id": "course-1",
-    }
+    assert response.json() == {"theme": "system", "locale": "en"}
 
 
 def test_patch_requires_csrf_headers() -> None:
@@ -55,33 +51,33 @@ def test_patch_persists_settings_in_session_record() -> None:
 
     patch_response = harness.client.patch(
         "/api/settings",
-        json={"theme": "dark", "locale": "de", "selected_learning_path_id": "course-2"},
+        json={"theme": "dark", "locale": "de"},
         headers=csrf_headers(harness),
     )
     get_response = harness.client.get("/api/settings")
 
     assert patch_response.status_code == 200
-    assert patch_response.json() == {
-        "theme": "dark",
-        "locale": "de",
-        "selected_learning_path_id": "course-2",
-    }
+    assert patch_response.json() == {"theme": "dark", "locale": "de"}
     assert get_response.status_code == 200
     assert get_response.json() == patch_response.json()
 
 
-def test_patch_can_clear_selected_course() -> None:
+def test_settings_no_longer_carry_a_learning_path_selection() -> None:
+    # #106: the session tenant owns the selection. A settings field that was
+    # persisted but never read is what hid that nothing could change it.
     harness = build_harness()
     login(harness)
 
     response = harness.client.patch(
         "/api/settings",
-        json={"selected_learning_path_id": None},
+        json={"selected_learning_path_id": "course-2"},
         headers=csrf_headers(harness),
     )
+    session = harness.client.get("/api/auth/session").json()
 
     assert response.status_code == 200
-    assert response.json()["selected_learning_path_id"] is None
+    assert "selected_learning_path_id" not in response.json()
+    assert session["tenant"]["learning_path_id"] == "course-1"
 
 
 def test_stale_route_save_returns_unauthorized_without_resurrecting_session() -> None:

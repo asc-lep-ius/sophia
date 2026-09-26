@@ -105,7 +105,6 @@ describe("server hook API helpers", () => {
             csrf_token: "csrf-from-api",
             settings: {
               locale: "de",
-              selected_learning_path_id: "course-2",
               theme: "dark",
             },
             tenant: {
@@ -146,13 +145,38 @@ describe("server hook API helpers", () => {
     });
     expect(event.locals.sessionSettings).toEqual({
       locale: "de",
-      selected_learning_path_id: "course-2",
       theme: "dark",
     });
     expect(event.locals.csrfToken).toBe("csrf-from-api");
     expect(event.locals.apiSetCookies).toContain(
       "__Host-sophia_session=rotated; Path=/",
     );
+  });
+
+  it("hydrates an unselected learning path as null rather than keeping a default", async () => {
+    const event = createEvent({
+      fetch: vi.fn().mockResolvedValue(
+        jsonResponse({
+          authenticated: true,
+          csrf_token: "csrf-from-api",
+          settings: { locale: "en", theme: "light" },
+          tenant: {
+            cohort_id: null,
+            learning_path_id: null,
+            org_id: "local",
+            role: "student",
+          },
+          user: { display_name: "Learner", email: "", id: "learner" },
+        }),
+      ),
+    });
+    event.locals.learning_path_id = "12";
+    event.locals.tenant = { ...event.locals.tenant, learning_path_id: "12" };
+
+    await hydrateAuthSessionLocals(event);
+
+    expect(event.locals.learning_path_id).toBeNull();
+    expect(event.locals.tenant.learning_path_id).toBeNull();
   });
 
   it("keeps anonymous fallback locals when the session API is unavailable", async () => {
@@ -165,7 +189,7 @@ describe("server hook API helpers", () => {
     expect(event.locals.authenticated).toBe(false);
     expect(event.locals.user).toBeNull();
     expect(event.locals.tenant).toEqual({
-      learning_path_id: "default-learning-path",
+      learning_path_id: null,
       org_id: "local",
       role: "student",
     });
@@ -194,7 +218,7 @@ function createEvent({
     locals: {
       apiSetCookies: [],
       authenticated: false,
-      learning_path_id: "default-learning-path",
+      learning_path_id: null,
       csrfToken,
       locale: "en",
       org_id: "local",
@@ -202,7 +226,7 @@ function createEvent({
       role: "student",
       sessionSettings: null,
       tenant: {
-        learning_path_id: "default-learning-path",
+        learning_path_id: null,
         org_id: "local",
         role: "student",
       },

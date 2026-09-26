@@ -169,11 +169,7 @@ def _login_identity(payload: AuthLoginRequest, tenant: SessionTenant | None) -> 
             email=f"{payload.username}@example.test",
         ),
         tenant=session_tenant,
-        settings=SessionSettings(
-            theme="system",
-            locale="en",
-            selected_learning_path_id=session_tenant.learning_path_id,
-        ),
+        settings=SessionSettings(theme="system", locale="en"),
         tuwel_credentials=SessionCredential(
             reference="tuwel:test-session",
             payload={"username": payload.username},

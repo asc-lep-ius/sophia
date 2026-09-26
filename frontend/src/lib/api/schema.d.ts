@@ -2194,7 +2194,7 @@ export interface components {
             /** Cohort Id */
             cohort_id?: string | null;
             /** Learning Path Id */
-            learning_path_id: string;
+            learning_path_id: string | null;
             /** Org Id */
             org_id: string;
             /** Role */
@@ -2213,8 +2213,6 @@ export interface components {
         SettingsPatchRequest: {
             /** Locale */
             locale?: string | null;
-            /** Selected Learning Path Id */
-            selected_learning_path_id?: string | null;
             /** Theme */
             theme?: string | null;
         };
@@ -2222,8 +2220,6 @@ export interface components {
         SettingsResponse: {
             /** Locale */
             locale: string;
-            /** Selected Learning Path Id */
-            selected_learning_path_id?: string | null;
             /** Theme */
             theme: string;
         };

@@ -193,7 +193,6 @@ def _authenticated_response(record: SessionRecord) -> AuthSessionResponse:
         settings=SettingsResponse(
             theme=record.settings.theme,
             locale=record.settings.locale,
-            selected_learning_path_id=record.settings.selected_learning_path_id,
         ),
         csrf_token=record.csrf_token,
     )

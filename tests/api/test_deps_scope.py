@@ -35,7 +35,7 @@ def test_scope_dependencies_return_default_stubs() -> None:
         cohort: Annotated[CohortScope, Depends(current_cohort)],
         user: Annotated[UserScope, Depends(current_user)],
         role: Annotated[RoleScope, Depends(current_role)],
-    ) -> dict[str, str]:
+    ) -> dict[str, str | None]:
         return {
             "org_id": org.id,
             "learning_path_id": learning_path.id,
@@ -49,7 +49,7 @@ def test_scope_dependencies_return_default_stubs() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "org_id": "local",
-        "learning_path_id": "default-learning-path",
+        "learning_path_id": None,
         "cohort_id": "default-cohort",
         "user_id": "anonymous",
         "role": "student",
@@ -66,7 +66,7 @@ def test_scope_dependencies_read_authenticated_session_record() -> None:
         cohort: Annotated[CohortScope, Depends(current_cohort)],
         user: Annotated[UserScope, Depends(current_user)],
         role: Annotated[RoleScope, Depends(current_role)],
-    ) -> dict[str, str]:
+    ) -> dict[str, str | None]:
         return {
             "org_id": org.id,
             "learning_path_id": learning_path.id,

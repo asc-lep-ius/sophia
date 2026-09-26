@@ -12,7 +12,6 @@ describe("settings route", () => {
       fetch: vi.fn().mockResolvedValue(
         jsonResponse({
           locale: "de",
-          selected_learning_path_id: "course-2",
           theme: "dark",
         }),
       ),
@@ -21,7 +20,6 @@ describe("settings route", () => {
     await expect(load(event as never)).resolves.toEqual({
       settings: {
         locale: "de",
-        selected_learning_path_id: "course-2",
         theme: "dark",
       },
     });
@@ -48,12 +46,12 @@ describe("settings route", () => {
     const fetch = vi.fn().mockResolvedValue(
       jsonResponse({
         locale: "de",
-        selected_learning_path_id: "course-2",
         theme: "oled",
       }),
     );
     const event = createEvent({
       fetch,
+      // What a page rendered before #106 would still post.
       form: {
         locale: "de",
         selected_learning_path_id: "course-2",
@@ -76,7 +74,6 @@ describe("settings route", () => {
     expect(init.body).toBe(
       JSON.stringify({
         locale: "de",
-        selected_learning_path_id: "course-2",
         theme: "oled",
       }),
     );
@@ -102,7 +99,6 @@ describe("settings route", () => {
           locale: "en",
           settings: {
             locale: "en",
-            selected_learning_path_id: "course-1",
             theme: "dark",
           },
           theme: "light",
@@ -114,6 +110,9 @@ describe("settings route", () => {
       name: "Dark",
     }) as HTMLInputElement;
     expect(darkRadio.checked).toBe(true);
+    expect(
+      document.querySelector('input[name="selected_learning_path_id"]'),
+    ).toBeNull();
 
     await fireEvent.click(screen.getByRole("radio", { name: "OLED" }));
 
@@ -159,7 +158,6 @@ function createEvent({
       role: "student",
       sessionSettings: {
         locale: "en",
-        selected_learning_path_id: "course-1",
         theme: "dark",
       },
       tenant: {
