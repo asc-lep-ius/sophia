@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   THEME_COOKIE,
   applyThemeToDocument,
   normalizeTheme,
   readThemeFromCookie,
+  persistThemeCookie,
   themeColorScheme,
-  themeCookieValue,
 } from "../../src/lib/theme";
 
 describe("cookie-driven theme", () => {
@@ -20,9 +20,22 @@ describe("cookie-driven theme", () => {
     expect(normalizeTheme("sepia")).toBe("light");
   });
 
-  it("builds an app-scoped theme cookie value", () => {
-    expect(themeCookieValue("oled")).toContain(`${THEME_COOKIE}=oled`);
-    expect(themeCookieValue("oled")).toContain("Path=/app");
+  it("pins an app-scoped theme cookie the pre-hydration script can read", () => {
+    const set = vi.fn();
+
+    persistThemeCookie(
+      { set } as never,
+      "oled",
+      new URL("https://sophia.example/app/settings"),
+    );
+
+    expect(set).toHaveBeenCalledWith(THEME_COOKIE, "oled", {
+      httpOnly: false,
+      maxAge: 31536000,
+      path: "/app",
+      sameSite: "lax",
+      secure: true,
+    });
   });
 
   it("reads the supported theme from a cookie header", () => {

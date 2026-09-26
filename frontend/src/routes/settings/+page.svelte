@@ -1,9 +1,13 @@
 <script lang="ts">
+  import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
+  import type { ActionResult } from "@sveltejs/kit";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import { normalizeLocale, type Locale } from "$lib/i18n/locale";
   import { m } from "$lib/paraglide/messages.js";
-  import { normalizeTheme, persistTheme, type Theme } from "$lib/theme";
+  import { serialiseSubmissions } from "$lib/settings/serialSubmit";
+  import { applyThemeToDocument, normalizeTheme, type Theme } from "$lib/theme";
 
   type SettingsState = {
     locale: string;
@@ -20,6 +24,9 @@
     error?: "save_failed";
     settings?: SettingsState;
   };
+
+  type Choice = { locale?: Locale; theme?: Theme };
+  type Outcome = "failed" | "saved";
 
   let {
     data = pageDataFallback(),
@@ -50,12 +57,78 @@
    */
   const renderedLocale = $derived(normalizeLocale(data.locale) ?? "en");
 
-  let selectedTheme = $derived<Theme>(persistedTheme);
-  let selectedLocale = $derived<Locale>(renderedLocale);
+  /**
+   * Clicks the server has not answered yet. They sit on top of the persisted
+   * values rather than overwriting them, so a refused save falls back to what
+   * the session holds by clearing this, not by remembering what to restore.
+   */
+  let choice = $state<Choice>({});
+  let saving = $state(false);
+  /** How the last enhanced save ended; `form` only ever answers a plain post. */
+  let outcome = $state<Outcome | null>(null);
+  /** Bumped on every click, so settling an older save cannot clear a newer one. */
+  let revision = 0;
 
-  function selectTheme(theme: Theme) {
-    selectedTheme = theme;
-    persistTheme(theme);
+  const selectedTheme = $derived(choice.theme ?? persistedTheme);
+  const selectedLocale = $derived(choice.locale ?? renderedLocale);
+  const shownOutcome = $derived<Outcome | null>(
+    saving ? null : (outcome ?? formOutcome(form)),
+  );
+
+  // The page is painted in whatever the control shows, pending or saved. The
+  // cookie behind the next page load is the action's to write, once the
+  // session has taken the value.
+  $effect(() => {
+    applyThemeToDocument(selectedTheme);
+  });
+
+  /** The one way any control applies: record the click, submit the form. */
+  function choose(change: Choice, control: HTMLInputElement) {
+    choice = { ...choice, ...change };
+    revision += 1;
+    saving = true;
+    control.form?.requestSubmit();
+  }
+
+  const saveOnChange = serialiseSubmissions(settle);
+
+  async function settle(result: ActionResult) {
+    // Paraglide resolves a page's language once per document load, so a new
+    // language needs a new document rather than a client-side navigation.
+    if (result.type === "redirect") {
+      window.location.assign(result.location);
+      return;
+    }
+    if (languageChanged(result)) {
+      window.location.reload();
+      return;
+    }
+
+    const settled = revision;
+    outcome = result.type === "success" ? "saved" : "failed";
+    // On a refusal as well: an earlier save in the same chain may have landed,
+    // and the controls fall back to whatever the session now holds.
+    await invalidateAll();
+    if (settled === revision) {
+      choice = {};
+      saving = false;
+    }
+  }
+
+  /** A chain whose first save switched the language can end in a plain success. */
+  function languageChanged(result: ActionResult): boolean {
+    const saved =
+      result.type === "success"
+        ? (result.data as SettingsForm | undefined)?.settings
+        : undefined;
+    return saved !== undefined && normalizeLocale(saved.locale) !== renderedLocale;
+  }
+
+  function formOutcome(submitted: SettingsForm | undefined): Outcome | null {
+    if (submitted?.error) {
+      return "failed";
+    }
+    return submitted?.settings ? "saved" : null;
   }
 
   function fallbackSettings(pageData: SettingsPageData): SettingsState {
@@ -79,11 +152,21 @@
 
 <PageHeader heading={m.settings_heading()} summary={m.settings_summary()} />
 
-<form class="settings-panel" method="POST" aria-labelledby="settings-heading">
+<!--
+  Every control saves itself: a change submits this form, one save at a time.
+  Without JavaScript nothing listens for the change, so the <noscript> button
+  posts the same form to the same action.
+-->
+<form
+  class="settings-panel"
+  method="POST"
+  aria-labelledby="settings-heading"
+  use:enhance={saveOnChange}
+>
   <h2 id="settings-heading">{m.settings_heading()}</h2>
-  {#if form?.error}
+  {#if shownOutcome === "failed"}
     <p class="form-error" role="alert">{m.settings_error_save()}</p>
-  {:else if form?.settings}
+  {:else if shownOutcome === "saved"}
     <p class="form-status" role="status">{m.settings_saved()}</p>
   {/if}
 
@@ -95,7 +178,8 @@
           <input
             checked={selectedTheme === theme.value}
             name="theme"
-            onchange={() => selectTheme(theme.value)}
+            onchange={(event) =>
+              choose({ theme: theme.value }, event.currentTarget)}
             type="radio"
             value={theme.value}
           />
@@ -113,7 +197,8 @@
           <input
             checked={selectedLocale === locale.value}
             name="locale"
-            onchange={() => (selectedLocale = locale.value)}
+            onchange={(event) =>
+              choose({ locale: locale.value }, event.currentTarget)}
             type="radio"
             value={locale.value}
           />
@@ -123,9 +208,11 @@
     </div>
   </fieldset>
 
-  <div class="actions">
-    <button type="submit">{m.settings_save()}</button>
-  </div>
+  <noscript>
+    <div class="actions">
+      <button type="submit">{m.settings_save()}</button>
+    </div>
+  </noscript>
 </form>
 
 <style>

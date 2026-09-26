@@ -32,7 +32,7 @@ describe("settings theme controls", () => {
     Reflect.deleteProperty(document, "cookie");
   });
 
-  it("reflects the layout theme and updates the cookie-backed document theme", async () => {
+  it("reflects the layout theme and repaints the document on click", async () => {
     render(SettingsPage);
 
     const darkRadio = screen.getByRole("radio", {
@@ -46,9 +46,10 @@ describe("settings theme controls", () => {
       name: "OLED",
     }) as HTMLInputElement;
     expect(oledRadio.checked).toBe(true);
-    expect(cookieValue).toContain(`${THEME_COOKIE}=oled`);
-    expect(cookieValue).toContain("Path=/app");
     expect(document.documentElement.dataset.theme).toBe("oled");
     expect(document.documentElement.style.colorScheme).toBe("dark");
+    // The cookie is the action's to pin once the session has the value; a
+    // click that is never saved must not outlive the page.
+    expect(cookieValue).not.toContain(THEME_COOKIE);
   });
 });
