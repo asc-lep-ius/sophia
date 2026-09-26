@@ -110,6 +110,20 @@ describe("dashboard page", () => {
     ).toBe("/app/quickstart");
   });
 
+  it("points a learner with no course selected at the picker", () => {
+    // #106: this is the page login lands on, and it used to repeat the dead
+    // end — "no numeric learning path selected" — with nowhere to go.
+    render(DashboardPage, { data: pageData({ learningPathId: null }) });
+
+    expect(
+      screen
+        .getByRole("link", { name: "Choose a course" })
+        .getAttribute("href"),
+    ).toBe("/app/study");
+    expect(screen.queryByText(/numeric/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Do this next" })).toBeNull();
+  });
+
   it("renders a designed empty state instead of an empty panel", () => {
     render(DashboardPage, { data: pageData({}) });
 

@@ -40,4 +40,19 @@ describe("selectedLearningPathId", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("never states the missing selection without a way to make one", () => {
+    // The same notice was pasted onto six pages with no link to the picker,
+    // so the page login lands on still read as the dead end #106 reported.
+    const offenders = readdirSync(ROUTES_DIR, { recursive: true })
+      .map(String)
+      .filter((file) => file.endsWith(".svelte"))
+      .filter((file) =>
+        readFileSync(join(ROUTES_DIR, file), "utf8").includes(
+          '<p class="notice">{m.dashboard_no_learning_path()}</p>',
+        ),
+      );
+
+    expect(offenders).toEqual([]);
+  });
 });

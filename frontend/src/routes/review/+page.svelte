@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { resolve } from "$app/paths";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import ReviewCard from "$lib/components/review/ReviewCard.svelte";
   import { completeReview } from "$lib/api/review";
@@ -60,7 +61,7 @@
 <PageHeader heading={m.review_heading()} summary={m.review_summary()} />
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else if data.due.status === "unauthorized"}
   <p class="notice" role="status">{m.dashboard_panel_unauthorized()}</p>
 {:else if data.due.status === "error"}
