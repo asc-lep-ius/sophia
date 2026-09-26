@@ -27,20 +27,20 @@ write_baseline "${STATE}/base-${SESSION_ID}"
 # file that never spans a week.
 #
 # The retention is gate-lib's constant and not a literal here, because the
-# doctor's bypass row counts over the same window. A row measured over more days
+# foreman's bypass row counts over the same window. A row measured over more days
 # than the sweep keeps would report a fall in bypasses that is only this line
 # deleting the evidence.
 find "$STATE" -type f ! -name "$GATE_SKIP_LOG_NAME" \
      -mtime "+${STATE_RETENTION_DAYS}" -delete 2>/dev/null || true
 
 # --- the readiness report -----------------------------------------------------
-# Reporting only. The doctor never edits the project and a finding is never a
+# Reporting only. The foreman never edits the project and a finding is never a
 # reason to block: this hook always exits 0, so the worst case is a table nobody
 # acts on. The model gets it as additionalContext, before its first tool call;
 # the user gets the same table in the transcript.
 #
 # Invoked through `bash` rather than executed, so that a project whose hooks lost
-# their exec bit — one of the things the doctor is here to notice — still gets
+# their exec bit — one of the things the foreman is here to notice — still gets
 # told so instead of silently reporting nothing.
 FOREMAN="${SCRIPT_DIR}/foreman.sh"
 if [[ -r "$FOREMAN" ]]; then

@@ -30,8 +30,11 @@
 #
 # Project-agnostic by construction: every check below is about the *contract* —
 # which files exist, which keys are set, what git says — and none of them knows
-# or cares what stack fills it. Nothing here writes a file, so a `noexec`
-# $TMPDIR and a non-login shell are both uneventful.
+# or cares what stack fills it. Nothing here writes into the repo. The browser
+# probe is the one thing that writes at all: its snapshot goes to a temp
+# directory it removes, and playwright-cli keeps its own session bookkeeping
+# under ~/.cache/ms-playwright, which a fixed probe name keeps to one entry. A
+# `noexec` $TMPDIR and a non-login shell are both uneventful.
 set -uo pipefail
 
 # --- what the contract is -----------------------------------------------------
@@ -55,13 +58,19 @@ ACCEPT_MAX_AGE_DAYS=30
 # three only ever report ok or advisory, so an acceptance naming one could accept
 # nothing and would read as stale forever.
 ACCEPTABLE_KEYS=(".claude/" "hooks" "gates.sh" "gate commands" ".gitignore"
-                 "origin/HEAD" "checkout" "local default" "forge" "run contract")
+                 "origin/HEAD" "checkout" "local default" "forge" "run contract"
+                 "browser")
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # The two things that can take real time are the fetch and the forge query, so
 # both are bounded and degrade to a finding rather than a hang. Everything else
 # is a stat, a grep or a git ref read.
 NET_TIMEOUT="${FOREMAN_NET_TIMEOUT:-5}"
+# A cold browser launch is the one local check that can take seconds, and this
+# script runs inside the SessionStart hook's 30s alongside two network steps of
+# NET_TIMEOUT each. Past this bound the row degrades to a finding rather than
+# the hook dying with no report at all. A warm launch measured 1.3s here.
+BROWSER_TIMEOUT="${FOREMAN_BROWSER_TIMEOUT:-10}"
 
 MEASURING=0
 OFFLINE=0
@@ -626,6 +635,45 @@ check_run_contract() {
     ok "run contract" "RUN_CMD and READY_URL set${SESSION_CMD:+, sign-in recorded}"
 }
 
+# --- 10b. a browser this box can drive -----------------------------------------
+# The run contract says how to start the product and sign in to it; a walk also
+# needs something to walk with. Without this row a box that could not launch one
+# found out at /ship step 2c, after the gates had run (#42).
+#
+# It opens a real session rather than asking `command -v`: playwright-cli wants
+# the Chromium build its own Playwright pins, and an upgrade that moves the pin
+# leaves the CLI on PATH and the build it needs missing.
+check_browser() {
+    local probe out version session="foreman-probe"
+    [[ -n "$SURFACE_PATHS" && -n "$RUN_CMD" ]] || return 0
+    if ! command -v playwright-cli >/dev/null 2>&1; then
+        required "browser" \
+            "a surface is recorded and no playwright-cli is on PATH — docs/hephaestus-runbook.md installs it"
+        return
+    fi
+    if ! probe=$(mktemp -d "${TMPDIR:-/tmp}/foreman-browser-XXXXXX"); then
+        advisory "browser" "no temp directory to probe a browser in"
+        return
+    fi
+    local -a bound=()
+    command -v timeout >/dev/null 2>&1 && bound=(timeout -k 2 "$BROWSER_TIMEOUT")
+    version=$("${bound[@]}" playwright-cli --version 2>/dev/null | head -1)
+    # One name for every probe, closed first: the CLI keeps an entry per
+    # session name, and a name per pid left one behind at every SessionStart.
+    "${bound[@]}" playwright-cli -s="$session" close >/dev/null 2>&1 || true
+    if out=$(PLAYWRIGHT_MCP_OUTPUT_DIR="$probe" \
+             "${bound[@]}" playwright-cli -s="$session" open about:blank 2>&1); then
+        ok "browser" "playwright-cli ${version:-(unknown version)} opened a headless session"
+    else
+        # cli_error is gate-lib's, loaded with the gates this row depends on: a
+        # launch failure is a stack trace, and its last line is the Node version.
+        required "browser" "playwright-cli ${version:-(unknown version)} would not open a browser: $(
+            cli_error "$out")"
+    fi
+    "${bound[@]}" playwright-cli -s="$session" close >/dev/null 2>&1 || true
+    rm -rf "$probe"
+}
+
 # --- 11. open deferred findings -----------------------------------------------
 check_deferrals() {
     local summary count severity
@@ -789,6 +837,7 @@ main() {
     check_default_ref
     check_forge
     (( gates_loaded )) && check_run_contract
+    (( gates_loaded )) && check_browser
     check_deferrals
     check_bypasses
     # Only with the gates loaded: without them there is no declared budget, and a
