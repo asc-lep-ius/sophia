@@ -122,6 +122,31 @@ describe("settings apply on change", () => {
     expect(sent()[1]).toEqual({ locale: "de", theme: "light" });
   });
 
+  it("stores a click made while the page reloads its data after a save", async () => {
+    // On the real stack the save answers in milliseconds and the data reload
+    // behind it takes far longer, so this is where a second click usually lands.
+    const view = renderSettings({ locale: "en", theme: "light" });
+    const reload = harness.invalidated;
+    let release: () => void = () => undefined;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    let reloading = false;
+    harness.invalidated = async () => {
+      reloading = true;
+      await released;
+      await reload?.();
+    };
+
+    await fireEvent.click(radio("Dark"));
+    await view.answer(0, saved({ locale: "en", theme: "dark" }));
+    await waitFor(() => expect(reloading).toBe(true));
+    await fireEvent.click(radio("OLED"));
+    harness.invalidated = reload;
+    release();
+
+    await waitFor(() => expect(sent()).toHaveLength(2));
+    expect(sent()[1]).toEqual({ locale: "en", theme: "oled" });
+  });
+
   it("puts the page back to what the session holds when a save is refused", async () => {
     const view = renderSettings({ locale: "en", theme: "light" });
 
