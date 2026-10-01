@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { authenticateShell } from "./shell-auth";
+import { openHydratedAct } from "./study-act";
 
 /**
  * Write an answer and prove the page actually received it.
@@ -47,7 +48,7 @@ const FULL_ANSWER =
 
 test("the reveal waits for the learner's own elaboration", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${ELABORATION_SESSION}/act`);
+  await openHydratedAct(page, ELABORATION_SESSION);
 
   const reveal = page.getByRole("button", { name: "Reveal" });
   await expect(reveal).toBeDisabled();
