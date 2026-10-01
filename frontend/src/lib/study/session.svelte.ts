@@ -410,10 +410,13 @@ export class StudySessionStore {
    * `dwellMs` here would re-run on every 250ms tick, tearing down and
    * rebuilding the batcher along with it.
    *
-   * This fires once, at mount, so its dwell is always near zero — it is
-   * `reveal()`'s own `prompt_shown` record that carries a dwell able to clear
-   * the pacing floor, since the server takes the highest one it has seen for
-   * the question. Do not `untrack` that call away too: it is not this bug.
+   * The page's effect still re-runs this whenever the card on screen changes
+   * — at mount, after each grade advances the queue, and on `resume()` — and
+   * each later card's `prompt_shown` depends on that. Its dwell is therefore
+   * always near zero: it is `reveal()`'s own `prompt_shown` record that
+   * carries a dwell able to clear the pacing floor, since the server takes the
+   * highest one it has seen for the question. Keep that record — without it
+   * the server never sees a dwell above zero.
    */
   recordPromptShown(): void {
     const card = this.current;
