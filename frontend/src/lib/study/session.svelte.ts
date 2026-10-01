@@ -3,6 +3,7 @@ import type {
   StudyPacing,
   StudyQuestion,
 } from "$lib/api/study";
+import type { DraftStore } from "$lib/study/drafts";
 import type { LearningEventBatcher } from "$lib/study/learningEvents";
 import {
   SubmissionOutbox,
@@ -43,6 +44,8 @@ export type StudySessionStoreOptions = {
   phase?: StudyAttemptPhase;
   submit: (submission: GradeSubmission, requestId: string) => Promise<void>;
   learningEvents?: Pick<LearningEventBatcher, "record">;
+  /** Answers in progress, keyed by question id, kept beyond this store. */
+  drafts?: DraftStore;
   /** Retry tuning for the grade outbox; the defaults are the shipping ones. */
   retry?: Pick<
     OutboxOptions<GradeSubmission>,
@@ -87,7 +90,7 @@ export class StudySessionStore {
     this.#newId = options.newId ?? (() => crypto.randomUUID());
     this.#cards = options.questions.map((question) => ({
       question,
-      answer: "",
+      answer: options.drafts?.read(question.id) ?? "",
       revealed: false,
       againLater: false,
     }));
@@ -96,7 +99,12 @@ export class StudySessionStore {
     this.#clockMs = this.#promptShownAt;
     this.#outbox = new SubmissionOutbox<GradeSubmission>({
       ...options.retry,
-      submit: (payload, requestId) => this.#options.submit(payload, requestId),
+      submit: async (payload, requestId) => {
+        await this.#options.submit(payload, requestId);
+        // Only once the server has it: a grade that is refused or never
+        // lands leaves the card to be answered again, text and all.
+        this.#options.drafts?.clear(payload.questionId);
+      },
       rollback: (entry) => this.#rollback(entry),
     });
   }
@@ -248,6 +256,7 @@ export class StudySessionStore {
       return;
     }
     card.answer = value;
+    this.#options.drafts?.write(card.question.id, value);
     this.#options.learningEvents?.record({
       eventType: "elaboration_written",
       questionId: card.question.id,

@@ -24,7 +24,7 @@ from sophia.infra.engine import affected_rows
 from sophia.infra.schema import learning_events
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Collection, Sequence
 
     from sqlalchemy import Row
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,6 +94,29 @@ async def get_question_trace(
                 learning_events.c.course_id == course_id,
                 learning_events.c.question_id == question_id,
                 learning_events.c.user_id == user_id,
+            )
+            .order_by(learning_events.c.occurred_at)
+        )
+    ).all()
+    return [_row_to_event(row) for row in rows]
+
+
+async def get_session_trace(
+    session: AsyncSession,
+    course_id: int,
+    session_id: int,
+    user_id: str,
+    event_types: Collection[LearningEventType],
+) -> list[LearningEvent]:
+    """Load one learner's recorded events of the given types for a study session."""
+    rows = (
+        await session.execute(
+            select(learning_events)
+            .where(
+                learning_events.c.course_id == course_id,
+                learning_events.c.session_id == session_id,
+                learning_events.c.user_id == user_id,
+                learning_events.c.event_type.in_([event_type.value for event_type in event_types]),
             )
             .order_by(learning_events.c.occurred_at)
         )

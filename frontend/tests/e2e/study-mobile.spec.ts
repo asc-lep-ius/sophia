@@ -54,7 +54,9 @@ test("tap alone can work a card end to end", async ({ page }) => {
 
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
-  await expect(page.getByText("What you wrote")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "What this question was generated from" }),
+  ).toBeVisible();
 
   await page.getByRole("button", { name: /Good/ }).tap();
   await expect(page.getByText(/Card 2 of \d+/)).toBeVisible();

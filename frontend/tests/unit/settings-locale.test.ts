@@ -64,9 +64,7 @@ describe("settings language control", () => {
 
     render(SettingsPage, { props: { data: pageData({ locale: "de" }) } });
 
-    expect(
-      screen.getByRole("button", { name: "Einstellungen speichern" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Sprache" })).toBeTruthy();
     expect(radio("Deutsch").checked).toBe(true);
     expect(screen.queryByRole("radio", { name: "German" })).toBeNull();
   });
