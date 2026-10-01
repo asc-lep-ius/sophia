@@ -4,6 +4,7 @@ import {
   authenticateShell,
   openCommandPaletteFromKeyboard,
 } from "./shell-auth";
+import { openHydratedAct } from "./study-act";
 
 const routes = [
   "/app/study",
@@ -88,7 +89,7 @@ test("a revealed German study card fits the 320px viewport", async ({
   await page.setExtraHTTPHeaders({
     "Accept-Language": "de-DE,de;q=0.9,en;q=0.5",
   });
-  await page.goto("/app/study/402/act");
+  await openHydratedAct(page, 402);
   await page.getByLabel("Deine Antwort").fill("Eine Antwort zum Aufdecken.");
   await page.getByRole("button", { name: "Aufdecken" }).click();
   await expect(page.getByText("Was du geschrieben hast")).toBeVisible();

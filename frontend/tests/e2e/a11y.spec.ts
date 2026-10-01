@@ -5,6 +5,7 @@ import {
   authenticateShell,
   openCommandPaletteFromKeyboard,
 } from "./shell-auth";
+import { openHydratedAct } from "./study-act";
 
 const routes = [
   "/app/study",
@@ -68,7 +69,7 @@ test("populated mobile drawer shell state has no axe violations", async ({
 
 test("a revealed study card has no axe violations", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto("/app/study/401/act");
+  await openHydratedAct(page, 401);
   await page.getByLabel("Your answer").fill("An answer long enough to reveal.");
   await page.getByRole("button", { name: "Reveal" }).click();
   await expect(page.getByText("What you wrote")).toBeVisible();
@@ -108,7 +109,7 @@ test("the study keyboard help dialog has no axe violations", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto("/app/study/401/act");
+  await openHydratedAct(page, 401);
   await page.getByRole("button", { name: "Keyboard shortcuts" }).click();
   await expect(
     page.getByRole("dialog", { name: "Keyboard shortcuts" }),

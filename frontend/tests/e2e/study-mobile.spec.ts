@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { authenticateShell } from "./shell-auth";
+import { openHydratedAct } from "./study-act";
 
 /**
  * Touch study on a small screen.
@@ -24,7 +25,7 @@ test("grades sit in a thumb-zone 2x2 grid with large enough targets", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${GRID_SESSION}/act`);
+  await openHydratedAct(page, GRID_SESSION);
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
 
@@ -50,7 +51,7 @@ test("grades sit in a thumb-zone 2x2 grid with large enough targets", async ({
 
 test("tap alone can work a card end to end", async ({ page }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${TAP_SESSION}/act`);
+  await openHydratedAct(page, TAP_SESSION);
 
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
@@ -64,7 +65,7 @@ test("the card and its controls fit the viewport without sideways scrolling", as
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${VIEWPORT_SESSION}/act`);
+  await openHydratedAct(page, VIEWPORT_SESSION);
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
 
@@ -80,7 +81,7 @@ test("the focused control is not hidden behind sticky chrome", async ({
   page,
 }) => {
   await authenticateShell(page);
-  await page.goto(`/app/study/${FOCUS_SESSION}/act`);
+  await openHydratedAct(page, FOCUS_SESSION);
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
 
   const reveal = page.getByRole("button", { name: "Reveal" });
