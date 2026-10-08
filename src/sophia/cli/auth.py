@@ -40,7 +40,7 @@ async def login(*, save_credentials: bool = False) -> None:
         session_path,
         tiss_session_path,
     )
-    from sophia.adapters.totp import StepLedger, ledger_path, step_at
+    from sophia.adapters.totp import StepLedger, ledger_path, matching_step, step_at
     from sophia.config import Settings
 
     console = Console()
@@ -50,13 +50,9 @@ async def login(*, save_credentials: bool = False) -> None:
         "TU Wien username", console=console
     )
     password = getpass.getpass("TU Wien password: ")
-    mfa_code = (
-        os.environ.get("SOPHIA_TUWEL_MFA_CODE") or getpass.getpass("TU Wien MFA code: ")
-    ).strip()
-    if not (mfa_code.isdigit() and len(mfa_code) == 6):
-        console.print("[red]TU Wien MFA code must be 6 digits.[/red]")
-        raise SystemExit(1)
 
+    # Asked before the MFA code, so the code is typed last: fresh for the login,
+    # and checked against the secret within the same step or the next.
     totp_secret: str | None = None
     if save_credentials:
         try:
@@ -64,7 +60,21 @@ async def login(*, save_credentials: bool = False) -> None:
         except KeyringUnavailableError as exc:
             console.print(f"[yellow]TOTP secret will not be stored: {exc}[/yellow]")
         else:
-            totp_secret = _prompt_totp_secret(console, mfa_code)
+            totp_secret = _prompt_totp_secret(console)
+
+    mfa_code = (
+        os.environ.get("SOPHIA_TUWEL_MFA_CODE") or getpass.getpass("TU Wien MFA code: ")
+    ).strip()
+    if not (mfa_code.isdigit() and len(mfa_code) == 6):
+        console.print("[red]TU Wien MFA code must be 6 digits.[/red]")
+        raise SystemExit(1)
+    # A wrong secret would otherwise surface hours later as a refused re-login.
+    if totp_secret is not None and matching_step(totp_secret, mfa_code, time.time()) is None:
+        console.print(
+            "[red]That TOTP secret does not produce the MFA code you entered — "
+            "it will not be stored.[/red]"
+        )
+        totp_secret = None
 
     tuwel_creds, tiss_creds = await login_both(
         settings.tuwel_host, settings.tiss_host, username, password, mfa_code
@@ -99,18 +109,15 @@ async def login(*, save_credentials: bool = False) -> None:
         )
 
 
-def _prompt_totp_secret(console: Console, mfa_code: str) -> str | None:
-    """Ask for the authenticator's secret, and keep it only if it made ``mfa_code``.
+def _prompt_totp_secret(console: Console) -> str | None:
+    """Ask for the authenticator's base32 secret; None when the learner skips it.
 
-    Checked against the code just typed, before anything is sent to the IdP: a
-    wrong secret would otherwise surface hours later as a refused re-login.
     Read with getpass only — never from argv or the environment, where it would
     land in shell history or ``/proc``.
     """
     import getpass
-    import time
 
-    from sophia.adapters.totp import InvalidTotpSecretError, matching_step, normalize_secret
+    from sophia.adapters.totp import InvalidTotpSecretError, normalize_secret
 
     for _ in range(_TOTP_SECRET_ATTEMPTS):
         raw = getpass.getpass(
@@ -119,14 +126,9 @@ def _prompt_totp_secret(console: Console, mfa_code: str) -> str | None:
         if not raw.strip():
             return None
         try:
-            secret = normalize_secret(raw)
+            return normalize_secret(raw)
         except InvalidTotpSecretError as exc:
             console.print(f"[red]{exc}.[/red]")
-            continue
-        if matching_step(secret, mfa_code, time.time()) is None:
-            console.print("[red]That secret does not produce the MFA code you entered.[/red]")
-            continue
-        return secret
     console.print("[yellow]No valid TOTP secret entered — it will not be stored.[/yellow]")
     return None
 

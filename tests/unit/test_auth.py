@@ -537,7 +537,7 @@ class TestAuthLoginCommand:
         secret = "JBSWY3DPEHPK3PXP"
         code = code_for_step(secret, step_at(time.time()))
 
-        await self._login_saving_credentials(tmp_path, ["testpass", code, secret])
+        await self._login_saving_credentials(tmp_path, ["testpass", secret, code])
 
         stored = load_credentials_from_keyring()
         assert stored is not None
@@ -556,7 +556,7 @@ class TestAuthLoginCommand:
         code = code_for_step("JBSWY3DPEHPK3PXP", step_at(time.time()))
 
         login_both_mock, _ = await self._login_saving_credentials(
-            tmp_path, ["testpass", code, "GEZDGNBVGY3TQOJQ", ""]
+            tmp_path, ["testpass", "GEZDGNBVGY3TQOJQ", code]
         )
 
         login_both_mock.assert_awaited_once()
