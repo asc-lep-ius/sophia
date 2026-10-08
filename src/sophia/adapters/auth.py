@@ -238,7 +238,7 @@ def save_credentials_to_keyring(
     log.info(
         "credentials_saved_to_keyring",
         service=_KEYRING_SERVICE,
-        totp_secret_stored=totp_secret is not None,
+        second_factor_stored=totp_secret is not None,
     )
 
 
