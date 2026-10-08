@@ -1164,3 +1164,19 @@ async def test_use_session_switches_what_the_next_call_sends() -> None:
     assert request.url.params["sesskey"] == "new"
     assert "MoodleSession=new-cookie" in request.headers["cookie"]
     assert "old-cookie" not in request.headers["cookie"]
+
+
+@respx.mock
+async def test_session_time_remaining_reads_without_counting_as_activity() -> None:
+    """The soak's probe must not keep the session alive itself, or it proves nothing."""
+    route = respx.post(f"{HOST}{AJAX_PATH}").mock(
+        return_value=httpx.Response(
+            200, json=[{"error": False, "data": {"userid": 1, "timeremaining": 28512}}]
+        )
+    )
+    async with httpx.AsyncClient() as http:
+        adapter = MoodleAdapter(http=http, sesskey="key", moodle_session="cookie", host=HOST)
+        remaining = await adapter.session_time_remaining()
+
+    assert remaining == 28512
+    assert route.calls.last.request.url.params["nosessionupdate"] == "true"
