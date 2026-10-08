@@ -152,6 +152,19 @@ class MoodleAdapter:
     def cookie_name(self) -> str:
         return self._cookie_name
 
+    def use_session(self, *, sesskey: str, moodle_session: str, cookie_name: str) -> None:
+        """Switch to a renewed session in place, without rebuilding the client.
+
+        The API builds this adapter once, and the shared client carries its
+        cookie for Opencast too, so a renewed session has to land in both.
+        """
+        self._sesskey = sesskey
+        self._moodle_session = moodle_session
+        self._cookie_name = cookie_name
+        self._http.cookies.set(
+            cookie_name, moodle_session, domain=urlparse(self._host).hostname or ""
+        )
+
     # ------------------------------------------------------------------
     # Low-level transport
     # ------------------------------------------------------------------

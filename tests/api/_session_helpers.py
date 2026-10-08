@@ -225,6 +225,8 @@ class FakeAppContainer:
     # AppContainer declares engine, so production always has one.
     engine: object | None = None
     moodle: FakeMoodle = field(default_factory=FakeMoodle)
+    # Likewise optional only here: readiness omits the upstream check without one.
+    upstream: object | None = None
 
     def session(self, **_kwargs: object) -> AbstractAsyncContextManager[object]:
         return _fake_session_scope(self.db)

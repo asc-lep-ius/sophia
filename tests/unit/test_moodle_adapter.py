@@ -1145,3 +1145,22 @@ class TestCalendarActionEvents:
         )
         with pytest.raises(AuthError, match="Session expired"):
             await adapter.get_calendar_action_events()
+
+
+@respx.mock
+async def test_use_session_switches_what_the_next_call_sends() -> None:
+    """The API swaps a renewed session into the adapter it built once at startup (#124)."""
+    route = respx.post(f"{HOST}{AJAX_PATH}").mock(
+        return_value=httpx.Response(200, json=[{"error": False, "data": {"timeremaining": 1}}])
+    )
+    async with httpx.AsyncClient() as http:
+        http.cookies.set("MoodleSession", "old-cookie", domain="tuwel.tuwien.ac.at")
+        adapter = MoodleAdapter(http=http, sesskey="old", moodle_session="old-cookie", host=HOST)
+
+        adapter.use_session(sesskey="new", moodle_session="new-cookie", cookie_name="MoodleSession")
+        await adapter.check_session()
+
+    request = route.calls.last.request
+    assert request.url.params["sesskey"] == "new"
+    assert "MoodleSession=new-cookie" in request.headers["cookie"]
+    assert "old-cookie" not in request.headers["cookie"]

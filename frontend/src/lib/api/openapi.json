@@ -2537,16 +2537,33 @@
       },
       "ReadinessCheck": {
         "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
           "name": {
             "enum": [
               "database",
-              "sse_broker"
+              "sse_broker",
+              "upstream_session"
             ],
             "title": "Name",
             "type": "string"
           },
           "ok": {
             "title": "Ok",
+            "type": "boolean"
+          },
+          "required": {
+            "default": true,
+            "title": "Required",
             "type": "boolean"
           }
         },

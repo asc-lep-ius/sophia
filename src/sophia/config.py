@@ -62,6 +62,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = "__Host-sophia_session"
     csrf_cookie_name: str = "__Host-sophia_csrf"
     session_ttl_seconds: int = _DEFAULT_SESSION_TTL_SECONDS
+    # How often the API pings TUWEL and TISS so neither idles out (TUWEL: 8 h).
+    session_keepalive_interval: int = Field(default=300, ge=60)
     session_cookie_secure: bool = True
     session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 

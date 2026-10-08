@@ -13,7 +13,8 @@ import contextlib
 import fcntl
 import os
 import time
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 import structlog
@@ -44,6 +45,27 @@ _LOCK_FILENAME = ".reauth.lock"
 
 class ReauthUnavailableError(AuthError):
     """Nothing stored that could log in again without a person."""
+
+
+@dataclass(frozen=True)
+class UpstreamStatus:
+    """Whether the stack can currently reach TU Wien as the learner."""
+
+    state: Literal["valid", "expired", "unreachable", "unknown"]
+    reason: str | None = None
+
+
+@dataclass
+class UpstreamSession:
+    """The TUWEL session one process holds, and how that is going.
+
+    Mutable on purpose: the API's keepalive swaps in renewed sessions and
+    readiness reads ``status``, both against the one instance the container
+    carries.
+    """
+
+    creds: SessionCredentials | None = None
+    status: UpstreamStatus = field(default_factory=lambda: UpstreamStatus("unknown"))
 
 
 async def tuwel_session_alive(creds: SessionCredentials, tuwel_host: str) -> bool:
