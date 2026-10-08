@@ -12,13 +12,12 @@ type SophiaUser = {
 type SophiaTenant = {
   cohort_id?: string | null;
   org_id: string;
-  learning_path_id: string;
+  learning_path_id: string | null;
   role: SophiaRole;
 };
 
 type SophiaSessionSettings = {
   locale: string;
-  selected_learning_path_id?: string | null;
   theme: string;
 };
 
@@ -28,7 +27,7 @@ declare global {
       authenticated: boolean;
       user: SophiaUser | null;
       org_id: string;
-      learning_path_id: string;
+      learning_path_id: string | null;
       role: SophiaRole;
       locale: Locale;
       csrfToken: string | null;

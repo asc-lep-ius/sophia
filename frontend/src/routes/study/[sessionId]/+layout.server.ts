@@ -1,6 +1,8 @@
 import { error } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
 import type { components } from "$lib/api/schema";
+import { selectedLearningPathId } from "$lib/learningPath";
+import { STUDY_PROGRESS } from "$lib/study/progress";
 import type { LayoutServerLoad } from "./$types";
 
 type SessionSummary = components["schemas"]["StudySessionSummaryResponse"];
@@ -14,10 +16,17 @@ export const load: LayoutServerLoad = async (event) => {
     error(404, "study.session_not_found");
   }
 
-  const learningPathId = Number(event.locals.tenant.learning_path_id);
-  if (!Number.isInteger(learningPathId) || learningPathId <= 0) {
-    error(409, "study.learning_path_not_numeric");
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
+    error(409, "study.learning_path_required");
   }
+
+  // Both are here for the stepper, whose progress is only as fresh as this
+  // load. Reading the route makes SvelteKit re-run it on every step change:
+  // otherwise a layout loaded on predict kept its attempted ids for the rest
+  // of the visit, and the way back to Work re-presented cards already graded.
+  event.depends(STUDY_PROGRESS);
+  void event.route.id;
 
   const summary = await loadSummary(event, sessionId);
   const pacing = await loadPacing(event);
@@ -80,16 +89,12 @@ async function readQuestions(
     "/api/study/sessions/{session_id}/questions",
     { params: { session_id: sessionId } },
   );
+  // A session with no cards is a 200 with an empty list, and the page offers
+  // to generate some. A failure is not that: read as an empty deck it put the
+  // stepper back to Predict alone and offered to generate cards for a session
+  // that already had them — and this load re-runs on every step change.
   if (!response.ok) {
-    // An empty deck rather than an error: the page can say "no cards" and
-    // offer to generate some. The learning path is a placeholder nothing
-    // reads — every route takes it from the session's own tenant.
-    return {
-      session_id: sessionId,
-      learning_path_id: 0,
-      questions: [],
-      attempted_question_ids: [],
-    };
+    error(502, "study.api_unavailable");
   }
   return (await response.json()) as SessionQuestions;
 }

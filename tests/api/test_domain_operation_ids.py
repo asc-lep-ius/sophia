@@ -23,6 +23,14 @@ DOMAIN_OPERATION_CONTRACTS: dict[tuple[str, str], tuple[str, str]] = {
         "readContentSourceIngestionStatus",
         "#/components/schemas/ContentSourceIngestionStatusResponse",
     ),
+    ("get", "/api/learning-paths"): (
+        "listLearningPaths",
+        "#/components/schemas/LearningPathListResponse",
+    ),
+    ("put", "/api/learning-paths/selection"): (
+        "selectLearningPath",
+        "#/components/schemas/LearningPathSelectionResponse",
+    ),
     ("get", "/api/learning-paths/{learning_path_id}/topics"): (
         "listTopics",
         "#/components/schemas/TopicListResponse",

@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from sophia.api.routers import content_sources as content_sources_router
+from sophia.api.sessions import SessionTenant
 from sophia.services.content_uploads import staging_dir
 from sophia.services.hermes_catalog import DiscoveredLectureModule, LectureModule
 from sophia.services.hermes_manage import EpisodeStatus
@@ -290,6 +291,26 @@ def test_upload_refuses_a_payload_over_the_configured_ceiling(tmp_path: Path) ->
     assert response.status_code == 422
     assert response.json()["detail"]["params"] == {"reason": "too_large", "max_bytes": 16}
     assert list(staging_dir(tmp_path, SESSION_LEARNING_PATH_ID).iterdir()) == []
+
+
+def test_upload_refuses_a_session_with_no_learning_path_selected(tmp_path: Path) -> None:
+    """An upload is staged under the session's learning path, so none means no upload."""
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=SessionTenant(org_id="tu-wien", learning_path_id=None),
+    )
+    harness.settings.data_dir = tmp_path
+    login(harness)
+
+    response = harness.client.post(
+        "/api/content-sources/uploads",
+        data={"title": "Lecture 1"},
+        files={"file": ("lecture-01.pdf", b"%PDF-1.7\n", "application/pdf")},
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 403
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_upload_requires_authentication_and_csrf(tmp_path: Path) -> None:

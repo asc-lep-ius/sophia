@@ -73,12 +73,9 @@ describe("dashboard server load", () => {
     });
   });
 
-  it("says plainly when the workspace has no numeric learning path", async () => {
+  it("says plainly when the workspace has no learning path selected", async () => {
     const fetch = vi.fn();
-    const event = createEvent({
-      fetch,
-      learningPathId: "default-learning-path",
-    });
+    const event = createEvent({ fetch, learningPathId: null });
 
     const data = (await load(event as never)) as DashboardData;
 
@@ -111,6 +108,20 @@ describe("dashboard page", () => {
         .getByRole("link", { name: "Open quickstart" })
         .getAttribute("href"),
     ).toBe("/app/quickstart");
+  });
+
+  it("points a learner with no course selected at the picker", () => {
+    // #106: this is the page login lands on, and it used to repeat the dead
+    // end — "no numeric learning path selected" — with nowhere to go.
+    render(DashboardPage, { data: pageData({ learningPathId: null }) });
+
+    expect(
+      screen
+        .getByRole("link", { name: "Choose a course" })
+        .getAttribute("href"),
+    ).toBe("/app/study");
+    expect(screen.queryByText(/numeric/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Do this next" })).toBeNull();
   });
 
   it("renders a designed empty state instead of an empty panel", () => {
@@ -281,7 +292,7 @@ function createEvent({
 }: {
   authenticated?: boolean;
   fetch: ReturnType<typeof vi.fn>;
-  learningPathId?: string;
+  learningPathId?: string | null;
   url?: string;
 }): RequestEvent {
   return {

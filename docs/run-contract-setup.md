@@ -136,7 +136,7 @@ and log in again.
 - **Never `SOPHIA_E2E_AUTH=1` plus the `sophia-e2e-auth` cookie** to demonstrate
   a flow. It skips the server's own session record, and `tests/e2e/shell-auth.ts`
   pairs it with a hardcoded numeric `sophia-learning-path-id` — the seeded value
-  that hid #106, because a real login gets the non-numeric sentinel
+  that hid #106, because a real login got the non-numeric sentinel
   `"default-learning-path"` and every consumer coerces it with `Number()`.
 - **Comments in `gates.sh` are blanked before the credential scan**, not dropped,
   so documenting the refusal by naming `keyring` or `~/.netrc` is safe. The scan

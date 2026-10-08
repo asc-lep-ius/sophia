@@ -10,7 +10,8 @@ import { openHydratedAct } from "./study-act";
 const routes = [
   "/app/study",
   "/app/study/1/predict",
-  "/app/study/1/act",
+  // Not session 1: that one is audited before its pre-test, on predict.
+  "/app/study/2/act",
   "/app/study/1/reflect",
   "/app/dashboard",
   "/app/review",
@@ -72,7 +73,9 @@ test("a revealed study card has no axe violations", async ({ page }) => {
   await openHydratedAct(page, 401);
   await page.getByLabel("Your answer").fill("An answer long enough to reveal.");
   await page.getByRole("button", { name: "Reveal" }).click();
-  await expect(page.getByText("What you wrote")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "What this question was generated from" }),
+  ).toBeVisible();
 
   const results = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])

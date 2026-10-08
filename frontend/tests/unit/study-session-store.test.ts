@@ -382,6 +382,7 @@ describe("study session store", () => {
     expect(record.mock.calls.map(([draft]) => draft.eventType)).toEqual([
       "prompt_shown",
       "elaboration_written",
+      "prompt_shown",
       "answer_revealed",
     ]);
   });

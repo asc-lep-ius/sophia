@@ -21,6 +21,14 @@ if TYPE_CHECKING:
 ELABORATION_LENGTH_KEY = "text_length"
 DWELL_KEY = "dwell_ms"
 
+SESSION_SCOPED_EVENT_TYPES = frozenset({LearningEventType.PREDICTION_MADE})
+"""Required once per study session rather than once per question.
+
+The confidence prediction is committed once, on the predict route against the
+session's anchor question, and covers every card the session goes on to work.
+It is still required: a session in which nothing was predicted unlocks nothing.
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class PolicyOutcome:
@@ -46,9 +54,19 @@ class PolicyOutcome:
 def evaluate_elaboration_policy(
     policy: ElaborationPolicy,
     events: Sequence[LearningEvent],
+    session_events: Sequence[LearningEvent] = (),
 ) -> PolicyOutcome:
-    """Check a learner's trace for one question against an elaboration policy."""
-    recorded_types = {event.event_type for event in events}
+    """Check a learner's trace for one question against an elaboration policy.
+
+    ``events`` is the trace for the question itself. ``session_events`` is the
+    trace for the study session the attempt belongs to, and counts only towards
+    the session-scoped requirements.
+    """
+    recorded_types = {event.event_type for event in events} | {
+        event.event_type
+        for event in session_events
+        if event.event_type in SESSION_SCOPED_EVENT_TYPES
+    }
     missing = tuple(
         event_type for event_type in policy.required_event_types if event_type not in recorded_types
     )

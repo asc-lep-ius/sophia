@@ -22,7 +22,9 @@ class SessionUserResponse(ApiModel):
 
 class SessionTenantResponse(ApiModel):
     org_id: str
-    learning_path_id: str
+    # Null until a learning path is selected; required so a client has to
+    # handle that state rather than read a missing key as a default.
+    learning_path_id: str | None
     cohort_id: str | None = None
     role: str
 

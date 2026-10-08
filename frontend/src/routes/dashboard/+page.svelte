@@ -3,6 +3,7 @@
   import BarFigure from "$lib/components/dashboard/BarFigure.svelte";
   import CalibrationFigure from "$lib/components/dashboard/CalibrationFigure.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import { barRow, splitCalibrationRows, type FigureDatum } from "$lib/dashboard/figures";
   import { nextAction } from "$lib/dashboard/nextAction";
@@ -74,7 +75,7 @@
 <PageHeader heading={m.dashboard_heading()} summary={m.dashboard_summary()} />
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else}
   <!--
     First, above everything: a dashboard that ranks nothing hands the ranking

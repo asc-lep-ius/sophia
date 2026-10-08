@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import DueDate from "$lib/components/chronos/DueDate.svelte";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
   import { formatHours, type Deadline } from "$lib/chronos/deadlines";
@@ -45,7 +46,7 @@
 {/if}
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else}
   <PanelSection
     id="chronos-workload"

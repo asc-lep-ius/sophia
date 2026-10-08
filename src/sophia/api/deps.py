@@ -103,6 +103,14 @@ def cache_session_record(request: Request, record: SessionRecord | None) -> None
     setattr(request.state, _SESSION_RECORD_STATE_ATTR, record)
 
 
+async def save_session_record(request: Request, record: SessionRecord) -> None:
+    """Persist an updated session record, or 401 if it expired in the meantime."""
+    if not await get_session_core(request).store.save(record):
+        cache_session_record(request, None)
+        raise AuthError("Authentication required")
+    cache_session_record(request, record)
+
+
 async def require_csrf(request: Request) -> SessionRecord:
     session = await current_session_record(request)
     requested_with = request.headers.get("x-requested-with", "").strip().lower()
@@ -132,9 +140,17 @@ async def require_effective_learning_path_id(
         return learning_path_id
     session = await current_session_record(request)
     try:
-        return int(session.tenant.learning_path_id)
+        return int(require_selected_learning_path_id(session))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN) from exc
+
+
+def require_selected_learning_path_id(session: SessionRecord) -> str:
+    """The session's learning path, or 403 while the learner has none selected."""
+    learning_path_id = session.tenant.learning_path_id
+    if learning_path_id is None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
+    return learning_path_id
 
 
 async def require_csrf_learning_path_scope(
@@ -162,15 +178,11 @@ async def current_org(request: Request) -> OrgScope:
 async def current_learning_path(request: Request) -> LearningPathScope:
     session = await optional_session_record(request)
     if session is not None:
-        return LearningPathScope(
-            id=session.tenant.learning_path_id,
-            display_name=session.tenant.learning_path_id,
-        )
-    context = get_request_context()
-    return LearningPathScope(
-        id=context.learning_path_id if context else "default-learning-path",
-        display_name="Default Learning Path",
-    )
+        learning_path_id = session.tenant.learning_path_id
+    else:
+        context = get_request_context()
+        learning_path_id = context.learning_path_id if context else None
+    return LearningPathScope(id=learning_path_id, display_name=learning_path_id or "")
 
 
 async def current_cohort(request: Request) -> CohortScope:

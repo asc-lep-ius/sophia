@@ -5,7 +5,7 @@ import AppShell from "../../src/lib/components/AppShell.svelte";
 import StudyPage from "../../src/routes/study/+page.svelte";
 
 const tenant = {
-  learning_path_id: "default-learning-path",
+  learning_path_id: null,
   org_id: "local",
   role: "student",
 } as const;
@@ -41,7 +41,7 @@ describe("frontend scaffold smoke", () => {
       screen.getByRole("link", { name: "Study" }).getAttribute("aria-current"),
     ).toBe("page");
     const sidebar = screen.getByRole("complementary", { name: "Sophia" });
-    expect(within(sidebar).getByText("default-learning-path")).toBeTruthy();
+    expect(within(sidebar).getByText("None selected")).toBeTruthy();
   });
 
   it("offers a session to start and one to resume", () => {
@@ -49,6 +49,7 @@ describe("frontend scaffold smoke", () => {
       data: {
         ...layoutData,
         learningPathId: 12,
+        learningPaths: null,
         sessions: [
           {
             id: 5,
@@ -73,12 +74,20 @@ describe("frontend scaffold smoke", () => {
     ).toBe("/app/study/5/act");
   });
 
-  it("says so plainly when the workspace has no numeric learning path", () => {
+  it("asks for a course instead of offering a session when none is selected", () => {
     render(StudyPage, {
-      data: { ...layoutData, learningPathId: null, sessions: [] },
+      data: {
+        ...layoutData,
+        learningPathId: null,
+        learningPaths: { status: "ready", data: [] },
+        sessions: [],
+      },
       form: null,
     });
 
     expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Choose a course to study" }),
+    ).toBeTruthy();
   });
 });

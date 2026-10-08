@@ -4,6 +4,7 @@
   import ContentLanguageNotice from "$lib/components/content/ContentLanguageNotice.svelte";
   import FilterDrawer from "$lib/components/content/FilterDrawer.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import {
     topicParams,
@@ -68,7 +69,7 @@
 />
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else}
   <FilterDrawer
     action={listPath}

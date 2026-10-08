@@ -17,7 +17,7 @@ class OrgScope(ApiModel):
 
 
 class LearningPathScope(ApiModel):
-    id: str
+    id: str | None
     display_name: str
 
 

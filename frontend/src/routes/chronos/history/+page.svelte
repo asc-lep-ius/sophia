@@ -3,6 +3,7 @@
   import BarFigure from "$lib/components/dashboard/BarFigure.svelte";
   import DueDate from "$lib/components/chronos/DueDate.svelte";
   import FilterDrawer from "$lib/components/content/FilterDrawer.svelte";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
   import { DEADLINE_OUTCOMES } from "$lib/chronos/deadlines";
@@ -49,7 +50,7 @@
 />
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else}
   <FilterDrawer action={historyPath} open={data.drawerOpen}>
     {#snippet fields()}

@@ -392,6 +392,20 @@ def test_quickstart_routes_reject_out_of_scope_learning_path_ids(
     assert calls == []
 
 
+def test_quickstart_refuses_a_session_with_no_learning_path_selected() -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=SessionTenant(org_id="tu-wien", learning_path_id=None),
+    )
+    login(harness)
+
+    overview_response = harness.client.get("/api/quickstart/overview")
+    count_response = harness.client.get("/api/quickstart/session-count")
+
+    assert overview_response.status_code == 403
+    assert count_response.status_code == 403
+
+
 def test_quickstart_openapi_contract_is_visible() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
     openapi = harness.app.openapi()

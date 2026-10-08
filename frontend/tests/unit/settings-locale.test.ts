@@ -49,7 +49,6 @@ describe("settings language control", () => {
           locale: "de",
           settings: {
             locale: "en",
-            selected_learning_path_id: "12",
             theme: "light",
           },
         }),
@@ -65,9 +64,7 @@ describe("settings language control", () => {
 
     render(SettingsPage, { props: { data: pageData({ locale: "de" }) } });
 
-    expect(
-      screen.getByRole("button", { name: "Einstellungen speichern" }),
-    ).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Sprache" })).toBeTruthy();
     expect(radio("Deutsch").checked).toBe(true);
     expect(screen.queryByRole("radio", { name: "German" })).toBeNull();
   });
@@ -76,9 +73,9 @@ describe("settings language control", () => {
 describe("settings language save", () => {
   it("pins the Paraglide cookie and reloads when the language changes", async () => {
     const { cookieSet, event } = actionEvent({
-      form: { locale: "de", selected_learning_path_id: "12", theme: "light" },
+      form: { locale: "de", theme: "light" },
       locale: "en",
-      saved: { locale: "de", selected_learning_path_id: "12", theme: "light" },
+      saved: { locale: "de", theme: "light" },
     });
 
     await expect(save(event)).rejects.toMatchObject({
@@ -98,11 +95,10 @@ describe("settings language save", () => {
   it("pins the cookie without reloading when the language is unchanged", async () => {
     const saved = {
       locale: "en",
-      selected_learning_path_id: "12",
       theme: "dark",
     };
     const { cookieSet, event } = actionEvent({
-      form: { locale: "en", selected_learning_path_id: "12", theme: "dark" },
+      form: { locale: "en", theme: "dark" },
       locale: "en",
       saved,
     });
@@ -118,7 +114,7 @@ describe("settings language save", () => {
 
   it("leaves the cookie alone when the API refuses the save", async () => {
     const { cookieSet, event } = actionEvent({
-      form: { locale: "de", selected_learning_path_id: "12", theme: "light" },
+      form: { locale: "de", theme: "light" },
       locale: "en",
       saved: { detail: "nope" },
       status: 422,
@@ -245,7 +241,6 @@ function pageData({
   locale: "de" | "en";
   settings?: {
     locale: string;
-    selected_learning_path_id?: string | null;
     theme: string;
   };
 }) {
@@ -253,7 +248,6 @@ function pageData({
     locale,
     settings: settings ?? {
       locale,
-      selected_learning_path_id: "12",
       theme: "light",
     },
     theme: "light" as const,
@@ -300,7 +294,6 @@ function actionEvent({
         role: "student",
         sessionSettings: {
           locale,
-          selected_learning_path_id: "12",
           theme: "light",
         },
         tenant: { learning_path_id: "12", org_id: "tu-wien", role: "student" },

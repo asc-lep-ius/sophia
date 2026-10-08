@@ -2,7 +2,7 @@ import { fail, redirect, type Actions, type RequestEvent } from "@sveltejs/kit";
 
 import type { components } from "$lib/api/schema";
 import { normalizeLocale, persistLocaleCookie } from "$lib/i18n/locale";
-import { normalizeTheme } from "$lib/theme";
+import { normalizeTheme, persistThemeCookie } from "$lib/theme";
 import { apiFetch } from "../../hooks.server";
 import type { PageServerLoad } from "./$types";
 
@@ -40,23 +40,32 @@ export const actions: Actions = {
     requireAuthenticated(event);
 
     const settings = await settingsFromForm(event);
-    const response = await apiFetch(event, "/api/settings", {
-      body: JSON.stringify(settings),
-      headers: { "content-type": "application/json" },
-      method: "PATCH",
-    });
+    let response: Response;
+    try {
+      response = await apiFetch(event, "/api/settings", {
+        body: JSON.stringify(settings),
+        headers: { "content-type": "application/json" },
+        method: "PATCH",
+      });
+    } catch {
+      // An unreachable API is a failed save like any other, answered on the
+      // page rather than by the error boundary.
+      return fail(502, { error: "save_failed" satisfies SettingsFormError });
+    }
 
     if (response.status === 401) {
       redirect(303, "/app/login");
     }
+    // No `settings` on a refusal: the page shows what the session still holds,
+    // not the values that were just turned down.
     if (!response.ok) {
       return fail(safeFailureStatus(response.status), {
         error: "save_failed" satisfies SettingsFormError,
-        settings,
       });
     }
 
     const saved = normalizeSettingsResponse(await response.json(), event);
+    persistThemeCookie(event.cookies, normalizeTheme(saved.theme), event.url);
 
     // The cookie is the authority for the rendered language and the session
     // record is storage, per docs/frontend-paraglide-decision.md. Pinning it on
@@ -86,15 +95,10 @@ async function settingsFromForm(
   event: RequestEvent,
 ): Promise<SettingsResponse> {
   const formData = await event.request.formData();
-  const selectedLearningPathId = readOptionalFormString(
-    formData,
-    "selected_learning_path_id",
-  );
   return {
     locale:
       normalizeLocale(readFormString(formData, "locale")) ??
       event.locals.locale,
-    selected_learning_path_id: selectedLearningPathId,
     theme: normalizeTheme(readFormString(formData, "theme")),
   };
 }
@@ -112,9 +116,6 @@ function normalizeSettingsResponse(
 function fallbackSettings(event: RequestEvent): SettingsResponse {
   return {
     locale: event.locals.sessionSettings?.locale ?? event.locals.locale,
-    selected_learning_path_id:
-      event.locals.sessionSettings?.selected_learning_path_id ??
-      event.locals.learning_path_id,
     theme: event.locals.sessionSettings?.theme ?? "light",
   };
 }
@@ -122,14 +123,6 @@ function fallbackSettings(event: RequestEvent): SettingsResponse {
 function readFormString(formData: FormData, name: string): string {
   const value = formData.get(name);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function readOptionalFormString(
-  formData: FormData,
-  name: string,
-): string | null {
-  const value = readFormString(formData, name);
-  return value ? value : null;
 }
 
 function safeFailureStatus(status: number): 400 | 401 | 403 | 422 | 502 {
@@ -147,12 +140,6 @@ function isSettingsResponse(value: unknown): value is SettingsResponse {
     value !== null &&
     typeof value === "object" &&
     typeof (value as { theme?: unknown }).theme === "string" &&
-    typeof (value as { locale?: unknown }).locale === "string" &&
-    ((value as { selected_learning_path_id?: unknown })
-      .selected_learning_path_id === null ||
-      (value as { selected_learning_path_id?: unknown })
-        .selected_learning_path_id === undefined ||
-      typeof (value as { selected_learning_path_id?: unknown })
-        .selected_learning_path_id === "string")
+    typeof (value as { locale?: unknown }).locale === "string"
   );
 }

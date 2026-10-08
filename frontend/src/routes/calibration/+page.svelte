@@ -1,6 +1,7 @@
 <script lang="ts">
   import { resolve } from "$app/paths";
   import CalibrationFigure from "$lib/components/dashboard/CalibrationFigure.svelte";
+  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
   import { calibrationView } from "$lib/calibration/insights";
@@ -35,7 +36,7 @@
 />
 
 {#if data.learningPathId === null}
-  <p class="notice">{m.dashboard_no_learning_path()}</p>
+  <NoLearningPathNotice />
 {:else}
   <PanelSection
     id="calibration-measured"

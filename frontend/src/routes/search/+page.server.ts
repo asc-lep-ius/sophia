@@ -1,5 +1,6 @@
 import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   unavailablePanel,
@@ -25,9 +26,7 @@ export const load: PageServerLoad = async (event) => {
     redirect(303, "/app/login");
   }
 
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
   const sources = await loadSources(event);
   const selectedSource = selectSource(sources.data, event.url);
   const sourceFilter = readSourceFilter(
@@ -138,9 +137,4 @@ function readSourceList(body: unknown): ContentSource[] | null {
   )
     ? (sources as ContentSource[])
     : null;
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }

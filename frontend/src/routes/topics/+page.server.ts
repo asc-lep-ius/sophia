@@ -1,5 +1,6 @@
 import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   unavailablePanel,
@@ -33,9 +34,7 @@ export const load: PageServerLoad = async (event) => {
   const override = readLanguageOverride(event.url);
   // Straight from the session tenant, never from the query string: a filter
   // that could name a learning path would be a way to read another one.
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
 
   const scoped =
     learningPathId === null
@@ -184,9 +183,4 @@ function isRating(value: unknown): boolean {
     typeof (value as TopicConfidence).topic === "string" &&
     typeof (value as TopicConfidence).predicted === "number"
   );
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }

@@ -1,5 +1,6 @@
 import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../../hooks.server";
+import { selectedLearningPathId } from "$lib/learningPath";
 import {
   panelFromResponse,
   unavailablePanel,
@@ -34,9 +35,7 @@ export const load: PageServerLoad = async (event) => {
 
   const outcome = readOutcomeFilter(event.url);
   const now = new Date();
-  const learningPathId = numericLearningPathId(
-    event.locals.tenant.learning_path_id,
-  );
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
 
   if (learningPathId === null) {
     return {
@@ -156,9 +155,4 @@ async function loadCalibration(
   } catch {
     return unavailablePanel([]);
   }
-}
-
-function numericLearningPathId(value: string): number | null {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
