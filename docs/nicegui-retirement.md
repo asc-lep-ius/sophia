@@ -81,7 +81,7 @@ runtime. There is nothing for them to assert once it is gone.
 | `test_accessibility.py` | Keyboard-shortcut and chart-table helpers for NiceGUI. The a11y gate is `frontend/tests/e2e/a11y.spec.ts` against axe, which is stricter |
 | `test_storage_map.py`, `test_session_store.py`, `test_course_state.py` | `app.storage` key bookkeeping. Study-session state is server-side, at `/api/study/sessions` |
 | `test_job_registry.py` | Per-user job bookkeeping in browser storage, for background work only the GUI started |
-| `test_session_health.py` | The keepalive monitor the NiceGUI process ran. Nothing else polled it, and the setting is gone |
+| `test_session_health.py` | The keepalive monitor the NiceGUI process ran. Nothing else polled it until #124 moved the job into the API's lifespan (`sophia/services/session_keepalive.py`, `SOPHIA_SESSION_KEEPALIVE_INTERVAL`) |
 | `test_error_service.py` | `classify_error` mapped exceptions to a toast category. The API answers with the error envelope in `sophia/api/errors.py` |
 | `test_math_input.py` | LaTeX input with a KaTeX preview, and the HTML sanitisation `ui.html()` required. Svelte escapes by default; see "capabilities dropped" below |
 | `test_surface_routes.py` | Asserted that nothing in the legacy app linked to its own pages and that the pages stayed served. Both halves are moot |

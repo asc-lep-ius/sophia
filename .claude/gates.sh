@@ -86,10 +86,11 @@ MUTATION_PATHS=""
 # them to start the product and walk a flow on it.
 #
 # The whole contract is box-local, because Sophia cannot start until somebody has
-# logged in on the machine once: `create_app` (src/sophia/infra/di.py:64) loads a
-# stored TUWEL session and raises AuthError before it builds anything. After that
-# first login, `ensure_valid_session` re-authenticates from the keyring with no
-# MFA code, so every run after it is unattended. docs/run-contract-setup.md is
+# logged in on the machine once: `create_app` (src/sophia/infra/di.py) refuses to
+# start with no stored session and nothing stored to log in with. After a first
+# login that stored the TOTP secret, `ensure_valid_session` logs in again with a
+# generated code, so every run after it is unattended (#124). Without the secret
+# a session that idles out (8 h) needs a person. docs/run-contract-setup.md is
 # the per-box checklist; the deployed container's version of the gap is #111.
 #
 # Ports and the Redis URL are exported rather than hardcoded twice: SESSION_CMD
@@ -124,7 +125,7 @@ READY_URL="http://127.0.0.1:5173/api/ready"
 # A project mint script — the third path project-setup names, alongside a test
 # authenticator override and a seeded row. It calls sophia's own
 # `ensure_valid_session` (src/sophia/services/job_runner.py), so an expired
-# session is refreshed from the keyring without MFA, then writes a real session
+# session is renewed with a code from the stored TOTP secret, then writes a real session
 # record and prints its cookie. It carries the operator's real TUWEL and TISS
 # session on purpose: a faked identity lands in an empty workspace, because
 # course_materials, lecture_modules and topic_mappings stay empty until a TUWEL
