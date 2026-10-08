@@ -3,123 +3,77 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
+
+from sophia.adapters.auth import KeyringUnavailableError, SessionCredentials
+from sophia.domain.errors import MfaRejectedError
+from sophia.services.job_runner import ensure_valid_session
+from sophia.services.upstream_session import ReauthUnavailableError
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from sophia.domain.errors import AuthError
-from sophia.services.job_runner import ensure_valid_session
-
 TUWEL_HOST = "https://tuwel.tuwien.ac.at"
 TISS_HOST = "https://tiss.tuwien.ac.at"
 
-
-def _make_session_creds() -> MagicMock:
-    creds = MagicMock()
-    creds.cookie_name = "MoodleSession"
-    creds.moodle_session = "test-cookie"
-    creds.sesskey = "test-sesskey"
-    return creds
+STORED = SessionCredentials(
+    moodle_session="stored-cookie",
+    sesskey="key",
+    host=TUWEL_HOST,
+    created_at="2026-10-08T00:00:00+00:00",
+)
 
 
 class TestEnsureValidSession:
-    async def test_returns_true_when_session_valid(self, tmp_path: Path) -> None:
-        """Existing session passes check_session — no keyring needed."""
-        mock_creds = _make_session_creds()
-
-        mock_http = AsyncMock()
-        mock_http.cookies = MagicMock()
-
-        mock_adapter = AsyncMock()
-        mock_adapter.check_session = AsyncMock()
-
+    async def test_live_session_needs_no_login(self, tmp_path: Path) -> None:
+        reauth = AsyncMock()
         with (
-            patch("sophia.services.job_runner.load_session", return_value=mock_creds),
-            patch("sophia.services.job_runner.http_session") as mock_http_ctx,
-            patch("sophia.services.job_runner.MoodleAdapter", return_value=mock_adapter),
+            patch("sophia.services.job_runner.load_session", return_value=STORED),
+            patch("sophia.services.job_runner.tuwel_session_alive", AsyncMock(return_value=True)),
+            patch("sophia.services.job_runner.reauthenticate", reauth),
         ):
-            mock_http_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_http_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            assert await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST) is True
+        reauth.assert_not_awaited()
 
-            result = await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST)
+    async def test_dead_session_is_renewed_and_named_as_the_stale_one(self, tmp_path: Path) -> None:
+        reauth = AsyncMock(return_value=STORED)
+        with (
+            patch("sophia.services.job_runner.load_session", return_value=STORED),
+            patch("sophia.services.job_runner.tuwel_session_alive", AsyncMock(return_value=False)),
+            patch("sophia.services.job_runner.reauthenticate", reauth),
+        ):
+            assert await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST) is True
+        reauth.assert_awaited_once_with(tmp_path, TUWEL_HOST, TISS_HOST, stale=STORED)
 
-        assert result is True
-        mock_adapter.check_session.assert_awaited_once()
-
-    async def test_returns_false_when_no_session_and_no_keyring(self, tmp_path: Path) -> None:
-        """No session file and no keyring creds → False."""
+    async def test_missing_session_file_is_renewed_too(self, tmp_path: Path) -> None:
+        reauth = AsyncMock(return_value=STORED)
         with (
             patch("sophia.services.job_runner.load_session", return_value=None),
-            patch(
-                "sophia.services.job_runner.load_credentials_from_keyring",
-                return_value=None,
-            ),
+            patch("sophia.services.job_runner.reauthenticate", reauth),
         ):
-            result = await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST)
+            assert await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST) is True
+        reauth.assert_awaited_once_with(tmp_path, TUWEL_HOST, TISS_HOST, stale=None)
 
-        assert result is False
-
-    async def test_re_authenticates_from_keyring_on_expired_session(self, tmp_path: Path) -> None:
-        """Session expired but keyring has creds — re-auth succeeds."""
-        mock_creds = _make_session_creds()
-        new_tuwel = MagicMock()
-        new_tiss = MagicMock()
-
-        mock_http = AsyncMock()
-        mock_http.cookies = MagicMock()
-
-        mock_adapter = AsyncMock()
-        mock_adapter.check_session = AsyncMock(side_effect=AuthError("expired"))
-
-        with (
-            patch("sophia.services.job_runner.load_session", return_value=mock_creds),
-            patch("sophia.services.job_runner.http_session") as mock_http_ctx,
-            patch("sophia.services.job_runner.MoodleAdapter", return_value=mock_adapter),
-            patch(
-                "sophia.services.job_runner.load_credentials_from_keyring",
-                return_value=("user", "pass"),
-            ),
-            patch(
-                "sophia.services.job_runner.login_both",
-                new_callable=AsyncMock,
-                return_value=(new_tuwel, new_tiss),
-            ) as mock_login,
-            patch("sophia.services.job_runner.save_session") as mock_save,
-            patch("sophia.services.job_runner.save_tiss_session") as mock_save_tiss,
-            patch(
-                "sophia.services.job_runner.session_path",
-                return_value=tmp_path / "tuwel.json",
-            ),
-            patch(
-                "sophia.services.job_runner.tiss_session_path",
-                return_value=tmp_path / "tiss.json",
-            ),
-        ):
-            mock_http_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_http)
-            mock_http_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
-
-            result = await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST)
-
-        assert result is True
-        mock_login.assert_awaited_once_with(TUWEL_HOST, TISS_HOST, "user", "pass")
-        mock_save.assert_called_once_with(new_tuwel, tmp_path / "tuwel.json")
-        mock_save_tiss.assert_called_once_with(new_tiss, tmp_path / "tiss.json")
-
-    async def test_returns_false_when_re_auth_fails(self, tmp_path: Path) -> None:
-        """Session expired and keyring re-auth also fails → False."""
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            ReauthUnavailableError("No TOTP secret stored"),
+            MfaRejectedError("refused the MFA code"),
+            KeyringUnavailableError("master password does not unlock the store"),
+            httpx.ConnectError("idp unreachable"),
+        ],
+    )
+    async def test_a_session_that_cannot_be_renewed_is_false_with_its_reason_logged(
+        self, tmp_path: Path, failure: Exception
+    ) -> None:
         with (
             patch("sophia.services.job_runner.load_session", return_value=None),
-            patch(
-                "sophia.services.job_runner.load_credentials_from_keyring",
-                return_value=("user", "pass"),
-            ),
-            patch(
-                "sophia.services.job_runner.login_both",
-                new_callable=AsyncMock,
-                side_effect=AuthError("bad creds"),
-            ),
+            patch("sophia.services.job_runner.reauthenticate", AsyncMock(side_effect=failure)),
+            patch("sophia.services.job_runner.log") as log,
         ):
-            result = await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST)
-
-        assert result is False
+            assert await ensure_valid_session(tmp_path, TUWEL_HOST, TISS_HOST) is False
+        log.error.assert_called_once()
+        assert log.error.call_args.kwargs["reason"] == str(failure)
