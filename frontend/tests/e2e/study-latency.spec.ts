@@ -78,7 +78,9 @@ test("the whole session is reachable without a pointer", async ({ page }) => {
   await page.getByLabel("Your answer").fill("An answer for this card.");
   await page.keyboard.press("Tab");
   await page.keyboard.press(" ");
-  await expect(page.getByText("What you wrote")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "What this question was generated from" }),
+  ).toBeVisible();
 
   await page.keyboard.press("3");
   await expect(page.getByText(/Card 2 of \d+/)).toBeVisible();

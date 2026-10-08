@@ -1,6 +1,7 @@
 <script lang="ts">
   import AnswerField from "./card/AnswerField.svelte";
   import CardPrompt from "./card/CardPrompt.svelte";
+  import RevealedSources from "./card/RevealedSources.svelte";
   import GradeBar from "./GradeBar.svelte";
   import KeyboardHelp from "./KeyboardHelp.svelte";
   import { m } from "$lib/paraglide/messages.js";
@@ -162,10 +163,7 @@
         {canReveal ? m.study_reveal_available() : ""}
       </p>
     {:else}
-      <div class="revealed">
-        <h3>{m.study_your_answer()}</h3>
-        <p class="own-answer">{current.answer}</p>
-      </div>
+      <RevealedSources spans={current.question.provenance.source_spans} />
       <GradeBar
         disabled={store.paused}
         onGrade={(grade) => store.grade(grade)}
@@ -275,26 +273,10 @@
 
   .queue span,
   .paused,
-  .dwell,
-  .own-answer,
-  h3 {
+  .dwell {
     overflow-wrap: anywhere;
   }
 
-  h3 {
-    margin: 0;
-    font-size: 0.9rem;
-    color: var(--muted);
-  }
-
-  .revealed {
-    display: grid;
-    gap: 0.3rem;
-    border-left: 3px solid var(--accent-strong);
-    padding-left: 0.75rem;
-  }
-
-  .own-answer,
   .paused,
   .dwell {
     margin: 0;
