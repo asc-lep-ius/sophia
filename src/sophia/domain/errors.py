@@ -11,6 +11,10 @@ class AuthError(SophiaError):
     """Authentication failed — token expired or invalid."""
 
 
+class MfaRejectedError(AuthError):
+    """The IdP refused the MFA code: missing, wrong, or already used."""
+
+
 class MoodleError(SophiaError):
     """Moodle API returned an error response."""
 

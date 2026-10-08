@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, MfaRejectedError
 
 log = structlog.get_logger()
 
@@ -323,12 +323,32 @@ async def _submit_credentials(
     resp = await client.post(action_url, data=payload)
     resp.raise_for_status()
 
-    # Check if IdP returned the login form again (bad credentials)
+    # The IdP answers a refused login with its form again.
     resp_soup = BeautifulSoup(resp.text, "lxml")
     if resp_soup.find("input", {"name": "username"}):
-        raise AuthError("Login failed — invalid username or password")
+        _raise_refused_login(resp_soup)
 
     return resp
+
+
+# Since MFA became mandatory, a missing or wrong code returns the same form as a
+# wrong password. The form always carries an "MFA Code" label, so only the
+# refusal wording counts: "Ungültiger MFA Code — Der MFA Code fehlt oder ist
+# ungültig", or its English rendering.
+_MFA_REFUSAL_RE = re.compile(
+    r"ungültige[rn]?\s+MFA|MFA[- ]?Code\s+fehlt"
+    r"|invalid\s+MFA|MFA\s+code\s+(?:is\s+)?(?:missing|invalid)",
+    re.IGNORECASE,
+)
+
+
+def _raise_refused_login(soup: BeautifulSoup) -> None:
+    text = " ".join(soup.get_text(" ").split())
+    if _MFA_REFUSAL_RE.search(text):
+        raise MfaRejectedError(
+            "Login failed — the IdP refused the MFA code (missing, wrong, or already used)"
+        )
+    raise AuthError("Login failed — invalid username or password")
 
 
 @_sso_retry

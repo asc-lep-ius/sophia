@@ -29,7 +29,7 @@ from sophia.adapters.auth import (
     save_session,
     session_path,
 )
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, MfaRejectedError
 
 HOST = "https://tuwel.tuwien.ac.at"
 IDP_URL = "https://idp.zid.tuwien.ac.at/simplesaml/module.php/core/loginuserpass.php"
@@ -275,6 +275,40 @@ class TestLoginWithCredentials:
 
         with pytest.raises(AuthError, match="MoodleSession cookie not found"):
             await login_with_credentials(HOST, "testuser", "testpass")
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            "Ungültiger MFA Code — Der MFA Code fehlt oder ist ungültig",
+            "Invalid MFA code — the MFA code is missing or invalid",
+        ],
+    )
+    @respx.mock
+    async def test_refused_mfa_code_is_reported_as_mfa_failure(self, refusal: str):
+        """Since MFA became mandatory, a refused code must not read as a wrong password."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        refused = IDP_LOGIN_FORM_HTML.replace("<form", f'<div class="alert">{refusal}</div><form')
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=refused))
+
+        with pytest.raises(MfaRejectedError, match="refused the MFA code"):
+            await login_with_credentials(HOST, "testuser", "testpass", "000000")
+
+    @respx.mock
+    async def test_mfa_field_label_alone_is_not_an_mfa_refusal(self):
+        """The form always labels its MFA field; only the refusal wording counts."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        labelled = IDP_LOGIN_FORM_HTML.replace(
+            '<input type="number"', '<label>MFA Code</label><input type="number"'
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=labelled))
+
+        with pytest.raises(AuthError, match="invalid username or password") as caught:
+            await login_with_credentials(HOST, "baduser", "badpass", "123456")
+        assert not isinstance(caught.value, MfaRejectedError)
 
     @respx.mock
     async def test_missing_sesskey_raises_auth_error(self):
