@@ -8,7 +8,8 @@ import {
 const routes = [
   "/app/study",
   "/app/study/1/predict",
-  "/app/study/1/act",
+  // Not session 1: that one is audited before its pre-test, on predict.
+  "/app/study/2/act",
   "/app/study/1/reflect",
   "/app/dashboard",
   "/app/review",
@@ -91,7 +92,9 @@ test("a revealed German study card fits the 320px viewport", async ({
   await page.goto("/app/study/402/act");
   await page.getByLabel("Deine Antwort").fill("Eine Antwort zum Aufdecken.");
   await page.getByRole("button", { name: "Aufdecken" }).click();
-  await expect(page.getByText("Was du geschrieben hast")).toBeVisible();
+  await expect(
+    page.getByRole("region", { name: "Woraus diese Frage erzeugt wurde" }),
+  ).toBeVisible();
 
   await expectNoHorizontalOverflow(page);
 });

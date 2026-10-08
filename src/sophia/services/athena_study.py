@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -432,6 +433,54 @@ async def save_manual_topic(
 _FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
 
 
+@dataclass(frozen=True, slots=True)
+class GroundedQuestion:
+    """A practice question and the lecture chunks it was generated from.
+
+    ``sources`` is empty for the template fallback: nothing grounds it, so there
+    is nothing to show the learner beside it.
+    """
+
+    prompt: str
+    sources: tuple[KnowledgeChunk, ...] = ()
+
+
+async def _embed_topic(app: AppContainer, topic: str) -> tuple[ChromaKnowledgeStore, list[float]]:
+    """The knowledge store and the topic's query embedding, ready for a scoped search."""
+    config = load_hermes_config(app.settings.config_dir)
+    if config is None:
+        from sophia.domain.models import HermesConfig
+
+        config = HermesConfig()
+    embedder = _get_or_create_embedder(config)
+    store = _get_or_create_store(app.settings)
+    query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
+    return store, query_embedding
+
+
+async def retrieve_lecture_chunks(
+    app: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+    topic: str,
+    *,
+    n_results: int = 5,
+) -> list[KnowledgeChunk]:
+    """The module's lecture transcript chunks most relevant to a topic, best first.
+
+    Empty when the module has no lecture data.
+    """
+    episode_ids = await _get_episode_ids(session, module_id)
+    if not episode_ids:
+        return []
+
+    store, query_embedding = await _embed_topic(app, topic)
+    results: list[tuple[KnowledgeChunk, float]] = await asyncio.to_thread(
+        store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
+    )
+    return [chunk for chunk, _score in results]
+
+
 async def get_lecture_context(
     app: AppContainer,
     session: AsyncSession,
@@ -458,14 +507,7 @@ async def get_lecture_context(
     if not episode_ids:
         return ""
 
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        from sophia.domain.models import HermesConfig
-
-        config = HermesConfig()
-    embedder = _get_or_create_embedder(config)
-    store = _get_or_create_store(app.settings)
-    query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
+    store, query_embedding = await _embed_topic(app, topic)
     search_results: list[tuple[KnowledgeChunk, float]] = await asyncio.to_thread(
         store.search, query_embedding, n_results=n_results, episode_ids=episode_ids
     )
@@ -515,6 +557,43 @@ async def get_lecture_context(
     return "\n\n".join(parts)
 
 
+async def generate_grounded_questions(
+    app: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+    topic: str,
+    count: int = 3,
+    difficulty: str = "explain",
+) -> list[GroundedQuestion]:
+    """Generate practice questions for a topic, each with the chunks behind it.
+
+    Uses RAG: embed topic → search lecture chunks → feed to LLM as context.
+    Falls back to generic questions if no lecture data or no LLM. The chunks are
+    returned rather than dropped because they are what the study surface shows
+    at reveal: without them the learner self-grades against nothing.
+    """
+    chunks = tuple(await retrieve_lecture_chunks(app, session, module_id, topic))
+    fallback = GroundedQuestion(prompt=_FALLBACK_QUESTION.format(topic=topic))
+
+    if not chunks:
+        return [fallback] * count
+
+    lecture_context = "\n\n".join(chunk.text for chunk in chunks)
+    extractor = _create_topic_extractor(app)
+    prompts: list[str] = []
+    for _ in range(count):
+        try:
+            q = await extractor.generate_question(topic, lecture_context, difficulty=difficulty)
+            if q and q not in prompts:
+                prompts.append(q)
+        except TopicExtractionError:
+            log.warning("question_generation_failed", topic=topic)
+            break
+
+    questions = [GroundedQuestion(prompt=prompt, sources=chunks) for prompt in prompts]
+    return questions + [fallback] * (count - len(questions))
+
+
 async def generate_study_questions(
     app: AppContainer,
     session: AsyncSession,
@@ -523,31 +602,11 @@ async def generate_study_questions(
     count: int = 3,
     difficulty: str = "explain",
 ) -> list[str]:
-    """Generate practice questions for a topic, grounded in lecture content.
-
-    Uses RAG: embed topic → search lecture chunks → feed to LLM as context.
-    Falls back to generic questions if no lecture data or no LLM.
-    """
-    lecture_context = await get_lecture_context(app, session, module_id, topic)
-
-    if not lecture_context:
-        return [_FALLBACK_QUESTION.format(topic=topic)] * count
-
-    extractor = _create_topic_extractor(app)
-    questions: list[str] = []
-    for _ in range(count):
-        try:
-            q = await extractor.generate_question(topic, lecture_context, difficulty=difficulty)
-            if q and q not in questions:
-                questions.append(q)
-        except TopicExtractionError:
-            log.warning("question_generation_failed", topic=topic)
-            break
-
-    while len(questions) < count:
-        questions.append(_FALLBACK_QUESTION.format(topic=topic))
-
-    return questions
+    """Generate practice question prompts for a topic, grounded in lecture content."""
+    questions = await generate_grounded_questions(
+        app, session, module_id, topic, count=count, difficulty=difficulty
+    )
+    return [question.prompt for question in questions]
 
 
 def _row_to_flashcard(row: Row[tuple[object, ...]]) -> StudentFlashcard:

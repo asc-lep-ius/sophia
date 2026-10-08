@@ -28,6 +28,20 @@ export function anchorCard(
   return questions.at(0);
 }
 
+/**
+ * Whether the session's pre-test is behind the learner.
+ *
+ * The predict route and the act route's guard must read this the same way,
+ * or a session one calls done and the other does not bounces between them.
+ */
+export function preTestAnswered(
+  questions: StudyQuestion[],
+  attemptedIds: string[],
+): boolean {
+  const anchor = anchorCard(questions);
+  return anchor !== undefined && attemptedIds.includes(anchor.id);
+}
+
 /** The practice deck: everything but the anchor, minus what is already answered. */
 export function practiceCards(
   questions: StudyQuestion[],

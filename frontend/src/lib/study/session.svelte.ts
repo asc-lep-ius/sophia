@@ -3,6 +3,7 @@ import type {
   StudyPacing,
   StudyQuestion,
 } from "$lib/api/study";
+import type { DraftStore } from "$lib/study/drafts";
 import type { LearningEventBatcher } from "$lib/study/learningEvents";
 import {
   SubmissionOutbox,
@@ -43,6 +44,8 @@ export type StudySessionStoreOptions = {
   phase?: StudyAttemptPhase;
   submit: (submission: GradeSubmission, requestId: string) => Promise<void>;
   learningEvents?: Pick<LearningEventBatcher, "record">;
+  /** Answers in progress, keyed by question id, kept beyond this store. */
+  drafts?: DraftStore;
   /** Retry tuning for the grade outbox; the defaults are the shipping ones. */
   retry?: Pick<
     OutboxOptions<GradeSubmission>,
@@ -87,7 +90,7 @@ export class StudySessionStore {
     this.#newId = options.newId ?? (() => crypto.randomUUID());
     this.#cards = options.questions.map((question) => ({
       question,
-      answer: "",
+      answer: options.drafts?.read(question.id) ?? "",
       revealed: false,
       againLater: false,
     }));
@@ -96,7 +99,12 @@ export class StudySessionStore {
     this.#clockMs = this.#promptShownAt;
     this.#outbox = new SubmissionOutbox<GradeSubmission>({
       ...options.retry,
-      submit: (payload, requestId) => this.#options.submit(payload, requestId),
+      submit: async (payload, requestId) => {
+        await this.#options.submit(payload, requestId);
+        // Only once the server has it: a grade that is refused or never
+        // lands leaves the card to be answered again, text and all.
+        this.#options.drafts?.clear(payload.questionId);
+      },
       rollback: (entry) => this.#rollback(entry),
     });
   }
@@ -248,6 +256,7 @@ export class StudySessionStore {
       return;
     }
     card.answer = value;
+    this.#options.drafts?.write(card.question.id, value);
     this.#options.learningEvents?.record({
       eventType: "elaboration_written",
       questionId: card.question.id,
@@ -265,6 +274,15 @@ export class StudySessionStore {
     }
     card.revealed = true;
     this.#state = "revealed";
+    // canReveal already required dwellMs to clear the policy's floor, so this
+    // is where the server's engagement check gets a prompt_shown worth
+    // trusting: the mount-time one from recordPromptShown carries a near-zero
+    // dwell, and the server takes the max it has seen for the question.
+    this.#options.learningEvents?.record({
+      eventType: "prompt_shown",
+      questionId: card.question.id,
+      payload: { dwell_ms: this.dwellMs },
+    });
     this.#options.learningEvents?.record({
       eventType: "answer_revealed",
       questionId: card.question.id,
@@ -383,7 +401,23 @@ export class StudySessionStore {
     this.#error = null;
   }
 
-  /** Report how long the prompt has been on screen, for the server's policy. */
+  /**
+   * Mark that the prompt is on screen, for the server's required-events check.
+   *
+   * Reads `#now()` and `#promptShownAt` directly rather than `dwellMs`: that
+   * getter goes through `#observedNow()`, which reads the reactive `#clockMs`
+   * tick so `canReveal` stays live. A caller inside an `$effect` that read
+   * `dwellMs` here would re-run on every 250ms tick, tearing down and
+   * rebuilding the batcher along with it.
+   *
+   * The page's effect still re-runs this whenever the card on screen changes
+   * — at mount, after each grade advances the queue, and on `resume()` — and
+   * each later card's `prompt_shown` depends on that. Its dwell is therefore
+   * always near zero: it is `reveal()`'s own `prompt_shown` record that
+   * carries a dwell able to clear the pacing floor, since the server takes the
+   * highest one it has seen for the question. Keep that record — without it
+   * the server never sees a dwell above zero.
+   */
   recordPromptShown(): void {
     const card = this.current;
     if (!card) {
@@ -392,7 +426,7 @@ export class StudySessionStore {
     this.#options.learningEvents?.record({
       eventType: "prompt_shown",
       questionId: card.question.id,
-      payload: { dwell_ms: this.dwellMs },
+      payload: { dwell_ms: Math.max(this.#now() - this.#promptShownAt, 0) },
     });
   }
 

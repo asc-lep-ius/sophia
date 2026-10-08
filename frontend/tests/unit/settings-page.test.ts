@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import type { RequestEvent } from "@sveltejs/kit";
 import { describe, expect, it, vi } from "vitest";
@@ -81,7 +84,77 @@ describe("settings route", () => {
     expect(headers.get("x-csrf-token")).toBe("csrf-from-session");
   });
 
-  it("renders server-backed settings and applies theme feedback before submit", async () => {
+  it("pins the theme cookie once the session has taken the theme", async () => {
+    const settingsAction = requireDefaultAction();
+    const cookieSet = vi.fn();
+    const event = createEvent({
+      cookieSet,
+      fetch: vi.fn().mockResolvedValue(
+        jsonResponse({
+          locale: "en",
+          theme: "oled",
+        }),
+      ),
+      form: { locale: "en", theme: "oled" },
+    });
+
+    await expect(settingsAction(event)).resolves.toEqual({
+      settings: { locale: "en", theme: "oled" },
+    });
+
+    expect(cookieSet).toHaveBeenCalledWith(
+      THEME_COOKIE,
+      "oled",
+      expect.objectContaining({ httpOnly: false, path: "/app" }),
+    );
+  });
+
+  it("reports a refused save without claiming the refused values", async () => {
+    const settingsAction = requireDefaultAction();
+    const cookieSet = vi.fn();
+    const event = createEvent({
+      cookieSet,
+      fetch: vi.fn().mockResolvedValue(new Response(null, { status: 500 })),
+      form: { locale: "en", theme: "oled" },
+    });
+
+    const result = await settingsAction(event);
+
+    expect(result).toMatchObject({
+      data: { error: "save_failed" },
+      status: 502,
+    });
+    expect(result).not.toHaveProperty("data.settings");
+    expect(cookieSet).not.toHaveBeenCalled();
+  });
+
+  it("answers an unreachable API as a failed save, not a thrown error", async () => {
+    const settingsAction = requireDefaultAction();
+    const event = createEvent({
+      fetch: vi.fn().mockRejectedValue(new TypeError("fetch failed")),
+      form: { locale: "en", theme: "oled" },
+    });
+
+    await expect(settingsAction(event)).resolves.toMatchObject({
+      data: { error: "save_failed" },
+      status: 502,
+    });
+  });
+
+  it("keeps a submit button for browsers without JavaScript", () => {
+    // Svelte renders <noscript> empty on the client, so the rendered page
+    // cannot show it; the server-rendered markup is this source.
+    const source = readFileSync(
+      join(process.cwd(), "src/routes/settings/+page.svelte"),
+      "utf8",
+    );
+
+    expect(source).toMatch(
+      /<noscript>[\s\S]*<button type="submit">\{m\.settings_save\(\)\}<\/button>[\s\S]*<\/noscript>/,
+    );
+  });
+
+  it("renders server-backed settings and repaints on click, with no save button", async () => {
     let cookieValue = "";
     Object.defineProperty(document, "cookie", {
       configurable: true,
@@ -116,11 +189,9 @@ describe("settings route", () => {
 
     await fireEvent.click(screen.getByRole("radio", { name: "OLED" }));
 
-    expect(cookieValue).toContain(`${THEME_COOKIE}=oled`);
     expect(document.documentElement.dataset.theme).toBe("oled");
-    expect(
-      screen.getByRole("button", { name: "Save settings" }),
-    ).toHaveProperty("type", "submit");
+    expect(cookieValue).not.toContain(THEME_COOKIE);
+    expect(screen.queryByRole("button", { name: "Save settings" })).toBeNull();
   });
 });
 
@@ -133,9 +204,11 @@ function requireDefaultAction() {
 }
 
 function createEvent({
+  cookieSet = vi.fn(),
   fetch,
   form,
 }: {
+  cookieSet?: ReturnType<typeof vi.fn>;
   fetch: ReturnType<typeof vi.fn>;
   form?: Record<string, string>;
 }): RequestEvent {
@@ -145,7 +218,7 @@ function createEvent({
   }
 
   return {
-    cookies: { get: () => undefined, set: () => undefined },
+    cookies: { get: () => undefined, set: cookieSet },
     fetch,
     locals: {
       apiSetCookies: [],
