@@ -437,6 +437,8 @@
   "study_reveal": "Aufdecken",
   "study_reveal_available": "Du kannst jetzt aufdecken.",
   "study_reveal_blocked": "Noch {remaining} Zeichen eigener Antwort, dann kannst du aufdecken.",
+  "study_reveal_free_recall": "Freies Erinnern: Diese Frage wurde nicht aus Kursmaterial erzeugt, es gibt also nichts, womit du deine Antwort vergleichen kannst. Bewerte, wie gut du dich aus dem Gedächtnis erinnert hast.",
+  "study_reveal_sources": "Woraus diese Frage erzeugt wurde",
   "study_saving": "Antwort wird gespeichert…",
   "study_session_completed": "Abgeschlossen",
   "study_session_in_progress": "Laufend",
