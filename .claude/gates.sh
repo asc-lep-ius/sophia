@@ -12,10 +12,14 @@
 # its own tools fails every turn and reads as "your code is broken".
 export PATH="$HOME/.local/bin:$PATH"
 
-# Measured on hephaestus, 2026-09-25, warm caches:
-#   lint 8.0s · types 20.1s · tests 10.4s (365 tests) · total ~38s
-# It was ~34s on 2026-09-12; the unit suite is what grew.
-LINT_CMD="uv run ruff check . && uv run ruff format --check . && pnpm -C frontend run lint"
+# Measured on hephaestus, 2026-10-08, warm caches:
+#   lint 8.9s · types 20.0s · tests 11.4s (445 tests) · total ~40s
+# It was ~38s on 2026-09-25 and ~34s on 2026-09-12; the unit suite is what grew.
+#
+# secret_policy.py is the half of `make lint` that ruff is not. It was missing
+# here, so a hard-coded secret literal was caught only by CI's `secret-policy`
+# job. It is stdlib-only and offline, and costs 0.3s.
+LINT_CMD="uv run ruff check . && uv run ruff format --check . && uv run python scripts/secret_policy.py --check && pnpm -C frontend run lint"
 TYPE_CMD="uv run pyright && pnpm -C frontend run check"
 
 # Frontend tests only, and the total gate stays under ~35s. That ceiling is the
@@ -42,7 +46,7 @@ TEST_CMD="pnpm -C frontend run test:unit"
 
 # The budget one full gate run is expected to fit in, in seconds. project-foreman
 # prints `last · max · budget` from the past week's markers, advisory only. 60 is
-# gate-lib's default and sits clear of the ~38s measured above, so a row that
+# gate-lib's default and sits clear of the ~40s measured above, so a row that
 # turns yellow means the gates really got slower, not that the line was drawn
 # tight.
 GATE_BUDGET_S=60
@@ -102,6 +106,7 @@ export SOPHIA_REDIS_URL="redis://127.0.0.1:16379/0"
 # Postgres is assumed already up (`make db.up`) and is never started or stopped
 # by the harness for the same reason.
 # Measured 2026-09-18: RUN_CMD to READY_URL 2.5s, SESSION_CMD 1.4s, STOP_CMD 0.4s.
+# Re-measured 2026-10-08: RUN_CMD to READY_URL 9.9s, STOP_CMD 0.4s.
 # Allow ~25s on a cold database instead — alembic runs the migrations on boot.
 RUN_CMD="scripts/run_stack.sh"
 
@@ -204,7 +209,7 @@ CI_WAIT_TIMEOUT=""
 # reads it to decide anything; it is what a proposal to tier this project's CI
 # has to argue against.
 #   CI_MR_SECONDS="500  # median of the last 50 MR pipelines, 2026-09-18"
-CI_MR_SECONDS="459  # median of 30 successful MR pipelines, 2026-09-25; was 489 over 26 on 2026-09-18"
+CI_MR_SECONDS="404  # median of 41 successful MR pipelines, 2026-10-08; was 459 over 30 on 2026-09-25"
 
 # CI_IS_ONLY_GATE — yes | no. Is the pipeline the only thing checking this
 # project? **Empty is `yes`**, and it is the one key here that fails closed: a
