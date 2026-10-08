@@ -107,7 +107,9 @@ services:
   redis:
     image: redis:8.6.3-alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    # Persisted like production, so recreating the container does not sign
+    # everybody out (#124). The proof-walk Redis in run_stack.sh stays ephemeral.
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
     volumes:
       - redis-data:/data
     expose:

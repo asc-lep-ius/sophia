@@ -92,10 +92,17 @@ async def login(
 
 
 @router.get("/auth/session", response_model=AuthSessionResponse)
-async def read_session(request: Request) -> AuthSessionResponse:
+async def read_session(request: Request, response: Response) -> AuthSessionResponse:
     record = await optional_session_record(request)
     if record is None:
         return AuthSessionResponse(authenticated=False)
+    # Reading the record slid its TTL in Redis. The cookies slide with it, or
+    # the browser drops a session the server still holds. The frontend asks
+    # this on every page load and passes the Set-Cookie through.
+    settings = get_settings(request)
+    session_cookie = request.cookies.get(settings.session_cookie_name)
+    if session_cookie:
+        _set_auth_cookies(response, settings, session_cookie, record.csrf_token)
     return _authenticated_response(record)
 
 
@@ -174,9 +181,11 @@ def _set_auth_cookies(
     session_cookie: str,
     csrf_token: str,
 ) -> None:
+    # Max-Age, so closing the browser does not end a session the server keeps.
     response.set_cookie(
         settings.session_cookie_name,
         session_cookie,
+        max_age=settings.session_ttl_seconds,
         path="/",
         secure=settings.session_cookie_secure,
         httponly=True,
@@ -185,6 +194,7 @@ def _set_auth_cookies(
     response.set_cookie(
         settings.csrf_cookie_name,
         csrf_token,
+        max_age=settings.session_ttl_seconds,
         path="/",
         secure=settings.session_cookie_secure,
         httponly=False,
