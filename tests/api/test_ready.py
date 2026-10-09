@@ -168,6 +168,10 @@ def test_the_api_lifespan_runs_the_keepalive_and_stops_it_on_shutdown(
 
     started: list[float] = []
     cancelled = asyncio.Event()
+    # Read before the container is torn down: closing the TestClient's loop
+    # cancels any task still running, so the event alone cannot tell whether
+    # the lifespan stopped the keepalive itself.
+    stopped_before_teardown: list[bool] = []
 
     class RecordingKeepalive:
         def __init__(self, container: object) -> None:
@@ -188,6 +192,7 @@ def test_the_api_lifespan_runs_the_keepalive_and_stops_it_on_shutdown(
         _settings: Settings | None = None,
     ) -> AsyncIterator[AppContainer]:
         yield fake_container
+        stopped_before_teardown.append(cancelled.is_set())
 
     monkeypatch.setattr(api_app_module, "create_app_container", fake_create_app_container)
     monkeypatch.setattr(api_app_module, "SessionKeepalive", RecordingKeepalive)
@@ -197,4 +202,4 @@ def test_the_api_lifespan_runs_the_keepalive_and_stops_it_on_shutdown(
         assert client.get("/api/ready").status_code == 200
         assert started == [120]
 
-    assert cancelled.is_set()
+    assert stopped_before_teardown == [True]

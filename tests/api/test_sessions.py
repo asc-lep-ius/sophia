@@ -427,7 +427,10 @@ def test_session_lifetime_is_configurable_from_the_environment(
     assert Settings().session_ttl_seconds == 3600
 
 
-def test_keepalive_interval_defaults_to_five_minutes_and_refuses_under_one() -> None:
-    assert Settings().session_keepalive_interval == 300
+def test_keepalive_interval_defaults_to_five_minutes_and_refuses_under_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SOPHIA_SESSION_KEEPALIVE_INTERVAL", raising=False)
+    assert Settings(_env_file=None).session_keepalive_interval == 300  # pyright: ignore[reportCallIssue]
     with pytest.raises(ValueError, match="session_keepalive_interval"):
         Settings(session_keepalive_interval=59)
