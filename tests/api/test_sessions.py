@@ -425,3 +425,9 @@ def test_session_lifetime_is_configurable_from_the_environment(
 ) -> None:
     monkeypatch.setenv("SOPHIA_SESSION_TTL_SECONDS", "3600")
     assert Settings().session_ttl_seconds == 3600
+
+
+def test_keepalive_interval_defaults_to_five_minutes_and_refuses_under_one() -> None:
+    assert Settings().session_keepalive_interval == 300
+    with pytest.raises(ValueError, match="session_keepalive_interval"):
+        Settings(session_keepalive_interval=59)

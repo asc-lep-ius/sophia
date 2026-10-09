@@ -87,7 +87,8 @@ async def create_app(settings: Settings | None = None):
 
     upstream = await _startup_session(settings, load_session(session_path(settings.config_dir)))
     if upstream.creds is None:
-        raise AuthError("Not logged in — run: sophia auth login")
+        why = f" ({upstream.status.reason})" if upstream.status.reason else ""
+        raise AuthError(f"Not logged in — run: sophia auth login{why}")
 
     async with contextlib.AsyncExitStack() as stack:
         try:
@@ -125,7 +126,10 @@ async def _startup_session(
             renewed = await reauthenticate(
                 settings.config_dir, settings.tuwel_host, settings.tiss_host, stale=stored
             )
-    except (AuthError, KeyringUnavailableError) as exc:
+    # OSError: a config dir the process cannot write (#111's container case).
+    # ValueError: a stored secret that is not base32. Both are a broken setup
+    # to report, not a reason to refuse to start.
+    except (AuthError, KeyringUnavailableError, OSError, ValueError) as exc:
         log.error("upstream_session.startup_renewal_failed", reason=str(exc))
         return UpstreamSession(stored, UpstreamStatus("expired", str(exc)))
     except (httpx.HTTPError, TimeoutError) as exc:

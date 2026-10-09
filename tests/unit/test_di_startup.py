@@ -93,3 +93,50 @@ async def test_no_session_and_no_way_to_log_in_is_still_not_logged_in(tmp_path: 
     ):
         async with create_app(_settings(tmp_path)):
             pass
+
+
+async def test_create_app_builds_on_the_renewed_session_not_the_stale_file(
+    tmp_path: Path,
+) -> None:
+    """create_app used to load the file and go; it has to validate and renew first."""
+    from sophia.adapters.auth import save_session, session_path
+
+    save_session(STORED, session_path(tmp_path))
+    built_with: list[object] = []
+
+    async def capture_init(_stack: object, _settings: object, upstream: object) -> object:
+        built_with.append(upstream)
+        return object()
+
+    with (
+        patch("sophia.infra.di.tuwel_session_alive", AsyncMock(return_value=False)),
+        patch("sophia.infra.di.reauthenticate", AsyncMock(return_value=RENEWED)),
+        patch("sophia.infra.di._init_resources", capture_init),
+    ):
+        async with create_app(_settings(tmp_path)):
+            pass
+
+    [upstream] = built_with
+    assert getattr(upstream, "creds", None) == RENEWED
+    assert getattr(upstream, "status", None) == UpstreamStatus("valid")
+
+
+@pytest.mark.parametrize(
+    "broken_setup",
+    [
+        PermissionError("config dir is not writable"),
+        ValueError("Non-base32 digit found"),
+    ],
+)
+async def test_a_broken_setup_starts_degraded_instead_of_crashing(
+    tmp_path: Path, broken_setup: Exception
+) -> None:
+    """An unwritable config dir (#111) or a corrupt stored secret is reported, not fatal."""
+    with (
+        patch("sophia.infra.di.tuwel_session_alive", AsyncMock(return_value=False)),
+        patch("sophia.infra.di.reauthenticate", AsyncMock(side_effect=broken_setup)),
+    ):
+        upstream = await _startup_session(_settings(tmp_path), STORED)
+
+    assert upstream.creds == STORED
+    assert upstream.status == UpstreamStatus("expired", str(broken_setup))

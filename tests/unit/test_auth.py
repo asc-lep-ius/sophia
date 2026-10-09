@@ -608,12 +608,17 @@ class TestKeyringCredentials:
             save_credentials_to_keyring("testuser", "testpass", "JBSWY3DPEHPK3PXP")
         set_password.assert_not_called()
 
-    def test_saving_without_a_secret_removes_an_older_one(self, memory_keyring: MemoryKeyring):
+    def test_saving_without_a_secret_keeps_the_one_already_stored(
+        self, memory_keyring: MemoryKeyring
+    ):
+        """Skipping the prompt on a later login means "do not change it" (decided on #124)."""
         with patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}):
             save_credentials_to_keyring("testuser", "oldpass", "JBSWY3DPEHPK3PXP")
         save_credentials_to_keyring("testuser", "newpass")
 
-        assert load_credentials_from_keyring() == StoredCredentials("testuser", "newpass")
+        assert load_credentials_from_keyring() == StoredCredentials(
+            "testuser", "newpass", "JBSWY3DPEHPK3PXP"
+        )
 
     def test_wrong_master_password_is_reported_not_raised_raw(self):
         """keyrings.alt raises ValueError("Incorrect Password"); #111's note saw it crash."""

@@ -118,8 +118,9 @@ TOTP secret too: the base32 secret from your authenticator's `otpauth://`
 enrolment (re-enrol to see it, if your app never showed it). It is read at a
 getpass prompt only, kept only if it produces the MFA code you just typed, and
 refused unless `PYTHON_KEYRING_BACKEND` pins a backend that is not plaintext —
-with it stored, this box holds both factors. Press Enter to skip it, and a
-session that dies needs you again. `sophia auth logout` removes it.
+with it stored, this box holds both factors. Press Enter to skip it on a later
+login and the one already stored is kept; with none stored, a session that dies
+needs you again. `sophia auth logout` removes it.
 
 The master password is fixed on the encrypted store's **first** use. If it was
 initialised with the wrong one, delete `~/.local/share/python_keyring/crypted_pass.cfg`

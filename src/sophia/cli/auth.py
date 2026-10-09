@@ -72,7 +72,7 @@ async def login(*, save_credentials: bool = False) -> None:
     if totp_secret is not None and matching_step(totp_secret, mfa_code, time.time()) is None:
         console.print(
             "[red]That TOTP secret does not produce the MFA code you entered — "
-            "it will not be stored.[/red]"
+            "it will not be stored, and one already stored is kept.[/red]"
         )
         totp_secret = None
 
@@ -91,13 +91,7 @@ async def login(*, save_credentials: bool = False) -> None:
         except KeyringUnavailableError as exc:
             console.print(f"[yellow]Credentials NOT saved: {exc}[/yellow]")
         else:
-            if totp_secret is None:
-                console.print(
-                    "[yellow]Credentials saved without a TOTP secret — a session that "
-                    "dies will need you to log in again.[/yellow]"
-                )
-            else:
-                console.print("[green]Credentials and TOTP secret saved.[/green]")
+            _report_saved_credentials(console, new_secret=totp_secret is not None)
 
     if tiss_creds:
         save_tiss_session(tiss_creds, tiss_session_path(settings.config_dir))
@@ -106,6 +100,25 @@ async def login(*, save_credentials: bool = False) -> None:
         console.print(
             "[yellow]TUWEL login succeeded but TISS login failed. "
             "TISS features may be unavailable.[/yellow]"
+        )
+
+
+def _report_saved_credentials(console: Console, *, new_secret: bool) -> None:
+    from sophia.adapters.auth import KeyringUnavailableError, load_credentials_from_keyring
+
+    if new_secret:
+        console.print("[green]Credentials and TOTP secret saved.[/green]")
+        return
+    try:
+        stored = load_credentials_from_keyring()
+    except KeyringUnavailableError:
+        stored = None
+    if stored is not None and stored.totp_secret:
+        console.print("[green]Credentials saved; the TOTP secret already stored was kept.[/green]")
+    else:
+        console.print(
+            "[yellow]Credentials saved without a TOTP secret — a session that "
+            "dies will need you to log in again.[/yellow]"
         )
 
 

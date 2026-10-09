@@ -209,8 +209,8 @@ def save_credentials_to_keyring(
 ) -> None:
     """Store TU Wien credentials in the OS keyring (opt-in).
 
-    The keyring holds exactly what the last save stored, so saving without a
-    secret removes an older one rather than pairing it with a new password.
+    Without a secret, a stored one is left as it is: skipping the prompt means
+    "do not change it", and only ``sophia auth logout`` removes it.
     Raises KeyringUnavailableError if no backend is configured, or if a secret
     is given and the backend is not one that may hold it.
     """
@@ -223,10 +223,7 @@ def save_credentials_to_keyring(
         with _keyring_env_password():
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
-            if totp_secret is None:
-                with contextlib.suppress(keyring.errors.PasswordDeleteError):
-                    keyring.delete_password(_KEYRING_SERVICE, _KEYRING_TOTP_KEY)
-            else:
+            if totp_secret is not None:
                 keyring.set_password(_KEYRING_SERVICE, _KEYRING_TOTP_KEY, totp_secret)
     except keyring.errors.NoKeyringError as exc:
         raise KeyringUnavailableError(

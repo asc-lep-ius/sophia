@@ -61,9 +61,13 @@ class SessionKeepalive:
             await asyncio.sleep(interval_s)
             try:
                 await self.tick()
-            except Exception:
-                # A keepalive that dies quietly is the failure it exists to end.
-                log.exception("session_keepalive.tick_failed")
+            except Exception as exc:
+                # A keepalive that dies quietly is the failure it exists to end,
+                # so the cause is logged — but never the traceback: its frame
+                # locals hold the TOTP secret and the password (#124).
+                log.error(
+                    "session_keepalive.tick_failed", error=type(exc).__name__, reason=str(exc)
+                )
 
     async def tick(self) -> None:
         self._adopt_session_saved_elsewhere()

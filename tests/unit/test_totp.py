@@ -114,3 +114,15 @@ async def test_ledger_survives_across_processes(tmp_path: Path) -> None:
 def test_unreadable_ledger_counts_as_nothing_spent(tmp_path: Path) -> None:
     ledger_path(tmp_path).write_text("not json")
     assert StepLedger(ledger_path(tmp_path)).last_used() is None
+
+
+async def test_a_ledger_step_from_the_future_does_not_hold_the_login(tmp_path: Path) -> None:
+    """After the clock moves back, waiting for a 'spent' future step would block for hours."""
+    clock = FakeClock(1_000_000.0)
+    ledger = StepLedger(ledger_path(tmp_path))
+    ledger.record(step_at(clock.now) + 500)
+
+    code = await fresh_code(RFC_SECRET, ledger, clock=clock, sleep=clock.sleep)
+
+    assert clock.slept == []
+    assert code == code_for_step(RFC_SECRET, step_at(1_000_000))

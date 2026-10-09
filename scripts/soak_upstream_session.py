@@ -31,7 +31,7 @@ from sophia.adapters.auth import load_session, load_tiss_session, session_path, 
 from sophia.adapters.moodle import MoodleAdapter
 from sophia.adapters.tiss_registration import TissRegistrationAdapter
 from sophia.config import Settings
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, MoodleError
 from sophia.infra.http import http_session
 from sophia.services.tiss_registration import current_semester
 
@@ -87,7 +87,8 @@ async def _soak(hours: float, every: float, interval: float, grace: float) -> in
         except AuthError:
             dead += 1
             print(f"{now},dead", flush=True)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, MoodleError) as exc:
+            # A TUWEL outage (5xx) says nothing about the keepalive.
             print(f"{now},unreachable:{type(exc).__name__}", flush=True)
         else:
             lowest = remaining if lowest is None else min(lowest, remaining)
@@ -98,10 +99,11 @@ async def _soak(hours: float, every: float, interval: float, grace: float) -> in
 
     tiss_ok = await _tiss_answers(settings)
     passed = lowest is not None and lowest >= floor and dead == 0 and tiss_ok
+    criterion = TUWEL_IDLE_TIMEOUT_S - interval
     print(
         f"{'PASS' if passed else 'FAIL'}: lowest TUWEL idle time left {lowest} s "
-        f"(floor {floor:.0f} s), {dead} dead sample(s), TISS "
-        f"{'answers' if tiss_ok else 'does not answer'}",
+        f"(floor {floor:.0f} s with --grace; #124's floor is {criterion:.0f} s), "
+        f"{dead} dead sample(s), TISS {'answers' if tiss_ok else 'does not answer'}",
         file=sys.stderr,
     )
     return 0 if passed else 1

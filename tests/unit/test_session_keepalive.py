@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,10 +19,12 @@ from sophia.adapters.auth import (
     tiss_session_path,
 )
 from sophia.domain.errors import AuthError, MfaRejectedError
+from sophia.infra.logging import setup_logging
 from sophia.services.session_keepalive import BACKOFF_BASE_S, SessionKeepalive
 from sophia.services.upstream_session import UpstreamSession, UpstreamStatus
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from sophia.infra.di import AppContainer
@@ -171,3 +174,34 @@ async def test_a_session_saved_elsewhere_is_adopted_without_a_login(
         cookie_name="MoodleSession",
     )
     reauth.assert_not_awaited()
+
+
+@pytest.fixture
+def console_logging() -> Iterator[None]:
+    """The console renderer is the one that printed frame locals; restore JSON after."""
+    setup_logging(json_logs=False)
+    yield
+    setup_logging()
+
+
+async def test_a_failed_tick_logs_its_cause_but_never_the_secret_in_its_frames(
+    harness: Harness, console_logging: None, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Scenario 7: the TOTP secret is never logged — not even through a traceback."""
+
+    async def tick_holding_the_secret() -> None:
+        secret = "JBSWY3DPEHPK3PXP"
+        raise PermissionError(f"ledger not writable (secret has {len(secret)} chars)")
+
+    harness.keepalive.tick = tick_holding_the_secret  # type: ignore[method-assign]
+    sleep = AsyncMock(side_effect=[None, asyncio.CancelledError()])
+    with (
+        patch("sophia.services.session_keepalive.asyncio.sleep", sleep),
+        pytest.raises(asyncio.CancelledError),
+    ):
+        await harness.keepalive.run(300)
+
+    printed = capsys.readouterr().out
+    assert "session_keepalive.tick_failed" in printed
+    assert "PermissionError" in printed
+    assert "JBSWY3DPEHPK3PXP" not in printed

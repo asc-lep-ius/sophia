@@ -112,6 +112,11 @@ async def fresh_code(
 ) -> str:
     """A code from a step no earlier login has spent, waiting for one if needed."""
     last = ledger.last_used()
+    if last is not None and last > step_at(clock()) + 1:
+        # A step from the future means the clock moved back since it was
+        # recorded. Waiting for it would hold the re-login lock for as long.
+        log.warning("totp.ledger_ahead_of_clock", steps_ahead=last - step_at(clock()))
+        last = None
     while last is not None and step_at(clock()) <= last:
         wait = (last + 1) * STEP_SECONDS - clock() + _STEP_MARGIN_SECONDS
         log.info("totp.waiting_for_unspent_step", seconds=round(wait, 1))

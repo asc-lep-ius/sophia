@@ -158,3 +158,43 @@ def test_an_expired_tu_wien_session_degrades_readiness_without_failing_it(
             {"name": "upstream_session", "ok": False, "required": False, "detail": "expired"},
         ],
     }
+
+
+def test_the_api_lifespan_runs_the_keepalive_and_stops_it_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 3 needs the keepalive running inside the API, not merely defined."""
+    import asyncio
+
+    started: list[float] = []
+    cancelled = asyncio.Event()
+
+    class RecordingKeepalive:
+        def __init__(self, container: object) -> None:
+            self.container = container
+
+        async def run(self, interval_s: float) -> None:
+            started.append(interval_s)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    fake_container = cast("AppContainer", FakeAppContainer(db=object()))
+
+    @asynccontextmanager
+    async def fake_create_app_container(
+        _settings: Settings | None = None,
+    ) -> AsyncIterator[AppContainer]:
+        yield fake_container
+
+    monkeypatch.setattr(api_app_module, "create_app_container", fake_create_app_container)
+    monkeypatch.setattr(api_app_module, "SessionKeepalive", RecordingKeepalive)
+    monkeypatch.setenv("SOPHIA_SESSION_KEEPALIVE_INTERVAL", "120")
+
+    with TestClient(create_standalone_api_app()) as client:
+        assert client.get("/api/ready").status_code == 200
+        assert started == [120]
+
+    assert cancelled.is_set()
