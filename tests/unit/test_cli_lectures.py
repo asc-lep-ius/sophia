@@ -21,6 +21,12 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _wide_console(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rich sizes a captured console from COLUMNS; at 80 the status table truncates."""
+    monkeypatch.setenv("COLUMNS", "200")
+
+
 def _make_episode_status(
     episode_id: str = "ep-001",
     title: str = "Lecture 1",
@@ -31,6 +37,7 @@ def _make_episode_status(
     transcription_status: str | None = "completed",
     index_status: str | None = "completed",
     missed_at: str | None = None,
+    transcription_source: str | None = None,
 ) -> EpisodeStatus:
     return EpisodeStatus(
         episode_id=episode_id,
@@ -41,6 +48,7 @@ def _make_episode_status(
         index_status=index_status,
         lecture_number=lecture_number,
         missed_at=missed_at,
+        transcription_source=transcription_source,
     )
 
 
@@ -154,6 +162,76 @@ class TestStatusTableColumns:
         # Material count (3) and column header should appear
         assert "3" in captured.out
 
+    @pytest.mark.asyncio
+    async def test_status_shows_where_each_transcript_came_from(
+        self, db: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """A captioned lecture shows source=captions and no download at all."""
+        from sophia.cli.lectures import lectures_status
+        from sophia.services.hermes_manage import DOWNLOAD_NOT_NEEDED
+
+        statuses = [
+            _make_episode_status(
+                "ep-captions",
+                "Vorlesung vom 2026-01-16",
+                DOWNLOAD_NOT_NEEDED,
+                transcription_source="captions",
+            ),
+            _make_episode_status("ep-whisper", "Vorlesung vom 2025-11-06", "completed"),
+        ]
+        mat_cursor = AsyncMock()
+        mat_cursor.fetchone = AsyncMock(return_value=(0,))
+        container = _mock_container(db=db)
+        container.db.execute = AsyncMock(return_value=mat_cursor)
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_manage.get_pipeline_status",
+                AsyncMock(return_value=statuses),
+            ),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await lectures_status(module_id="42")
+
+        out = capsys.readouterr().out
+        assert "Source" in out
+        assert "captions" in out
+        assert DOWNLOAD_NOT_NEEDED not in out
+
+
+class TestTranscribeCommand:
+    @pytest.mark.asyncio
+    async def test_whisper_still_runs_when_tuwel_is_unreachable(
+        self, db: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The captions pass needs TUWEL; Whisper over what was downloaded does not."""
+        from sophia.cli.lectures import lectures_transcribe
+        from sophia.domain.errors import LectureTubeError
+
+        container = _mock_container(db=db)
+        whisper = AsyncMock(return_value=[])
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_transcribe.transcribe_from_captions",
+                AsyncMock(side_effect=LectureTubeError("HTTP 503 from TUWEL Opencast")),
+            ),
+            patch("sophia.services.hermes_transcribe.transcribe_lectures", whisper),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await lectures_transcribe(module_id="42")
+
+        whisper.assert_awaited_once()
+        assert "Captions unavailable" in capsys.readouterr().out
+
 
 # ---------------------------------------------------------------------------
 # lectures materials — new subcommand
@@ -255,6 +333,11 @@ class TestProcessMaterialsFlag:
         container = MagicMock()
 
         with (
+            patch("sophia.services.hermes_pipeline.check_whisper_config", MagicMock()),
+            patch(
+                "sophia.services.hermes_pipeline.transcribe_from_captions",
+                AsyncMock(return_value=[]),
+            ),
             patch("sophia.services.hermes_pipeline.download_lectures", AsyncMock(return_value=[])),
             patch(
                 "sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])

@@ -20,6 +20,7 @@ from sophia.domain.models import (
     LectureSearchResult,
     TranscriptSegment,
 )
+from sophia.infra.engine import commit_unit
 from sophia.infra.schema import (
     course_materials,
     knowledge_index,
@@ -27,6 +28,7 @@ from sophia.infra.schema import (
     transcript_segments,
     transcriptions,
 )
+from sophia.services.hermes_episodes import episode_title, module_episode_titles_query
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
@@ -99,8 +101,8 @@ async def _get_transcriptions(session: AsyncSession, module_id: int) -> list[tup
     """Return (episode_id, title) for completed transcriptions in a module."""
     rows = (
         await session.execute(
-            select(transcriptions.c.episode_id, lecture_downloads.c.title)
-            .join(
+            select(transcriptions.c.episode_id, episode_title().label("title"))
+            .outerjoin(
                 lecture_downloads,
                 transcriptions.c.episode_id == lecture_downloads.c.episode_id,
             )
@@ -248,7 +250,9 @@ async def index_lectures(
     """Orchestrate indexing for transcribed lectures in a module.
 
     Queries transcriptions for completed episodes, skips already-indexed ones,
-    then chunks, embeds, and stores each episode's segments.
+    then chunks, embeds, and stores each episode's segments. Each episode's
+    row is committed once its chunks are in the store; an episode interrupted
+    in between is indexed again next time, which the store's upsert absorbs.
     """
     transcriptions = await _get_transcriptions(session, module_id)
     if not transcriptions:
@@ -285,6 +289,7 @@ async def index_lectures(
             on_start=on_start,
             on_complete=on_complete,
         )
+        await commit_unit(session)
         results.append(result)
 
     return results
@@ -303,10 +308,7 @@ async def search_lectures(
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
-    episode_query = select(
-        lecture_downloads.c.episode_id,
-        lecture_downloads.c.title,
-    ).where(lecture_downloads.c.module_id == module_id)
+    episode_query = module_episode_titles_query(module_id)
     if missed_only:
         episode_query = episode_query.where(lecture_downloads.c.missed_at.is_not(None))
 

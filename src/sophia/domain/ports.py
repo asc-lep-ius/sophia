@@ -133,6 +133,12 @@ class LectureDownloader(Protocol):
     ) -> AsyncIterator[DownloadProgressEvent]: ...
 
 
+class CaptionFetcher(Protocol):
+    """Fetches a published caption file as text."""
+
+    async def fetch_captions(self, url: str) -> str: ...
+
+
 class Transcriber(Protocol):
     """Transcribes audio files into text segments."""
 

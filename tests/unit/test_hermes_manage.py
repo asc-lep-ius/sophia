@@ -44,6 +44,22 @@ async def _insert_transcription(
     )
 
 
+async def _insert_caption_transcription(
+    db: AsyncSession,
+    episode_id: str,
+    module_id: int,
+    *,
+    title: str = "Captioned lecture",
+) -> None:
+    """A transcript read from the player's captions: no download row behind it."""
+    await exec_sql(
+        db,
+        """INSERT INTO transcriptions (episode_id, module_id, status, source, title, caption_url)
+           VALUES (?, ?, 'completed', 'captions', ?, 'https://cdn.video.tuwien.ac.at/c.vtt')""",
+        (episode_id, module_id, title),
+    )
+
+
 async def _insert_index(
     db: AsyncSession,
     episode_id: str,
@@ -356,6 +372,27 @@ class TestGetPipelineStatus:
         assert len(statuses) == 1
         assert statuses[0].download_status == "discarded"
 
+    async def test_caption_transcript_without_a_download_row(self, db: AsyncSession) -> None:
+        """An episode whose transcript came from captions was never downloaded."""
+        from sophia.services.hermes_manage import DOWNLOAD_NOT_NEEDED, get_pipeline_status
+
+        await _insert_download(db, "ep-1", 100, title="Downloaded")
+        await _insert_transcription(db, "ep-1", 100)
+        await _insert_caption_transcription(db, "ep-2", 100, title="Captioned")
+        await _insert_index(db, "ep-2", 100)
+
+        statuses = {s.episode_id: s for s in await get_pipeline_status(db, 100)}
+
+        assert set(statuses) == {"ep-1", "ep-2"}
+        captioned = statuses["ep-2"]
+        assert captioned.title == "Captioned"
+        assert captioned.download_status == DOWNLOAD_NOT_NEEDED
+        assert captioned.skip_reason is None
+        assert captioned.transcription_status == "completed"
+        assert captioned.transcription_source == "captions"
+        assert captioned.index_status == "completed"
+        assert statuses["ep-1"].transcription_source == "whisper"
+
     async def test_missed_at_reflected_in_status(self, db: AsyncSession) -> None:
         from sophia.services.hermes_manage import get_pipeline_status, mark_missed
 
@@ -440,6 +477,22 @@ class TestPurgeEpisode:
         ).fetchone()
         assert row is not None
         assert row[0] == 0
+
+    async def test_purge_caption_transcript_without_a_download_row(self, db: AsyncSession) -> None:
+        from sophia.services.hermes_manage import get_episode_count, purge_episode
+
+        await _insert_caption_transcription(db, "ep-c", 100)
+        await _insert_segments(db, "ep-c", count=4)
+        await _insert_index(db, "ep-c", 100)
+        assert await get_episode_count(db, 100) == 1
+
+        result = await purge_episode(db, _FakeStore({"ep-c": 2}), 100, "ep-c")
+
+        assert result.transcriptions == 1
+        assert result.transcript_segments == 4
+        assert result.knowledge_index == 1
+        assert result.knowledge_chunks == 2
+        assert await get_episode_count(db, 100) == 0
 
     async def test_purge_nonexistent_episode(self, db: AsyncSession) -> None:
         from sophia.services.hermes_manage import purge_episode

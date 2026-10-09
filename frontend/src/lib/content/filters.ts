@@ -71,9 +71,14 @@ export function readDrawerOpen(url: URL): boolean {
   return url.searchParams.get(DRAWER_PARAM) === "open";
 }
 
+/**
+ * Ready means transcribed and indexed. The download is not part of it: a
+ * lecture whose transcript was read from the player's captions was never
+ * downloaded and reports download_status "none", and it is as ready to study
+ * as one Whisper transcribed.
+ */
 export function isContentItemReady(item: ContentItem): boolean {
   return (
-    item.download_status === "completed" &&
     item.transcription_status === "completed" &&
     item.index_status === "completed"
   );

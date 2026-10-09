@@ -67,6 +67,10 @@ class TranscriptionError(HermesError):
     """Whisper transcription failed."""
 
 
+class CaptionError(HermesError):
+    """A published caption track could not be fetched or parsed."""
+
+
 class EmbeddingError(HermesError):
     """Embedding or knowledge base indexing failed."""
 

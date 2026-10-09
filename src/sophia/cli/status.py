@@ -8,12 +8,11 @@ from sqlalchemy import Table, case, distinct, func, select
 
 from sophia.infra.schema import (
     knowledge_index,
-    lecture_downloads,
     review_schedule,
     student_flashcards,
     topic_mappings,
-    transcriptions,
 )
+from sophia.services.hermes_episodes import episode_states
 
 if TYPE_CHECKING:
     import cyclopts
@@ -99,36 +98,37 @@ async def _fetch_course_stats(db: AsyncSession) -> list[dict[str, int | str | No
     def completed(column: ColumnElement[str | None]) -> Case[int]:
         return case((column == "completed", 1), else_=0)
 
+    # Episodes come from both tables: a lecture transcribed from the player's
+    # captions has no download row, and a module where every lecture was
+    # captioned would otherwise not appear at all.
+    episodes = episode_states()
+
     def scoped_count(table: Table) -> ScalarSelect[int]:
         return (
             select(func.count())
             .select_from(table)
-            .where(table.c.course_id == lecture_downloads.c.module_id)
+            .where(table.c.course_id == episodes.c.module_id)
             .scalar_subquery()
         )
 
     primary_rows = (
         await db.execute(
             select(
-                lecture_downloads.c.module_id,
-                func.count(distinct(lecture_downloads.c.episode_id)).label("total_lectures"),
-                func.sum(completed(lecture_downloads.c.status)).label("downloaded"),
-                func.sum(completed(transcriptions.c.status)).label("transcribed"),
+                episodes.c.module_id,
+                func.count(distinct(episodes.c.episode_id)).label("total_lectures"),
+                func.sum(completed(episodes.c.download_status)).label("downloaded"),
+                func.sum(completed(episodes.c.transcription_status)).label("transcribed"),
                 func.sum(completed(knowledge_index.c.status)).label("indexed"),
                 scoped_count(topic_mappings).label("topics"),
                 scoped_count(student_flashcards).label("flashcards"),
             )
-            .select_from(lecture_downloads)
-            .outerjoin(
-                transcriptions,
-                lecture_downloads.c.episode_id == transcriptions.c.episode_id,
-            )
+            .select_from(episodes)
             .outerjoin(
                 knowledge_index,
-                lecture_downloads.c.episode_id == knowledge_index.c.episode_id,
+                episodes.c.episode_id == knowledge_index.c.episode_id,
             )
-            .group_by(lecture_downloads.c.module_id)
-            .order_by(lecture_downloads.c.module_id)
+            .group_by(episodes.c.module_id)
+            .order_by(episodes.c.module_id)
         )
     ).all()
 

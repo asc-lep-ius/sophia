@@ -5,9 +5,8 @@ from __future__ import annotations
 from typing import Annotated
 
 import cyclopts
-from sqlalchemy import select
 
-from sophia.infra.schema import lecture_downloads
+from sophia.services.hermes_episodes import episode_titles_query, module_episode_titles_query
 
 app = cyclopts.App(
     name="study",
@@ -83,14 +82,7 @@ async def study_topics(
 
             title_map: dict[str, str] = {}
             if episode_ids:
-                rows = (
-                    await db.execute(
-                        select(
-                            lecture_downloads.c.episode_id,
-                            lecture_downloads.c.title,
-                        ).where(lecture_downloads.c.episode_id.in_(episode_ids))
-                    )
-                ).all()
+                rows = (await db.execute(episode_titles_query(sorted(episode_ids)))).all()
                 title_map = {row.episode_id: row.title for row in rows}
 
             table = Table(title="Topic Analysis")
@@ -113,12 +105,8 @@ async def study_topics(
             from sophia.services.pipeline import get_course_references
 
             series_title = ""
-            title = await db.scalar(
-                select(lecture_downloads.c.title)
-                .where(lecture_downloads.c.module_id == resolved_id)
-                .distinct()
-                .limit(1)
-            )
+            first = (await db.execute(module_episode_titles_query(resolved_id).limit(1))).first()
+            title = first.title if first else None
             if title:
                 series_title = title.split(" - ")[0].split(" – ")[0].strip()
 

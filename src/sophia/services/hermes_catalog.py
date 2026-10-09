@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules
+from sophia.services.hermes_episodes import episode_module_id, episodes_from
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,22 +40,27 @@ class DiscoveredLectureModule:
 
 
 async def get_lecture_modules(session: AsyncSession) -> list[LectureModule]:
-    """Query distinct modules that have local lecture download records."""
+    """Query distinct modules that have local lecture records, downloaded or transcribed."""
     course_name = func.coalesce(lecture_modules.c.course_name, "")
+    module_id = episode_module_id()
+    # One row per module, whatever mix of downloaded and captioned lectures it
+    # holds: the series id is the download rows' where there are any.
+    series_id = func.coalesce(func.max(lecture_downloads.c.series_id), "")
     rows = (
         await session.execute(
             select(
-                lecture_downloads.c.module_id,
-                lecture_downloads.c.series_id,
+                module_id.label("module_id"),
+                series_id.label("series_id"),
                 course_name.label("course_name"),
             )
-            .select_from(lecture_downloads)
-            .outerjoin(
-                lecture_modules,
-                lecture_downloads.c.module_id == lecture_modules.c.module_id,
+            .select_from(
+                episodes_from().outerjoin(
+                    lecture_modules,
+                    module_id == lecture_modules.c.module_id,
+                )
             )
-            .distinct()
-            .order_by(course_name, lecture_downloads.c.module_id)
+            .group_by(module_id, course_name)
+            .order_by(course_name, module_id)
         )
     ).all()
     return [

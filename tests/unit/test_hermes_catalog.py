@@ -9,10 +9,11 @@ import pytest
 from sqlalchemy import insert, select
 
 from sophia.domain.models import Course, CourseSection, Lecture, ModuleInfo
-from sophia.infra.schema import DEFAULT_SCOPE, lecture_modules
+from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules, transcriptions
 from sophia.services.hermes_catalog import (
     discover_lecture_modules,
     get_lecture_module_course_id,
+    get_lecture_modules,
 )
 
 if TYPE_CHECKING:
@@ -83,3 +84,65 @@ async def test_pre_tenancy_module_has_no_owner(db: AsyncSession) -> None:
     await _insert_module(db, 456, course_id=DEFAULT_SCOPE)
 
     assert await get_lecture_module_course_id(db, 456) is None
+
+
+@pytest.mark.asyncio
+async def test_catalogue_lists_modules_known_only_through_caption_transcripts(
+    db: AsyncSession,
+) -> None:
+    """A module whose every lecture was captioned has no download row to be found by."""
+    await _insert_module(db, 456)
+    await db.execute(
+        insert(lecture_downloads).values(
+            episode_id="e-dl",
+            module_id=456,
+            series_id="s1",
+            title="Downloaded",
+            track_url="",
+            track_mimetype="",
+        ),
+    )
+    await db.execute(
+        insert(transcriptions).values(
+            episode_id="e-cc",
+            module_id=789,
+            status="completed",
+            source="captions",
+            title="Captioned",
+        ),
+    )
+
+    modules = await get_lecture_modules(db)
+
+    assert [(m.module_id, m.series_id, m.course_name) for m in modules] == [
+        (789, "", ""),
+        (456, "s1", "Numerical Methods"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_mixed_module_is_listed_once_with_its_series(db: AsyncSession) -> None:
+    """Download rows carry the series id; the caption transcript must not add a second row."""
+    await db.execute(
+        insert(lecture_downloads).values(
+            episode_id="e-dl",
+            module_id=456,
+            series_id="s1",
+            title="Downloaded",
+            track_url="",
+            track_mimetype="",
+        ),
+    )
+    await db.execute(
+        insert(transcriptions).values(
+            episode_id="e-cc",
+            module_id=456,
+            status="completed",
+            source="captions",
+            title="Captioned",
+        ),
+    )
+
+    modules = await get_lecture_modules(db)
+
+    assert [(m.module_id, m.series_id) for m in modules] == [(456, "s1")]

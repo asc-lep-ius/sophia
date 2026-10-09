@@ -110,6 +110,27 @@ async def test_pipeline_complete_all_done(db: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_pipeline_complete_for_a_module_read_from_captions(db: AsyncSession) -> None:
+    """No download row exists for a captioned lecture, and none is needed."""
+    await exec_sql(
+        db,
+        "INSERT INTO transcriptions (episode_id, module_id, status, source, title) "
+        "VALUES ('ep-c', 42, 'completed', 'captions', 'Captioned')",
+    )
+    await _insert_knowledge_index(db, episode_id="ep-c", module_id=42)
+
+    assert await _is_pipeline_complete(db, 42) is True
+
+    await exec_sql(
+        db,
+        "INSERT INTO transcriptions (episode_id, module_id, status, source, title) "
+        "VALUES ('ep-c2', 42, 'completed', 'captions', 'Not indexed yet')",
+    )
+
+    assert await _is_pipeline_complete(db, 42) is False
+
+
+@pytest.mark.asyncio
 async def test_pipeline_complete_partial(db: AsyncSession) -> None:
     await _insert_episode(db, episode_id="ep-1", module_id=42)
     await _insert_transcription(db, episode_id="ep-1", module_id=42)

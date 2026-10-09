@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import subprocess
+import sys
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
+from sophia.domain.errors import TranscriptionError
 from sophia.domain.models import (
     ComputeDevice,
     ComputeType,
@@ -26,14 +30,44 @@ from sophia.services.hermes_setup import (
     detect_gpu_context,
     get_provider_defaults,
     load_hermes_config,
+    recommend_compute_type,
     recommend_config,
     save_hermes_config,
     validate_api_key_live,
     validate_llm_provider,
+    verify_compute_type,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+# What ctranslate2.get_supported_compute_types("cuda") returns on hephaestus's
+# GTX 1070 (compute capability 6.1), and on a card with efficient float16.
+PASCAL_CUDA_TYPES = {"float32", "int8", "int8_float32"}
+AMPERE_CUDA_TYPES = {"float32", "float16", "int8", "int8_float16", "int8_float32"}
+
+
+def _fake_ctranslate2(monkeypatch: pytest.MonkeyPatch, cuda_types: set[str]) -> list[str]:
+    """Stand in for ctranslate2, whether or not the hermes extra is installed.
+
+    Returns the list of devices it was asked about.
+    """
+    asked: list[str] = []
+
+    def _get_supported_compute_types(device: str) -> set[str]:
+        asked.append(device)
+        return set(cuda_types)
+
+    module = SimpleNamespace(get_supported_compute_types=_get_supported_compute_types)
+    monkeypatch.setitem(sys.modules, "ctranslate2", module)
+    return asked
+
+
+@pytest.fixture(autouse=True)
+def _float16_gpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default every test to a GPU that supports float16; tests override it."""
+    _fake_ctranslate2(monkeypatch, AMPERE_CUDA_TYPES)
 
 
 NVIDIA_SMI_OUTPUT = """\
@@ -198,6 +232,141 @@ class TestRecommendConfig:
         """Default embeddings should be local."""
         config = recommend_config(has_gpu=False, vram_mb=0)
         assert config.embeddings.provider == EmbeddingProvider.LOCAL
+
+
+class TestRecommendComputeType:
+    @pytest.mark.parametrize(
+        ("cuda_types", "expected"),
+        [
+            (AMPERE_CUDA_TYPES, ComputeType.FLOAT16),
+            ({"float32", "int8", "int8_float16"}, ComputeType.INT8_FLOAT16),
+            (PASCAL_CUDA_TYPES, ComputeType.INT8),
+            ({"float32"}, ComputeType.FLOAT32),
+        ],
+        ids=["float16", "int8_float16", "pascal-int8", "float32-only"],
+    )
+    def test_prefers_fastest_supported(
+        self, monkeypatch: pytest.MonkeyPatch, cuda_types: set[str], expected: ComputeType
+    ) -> None:
+        _fake_ctranslate2(monkeypatch, cuda_types)
+        assert recommend_compute_type(ComputeDevice.CUDA) == expected
+
+    def test_cpu_is_float32_without_asking(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        asked = _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        assert recommend_compute_type(ComputeDevice.CPU) == ComputeType.FLOAT32
+        assert asked == []
+
+    def test_without_ctranslate2_keeps_float16_and_says_so(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setitem(sys.modules, "ctranslate2", None)
+        with capture_logs() as logs:
+            assert recommend_compute_type(ComputeDevice.CUDA) == ComputeType.FLOAT16
+        assert [entry["event"] for entry in logs] == ["compute_type_check_skipped"]
+
+    def test_setup_on_pascal_writes_a_supported_type(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """Scenario 1: the GTX 1070 gets int8 in hermes.toml, not float16."""
+        _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        save_hermes_config(recommend_config(has_gpu=True, vram_mb=8192), tmp_path)
+        loaded = load_hermes_config(tmp_path)
+        assert loaded is not None
+        assert loaded.whisper.compute_type == ComputeType.INT8
+        assert 'compute_type = "int8"' in (tmp_path / "hermes.toml").read_text()
+
+
+class TestVerifyComputeType:
+    def test_unsupported_type_names_the_supported_ones(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        whisper = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+        with pytest.raises(TranscriptionError, match="float32, int8, int8_float32"):
+            verify_compute_type(whisper)
+
+    def test_supported_type_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        verify_compute_type(
+            HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.INT8)
+        )
+
+    def test_cpu_is_skipped_out_loud(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        asked = _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        whisper = HermesWhisperConfig(device=ComputeDevice.CPU, compute_type=ComputeType.FLOAT32)
+        with capture_logs() as logs:
+            verify_compute_type(whisper)
+        assert asked == []
+        assert logs[0]["event"] == "compute_type_check_skipped"
+        assert logs[0]["reason"] == "cpu device"
+
+    def test_missing_ctranslate2_is_skipped_out_loud(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setitem(sys.modules, "ctranslate2", None)
+        whisper = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+        with capture_logs() as logs:
+            verify_compute_type(whisper)
+        assert logs[0]["event"] == "compute_type_check_skipped"
+        assert "ctranslate2 not installed" in logs[0]["reason"]
+
+    def test_unusable_cuda_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _no_device(device: str) -> set[str]:
+            raise RuntimeError("CUDA failed with error no CUDA-capable device is detected")
+
+        monkeypatch.setitem(
+            sys.modules, "ctranslate2", SimpleNamespace(get_supported_compute_types=_no_device)
+        )
+        whisper = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.INT8)
+        with pytest.raises(TranscriptionError, match="no CUDA-capable device"):
+            verify_compute_type(whisper)
+
+
+class TestSetupWizard:
+    @pytest.fixture
+    def config_dir(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+        """An 8 GB GPU, every prompt answered with Enter, config written to tmp_path."""
+        monkeypatch.setenv("SOPHIA_CONFIG_DIR", str(tmp_path))
+        monkeypatch.setattr(
+            "sophia.services.hermes_setup.detect_gpu", lambda: (True, "GTX 1070", 8192)
+        )
+        monkeypatch.setattr("builtins.input", lambda _prompt: "")
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        ("cuda_types", "expected"),
+        [(PASCAL_CUDA_TYPES, "int8"), (AMPERE_CUDA_TYPES, "float16")],
+        ids=["pascal", "float16-gpu"],
+    )
+    def test_writes_a_type_the_gpu_supports(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        config_dir: Path,
+        cuda_types: set[str],
+        expected: str,
+    ) -> None:
+        from sophia.cli.lectures import lectures_setup
+
+        _fake_ctranslate2(monkeypatch, cuda_types)
+        lectures_setup()
+        assert f'compute_type = "{expected}"' in (config_dir / "hermes.toml").read_text()
+
+    def test_verification_rejects_an_unsupported_type(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        config_dir: Path,
+        capsys: pytest.CaptureFixture[str],
+    ) -> None:
+        from sophia.cli.lectures import lectures_setup
+
+        _fake_ctranslate2(monkeypatch, PASCAL_CUDA_TYPES)
+        monkeypatch.setattr(
+            "sophia.services.hermes_setup.recommend_compute_type",
+            lambda _device: ComputeType.FLOAT16,
+        )
+        with pytest.raises(SystemExit):
+            lectures_setup()
+        out = capsys.readouterr().out
+        assert "Config verification failed" in out
+        assert "Config verified" not in out
 
 
 class TestSaveAndLoadConfig:

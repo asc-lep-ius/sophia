@@ -139,6 +139,34 @@ async def test_fetch_single_module(db: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_fetch_counts_captioned_lectures_that_were_never_downloaded(
+    db: AsyncSession,
+) -> None:
+    """A module whose lectures came from captions has no download rows to count."""
+    await exec_sql(
+        db,
+        "INSERT INTO transcriptions (episode_id, module_id, status, source, title) "
+        "VALUES ('ep-c1', 7, 'completed', 'captions', 'One'), "
+        "('ep-c2', 7, 'completed', 'captions', 'Two')",
+    )
+    await _insert_knowledge_index(db, episode_id="ep-c1", module_id=7)
+    await _insert_episode(db, episode_id="ep-w", module_id=7)
+    await _insert_transcription(db, episode_id="ep-w", module_id=7)
+    await _insert_topic(db, topic="Arrays", course_id=7)
+
+    rows = await _fetch_course_stats(db)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["module_id"] == 7
+    assert row["total_lectures"] == 3
+    assert row["downloaded"] == 1
+    assert row["transcribed"] == 3
+    assert row["indexed"] == 1
+    assert row["topics"] == 1
+
+
+@pytest.mark.asyncio
 async def test_fetch_partial_pipeline(db: AsyncSession) -> None:
     """Module with 2 episodes but only one transcribed and indexed."""
     await _insert_episode(db, episode_id="ep-1", module_id=10)

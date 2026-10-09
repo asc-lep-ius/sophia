@@ -55,11 +55,12 @@
     if (isContentItemReady(item)) {
       return m.content_stage_ready();
     }
-    if (item.download_status !== "completed") {
-      return m.content_stage_downloading();
-    }
     if (item.transcription_status !== "completed") {
-      return m.content_stage_transcribing();
+      // A transcript read from captions needs no download, so the download
+      // only counts as the waiting stage while there is no transcript yet.
+      return item.download_status === "completed"
+        ? m.content_stage_transcribing()
+        : m.content_stage_downloading();
     }
     return m.content_stage_indexing();
   }

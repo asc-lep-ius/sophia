@@ -11,11 +11,10 @@ from sqlalchemy import case, func, select
 from sophia.infra.schema import (
     confidence_ratings,
     knowledge_index,
-    lecture_downloads,
     study_sessions,
     topic_mappings,
-    transcriptions,
 )
+from sophia.services.hermes_episodes import episode_states
 
 log = structlog.get_logger()
 
@@ -164,29 +163,31 @@ def _completed(column: ColumnElement[str | None]) -> Case[int]:
 
 
 async def _is_pipeline_complete(db: AsyncSession, module_id: int) -> bool:
+    """Every episode of the module is transcribed and indexed.
+
+    The download is not part of it: a lecture transcribed from the player's
+    captions is never downloaded, and a module where every lecture was
+    captioned must read as complete rather than be re-processed on every run.
+    """
+    episodes = episode_states()
     row = (
         await db.execute(
             select(
                 func.count().label("total"),
-                func.sum(_completed(lecture_downloads.c.status)).label("dl"),
-                func.sum(_completed(transcriptions.c.status)).label("tr"),
+                func.sum(_completed(episodes.c.transcription_status)).label("tr"),
                 func.sum(_completed(knowledge_index.c.status)).label("ix"),
             )
-            .select_from(lecture_downloads)
-            .outerjoin(
-                transcriptions,
-                lecture_downloads.c.episode_id == transcriptions.c.episode_id,
-            )
+            .select_from(episodes)
             .outerjoin(
                 knowledge_index,
-                lecture_downloads.c.episode_id == knowledge_index.c.episode_id,
+                episodes.c.episode_id == knowledge_index.c.episode_id,
             )
-            .where(lecture_downloads.c.module_id == module_id)
+            .where(episodes.c.module_id == module_id)
         )
     ).one()
     if row.total == 0:
         return False
-    return bool(row.total == row.dl == row.tr == row.ix)
+    return bool(row.total == row.tr == row.ix)
 
 
 async def _count_exists(db: AsyncSession, query: Select[tuple[int]]) -> bool:

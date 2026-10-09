@@ -67,6 +67,11 @@ def _is_allowed_redirect(url: str) -> bool:
     )
 
 
+def is_trusted_url(url: str) -> bool:
+    """True for an https URL on a TU Wien host — what a fetch of a scraped URL requires."""
+    return urlparse(url).scheme == "https" and _is_allowed_redirect(url)
+
+
 async def _validate_redirect(response: httpx.Response) -> None:
     """Event hook: block redirects to non-whitelisted domains (SSRF protection)."""
     if response.status_code not in _REDIRECT_STATUSES:

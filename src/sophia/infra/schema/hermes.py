@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     Float,
     ForeignKey,
@@ -53,15 +54,13 @@ lecture_downloads = Table(
     Index("idx_lecture_downloads_status", "status"),
 )
 
+# No foreign key to lecture_downloads since 0004: a transcript read from the
+# player's published captions has no download behind it, so the episode's
+# title and module live here as well. See docs/captions-as-transcript.md.
 transcriptions = Table(
     "transcriptions",
     metadata,
-    Column(
-        "episode_id",
-        Text,
-        ForeignKey("lecture_downloads.episode_id"),
-        primary_key=True,
-    ),
+    Column("episode_id", Text, primary_key=True),
     Column("module_id", Integer, nullable=False),
     Column("language", Text, nullable=False, server_default="de"),
     Column("duration_s", Float()),
@@ -74,6 +73,10 @@ transcriptions = Table(
     Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
     org_id_column(),
     text_course_id_column(),
+    Column("source", Text, nullable=False, server_default="whisper"),
+    Column("title", Text, nullable=False, server_default=""),
+    Column("caption_url", Text),
+    CheckConstraint("source IN ('captions', 'whisper')", name="source_allowed"),
     Index("idx_transcriptions_status", "status"),
 )
 

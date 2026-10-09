@@ -7,10 +7,12 @@ import re
 import subprocess
 import tomllib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import httpx
+import structlog
 
+from sophia.domain.errors import TranscriptionError
 from sophia.domain.models import (
     ComputeDevice,
     ComputeType,
@@ -26,7 +28,18 @@ from sophia.domain.models import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+log = structlog.get_logger()
+
 _HERMES_TOML = "hermes.toml"
+
+# Fastest first. int8 comes before float32 because it is what a GPU without
+# efficient float16 (Pascal, compute capability 6.x) runs at full speed.
+_GPU_COMPUTE_TYPE_PREFERENCE = (
+    ComputeType.FLOAT16,
+    ComputeType.INT8_FLOAT16,
+    ComputeType.INT8,
+    ComputeType.FLOAT32,
+)
 
 
 # VRAM thresholds (MiB) for Whisper model selection
@@ -133,13 +146,13 @@ def recommend_config(
         whisper = HermesWhisperConfig(
             model=WhisperModel.LARGE_V3,
             device=ComputeDevice.CUDA,
-            compute_type=ComputeType.FLOAT16,
+            compute_type=recommend_compute_type(ComputeDevice.CUDA),
         )
     elif has_gpu and vram_mb >= _LOW_VRAM_THRESHOLD:
         whisper = HermesWhisperConfig(
             model=WhisperModel.TURBO,
             device=ComputeDevice.CUDA,
-            compute_type=ComputeType.FLOAT16,
+            compute_type=recommend_compute_type(ComputeDevice.CUDA),
         )
     else:
         whisper = HermesWhisperConfig(
@@ -161,6 +174,67 @@ def recommend_config(
     )
 
     return HermesConfig(whisper=whisper, llm=llm, embeddings=embeddings)
+
+
+def supported_compute_types(device: ComputeDevice) -> frozenset[str] | None:
+    """Compute types CTranslate2 can run on *device*, or None when CTranslate2 is not installed."""
+    try:
+        import ctranslate2  # type: ignore[import-not-found]
+    except ImportError:
+        log.warning(
+            "compute_type_check_skipped",
+            device=device.value,
+            reason="ctranslate2 not installed — run: uv sync --extra hermes",
+        )
+        return None
+
+    try:
+        supported = cast(
+            "set[str]",
+            ctranslate2.get_supported_compute_types(device.value),  # pyright: ignore[reportUnknownMemberType]
+        )
+    except RuntimeError as exc:
+        raise TranscriptionError(f"CTranslate2 cannot use device {device.value}: {exc}") from exc
+    return frozenset(supported)
+
+
+def recommend_compute_type(device: ComputeDevice) -> ComputeType:
+    """Pick the fastest compute type *device* supports, preferring float16."""
+    if device == ComputeDevice.CPU:
+        return ComputeType.FLOAT32
+
+    supported = supported_compute_types(device)
+    if supported is None:
+        # Unknown until faster-whisper is installed; verify_compute_type reports
+        # a mismatch at the first pipeline start after that.
+        return ComputeType.FLOAT16
+    for compute_type in _GPU_COMPUTE_TYPE_PREFERENCE:
+        if compute_type.value in supported:
+            return compute_type
+    raise TranscriptionError(
+        f"No usable compute type on {device.value} — CTranslate2 supports: "
+        + ", ".join(sorted(supported))
+    )
+
+
+def verify_compute_type(whisper: HermesWhisperConfig) -> None:
+    """Raise TranscriptionError if *whisper*'s compute type cannot run on its device.
+
+    Runs before anything is downloaded, so a bad config fails in seconds rather
+    than after the Whisper model has loaded.
+    """
+    if whisper.device == ComputeDevice.CPU:
+        log.info("compute_type_check_skipped", device=whisper.device.value, reason="cpu device")
+        return
+
+    supported = supported_compute_types(whisper.device)
+    if supported is None or whisper.compute_type.value in supported:
+        return
+    raise TranscriptionError(
+        f"compute_type {whisper.compute_type.value} is not supported on "
+        f"{whisper.device.value} — this device supports: {', '.join(sorted(supported))}. "
+        "Set compute_type in hermes.toml, or rerun: sophia lectures setup"
+    )
 
 
 def save_hermes_config(config: HermesConfig, config_dir: Path) -> Path:
