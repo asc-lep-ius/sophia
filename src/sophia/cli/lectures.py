@@ -40,9 +40,9 @@ def lectures_setup() -> None:
     from rich.table import Table
 
     from sophia.config import Settings
+    from sophia.domain.errors import TranscriptionError
     from sophia.domain.models import (
         ComputeDevice,
-        ComputeType,
         EmbeddingProvider,
         HermesConfig,
         HermesEmbeddingConfig,
@@ -55,9 +55,11 @@ def lectures_setup() -> None:
         detect_gpu,
         get_provider_defaults,
         load_hermes_config,
+        recommend_compute_type,
         recommend_config,
         save_hermes_config,
         validate_llm_provider,
+        verify_compute_type,
     )
 
     console = Console()
@@ -76,7 +78,11 @@ def lectures_setup() -> None:
     else:
         console.print("  [yellow]No GPU detected — using CPU mode[/yellow]")
 
-    recommended = recommend_config(has_gpu, vram_mb)
+    try:
+        recommended = recommend_config(has_gpu, vram_mb)
+    except TranscriptionError as exc:
+        console.print(f"  [red]✗[/red] {exc}")
+        raise SystemExit(1) from None
 
     # Step 2: Whisper config
     console.print("\n[bold]Step 2:[/bold] Whisper transcription model")
@@ -101,18 +107,13 @@ def lectures_setup() -> None:
     else:
         chosen_model = recommended.whisper.model
 
-    if has_gpu:
-        device = ComputeDevice.CUDA
-        compute_type = ComputeType.FLOAT16
-    else:
-        device = ComputeDevice.CPU
-        compute_type = ComputeType.FLOAT32
-
+    device = ComputeDevice.CUDA if has_gpu else ComputeDevice.CPU
     whisper_cfg = HermesWhisperConfig(
         model=chosen_model,
         device=device,
-        compute_type=compute_type,
+        compute_type=recommend_compute_type(device),
     )
+    console.print(f"  [green]✓[/green] Compute type: {whisper_cfg.compute_type.value}")
 
     # Step 3: LLM provider
     console.print("\n[bold]Step 3:[/bold] LLM provider")
@@ -189,10 +190,15 @@ def lectures_setup() -> None:
 
     # Verify round-trip
     loaded = load_hermes_config(settings.config_dir)
-    if loaded == config:
-        console.print("[green]✓ Config verified[/green]")
-    else:
+    if loaded is None or loaded != config:
         console.print("[red]⚠ Config verification failed — please check the file[/red]")
+        raise SystemExit(1)
+    try:
+        verify_compute_type(loaded.whisper)
+    except TranscriptionError as exc:
+        console.print(f"[red]⚠ Config verification failed:[/red] {exc}")
+        raise SystemExit(1) from None
+    console.print("[green]✓ Config verified[/green]")
 
     console.print("\n[dim]Next step:[/dim]")
     console.print("  [cyan]sophia lectures list[/cyan]")

@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from sophia.domain.errors import TranscriptionError
+from sophia.domain.models import ComputeDevice, ComputeType, HermesConfig, HermesWhisperConfig
 from sophia.services.hermes_download import LectureDownloadResult
 from sophia.services.hermes_index import IndexingResult
 from sophia.services.hermes_transcribe import TranscriptionResult
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+
+
+@pytest.fixture(autouse=True)
+def _whisper_config_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The containers here are mocks with no config dir; the check has its own test."""
+    monkeypatch.setattr("sophia.services.hermes_pipeline.check_whisper_config", MagicMock())
 
 
 def _make_download(
@@ -123,6 +133,47 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
         await run_pipeline(container, db, module_id=42)
 
     assert call_order == ["captions", "download", "transcribe", "index", "topics"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_refuses_unsupported_compute_type_before_any_stage(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A float16 config on a Pascal GPU fails at once, naming what the GPU supports."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+    from sophia.services.hermes_setup import save_hermes_config
+    from sophia.services.hermes_transcribe import check_whisper_config
+
+    monkeypatch.setattr(
+        "sophia.services.hermes_pipeline.check_whisper_config", check_whisper_config
+    )
+    save_hermes_config(
+        HermesConfig(
+            whisper=HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+        ),
+        tmp_path,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "ctranslate2",
+        SimpleNamespace(get_supported_compute_types=lambda _d: {"float32", "int8", "int8_float32"}),
+    )
+    container = MagicMock()
+    container.settings.config_dir = tmp_path
+    captions = AsyncMock(return_value=[])
+    download = AsyncMock(return_value=[])
+
+    with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", captions),
+        patch("sophia.services.hermes_pipeline.download_lectures", download),
+        pytest.raises(TranscriptionError, match="float32, int8, int8_float32"),
+    ):
+        await run_pipeline(container, db, module_id=42)
+
+    captions.assert_not_awaited()
+    download.assert_not_awaited()
 
 
 # ------------------------------------------------------------------

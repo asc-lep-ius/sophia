@@ -544,3 +544,30 @@ async def test_an_unreadable_episode_page_names_that_as_the_reason(
     assert [(entry["episode_id"], entry["reason"]) for entry in unavailable] == [
         ("ep-gone", "episode detail unavailable")
     ]
+
+
+def test_whisper_refuses_an_unsupported_compute_type_before_loading(
+    app: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`transcribe` fails before faster-whisper fetches a model the GPU cannot run."""
+    import sys
+    from types import SimpleNamespace
+
+    from sophia.domain.models import ComputeDevice, ComputeType, HermesWhisperConfig
+    from sophia.services.hermes_setup import save_hermes_config
+    from sophia.services.hermes_transcribe import _create_transcriber
+
+    whisper = HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+    save_hermes_config(HermesConfig(whisper=whisper), app.settings.config_dir)
+    monkeypatch.setitem(
+        sys.modules,
+        "ctranslate2",
+        SimpleNamespace(get_supported_compute_types=lambda _d: {"float32", "int8", "int8_float32"}),
+    )
+
+    with (
+        patch("sophia.services.hermes_transcribe.WhisperTranscriber") as transcriber,
+        pytest.raises(TranscriptionError, match="not supported on cuda"),
+    ):
+        _create_transcriber(app)
+    transcriber.assert_not_called()

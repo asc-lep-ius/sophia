@@ -13,6 +13,7 @@ from sophia.services.hermes_index import IndexingResult, index_lectures
 from sophia.services.hermes_manage import assign_lecture_numbers
 from sophia.services.hermes_transcribe import (
     TranscriptionResult,
+    check_whisper_config,
     transcribe_from_captions,
     transcribe_lectures,
 )
@@ -68,6 +69,7 @@ async def run_pipeline(
     result = PipelineResult()
 
     log.info("pipeline_start", module_id=module_id)
+    check_whisper_config(app)
 
     if cancel_check and cancel_check():
         log.info("pipeline_cancelled", module_id=module_id, stage="before_captions")

@@ -34,14 +34,19 @@ from sophia.infra.schema import (
 )
 from sophia.services.content_language import get_learning_path_settings
 from sophia.services.hermes_catalog import get_lecture_module_course_id
-from sophia.services.hermes_setup import load_hermes_config
+from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.domain.models import Lecture, LectureCaption, TranscriptSegment
+    from sophia.domain.models import (
+        HermesWhisperConfig,
+        Lecture,
+        LectureCaption,
+        TranscriptSegment,
+    )
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
@@ -313,11 +318,16 @@ async def transcribe_lectures(
     return results
 
 
+def check_whisper_config(app: AppContainer) -> HermesWhisperConfig:
+    """Load the Whisper config, failing now if its compute type cannot run on its device."""
+    config = load_hermes_config(app.settings.config_dir) or HermesConfig()
+    verify_compute_type(config.whisper)
+    return config.whisper
+
+
 def _create_transcriber(app: AppContainer) -> WhisperTranscriber:
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        config = HermesConfig()
-    return WhisperTranscriber(config.whisper, model_dir=app.settings.cache_dir / "whisper")
+    whisper = check_whisper_config(app)
+    return WhisperTranscriber(whisper, model_dir=app.settings.cache_dir / "whisper")
 
 
 async def _get_downloads(session: AsyncSession, module_id: int) -> list[tuple[str, str, str]]:
