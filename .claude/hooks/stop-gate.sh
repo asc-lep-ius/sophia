@@ -105,16 +105,47 @@ ${GATE_FAILURES}"
 fi
 
 # --- gate 2: review required ----------------------------------------------
-# /ship is user-invoked only (disable-model-invocation), so the model has no
-# legal way to clear this gate itself. Ask once per tree, then get out of the
-# way — blocking again only burns turns on an instruction that cannot be
-# obeyed. Deliberately does not touch ATTEMPTS: that budget is for gate 1,
-# whose failures the model can actually fix.
+# Ask once per tree, then get out of the way — blocking again only burns turns,
+# and a turn that ended on a question must be allowed to wait for its answer.
+# Deliberately does not touch ATTEMPTS: that budget is for gate 1, whose
+# failures the model can actually fix.
+#
+# On an issue branch (`<iid>-…`) the ask is "invoke /ship if the issue is done",
+# and the request marker is what skill-guard.sh lets that invocation through on.
+# Anywhere else, after `/autoship off`, or in any milestone turn, it is the nudge
+# to tell the user, because the model has no legal way to start /ship there. The
+# runner keeps the gate on for its ship and nudge turns, and a ship turn that
+# stopped at step 6 over a deferred HIGH must stay blocked, not ship again.
 if [[ ! -f "${STATE}/reviewed-${CUR_FP}.ok" ]]; then
     NUDGE_FILE="${STATE}/nudged-${SESSION_ID}-${CUR_FP}"
-    if [[ -f "$NUDGE_FILE" ]]; then
+    REQUEST_FILE=$(ship_request_marker "$STATE" "$SESSION_ID" "$CUR_FP")
+    if [[ -f "$NUDGE_FILE" || -f "$REQUEST_FILE" ]]; then
         echo "gate: review pending, already asked for this tree — allowing stop" >&2
         pass
+    fi
+    if [[ -f "$(ship_pending_file "$STATE" "$CUR_FP")" ]]; then
+        echo "gate: /ship ran for this tree and is waiting on the user — allowing stop" >&2
+        pass
+    fi
+    IID=$(issue_branch_iid)
+    if [[ -n "$IID" && -z "${MILESTONE_RUN:-}" \
+          && ! -f "$(autoship_off_marker "$STATE" "$SESSION_ID")" ]]; then
+        : > "$REQUEST_FILE"
+        printf '%s\n' "Code changed on #${IID}'s branch and has not been reviewed.
+
+If every acceptance criterion of #${IID} is met and you are not waiting on the
+user for anything, invoke /ship now — /ship --quick if a review already ran on
+this branch and the tree has moved since. It runs straight through and asks the
+user every open question once, at the end.
+
+Otherwise end the turn and say in one line that the work is unreviewed. A
+question you were asking stays above that line: the user answers it, not /ship.
+
+This gate asks once per tree and will not block again for this one. The user
+turns it off for the session with /autoship off, or bypasses it with the line
+below — theirs to write, never yours:
+echo 'why' > ${STATE}/skip-${SESSION_ID}" >&2
+        exit 2
     fi
     : > "$NUDGE_FILE"
     printf '%s\n' "Code changed in this session but has not been reviewed.

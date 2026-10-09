@@ -40,7 +40,7 @@ set -uo pipefail
 # --- what the contract is -----------------------------------------------------
 REQUIRED_HOOKS=(bash-guard.sh decision-doc-context.sh foreman.sh gate-lib.sh
                 mark-reviewed.sh post-edit-lint.sh run-gates.sh session-start.sh
-                stop-gate.sh)
+                skill-guard.sh stop-gate.sh)
 TEMPLATE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/templates/project-claude"
 # #18 owns this ledger and its format. Until it lands the file is simply absent,
 # which is why every read of it degrades to a row saying so rather than an error.

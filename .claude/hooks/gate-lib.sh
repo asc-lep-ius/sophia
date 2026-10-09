@@ -173,6 +173,37 @@ gates_marker() {
     printf '%s/gates-%s.ok' "$1" "$2"
 }
 
+# --- the auto-ship request -----------------------------------------------------
+# On an issue branch the Stop gate asks the model to invoke /ship itself, once
+# per tree, and skill-guard.sh lets that invocation through only against the
+# request the gate wrote. The marker is the evidence: a model that decided on its
+# own that the work is done has nothing to show the guard.
+ship_request_marker() {  # ship_request_marker <state> <session> <fingerprint>
+    printf '%s/ship-requested-%s-%s' "$1" "$2" "$3"
+}
+
+# What /ship writes when it reaches its end-of-run prompt: every open decision,
+# keyed to the tree they are about. Its existence means /ship already ran for this
+# tree and is waiting on a person, so neither the gate nor anybody else should
+# start it again.
+ship_pending_file() {  # ship_pending_file <state> <fingerprint>
+    printf '%s/ship-pending-%s.md' "$1" "$2"
+}
+
+# `/autoship off` writes this. Per session, so turning it off while iterating
+# never outlives the session that needed it.
+autoship_off_marker() {  # autoship_off_marker <state> <session>
+    printf '%s/autoship-off-%s' "$1" "$2"
+}
+
+# The issue a branch named `<iid>-…` is for, or nothing. Run from the repo root.
+issue_branch_iid() {
+    local branch
+    branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || return 0
+    [[ "$branch" =~ ^([0-9]+)- ]] && printf '%s' "${BASH_REMATCH[1]}"
+    return 0
+}
+
 # --- what a tree change is allowed to skip -------------------------------------
 # The gates run on every tree change, whatever moved it. In a directory whose
 # ordinary edit is a config file no gate reads, that is a ~30s toll on work the
@@ -209,6 +240,12 @@ GATE_SKIP_LOG_NAME="gate-skips.log"
 # one inert path, every path in the change reads as inert, and the gates skip
 # over a covered file that moved. Both sides of the comparison carry the flag, so
 # the filtered list is computed the same way as the whole one.
+#
+# `git diff-files` as well, because a clean filter can hide a change from `git
+# diff` that `git status` still lists: git takes a file whose size changed for
+# modified without running the filter. The fingerprint reads `git status`, so it
+# moves, and a change no list named used to fall through to a full gate run.
+# ~/.claude filters settings.json that way, to keep /model and /effort out of git.
 changed_paths() {  # changed_paths <baseline sha> [globs]
     local base="${1:-}" globs="${2:-}"
     local -a specs=("--")
@@ -222,6 +259,7 @@ changed_paths() {  # changed_paths <baseline sha> [globs]
         git diff --no-renames --name-only "$base" HEAD "${specs[@]}"
         git diff --no-renames --name-only HEAD "${specs[@]}"
         git ls-files --others --exclude-standard "${specs[@]}"
+        git diff-files --name-only "${specs[@]}"
     } 2>/dev/null | sort -u
 }
 
