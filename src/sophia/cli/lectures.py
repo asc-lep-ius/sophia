@@ -24,7 +24,7 @@ app = cyclopts.App(
         " 2. list                           — discover lecture recordings\n"
         " 3. process    MODULE_ID           — full pipeline (all stages)\n"
         " 4. download   MODULE_ID           — download recordings only\n"
-        " 5. transcribe MODULE_ID           — transcribe with Whisper\n"
+        " 5. transcribe MODULE_ID           — captions where published, else Whisper\n"
         " 6. index      MODULE_ID           — build embedding index\n"
         ' 7. search     "query" MODULE_ID   — semantic search in transcripts\n'
         "\n"
@@ -247,7 +247,7 @@ async def lectures_status(
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.infra.di import create_app
-    from sophia.services.hermes_manage import get_pipeline_status
+    from sophia.services.hermes_manage import DOWNLOAD_NOT_NEEDED, get_pipeline_status
 
     async with create_app() as container, container.session() as db:
         async with handle_resolve_error():
@@ -271,6 +271,7 @@ async def lectures_status(
     table.add_column("Title", style="cyan")
     table.add_column("Download", style="green")
     table.add_column("Transcription", style="green")
+    table.add_column("Source", style="magenta")
     table.add_column("Index", style="green")
     table.add_column("Missed", style="red", justify="center")
     table.add_column("Materials", justify="right")
@@ -281,8 +282,9 @@ async def lectures_status(
             str(ep.lecture_number) if ep.lecture_number is not None else "",
             ep.episode_id[:12],
             ep.title,
-            ep.download_status,
+            "—" if ep.download_status == DOWNLOAD_NOT_NEEDED else ep.download_status,
             ep.transcription_status or "—",
+            ep.transcription_source or "—",
             ep.index_status or "—",
             "⚠" if ep.missed_at else "",
             mat_count,
@@ -808,7 +810,7 @@ async def lectures_transcribe(
         cyclopts.Parameter(help="Module ID, course number (186.813), or name."),
     ],
 ) -> None:
-    """Transcribe downloaded lectures using Whisper. Requires 'sophia lectures setup'."""
+    """Transcribe lectures: the player's captions where published, Whisper otherwise."""
     from rich.console import Console
     from rich.progress import (
         BarColumn,
@@ -822,7 +824,10 @@ async def lectures_transcribe(
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError, TranscriptionError
     from sophia.infra.di import create_app
-    from sophia.services.hermes_transcribe import transcribe_lectures
+    from sophia.services.hermes_transcribe import (
+        transcribe_from_captions,
+        transcribe_lectures,
+    )
 
     console = Console()
 
@@ -864,13 +869,17 @@ async def lectures_transcribe(
                     progress.advance(task)
                     progress.update(task, description="[cyan]Transcribing…[/cyan]")
 
-                results = await transcribe_lectures(
+                results = await transcribe_from_captions(
+                    container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
+                )
+                results += await transcribe_lectures(
                     container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
                 )
 
             table = Table(title="Transcription Results")
             table.add_column("Title", style="cyan", no_wrap=False)
             table.add_column("Status", style="white")
+            table.add_column("Source", style="magenta")
             table.add_column("Segments", justify="right")
             table.add_column("SRT", style="dim", no_wrap=False)
 
@@ -883,6 +892,7 @@ async def lectures_transcribe(
                 table.add_row(
                     r.title,
                     f"[{status_style}]{r.status}[/{status_style}]",
+                    r.source,
                     str(r.segment_count) if r.segment_count else "",
                     str(r.srt_path) if r.srt_path else r.error or "",
                 )
@@ -1012,7 +1022,7 @@ async def lectures_process(
         ),
     ] = False,
 ) -> None:
-    """Run the full lecture pipeline: download → transcribe → index → extract topics."""
+    """Run the full lecture pipeline: captions → download → transcribe → index → topics."""
     from types import SimpleNamespace
     from typing import TYPE_CHECKING
 
@@ -1054,6 +1064,9 @@ async def lectures_process(
                         break
 
             state = SimpleNamespace(
+                cc_count=0,
+                cc_done=False,
+                dl_done=False,
                 tr_task=None,
                 tr_count=0,
                 ix_task=None,
@@ -1068,10 +1081,44 @@ async def lectures_process(
                 TimeElapsedColumn(),
                 console=console,
             ) as progress:
-                dl_task = progress.add_task("[cyan][1/4] Downloading…[/cyan]", total=None)
+                cc_task = progress.add_task("[cyan][1/5] Reading captions…[/cyan]", total=None)
+                dl_task = progress.add_task("[cyan][2/5] Downloading…[/cyan]", total=None)
                 ep_tasks: dict[str, object] = {}
 
+                def _finish_captions() -> None:
+                    if state.cc_done:
+                        return
+                    state.cc_done = True
+                    progress.update(
+                        cc_task,
+                        description=f"[green]✓ [1/5] Captions read ({state.cc_count})[/green]",
+                        completed=1,
+                        total=1,
+                    )
+
+                def _finish_download() -> None:
+                    _finish_captions()
+                    if state.dl_done:
+                        return
+                    state.dl_done = True
+                    progress.update(
+                        dl_task,
+                        description="[green]✓ [2/5] Download complete[/green]",
+                        completed=1,
+                        total=1,
+                    )
+
+                def _on_cc_start(episode_id: str, title: str) -> None:
+                    progress.update(
+                        cc_task,
+                        description=f"[cyan][1/5] Reading captions: {title[:40]}…[/cyan]",
+                    )
+
+                def _on_cc_complete(episode_id: str, segment_count: int) -> None:
+                    state.cc_count += 1
+
                 def _on_dl(episode_id: str, event: DownloadProgressEvent) -> None:
+                    _finish_captions()
                     if episode_id not in ep_tasks:
                         ep_tasks[episode_id] = progress.add_task(
                             f"  └ {episode_id[:35]}…",
@@ -1080,33 +1127,29 @@ async def lectures_process(
                     progress.update(ep_tasks[episode_id], completed=event.bytes_downloaded)  # type: ignore[arg-type]
 
                 def _on_tr_start(episode_id: str, title: str) -> None:
+                    _finish_download()
                     if state.tr_task is None:
                         state.tr_task = progress.add_task(
-                            f"[cyan][2/4] Transcribing: {title[:40]}…[/cyan]", total=None
-                        )
-                        progress.update(
-                            dl_task,
-                            description="[green]✓ [1/4] Download complete[/green]",
-                            completed=1,
-                            total=1,
+                            f"[cyan][3/5] Transcribing: {title[:40]}…[/cyan]", total=None
                         )
                     else:
                         progress.update(
                             state.tr_task,
-                            description=f"[cyan][2/4] Transcribing: {title[:40]}…[/cyan]",
+                            description=f"[cyan][3/5] Transcribing: {title[:40]}…[/cyan]",
                         )
 
                 def _on_tr_complete(episode_id: str, segment_count: int) -> None:
                     state.tr_count += 1
 
                 def _on_ix_start(episode_id: str, title: str) -> None:
+                    _finish_download()
                     if state.ix_task is None:
                         state.ix_task = progress.add_task(
-                            f"[cyan][3/4] Indexing: {title[:40]}…[/cyan]", total=None
+                            f"[cyan][4/5] Indexing: {title[:40]}…[/cyan]", total=None
                         )
                         if state.tr_task is not None:
                             tr_done = (
-                                f"[green]✓ [2/4] Transcription complete ({state.tr_count})[/green]"
+                                f"[green]✓ [3/5] Transcription complete ({state.tr_count})[/green]"
                             )
                             progress.update(
                                 state.tr_task,
@@ -1117,19 +1160,20 @@ async def lectures_process(
                     else:
                         progress.update(
                             state.ix_task,
-                            description=f"[cyan][3/4] Indexing: {title[:40]}…[/cyan]",
+                            description=f"[cyan][4/5] Indexing: {title[:40]}…[/cyan]",
                         )
 
                 def _on_ix_complete(episode_id: str, chunk_count: int) -> None:
                     state.ix_count += 1
 
                 def _on_topic(topic_label: str) -> None:
+                    _finish_download()
                     if state.tc_task is None:
                         state.tc_task = progress.add_task(
-                            "[cyan][4/4] Extracting topics…[/cyan]", total=None
+                            "[cyan][5/5] Extracting topics…[/cyan]", total=None
                         )
                         if state.ix_task is not None:
-                            ix_done = f"[green]✓ [3/4] Indexing complete ({state.ix_count})[/green]"
+                            ix_done = f"[green]✓ [4/5] Indexing complete ({state.ix_count})[/green]"
                             progress.update(
                                 state.ix_task,
                                 description=ix_done,
@@ -1139,7 +1183,7 @@ async def lectures_process(
                     state.tc_count += 1
                     progress.update(
                         state.tc_task,
-                        description=f"[cyan][4/4] Topics: {state.tc_count} extracted…[/cyan]",
+                        description=f"[cyan][5/5] Topics: {state.tc_count} extracted…[/cyan]",
                     )
 
                 result: PipelineResult = await run_pipeline(
@@ -1148,6 +1192,8 @@ async def lectures_process(
                     resolved_id,
                     index_materials=materials_flag,
                     course_id=_course_id,
+                    on_caption_start=_on_cc_start,
+                    on_caption_complete=_on_cc_complete,
                     on_download_progress=_on_dl,
                     on_transcribe_start=_on_tr_start,
                     on_transcribe_complete=_on_tr_complete,
@@ -1157,32 +1203,26 @@ async def lectures_process(
                 )
 
                 # Mark the deepest completed stage as done
+                _finish_download()
                 if state.tc_task is not None:
                     progress.update(
                         state.tc_task,
-                        description=f"[green]✓ [4/4] Topics complete ({state.tc_count})[/green]",
+                        description=f"[green]✓ [5/5] Topics complete ({state.tc_count})[/green]",
                         completed=1,
                         total=1,
                     )
                 elif state.ix_task is not None:
                     progress.update(
                         state.ix_task,
-                        description=f"[green]✓ [3/4] Indexing complete ({state.ix_count})[/green]",
+                        description=f"[green]✓ [4/5] Indexing complete ({state.ix_count})[/green]",
                         completed=1,
                         total=1,
                     )
                 elif state.tr_task is not None:
-                    tr_done = f"[green]✓ [2/4] Transcription complete ({state.tr_count})[/green]"
+                    tr_done = f"[green]✓ [3/5] Transcription complete ({state.tr_count})[/green]"
                     progress.update(
                         state.tr_task,
                         description=tr_done,
-                        completed=1,
-                        total=1,
-                    )
-                else:
-                    progress.update(
-                        dl_task,
-                        description="[green]✓ [1/4] Download complete[/green]",
                         completed=1,
                         total=1,
                     )
@@ -1193,34 +1233,43 @@ async def lectures_process(
             table.add_column("Episode", style="cyan", no_wrap=False)
             table.add_column("Download", style="white")
             table.add_column("Transcribe", style="white")
+            table.add_column("Source", style="magenta")
             table.add_column("Index", style="white")
 
-            # Build per-episode rows from downloads (source of episode IDs)
+            # One row per episode the run saw: the downloads first, then any
+            # caption transcript the download stage never got to report on.
             transcribe_map = {r.episode_id: r for r in result.transcriptions}
             index_map = {r.episode_id: r for r in result.indexing}
+            seen = {dl.episode_id for dl in result.downloads}
+            episodes = [(dl.episode_id, dl.title, dl.status) for dl in result.downloads] + [
+                (tr.episode_id, tr.title, "—")
+                for tr in result.transcriptions
+                if tr.episode_id not in seen
+            ]
 
             completed = {"download": 0, "transcribe": 0, "index": 0}
             skipped = {"download": 0, "transcribe": 0, "index": 0}
             failed = {"download": 0, "transcribe": 0, "index": 0}
 
-            for dl in result.downloads:
-                dl_style = _STATUS_STYLES.get(dl.status, "white")
-                dl_cell = f"[{dl_style}]{dl.status}[/{dl_style}]"
+            for episode_id, title, dl_status in episodes:
+                dl_style = _STATUS_STYLES.get(dl_status, "dim")
+                dl_cell = f"[{dl_style}]{dl_status}[/{dl_style}]"
 
-                tr = transcribe_map.get(dl.episode_id)
+                tr = transcribe_map.get(episode_id)
                 tr_status = tr.status if tr else "—"
                 tr_style = _STATUS_STYLES.get(tr_status, "dim")
                 tr_cell = f"[{tr_style}]{tr_status}[/{tr_style}]"
+                source_cell = tr.source if tr else "—"
 
-                ix = index_map.get(dl.episode_id)
+                ix = index_map.get(episode_id)
                 ix_status = ix.status if ix else "—"
                 ix_style = _STATUS_STYLES.get(ix_status, "dim")
                 ix_cell = f"[{ix_style}]{ix_status}[/{ix_style}]"
 
-                table.add_row(dl.title, dl_cell, tr_cell, ix_cell)
+                table.add_row(title, dl_cell, tr_cell, source_cell, ix_cell)
 
                 for stage, status in [
-                    ("download", dl.status),
+                    ("download", dl_status),
                     ("transcribe", tr_status),
                     ("index", ix_status),
                 ]:
@@ -1241,6 +1290,7 @@ async def lectures_process(
                 f"[green]{completed['transcribe']}[/green] / "
                 f"[yellow]{skipped['transcribe']}[/yellow] / "
                 f"[red]{failed['transcribe']}[/red]",
+                "",
                 f"[green]{completed['index']}[/green] / "
                 f"[yellow]{skipped['index']}[/yellow] / "
                 f"[red]{failed['index']}[/red]",
