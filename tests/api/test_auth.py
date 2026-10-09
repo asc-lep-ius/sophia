@@ -57,6 +57,9 @@ def test_login_sets_signed_session_and_csrf_cookies() -> None:
     assert "SameSite=lax" in csrf_header
     assert "Path=/" in session_header
     assert "Path=/" in csrf_header
+    # Not browser-session cookies: closing the browser must not sign the learner out.
+    assert f"Max-Age={harness.settings.session_ttl_seconds}" in session_header
+    assert f"Max-Age={harness.settings.session_ttl_seconds}" in csrf_header
 
 
 def test_login_bad_credentials_uses_auth_error_envelope() -> None:
@@ -92,9 +95,27 @@ def test_session_endpoint_returns_authenticated_session() -> None:
     assert body["csrf_token"] == harness.client.cookies.get(harness.settings.csrf_cookie_name)
 
 
+def test_reading_the_session_slides_the_cookies_with_it() -> None:
+    """Redis slides the record on every read; a cookie that did not would expire first."""
+    harness = build_harness()
+    login(harness)
+    session_cookie = harness.client.cookies.get(harness.settings.session_cookie_name)
+
+    response = harness.client.get("/api/auth/session")
+
+    set_cookie_headers = response.headers.get_list("set-cookie")
+    session_header = _cookie_header(set_cookie_headers, harness.settings.session_cookie_name)
+    csrf_header = _cookie_header(set_cookie_headers, harness.settings.csrf_cookie_name)
+    assert session_header.startswith(f"{harness.settings.session_cookie_name}={session_cookie};")
+    assert f"Max-Age={harness.settings.session_ttl_seconds}" in session_header
+    assert f"Max-Age={harness.settings.session_ttl_seconds}" in csrf_header
+    assert "HttpOnly" in session_header
+
+
 def test_session_endpoint_without_cookie_returns_anonymous_status() -> None:
     response = build_harness().client.get("/api/auth/session")
 
+    assert response.headers.get_list("set-cookie") == []
     assert response.status_code == 200
     assert response.json() == {
         "authenticated": False,

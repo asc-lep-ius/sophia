@@ -12,7 +12,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _LOCAL_DEVELOPMENT_SECRET_KEY = "sophia-local-development-secret-key"
 _MINIMUM_PRODUCTION_SECRET_KEY_BYTES = 32
-_DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 8
+# Sliding, so a learner who comes back within 30 days stays signed in (#124).
+_DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 _COOKIE_NAME_PATTERN = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
 
 
@@ -62,6 +63,8 @@ class Settings(BaseSettings):
     session_cookie_name: str = "__Host-sophia_session"
     csrf_cookie_name: str = "__Host-sophia_csrf"
     session_ttl_seconds: int = _DEFAULT_SESSION_TTL_SECONDS
+    # How often the API pings TUWEL and TISS so neither idles out (TUWEL: 8 h).
+    session_keepalive_interval: int = Field(default=300, ge=60)
     session_cookie_secure: bool = True
     session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 

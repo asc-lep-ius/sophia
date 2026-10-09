@@ -12,16 +12,18 @@ Nothing here runs on Stop. The run contract is read only by `/ship` step 2c.
 
 ## Why this is box-local at all
 
-`create_app` (`src/sophia/infra/di.py:64`) loads a stored TUWEL session and
-raises `AuthError` before it builds anything, so the API will not start until
-somebody has logged in on that machine. After the first login, `ensure_session`
-(`src/sophia/services/job_runner.py`) re-authenticates from the keyring via
-`login_both` with **no MFA code** and re-saves both the TUWEL and the TISS
-session — so only the first login is interactive, and the same credential pair
-serves both services.
+`create_app` (`src/sophia/infra/di.py`) refuses to start with no stored TUWEL
+session and nothing stored to log in with, so the API will not start until
+somebody has logged in on that machine. MFA has been mandatory since 2026-04-01,
+so the first login has to store the TOTP secret as well as the password: after
+it, `ensure_valid_session` (`src/sophia/services/job_runner.py`) logs in again
+with a generated code whenever the session has died, and re-saves both the
+TUWEL and the TISS session — so only the first login is interactive, and the
+one login serves both services. Without the secret, a session that idles out
+(TUWEL forgets it after 8 h) needs a person again (#124).
 
 That is why `SESSION_CMD` points at a project mint script that calls
-`ensure_session` rather than at a faked identity. A fake session lands in an
+`ensure_valid_session` rather than at a faked identity. A fake session lands in an
 empty workspace: `course_materials`, `lecture_modules` and `topic_mappings` stay
 empty until a TUWEL sync has run, so it cannot exercise the study surface at all.
 The cost is that the proof walk is box-bound — it works where somebody has logged
@@ -111,8 +113,14 @@ are read from the environment, but the password always goes through
 `getpass.getpass`, so running it from a non-interactive shell fails with
 `EOF when reading a line` after burning an MFA code.
 
-`--save-credentials` is what makes every later run unattended. Without it the
-session is saved but there is nothing to refresh from.
+`--save-credentials` is what makes every later run unattended. It asks for the
+TOTP secret too: the base32 secret from your authenticator's `otpauth://`
+enrolment (re-enrol to see it, if your app never showed it). It is read at a
+getpass prompt only, kept only if it produces the MFA code you just typed, and
+refused unless `PYTHON_KEYRING_BACKEND` pins a backend that is not plaintext —
+with it stored, this box holds both factors. Press Enter to skip it on a later
+login and the one already stored is kept; with none stored, a session that dies
+needs you again. `sophia auth logout` removes it.
 
 The master password is fixed on the encrypted store's **first** use. If it was
 initialised with the wrong one, delete `~/.local/share/python_keyring/crypted_pass.cfg`

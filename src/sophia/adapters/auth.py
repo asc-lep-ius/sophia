@@ -9,7 +9,7 @@ import os
 import re
 import warnings
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import UTC, datetime
 from random import randint
 from typing import TYPE_CHECKING
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, MfaRejectedError
 
 log = structlog.get_logger()
 
@@ -136,7 +136,26 @@ def clear_tiss_session(path: Path) -> None:
 _KEYRING_SERVICE = "sophia-tuwien"
 _KEYRING_USERNAME_KEY = "username"
 _KEYRING_PASSWORD_KEY = "password"
+_KEYRING_TOTP_KEY = "totp_secret"
 _KEYRING_PASSWORD_ENV = "SOPHIA_KEYRING_PASSWORD"
+_PINNED_BACKEND_ENV = "PYTHON_KEYRING_BACKEND"
+# Backends that would keep the second factor in cleartext, or nowhere (#111).
+_UNSAFE_BACKENDS = frozenset(
+    {
+        "keyrings.alt.file.PlaintextKeyring",
+        "keyring.backends.fail.Keyring",
+        "keyring.backends.null.Keyring",
+    }
+)
+
+
+@dataclass(frozen=True)
+class StoredCredentials:
+    """What ``sophia auth login --save-credentials`` left in the keyring."""
+
+    username: str
+    password: str = field(repr=False)
+    totp_secret: str | None = field(default=None, repr=False)
 
 
 @contextmanager
@@ -156,31 +175,76 @@ def _keyring_env_password() -> Iterator[None]:
 
 
 class KeyringUnavailableError(Exception):
-    """Raised when no keyring backend is available."""
+    """Raised when no keyring backend is available, or the one there is unusable."""
 
 
-def save_credentials_to_keyring(username: str, password: str) -> None:
+_WRONG_MASTER_PASSWORD = (
+    f"The keyring master password ({_KEYRING_PASSWORD_ENV}) does not unlock the store"
+)
+
+
+def require_secure_keyring() -> None:
+    """Refuse to hold the TOTP secret anywhere but a pinned, encrypted backend.
+
+    With the secret stored, the machine holds both factors, so #111's rule for
+    the password is a hard requirement here: the backend is named explicitly in
+    PYTHON_KEYRING_BACKEND, never left to priority resolution, and never one
+    that writes cleartext.
+    """
+    import keyring
+
+    if not os.environ.get(_PINNED_BACKEND_ENV):
+        raise KeyringUnavailableError(
+            f"Pin a keyring backend with {_PINNED_BACKEND_ENV} before storing the TOTP "
+            "secret — see docs/run-contract-setup.md"
+        )
+    backend = keyring.get_keyring()
+    name = f"{type(backend).__module__}.{type(backend).__name__}"
+    if name in _UNSAFE_BACKENDS:
+        raise KeyringUnavailableError(f"{name} would not keep the TOTP secret encrypted")
+
+
+def save_credentials_to_keyring(
+    username: str, password: str, totp_secret: str | None = None
+) -> None:
     """Store TU Wien credentials in the OS keyring (opt-in).
 
-    Raises KeyringUnavailableError if no backend is configured.
+    Without a secret, a stored one is left as it is: skipping the prompt means
+    "do not change it", and only ``sophia auth logout`` removes it.
+    Raises KeyringUnavailableError if no backend is configured, or if a secret
+    is given and the backend is not one that may hold it.
     """
     import keyring
     import keyring.errors
 
+    if totp_secret is not None:
+        require_secure_keyring()
     try:
         with _keyring_env_password():
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY, username)
             keyring.set_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY, password)
+            if totp_secret is not None:
+                keyring.set_password(_KEYRING_SERVICE, _KEYRING_TOTP_KEY, totp_secret)
     except keyring.errors.NoKeyringError as exc:
         raise KeyringUnavailableError(
             "No keyring backend available. "
             "Install 'secretstorage' (Linux) or 'keyrings.alt' for a file-based fallback."
         ) from exc
-    log.info("credentials_saved_to_keyring", service=_KEYRING_SERVICE)
+    except ValueError as exc:  # keyrings.alt's EncryptedKeyring: "Incorrect Password"
+        raise KeyringUnavailableError(_WRONG_MASTER_PASSWORD) from exc
+    log.info(
+        "credentials_saved_to_keyring",
+        service=_KEYRING_SERVICE,
+        second_factor_stored=totp_secret is not None,
+    )
 
 
-def load_credentials_from_keyring() -> tuple[str, str] | None:
-    """Load stored TU Wien credentials from the OS keyring, or None."""
+def load_credentials_from_keyring() -> StoredCredentials | None:
+    """Load stored TU Wien credentials from the OS keyring, or None.
+
+    Raises KeyringUnavailableError when a backend is there but cannot be
+    unlocked — a wrong master password is a broken setup, not "nothing stored".
+    """
     import keyring
     import keyring.errors
 
@@ -188,24 +252,28 @@ def load_credentials_from_keyring() -> tuple[str, str] | None:
         with _keyring_env_password():
             username = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
             password = keyring.get_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+            totp_secret = keyring.get_password(_KEYRING_SERVICE, _KEYRING_TOTP_KEY)
     except keyring.errors.NoKeyringError:
         log.warning("keyring_unavailable")
         return None
+    except ValueError as exc:  # keyrings.alt's EncryptedKeyring: "Incorrect Password"
+        raise KeyringUnavailableError(_WRONG_MASTER_PASSWORD) from exc
     if username and password:
-        return username, password
+        return StoredCredentials(username, password, totp_secret or None)
     return None
 
 
 def clear_credentials_from_keyring() -> None:
-    """Remove stored TU Wien credentials from the OS keyring."""
+    """Remove stored TU Wien credentials, TOTP secret included, from the OS keyring."""
     import keyring
     import keyring.errors
 
     with _keyring_env_password():
-        with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
-            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME_KEY)
-        with contextlib.suppress(keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError):
-            keyring.delete_password(_KEYRING_SERVICE, _KEYRING_PASSWORD_KEY)
+        for key in (_KEYRING_USERNAME_KEY, _KEYRING_PASSWORD_KEY, _KEYRING_TOTP_KEY):
+            with contextlib.suppress(
+                keyring.errors.PasswordDeleteError, keyring.errors.NoKeyringError
+            ):
+                keyring.delete_password(_KEYRING_SERVICE, key)
     log.info("credentials_cleared_from_keyring", service=_KEYRING_SERVICE)
 
 
@@ -323,12 +391,32 @@ async def _submit_credentials(
     resp = await client.post(action_url, data=payload)
     resp.raise_for_status()
 
-    # Check if IdP returned the login form again (bad credentials)
+    # The IdP answers a refused login with its form again.
     resp_soup = BeautifulSoup(resp.text, "lxml")
     if resp_soup.find("input", {"name": "username"}):
-        raise AuthError("Login failed — invalid username or password")
+        _raise_refused_login(resp_soup)
 
     return resp
+
+
+# Since MFA became mandatory, a missing or wrong code returns the same form as a
+# wrong password. The form always carries an "MFA Code" label, so only the
+# refusal wording counts: "Ungültiger MFA Code — Der MFA Code fehlt oder ist
+# ungültig", or its English rendering.
+_MFA_REFUSAL_RE = re.compile(
+    r"ungültige[rn]?\s+MFA|MFA[- ]?Code\s+fehlt"
+    r"|invalid\s+MFA|MFA\s+code\s+(?:is\s+)?(?:missing|invalid)",
+    re.IGNORECASE,
+)
+
+
+def _raise_refused_login(soup: BeautifulSoup) -> None:
+    text = " ".join(soup.get_text(" ").split())
+    if _MFA_REFUSAL_RE.search(text):
+        raise MfaRejectedError(
+            "Login failed — the IdP refused the MFA code (missing, wrong, or already used)"
+        )
+    raise AuthError("Login failed — invalid username or password")
 
 
 @_sso_retry

@@ -38,24 +38,25 @@ that cannot arrive. CI runs it with `--cov-fail-under=85` instead.
 ## Gotchas
 
 **The API cannot start until somebody has logged in on this box once.**
-`create_app` (`src/sophia/infra/di.py:64`) calls `load_session(...)` and raises
-`AuthError("Not logged in — run: sophia auth login")` before it builds anything.
-Verified 2026-09-18: uvicorn exits at lifespan startup.
+`create_app` (`src/sophia/infra/di.py`) raises `AuthError("Not logged in — run:
+sophia auth login")` when there is no stored session and nothing stored to log
+in with. Verified 2026-09-18: uvicorn exits at lifespan startup.
 
-That is a first-run cost, not a permanent one. MFA is required only for the
-interactive `sophia auth login`; afterwards `ensure_session`
-(`src/sophia/services/job_runner.py`) re-authenticates from the keyring via
-`login_both` with **no MFA code** and re-saves both the TUWEL and the TISS
-session, so the stack starts unattended from then on. Use
-`--save-credentials` on that first login or there is nothing to refresh from.
+That is a first-run cost only if the first login stores the TOTP secret. MFA has
+been mandatory since 2026-04-01, so a password alone can never log in again.
+`sophia auth login --save-credentials` stores the password and the TOTP secret;
+from then on `ensure_valid_session` (`src/sophia/services/job_runner.py`) and
+`create_app` log in again with a generated code when the session has died, and
+the API's keepalive pings TUWEL and TISS every 300 s (#124). Without the secret,
+a session that idles out (TUWEL: 8 h) needs a person with an authenticator.
 
 On a headless box neither prerequisite holds by default — the config dir must be
-writable and `keyring` must resolve to something other than
-`keyring.backends.fail.Keyring`. `docs/run-contract-setup.md` is the per-box
+writable, and the TOTP secret is refused unless `PYTHON_KEYRING_BACKEND` pins a
+backend that is not plaintext. `docs/run-contract-setup.md` is the per-box
 checklist; the deployed container's version of the same gap is #111.
 
 The credential coupling is shallow: `creds` is used only to cookie the shared
-http session and to build `MoodleAdapter` (`di.py:99-119`); the engine,
+http session and to build `MoodleAdapter` (`_init_resources` in `di.py`); the engine,
 migrations, TISS, Opencast and the downloader need none of it. Nothing in CI has
 ever started the product — `.gitlab-ci.yml` runs Postgres as a service for
 database-backed tests and no job launches the API or the frontend.

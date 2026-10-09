@@ -127,3 +127,74 @@ def test_ready_reports_503_when_postgres_stops_answering() -> None:
     assert response.status_code == 503
     checks = {check["name"]: check["ok"] for check in response.json()["checks"]}
     assert checks["database"] is False
+
+
+def test_an_expired_tu_wien_session_degrades_readiness_without_failing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Decided on #124: pages that need no TUWEL keep working, so the API stays ready."""
+    from sophia.services.upstream_session import UpstreamSession, UpstreamStatus
+
+    upstream = UpstreamSession(None, UpstreamStatus("expired", "No TOTP secret stored"))
+    fake_container = cast("AppContainer", FakeAppContainer(db=object(), upstream=upstream))
+
+    @asynccontextmanager
+    async def fake_create_app_container(
+        _settings: Settings | None = None,
+    ) -> AsyncIterator[AppContainer]:
+        yield fake_container
+
+    monkeypatch.setattr(api_app_module, "create_app_container", fake_create_app_container)
+    with TestClient(create_standalone_api_app()) as client:
+        response = client.get("/api/ready")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "status": "ready",
+        "checks": [
+            {"name": "database", "ok": True},
+            {"name": "sse_broker", "ok": True},
+            # The state only: the reason names the setup gap, and this route is public.
+            {"name": "upstream_session", "ok": False, "required": False, "detail": "expired"},
+        ],
+    }
+
+
+def test_the_api_lifespan_runs_the_keepalive_and_stops_it_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scenario 3 needs the keepalive running inside the API, not merely defined."""
+    import asyncio
+
+    started: list[float] = []
+    cancelled = asyncio.Event()
+
+    class RecordingKeepalive:
+        def __init__(self, container: object) -> None:
+            self.container = container
+
+        async def run(self, interval_s: float) -> None:
+            started.append(interval_s)
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    fake_container = cast("AppContainer", FakeAppContainer(db=object()))
+
+    @asynccontextmanager
+    async def fake_create_app_container(
+        _settings: Settings | None = None,
+    ) -> AsyncIterator[AppContainer]:
+        yield fake_container
+
+    monkeypatch.setattr(api_app_module, "create_app_container", fake_create_app_container)
+    monkeypatch.setattr(api_app_module, "SessionKeepalive", RecordingKeepalive)
+    monkeypatch.setenv("SOPHIA_SESSION_KEEPALIVE_INTERVAL", "120")
+
+    with TestClient(create_standalone_api_app()) as client:
+        assert client.get("/api/ready").status_code == 200
+        assert started == [120]
+
+    assert cancelled.is_set()

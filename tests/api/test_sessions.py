@@ -119,7 +119,7 @@ def test_session_settings_validate_cookie_and_redis_defaults() -> None:
     assert settings.redis_url == "redis://localhost:6379/0"
     assert settings.session_cookie_name == "__Host-sophia_session"
     assert settings.csrf_cookie_name == "__Host-sophia_csrf"
-    assert settings.session_ttl_seconds == 60 * 60 * 8
+    assert settings.session_ttl_seconds == 60 * 60 * 24 * 30
     assert settings.session_cookie_secure is True
     assert settings.session_cookie_samesite == "lax"
 
@@ -418,3 +418,16 @@ def test_created_at_is_utc_with_a_z_suffix() -> None:
     assert datetime.fromisoformat(record.created_at).tzinfo == UTC
     assert "." not in record.created_at, "timestamps are stored at second granularity"
     assert record.updated_at == record.created_at
+
+
+def test_session_lifetime_is_configurable_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SOPHIA_SESSION_TTL_SECONDS", "3600")
+    assert Settings().session_ttl_seconds == 3600
+
+
+def test_keepalive_interval_defaults_to_five_minutes_and_refuses_under_one() -> None:
+    assert Settings().session_keepalive_interval == 300
+    with pytest.raises(ValueError, match="session_keepalive_interval"):
+        Settings(session_keepalive_interval=59)

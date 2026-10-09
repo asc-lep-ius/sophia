@@ -4,69 +4,35 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import httpx
 import structlog
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-from sophia.adapters.auth import (
-    load_credentials_from_keyring,
-    load_session,
-    login_both,
-    save_session,
-    save_tiss_session,
-    session_path,
-    tiss_session_path,
-)
-from sophia.adapters.moodle import MoodleAdapter
+from sophia.adapters.auth import KeyringUnavailableError, load_session, session_path
 from sophia.domain.errors import AuthError
-from sophia.infra.http import http_session
+from sophia.services.upstream_session import reauthenticate, tuwel_session_alive
 
 log = structlog.get_logger()
 
 
 async def ensure_valid_session(config_dir: Path, tuwel_host: str, tiss_host: str) -> bool:
-    """Check session validity and re-authenticate from keyring if expired.
+    """Check the stored TUWEL session, and log in again with a TOTP code if it died.
 
-    Returns True if a valid session is available (existing or refreshed).
-    Returns False if no keyring credentials are stored and session is expired.
+    Returns True when a valid session is stored afterwards (the existing one or
+    a new one). Returns False, with the reason logged once at error, when the
+    session is dead and cannot be renewed without a person.
     """
-    from urllib.parse import urlparse
-
     creds = load_session(session_path(config_dir))
-    if creds is not None:
-        try:
-            async with http_session() as http:
-                tuwel_domain = urlparse(tuwel_host).hostname or ""
-                http.cookies.set(creds.cookie_name, creds.moodle_session, domain=tuwel_domain)
-                adapter = MoodleAdapter(
-                    http=http,
-                    sesskey=creds.sesskey,
-                    moodle_session=creds.moodle_session,
-                    host=tuwel_host,
-                    cookie_name=creds.cookie_name,
-                )
-                await adapter.check_session()
-                log.info("job_runner.session_valid")
-                return True
-        except AuthError:
-            log.info("job_runner.session_expired")
-
-    keyring_creds = load_credentials_from_keyring()
-    if keyring_creds is None:
-        log.error("job_runner.no_keyring_credentials")
-        return False
-
-    username, password = keyring_creds
-    log.info("job_runner.re_authenticating")
-
     try:
-        tuwel_creds, tiss_creds = await login_both(tuwel_host, tiss_host, username, password)
-        save_session(tuwel_creds, session_path(config_dir))
-        if tiss_creds:
-            save_tiss_session(tiss_creds, tiss_session_path(config_dir))
-        log.info("job_runner.re_auth_success")
-        return True
-    except AuthError:
-        log.error("job_runner.re_auth_failed", exc_info=True)
+        if creds is not None and await tuwel_session_alive(creds, tuwel_host):
+            log.info("job_runner.session_valid")
+            return True
+        log.info("job_runner.session_expired")
+        await reauthenticate(config_dir, tuwel_host, tiss_host, stale=creds)
+    except (AuthError, KeyringUnavailableError, httpx.HTTPError) as exc:
+        log.error("job_runner.re_auth_failed", reason=str(exc), error=type(exc).__name__)
         return False
+    log.info("job_runner.re_auth_success")
+    return True

@@ -11,8 +11,10 @@ TUWEL sync has run. A walk through that proves nothing about the study surface.
 The cost is that this is box-bound — see docs/run-contract-setup.md.
 
 It does not re-run the interactive login. `ensure_valid_session` checks the
-stored session and, when it has expired, re-authenticates from the keyring with
-no MFA code, exactly as the scheduled job runner does.
+stored session and, when it has expired, logs in again with the keyring's
+password and a code generated from the stored TOTP secret, exactly as the
+scheduled job runner does. Without a stored secret an expired session cannot
+come back unattended, because MFA is mandatory.
 
 It reads `~/.config/sophia/env` itself (`SOPHIA_ENV_FILE` overrides) rather than
 relying on a sourced shell profile, because `/ship` runs SESSION_CMD in an
@@ -107,7 +109,7 @@ def _resolve_username() -> str:
         return from_env
     stored = load_credentials_from_keyring()
     if stored is not None:
-        return stored[0]
+        return stored.username
     msg = (
         "no username available — set SOPHIA_TUWEL_USERNAME, or run "
         "`sophia auth login --save-credentials` so it can be read back"

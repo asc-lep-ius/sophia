@@ -152,21 +152,41 @@ class MoodleAdapter:
     def cookie_name(self) -> str:
         return self._cookie_name
 
+    def use_session(self, *, sesskey: str, moodle_session: str, cookie_name: str) -> None:
+        """Switch to a renewed session in place, without rebuilding the client.
+
+        The API builds this adapter once, and the shared client carries its
+        cookie for Opencast too, so a renewed session has to land in both.
+        """
+        self._sesskey = sesskey
+        self._moodle_session = moodle_session
+        self._cookie_name = cookie_name
+        self._http.cookies.set(
+            cookie_name, moodle_session, domain=urlparse(self._host).hostname or ""
+        )
+
     # ------------------------------------------------------------------
     # Low-level transport
     # ------------------------------------------------------------------
 
-    async def _call(self, function: str, params: dict[str, Any] | None = None) -> Any:
+    async def _call(
+        self,
+        function: str,
+        params: dict[str, Any] | None = None,
+        *,
+        query: dict[str, str] | None = None,
+    ) -> Any:
         """POST to the Moodle AJAX API and return parsed JSON.
 
-        Uses lib/ajax/service.php with session cookie authentication.
+        Uses lib/ajax/service.php with session cookie authentication. ``query``
+        adds service.php options, such as ``nosessionupdate``.
         Raises MoodleError for Moodle-level errors and AuthError for session issues.
         """
         payload = [{"index": 0, "methodname": function, "args": params or {}}]
 
         response = await self._http.post(
             self._ajax_endpoint,
-            params={"sesskey": self._sesskey, "info": function},
+            params={"sesskey": self._sesskey, "info": function, **(query or {})},
             json=payload,
         )
         try:
@@ -208,6 +228,16 @@ class MoodleAdapter:
         """
         with contextlib.suppress(MoodleError):
             await self._call("core_session_time_remaining")
+
+    async def session_time_remaining(self) -> int:
+        """Seconds until TUWEL forgets this session, read without extending it.
+
+        ``nosessionupdate`` keeps the read from counting as activity, which
+        makes it a clean probe of whether something else keeps the session
+        alive. Raises AuthError when the session is already gone.
+        """
+        data = await self._call("core_session_time_remaining", query={"nosessionupdate": "true"})
+        return int(data["timeremaining"])
 
     # ------------------------------------------------------------------
     # CourseProvider

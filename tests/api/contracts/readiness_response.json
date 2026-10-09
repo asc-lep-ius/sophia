@@ -1,12 +1,22 @@
 {
   "checks": [
     {
+      "detail": null,
       "name": "database",
-      "ok": true
+      "ok": true,
+      "required": true
     },
     {
+      "detail": null,
       "name": "sse_broker",
-      "ok": true
+      "ok": true,
+      "required": true
+    },
+    {
+      "detail": "expired",
+      "name": "upstream_session",
+      "ok": false,
+      "required": false
     }
   ],
   "status": "ready"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any, cast
 
@@ -43,6 +45,7 @@ from sophia.infra.logging import (
     is_sensitive_observability_key,
     setup_logging,
 )
+from sophia.services.session_keepalive import SessionKeepalive
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -149,11 +152,18 @@ async def _standalone_api_lifespan(api_app: FastAPI) -> AsyncIterator[None]:
     settings = cast("Settings", api_app.state.settings)
     async with create_app_container(settings) as app_container:
         api_app.state.app_container = app_container
+        keepalive = asyncio.create_task(
+            SessionKeepalive(app_container).run(settings.session_keepalive_interval),
+            name="session-keepalive",
+        )
         _set_runtime_readiness(api_app, ready=True)
         try:
             yield
         finally:
             _set_runtime_readiness(api_app, ready=False)
+            keepalive.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await keepalive
             api_app.state.app_container = None
 
 

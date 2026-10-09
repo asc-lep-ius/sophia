@@ -12,8 +12,12 @@ class HealthResponse(ApiModel):
 
 
 class ReadinessCheck(ApiModel):
-    name: Literal["database", "sse_broker"]
+    name: Literal["database", "sse_broker", "upstream_session"]
     ok: bool
+    # A check that is not required reports a degraded dependency without
+    # making the service unready: pages that need no TU Wien session still work.
+    required: bool = True
+    detail: str | None = None
 
 
 class ReadinessResponse(ApiModel):

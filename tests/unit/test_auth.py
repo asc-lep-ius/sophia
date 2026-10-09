@@ -9,15 +9,20 @@ from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs
 
 import httpx
+import keyring
 import pytest
 import respx
+from keyring.backend import KeyringBackend
+from keyring.errors import PasswordDeleteError
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 from sophia.adapters.auth import (
     KeyringUnavailableError,
     SessionCredentials,
+    StoredCredentials,
     _keyring_env_password,  # pyright: ignore[reportPrivateUsage]
     clear_credentials_from_keyring,
     clear_session,
@@ -29,7 +34,7 @@ from sophia.adapters.auth import (
     save_session,
     session_path,
 )
-from sophia.domain.errors import AuthError
+from sophia.domain.errors import AuthError, MfaRejectedError
 
 HOST = "https://tuwel.tuwien.ac.at"
 IDP_URL = "https://idp.zid.tuwien.ac.at/simplesaml/module.php/core/loginuserpass.php"
@@ -68,6 +73,35 @@ DASHBOARD_HTML = """
 <div id="page-wrapper">Dashboard content</div>
 </body></html>
 """
+
+
+class MemoryKeyring(KeyringBackend):
+    """A keyring that lives in the test, so no test can touch the box's real one."""
+
+    priority = 1  # pyright: ignore[reportAssignmentType]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.store: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service: str, username: str) -> str | None:
+        return self.store.get((service, username))
+
+    def set_password(self, service: str, username: str, password: str) -> None:
+        self.store[(service, username)] = password
+
+    def delete_password(self, service: str, username: str) -> None:
+        if self.store.pop((service, username), None) is None:
+            raise PasswordDeleteError(username)
+
+
+@pytest.fixture(autouse=True)
+def memory_keyring() -> Iterator[MemoryKeyring]:
+    previous = keyring.get_keyring()
+    backend = MemoryKeyring()
+    keyring.set_keyring(backend)
+    yield backend
+    keyring.set_keyring(previous)
 
 
 @pytest.fixture
@@ -238,6 +272,40 @@ class TestLoginWithCredentials:
 
         with pytest.raises(AuthError, match="invalid username or password"):
             await login_with_credentials(HOST, "baduser", "badpass")
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [
+            "Ungültiger MFA Code — Der MFA Code fehlt oder ist ungültig",
+            "Invalid MFA code — the MFA code is missing or invalid",
+        ],
+    )
+    @respx.mock
+    async def test_refused_mfa_code_is_reported_as_mfa_failure(self, refusal: str):
+        """Since MFA became mandatory, a refused code must not read as a wrong password."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        refused = IDP_LOGIN_FORM_HTML.replace("<form", f'<div class="alert">{refusal}</div><form')
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=refused))
+
+        with pytest.raises(MfaRejectedError, match="refused the MFA code"):
+            await login_with_credentials(HOST, "testuser", "testpass", "000000")
+
+    @respx.mock
+    async def test_mfa_field_label_alone_is_not_an_mfa_refusal(self):
+        """The form always labels its MFA field; only the refusal wording counts."""
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        labelled = IDP_LOGIN_FORM_HTML.replace(
+            '<input type="number"', '<label>MFA Code</label><input type="number"'
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=labelled))
+
+        with pytest.raises(AuthError, match="invalid username or password") as caught:
+            await login_with_credentials(HOST, "baduser", "badpass", "123456")
+        assert not isinstance(caught.value, MfaRejectedError)
 
     @respx.mock
     async def test_missing_saml_response_raises_auth_error(self):
@@ -436,27 +504,129 @@ class TestAuthLoginCommand:
 
         login_both_mock.assert_awaited_once_with(HOST, TISS_HOST, "testuser", "testpass", "123456")
 
+    async def _login_saving_credentials(
+        self, tmp_path: Path, typed: list[str]
+    ) -> tuple[AsyncMock, Path]:
+        from sophia.cli.auth import login
+
+        tuwel_creds = SessionCredentials(
+            moodle_session="test-moodle-session",
+            sesskey="abc123sesskey",
+            host=HOST,
+            created_at="2026-03-04T12:00:00+00:00",
+        )
+        login_both_mock = AsyncMock(return_value=(tuwel_creds, None))
+        settings = SimpleNamespace(tuwel_host=HOST, tiss_host=TISS_HOST, config_dir=tmp_path)
+        with (
+            patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}, clear=True),
+            patch("rich.prompt.Prompt.ask", return_value="testuser"),
+            patch("getpass.getpass", side_effect=typed),
+            patch("sophia.config.Settings", return_value=settings),
+            patch("sophia.adapters.auth.login_both", login_both_mock),
+        ):
+            await login(save_credentials=True)
+        return login_both_mock, tmp_path
+
+    async def test_stores_a_totp_secret_that_produced_the_typed_code(
+        self, tmp_path: Path, memory_keyring: MemoryKeyring
+    ):
+        import time
+
+        from sophia.adapters.totp import StepLedger, code_for_step, ledger_path, step_at
+
+        secret = "JBSWY3DPEHPK3PXP"
+        code = code_for_step(secret, step_at(time.time()))
+
+        await self._login_saving_credentials(tmp_path, ["testpass", secret, code])
+
+        stored = load_credentials_from_keyring()
+        assert stored is not None
+        assert stored.totp_secret == secret
+        # The typed code is spent, so a re-login in this step must wait.
+        assert StepLedger(ledger_path(tmp_path)).last_used() is not None
+
+    async def test_secret_that_did_not_produce_the_code_is_never_stored(
+        self, tmp_path: Path, memory_keyring: MemoryKeyring
+    ):
+        """A wrong secret would only surface hours later, as a refused re-login."""
+        import time
+
+        from sophia.adapters.totp import code_for_step, step_at
+
+        code = code_for_step("JBSWY3DPEHPK3PXP", step_at(time.time()))
+
+        login_both_mock, _ = await self._login_saving_credentials(
+            tmp_path, ["testpass", "GEZDGNBVGY3TQOJQ", code]
+        )
+
+        login_both_mock.assert_awaited_once()
+        assert load_credentials_from_keyring() == StoredCredentials("testuser", "testpass")
+
 
 class TestKeyringCredentials:
     """Keyring credential save/load/clear with mocked backend."""
 
-    def test_save_and_load_roundtrip(self):
-        store: dict[tuple[str, str], str] = {}
+    def test_save_and_load_roundtrip(self, memory_keyring: MemoryKeyring):
+        save_credentials_to_keyring("testuser", "testpass")
 
-        def fake_set(service: str, key: str, value: str) -> None:
-            store[(service, key)] = value
+        assert load_credentials_from_keyring() == StoredCredentials("testuser", "testpass")
 
-        def fake_get(service: str, key: str) -> str | None:
-            return store.get((service, key))
+    def test_totp_secret_roundtrips_under_a_pinned_backend(self, memory_keyring: MemoryKeyring):
+        with patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}):
+            save_credentials_to_keyring("testuser", "testpass", "JBSWY3DPEHPK3PXP")
+
+        loaded = load_credentials_from_keyring()
+        assert loaded is not None
+        assert loaded.totp_secret == "JBSWY3DPEHPK3PXP"
+
+    def test_secrets_stay_out_of_the_repr(self):
+        shown = repr(StoredCredentials("testuser", "hunter2", "JBSWY3DPEHPK3PXP"))
+        assert "hunter2" not in shown
+        assert "JBSWY3DPEHPK3PXP" not in shown
+
+    def test_totp_secret_refused_without_a_pinned_backend(self, memory_keyring: MemoryKeyring):
+        """#111: the backend is named explicitly, never left to priority resolution."""
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            pytest.raises(KeyringUnavailableError, match="PYTHON_KEYRING_BACKEND"),
+        ):
+            save_credentials_to_keyring("testuser", "testpass", "JBSWY3DPEHPK3PXP")
+        assert memory_keyring.store == {}
+
+    def test_totp_secret_refused_by_a_plaintext_backend(self):
+        """With the secret stored the box holds both factors, so cleartext is out."""
+        plaintext_keyring = type("PlaintextKeyring", (), {"__module__": "keyrings.alt.file"})
 
         with (
-            patch("keyring.set_password", side_effect=fake_set),
-            patch("keyring.get_password", side_effect=fake_get),
+            patch.dict(
+                "os.environ", {"PYTHON_KEYRING_BACKEND": "keyrings.alt.file.PlaintextKeyring"}
+            ),
+            patch("keyring.get_keyring", return_value=plaintext_keyring()),
+            patch("keyring.set_password") as set_password,
+            pytest.raises(KeyringUnavailableError, match="PlaintextKeyring"),
         ):
-            save_credentials_to_keyring("testuser", "testpass")
-            result = load_credentials_from_keyring()
+            save_credentials_to_keyring("testuser", "testpass", "JBSWY3DPEHPK3PXP")
+        set_password.assert_not_called()
 
-        assert result == ("testuser", "testpass")
+    def test_saving_without_a_secret_keeps_the_one_already_stored(
+        self, memory_keyring: MemoryKeyring
+    ):
+        """Skipping the prompt on a later login means "do not change it" (decided on #124)."""
+        with patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}):
+            save_credentials_to_keyring("testuser", "oldpass", "JBSWY3DPEHPK3PXP")
+        save_credentials_to_keyring("testuser", "newpass")
+
+        assert load_credentials_from_keyring() == StoredCredentials(
+            "testuser", "newpass", "JBSWY3DPEHPK3PXP"
+        )
+
+    def test_wrong_master_password_is_reported_not_raised_raw(self):
+        """keyrings.alt raises ValueError("Incorrect Password"); #111's note saw it crash."""
+        with (
+            patch("keyring.get_password", side_effect=ValueError("Incorrect Password")),
+            pytest.raises(KeyringUnavailableError, match="master password"),
+        ):
+            load_credentials_from_keyring()
 
     def test_load_missing_returns_none(self):
         with patch("keyring.get_password", return_value=None):
@@ -475,16 +645,13 @@ class TestKeyringCredentials:
             result = load_credentials_from_keyring()
         assert result is None
 
-    def test_clear_removes_both(self):
-        deleted: list[tuple[str, str]] = []
+    def test_clear_removes_password_and_totp_secret(self, memory_keyring: MemoryKeyring):
+        with patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}):
+            save_credentials_to_keyring("testuser", "testpass", "JBSWY3DPEHPK3PXP")
 
-        def fake_delete(service: str, key: str) -> None:
-            deleted.append((service, key))
+        clear_credentials_from_keyring()
 
-        with patch("keyring.delete_password", side_effect=fake_delete):
-            clear_credentials_from_keyring()
-
-        assert len(deleted) == 2
+        assert memory_keyring.store == {}
 
     def test_clear_ignores_missing(self):
         """clear_credentials_from_keyring tolerates missing entries."""

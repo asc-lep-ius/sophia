@@ -2169,13 +2169,20 @@ export interface components {
         };
         /** ReadinessCheck */
         ReadinessCheck: {
+            /** Detail */
+            detail?: string | null;
             /**
              * Name
              * @enum {string}
              */
-            name: "database" | "sse_broker";
+            name: "database" | "sse_broker" | "upstream_session";
             /** Ok */
             ok: boolean;
+            /**
+             * Required
+             * @default true
+             */
+            required: boolean;
         };
         /** ReadinessResponse */
         ReadinessResponse: {
