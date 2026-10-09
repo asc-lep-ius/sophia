@@ -18,7 +18,7 @@ from sophia.infra.schema import lecture_downloads, transcriptions
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from sqlalchemy import ColumnElement, Select
+    from sqlalchemy import ColumnElement, Select, Subquery
     from sqlalchemy.sql import Join
 
 
@@ -69,4 +69,23 @@ def episode_titles_query(episode_ids: Sequence[str]) -> Select[tuple[str, str]]:
         select(episode_id().label("episode_id"), episode_title().label("title"))
         .select_from(episodes_from())
         .where(episode_id().in_(episode_ids))
+    )
+
+
+def episode_states() -> Subquery:
+    """One row per episode: its id, its module, and the state of each stage it has.
+
+    Aggregations group by the module through this rather than through the
+    join directly, because a Postgres GROUP BY on the coalesced module id
+    cannot also reference either table's own column in a correlated subquery.
+    """
+    return (
+        select(
+            episode_id().label("episode_id"),
+            episode_module_id().label("module_id"),
+            lecture_downloads.c.status.label("download_status"),
+            transcriptions.c.status.label("transcription_status"),
+        )
+        .select_from(episodes_from())
+        .subquery("episodes")
     )

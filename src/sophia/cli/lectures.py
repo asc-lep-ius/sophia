@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sophia.infra.schema import (
     course_materials,
     knowledge_index,
-    lecture_downloads,
     transcriptions,
 )
 
@@ -811,6 +810,8 @@ async def lectures_transcribe(
     ],
 ) -> None:
     """Transcribe lectures: the player's captions where published, Whisper otherwise."""
+    import httpx
+    import structlog
     from rich.console import Console
     from rich.progress import (
         BarColumn,
@@ -822,7 +823,7 @@ async def lectures_transcribe(
     from rich.table import Table
 
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
-    from sophia.domain.errors import AuthError, TranscriptionError
+    from sophia.domain.errors import AuthError, LectureTubeError, TranscriptionError
     from sophia.infra.di import create_app
     from sophia.services.hermes_transcribe import (
         transcribe_from_captions,
@@ -830,27 +831,12 @@ async def lectures_transcribe(
     )
 
     console = Console()
+    log = structlog.get_logger()
 
     try:
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-
-            transcribed = select(transcriptions.c.episode_id).where(
-                transcriptions.c.module_id == resolved_id,
-                transcriptions.c.status == "completed",
-            )
-            pending_count = (
-                await db.scalar(
-                    select(func.count())
-                    .select_from(lecture_downloads)
-                    .where(
-                        lecture_downloads.c.module_id == resolved_id,
-                        lecture_downloads.c.status == "completed",
-                        lecture_downloads.c.episode_id.not_in(transcribed),
-                    )
-                )
-            ) or 0
 
             with Progress(
                 SpinnerColumn(),
@@ -860,7 +846,9 @@ async def lectures_transcribe(
                 TimeElapsedColumn(),
                 console=console,
             ) as progress:
-                task = progress.add_task("[cyan]Transcribing…[/cyan]", total=pending_count or None)
+                # No total: the captions pass decides how many episodes Whisper
+                # gets only once it has run.
+                task = progress.add_task("[cyan]Transcribing…[/cyan]", total=None)
 
                 def _on_start(episode_id: str, title: str) -> None:
                     progress.update(task, description=f"[cyan]Transcribing:[/cyan] {title[:50]}…")
@@ -869,9 +857,15 @@ async def lectures_transcribe(
                     progress.advance(task)
                     progress.update(task, description="[cyan]Transcribing…[/cyan]")
 
-                results = await transcribe_from_captions(
-                    container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
-                )
+                try:
+                    results = await transcribe_from_captions(
+                        container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
+                    )
+                except (LectureTubeError, httpx.HTTPError) as exc:
+                    # Whisper over what was downloaded must not wait on TUWEL.
+                    log.warning("captions_unavailable", module_id=resolved_id, reason=str(exc))
+                    console.print(f"[yellow]Captions unavailable:[/yellow] {exc}")
+                    results = []
                 results += await transcribe_lectures(
                     container, db, resolved_id, on_start=_on_start, on_complete=_on_complete
                 )

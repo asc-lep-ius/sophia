@@ -118,3 +118,31 @@ async def test_catalogue_lists_modules_known_only_through_caption_transcripts(
         (789, "", ""),
         (456, "s1", "Numerical Methods"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_mixed_module_is_listed_once_with_its_series(db: AsyncSession) -> None:
+    """Download rows carry the series id; the caption transcript must not add a second row."""
+    await db.execute(
+        insert(lecture_downloads).values(
+            episode_id="e-dl",
+            module_id=456,
+            series_id="s1",
+            title="Downloaded",
+            track_url="",
+            track_mimetype="",
+        ),
+    )
+    await db.execute(
+        insert(transcriptions).values(
+            episode_id="e-cc",
+            module_id=456,
+            status="completed",
+            source="captions",
+            title="Captioned",
+        ),
+    )
+
+    modules = await get_lecture_modules(db)
+
+    assert [(m.module_id, m.series_id) for m in modules] == [(456, "s1")]

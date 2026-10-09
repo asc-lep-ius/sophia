@@ -43,7 +43,9 @@ async def get_lecture_modules(session: AsyncSession) -> list[LectureModule]:
     """Query distinct modules that have local lecture records, downloaded or transcribed."""
     course_name = func.coalesce(lecture_modules.c.course_name, "")
     module_id = episode_module_id()
-    series_id = func.coalesce(lecture_downloads.c.series_id, "")
+    # One row per module, whatever mix of downloaded and captioned lectures it
+    # holds: the series id is the download rows' where there are any.
+    series_id = func.coalesce(func.max(lecture_downloads.c.series_id), "")
     rows = (
         await session.execute(
             select(
@@ -57,7 +59,7 @@ async def get_lecture_modules(session: AsyncSession) -> list[LectureModule]:
                     module_id == lecture_modules.c.module_id,
                 )
             )
-            .distinct()
+            .group_by(module_id, course_name)
             .order_by(course_name, module_id)
         )
     ).all()

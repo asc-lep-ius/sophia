@@ -203,6 +203,36 @@ class TestStatusTableColumns:
         assert DOWNLOAD_NOT_NEEDED not in out
 
 
+class TestTranscribeCommand:
+    @pytest.mark.asyncio
+    async def test_whisper_still_runs_when_tuwel_is_unreachable(
+        self, db: AsyncSession, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """The captions pass needs TUWEL; Whisper over what was downloaded does not."""
+        from sophia.cli.lectures import lectures_transcribe
+        from sophia.domain.errors import LectureTubeError
+
+        container = _mock_container(db=db)
+        whisper = AsyncMock(return_value=[])
+
+        with (
+            patch("sophia.infra.di.create_app") as mock_create,
+            patch("sophia.cli._resolver.resolve_module_id", AsyncMock(return_value=42)),
+            patch(
+                "sophia.services.hermes_transcribe.transcribe_from_captions",
+                AsyncMock(side_effect=LectureTubeError("HTTP 503 from TUWEL Opencast")),
+            ),
+            patch("sophia.services.hermes_transcribe.transcribe_lectures", whisper),
+        ):
+            mock_create.return_value.__aenter__ = AsyncMock(return_value=container)
+            mock_create.return_value.__aexit__ = AsyncMock(return_value=False)
+
+            await lectures_transcribe(module_id="42")
+
+        whisper.assert_awaited_once()
+        assert "Captions unavailable" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
 # lectures materials — new subcommand
 # ---------------------------------------------------------------------------

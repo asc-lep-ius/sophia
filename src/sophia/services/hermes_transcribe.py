@@ -101,6 +101,7 @@ async def transcribe_from_captions(
         return []
 
     sources = await _get_transcript_sources(session, module_id)
+    excluded = await _get_excluded_downloads(session, module_id)
     language = await resolve_caption_language(session, module_id)
     results: list[TranscriptionResult] = []
 
@@ -108,6 +109,16 @@ async def transcribe_from_captions(
         if cancel_check and cancel_check():
             log.info("captions_cancelled", module_id=module_id, completed=len(results))
             break
+
+        if episode.episode_id in excluded:
+            # `lectures discard` promises no further processing, and a silent
+            # recording was skipped for a reason; Whisper never read either.
+            log.info(
+                "captions_skipped",
+                episode_id=episode.episode_id,
+                reason=f"download is {excluded[episode.episode_id]}",
+            )
+            continue
 
         source = sources.get(episode.episode_id)
         if source == TranscriptSource.CAPTIONS.value:
@@ -162,7 +173,7 @@ async def _transcribe_from_captions(
             "captions_unavailable",
             episode_id=episode.episode_id,
             source=TranscriptSource.WHISPER.value,
-            reason=f"no caption track in {language!r} or {DEFAULT_CAPTION_LANGUAGE!r}",
+            reason=_unavailable_reason(detail, language),
             offered=[caption.lang for caption in captions],
         )
         return None
@@ -205,6 +216,13 @@ async def _transcribe_from_captions(
         status="completed",
         source=TranscriptSource.CAPTIONS.value,
     )
+
+
+def _unavailable_reason(detail: Lecture | None, language: str) -> str:
+    if detail is None:
+        return "episode detail unavailable"
+    wanted = sorted({language, DEFAULT_CAPTION_LANGUAGE})
+    return f"no caption track in {' or '.join(repr(lang) for lang in wanted)}"
 
 
 async def _store_caption_transcript(
@@ -320,6 +338,19 @@ async def _get_downloads(session: AsyncSession, module_id: int) -> list[tuple[st
 
 async def _get_transcribed_ids(session: AsyncSession, module_id: int) -> set[str]:
     return set(await _get_transcript_sources(session, module_id))
+
+
+async def _get_excluded_downloads(session: AsyncSession, module_id: int) -> dict[str, str]:
+    """Episodes whose download row says not to process them, episode id to status."""
+    rows = (
+        await session.execute(
+            select(lecture_downloads.c.episode_id, lecture_downloads.c.status).where(
+                lecture_downloads.c.module_id == module_id,
+                lecture_downloads.c.status.in_(("discarded", "skipped")),
+            )
+        )
+    ).all()
+    return {row.episode_id: row.status for row in rows}
 
 
 async def _get_transcript_sources(session: AsyncSession, module_id: int) -> dict[str, str]:

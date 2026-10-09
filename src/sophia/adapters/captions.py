@@ -12,6 +12,7 @@ the files seen so far use nothing else.
 
 from __future__ import annotations
 
+import html
 import re
 from typing import TYPE_CHECKING
 
@@ -20,6 +21,7 @@ import structlog
 
 from sophia.domain.errors import CaptionError
 from sophia.domain.models import LectureCaption, TranscriptSegment
+from sophia.infra.http import is_trusted_url
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -96,7 +98,7 @@ def parse_vtt(text: str) -> list[TranscriptSegment]:
             malformed.append(lines[timing_index].strip())
             continue
         cue_text = " ".join(
-            _TAG_RE.sub("", line).strip() for line in lines[timing_index + 1 :]
+            html.unescape(_TAG_RE.sub("", line)).strip() for line in lines[timing_index + 1 :]
         ).strip()
         if not cue_text:
             continue
@@ -124,9 +126,10 @@ def _to_seconds(parts: Sequence[str | None]) -> float:
 class HttpCaptionFetcher:
     """Fetches caption files over the shared HTTP session.
 
-    The CDN serves them without a TUWEL cookie, but the shared client carries
-    the project's redirect guard and retry policy, which a bare request would
-    not.
+    The URL comes from a scraped TUWEL page, so it is fetched only when it is
+    an https URL on a TU Wien host, and the body is read in bounded chunks
+    rather than trusted to be small. The CDN serves the files without a
+    cookie; the shared client is used for its redirect guard.
     """
 
     def __init__(self, http: httpx.AsyncClient, max_bytes: int = _MAX_CAPTION_BYTES) -> None:
@@ -134,14 +137,26 @@ class HttpCaptionFetcher:
         self._max_bytes = max_bytes
 
     async def fetch_captions(self, url: str) -> str:
+        if not is_trusted_url(url):
+            raise CaptionError(f"refusing to fetch captions from {url}: not a TU Wien https URL")
         try:
-            response = await self._http.get(url, timeout=_FETCH_TIMEOUT_S)
+            async with self._http.stream("GET", url, timeout=_FETCH_TIMEOUT_S) as response:
+                if not response.is_success:
+                    raise CaptionError(f"HTTP {response.status_code} fetching {url}")
+                body = await self._read_bounded(response, url)
         except httpx.HTTPError as exc:
             raise CaptionError(f"fetching {url}: {exc}") from exc
-        if not response.is_success:
-            raise CaptionError(f"HTTP {response.status_code} fetching {url}")
-        if len(response.content) > self._max_bytes:
-            raise CaptionError(
-                f"caption file of {len(response.content)} bytes exceeds {self._max_bytes}"
-            )
-        return response.content.decode("utf-8", errors="replace")
+        return body.decode("utf-8", errors="replace")
+
+    async def _read_bounded(self, response: httpx.Response, url: str) -> bytes:
+        declared = response.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > self._max_bytes:
+            raise CaptionError(f"caption file of {declared} bytes exceeds {self._max_bytes}")
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.aiter_bytes():
+            size += len(chunk)
+            if size > self._max_bytes:
+                raise CaptionError(f"caption file exceeds {self._max_bytes} bytes: {url}")
+            chunks.append(chunk)
+        return b"".join(chunks)

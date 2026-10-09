@@ -490,3 +490,57 @@ async def test_captions_pass_honours_cancellation(app: MagicMock, db: AsyncSessi
     results = await transcribe_from_captions(app, db, 42, cancel_check=cancel_after_one)
 
     assert [r.episode_id for r in results] == ["ep-1"]
+
+
+@pytest.mark.parametrize("status", ["discarded", "skipped"])
+@pytest.mark.asyncio
+async def test_a_discarded_or_skipped_lecture_keeps_its_captions_unread(
+    app: MagicMock, db: AsyncSession, status: str
+) -> None:
+    """`lectures discard` promises no further processing; the captions pass honours it."""
+    from sophia.services.hermes_transcribe import transcribe_from_captions
+
+    await exec_sql(
+        db,
+        """INSERT INTO lecture_downloads
+           (episode_id, module_id, title, track_url, track_mimetype, status)
+           VALUES ('ep-out', 42, 'Discarded', '', '', ?)""",
+        (status,),
+    )
+    _wire_opencast(
+        app, [_captioned("ep-out", "Discarded", "de"), _captioned("ep-in", "Kept", "de")]
+    )
+    app.caption_fetcher.fetch_captions = AsyncMock(side_effect=_fetch_vtt)
+
+    with capture_logs() as logs:
+        results = await transcribe_from_captions(app, db, 42)
+
+    assert [(r.episode_id, r.status) for r in results] == [("ep-in", "completed")]
+    app.caption_fetcher.fetch_captions.assert_awaited_once_with(f"{CDN}/ep-in/de/captions.vtt")
+    rows = (await exec_sql(db, "SELECT episode_id FROM transcriptions")).fetchall()
+    assert [row[0] for row in rows] == ["ep-in"]
+    skipped = [entry for entry in logs if entry["event"] == "captions_skipped"]
+    assert [(entry["episode_id"], entry["reason"]) for entry in skipped] == [
+        ("ep-out", f"download is {status}")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_episode_page_names_that_as_the_reason(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    from sophia.services.hermes_transcribe import transcribe_from_captions
+
+    _wire_opencast(app, [_captioned("ep-gone", "Gone", "de")])
+    app.opencast.get_episode_detail = AsyncMock(return_value=None)
+    app.caption_fetcher.fetch_captions = AsyncMock(side_effect=_fetch_vtt)
+
+    with capture_logs() as logs:
+        results = await transcribe_from_captions(app, db, 42)
+
+    assert results == []
+    app.caption_fetcher.fetch_captions.assert_not_awaited()
+    unavailable = [entry for entry in logs if entry["event"] == "captions_unavailable"]
+    assert [(entry["episode_id"], entry["reason"]) for entry in unavailable] == [
+        ("ep-gone", "episode detail unavailable")
+    ]

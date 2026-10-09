@@ -110,6 +110,13 @@ class TestParseVtt:
         assert dropped[0]["kept"] == 1
         assert dropped[0]["example"] == "00:00:01 --> soon"
 
+    def test_character_escapes_are_decoded(self) -> None:
+        document = "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nA &amp; B &lt; C&nbsp;D\n"
+
+        segments = parse_vtt(document)
+
+        assert segments[0].text == "A & B < C\xa0D"
+
     def test_a_document_with_only_malformed_cues_has_no_segments(self) -> None:
         assert parse_vtt("WEBVTT\n\n00:00:01 --> soon\nText\n") == []
 
@@ -181,3 +188,34 @@ class TestHttpCaptionFetcher:
         async with httpx.AsyncClient() as client:
             with pytest.raises(CaptionError, match="exceeds"):
                 await HttpCaptionFetcher(client, max_bytes=16).fetch_captions(url)
+
+    @respx.mock
+    async def test_a_body_larger_than_declared_is_cut_off_while_streaming(self) -> None:
+        url = "https://cdn.video.tuwien.ac.at/static/lying.vtt"
+        respx.get(url).mock(
+            return_value=httpx.Response(
+                200, content=b"WEBVTT\n" + b"x" * 64, headers={"content-length": "8"}
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(CaptionError, match="exceeds"):
+                await HttpCaptionFetcher(client, max_bytes=16).fetch_captions(url)
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "http://cdn.video.tuwien.ac.at/static/plain.vtt",
+            "https://cdn.example.com/static/elsewhere.vtt",
+            "https://127.0.0.1/static/loopback.vtt",
+        ],
+    )
+    @respx.mock
+    async def test_urls_off_tu_wien_https_are_never_fetched(self, url: str) -> None:
+        route = respx.get(url).mock(return_value=httpx.Response(200, text=TUWIEN_VTT))
+
+        async with httpx.AsyncClient() as client:
+            with pytest.raises(CaptionError, match="not a TU Wien https URL"):
+                await HttpCaptionFetcher(client).fetch_captions(url)
+
+        assert not route.called

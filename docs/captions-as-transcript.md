@@ -38,7 +38,8 @@ sample, not a measurement. If it turns out wrong for some course, the
 `source` column is what lets a later comparison tell the two apart.
 
 The English track is a machine translation of the German one and is not
-used as study material.
+used as study material unless the course's configured language is English,
+in which case the track choice below picks it.
 
 ## Decision
 
@@ -97,10 +98,15 @@ reports `download_status` `none`, which the CLI renders as a dash, and the
 content page counts an item ready when it is transcribed and indexed, whether
 or not it was downloaded.
 
-Two attributes stay on the download row and so do not apply to a captioned
-lecture: `lecture_number` (the status table's `#` column is empty for it) and
-`missed_at` (it cannot be marked missed). Both want a home that both kinds of
-transcript share; that is a follow-up, not part of this change.
+Three things stay on the download row and so do not apply to a captioned
+lecture: `lecture_number` (the status table's `#` column is empty for it),
+`missed_at` (it cannot be marked missed) and `discard` (it cannot be
+discarded, though a lecture discarded before its captions were read stays
+excluded). Worse, `assign_lecture_numbers` numbers only the downloaded
+lectures, so in a mixed module the one Whisper lecture is numbered as if the
+captioned ones did not exist: on EP1 the sixteenth lecture reads `#1`. All of
+it wants a home that both kinds of transcript share; that is a follow-up, not
+part of this change.
 
 ## Verifying it on the real stack
 
