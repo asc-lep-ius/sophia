@@ -315,8 +315,13 @@ async def login_both(
 
             await _establish_education_session(client, tiss_base)
             tiss_creds = _build_tiss_credentials(client, tiss_saml_resp, tiss_base)
-        except Exception:
-            log.warning("tiss_login_failed_during_unified_login", exc_info=True)
+        except Exception as exc:
+            # Never exc_info: the traceback's frame locals hold the password (#153).
+            log.warning(
+                "tiss_login_failed_during_unified_login",
+                error=type(exc).__name__,
+                reason=str(exc),
+            )
 
         return tuwel_creds, tiss_creds
 

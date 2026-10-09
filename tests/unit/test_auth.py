@@ -472,6 +472,43 @@ class TestLoginBoth:
         assert tuwel_creds.moodle_session == "test-moodle-session"
         assert tiss_creds is None
 
+    @respx.mock
+    async def test_a_failed_tiss_step_never_logs_the_password(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """#153: a traceback here printed login_both's locals, password included.
+
+        Reachable unattended since #124: a re-login that passes MFA can still
+        fail at TISS, and SESSION_CMD runs with console-style logging.
+        """
+        from sophia.infra.logging import setup_logging
+
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+        respx.get(f"{TISS_HOST}/admin/authentifizierung").mock(
+            side_effect=httpx.ConnectError("TISS unreachable")
+        )
+
+        setup_logging(json_logs=False)
+        try:
+            await login_both(HOST, TISS_HOST, "testuser", "pw-that-must-not-leak", "123456")
+        finally:
+            setup_logging()
+
+        printed = capsys.readouterr().out
+        assert "tiss_login_failed_during_unified_login" in printed
+        assert "ConnectError" in printed
+        assert "pw-that-must-not-leak" not in printed
+
 
 class TestAuthLoginCommand:
     """CLI login prompt behavior."""
