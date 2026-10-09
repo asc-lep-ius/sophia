@@ -10,7 +10,7 @@ import respx
 
 from sophia.adapters.lecturetube import OpencastAdapter
 from sophia.domain.errors import AuthError, LectureTubeError
-from sophia.domain.models import Lecture, LectureTrack
+from sophia.domain.models import Lecture, LectureCaption, LectureTrack
 from sophia.domain.ports import LectureProvider
 
 HOST = "https://tuwel.tuwien.ac.at"
@@ -55,6 +55,18 @@ EPISODE_PAGE_HTML = (
     "</script>"
     '<iframe id="opencast-player"></iframe>'
     "</body></html>"
+)
+
+# The caption block as TU Wien's player publishes it (sampled 2026-10-09): one
+# auto-generated WebVTT track per language, on the video CDN.
+CAPTION_CDN = "https://cdn.video.tuwien.ac.at/static/lecture_tube/engage-player"
+EPISODE_PAGE_WITH_CAPTIONS_HTML = EPISODE_PAGE_HTML.replace(
+    '"captions":[]',
+    '"captions":[{"lang":"de","text":"de Waas (Auto generated)","format":"vtt",'
+    f'"url":"{CAPTION_CDN}/{EPISODE_UUID}/de/captions-de.vtt"}},'
+    '{"lang":"en","text":"en Waas (Auto generated)","format":"vtt",'
+    f'"url":"{CAPTION_CDN}/{EPISODE_UUID}/en/captions-en.vtt"}},'
+    '{"lang":"","text":"nameless","format":"vtt","url":"https://cdn.example/x.vtt"}]',
 )
 
 EPISODE_PAGE_NO_DATA_HTML = (
@@ -198,6 +210,41 @@ class TestGetEpisodeDetail:
             mimetype="video/mp4",
             resolution="1920x1080",
         )
+
+    @respx.mock
+    async def test_without_captions_the_list_is_empty(self, adapter: OpencastAdapter) -> None:
+        respx.get(f"{HOST}/mod/opencast/view.php").mock(
+            return_value=httpx.Response(200, html=EPISODE_PAGE_HTML),
+        )
+
+        lecture = await adapter.get_episode_detail(MODULE_ID, EPISODE_UUID)
+
+        assert lecture is not None
+        assert lecture.captions == []
+
+    @respx.mock
+    async def test_captions_are_read_from_the_manifest(self, adapter: OpencastAdapter) -> None:
+        respx.get(f"{HOST}/mod/opencast/view.php").mock(
+            return_value=httpx.Response(200, html=EPISODE_PAGE_WITH_CAPTIONS_HTML),
+        )
+
+        lecture = await adapter.get_episode_detail(MODULE_ID, EPISODE_UUID)
+
+        assert lecture is not None
+        assert lecture.captions == [
+            LectureCaption(
+                lang="de",
+                url=f"{CAPTION_CDN}/{EPISODE_UUID}/de/captions-de.vtt",
+                format="vtt",
+                label="de Waas (Auto generated)",
+            ),
+            LectureCaption(
+                lang="en",
+                url=f"{CAPTION_CDN}/{EPISODE_UUID}/en/captions-en.vtt",
+                format="vtt",
+                label="en Waas (Auto generated)",
+            ),
+        ]
 
     @respx.mock
     async def test_no_episode_data_returns_none(self, adapter: OpencastAdapter) -> None:

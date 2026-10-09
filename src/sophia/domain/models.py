@@ -493,6 +493,20 @@ class LectureTrack(BaseModel, frozen=True):
     resolution: str = ""
 
 
+class LectureCaption(BaseModel, frozen=True):
+    """A caption track the player offers for a lecture.
+
+    TU Wien's player publishes auto-generated captions per language as WebVTT
+    files on its CDN; ``label`` is the player's own description of the track,
+    such as ``"de Waas (Auto generated)"``.
+    """
+
+    lang: str
+    url: str
+    format: str = "vtt"
+    label: str = ""
+
+
 class Lecture(BaseModel, frozen=True):
     """A single lecture recording (Opencast episode)."""
 
@@ -504,6 +518,7 @@ class Lecture(BaseModel, frozen=True):
     created: str = ""
     creator: str = ""
     tracks: list[LectureTrack] = []
+    captions: list[LectureCaption] = []
 
 
 # ---------------------------------------------------------------------------
@@ -535,6 +550,13 @@ class ScheduledJob(BaseModel, frozen=True):
 # ---------------------------------------------------------------------------
 # Transcription — Whisper transcription models
 # ---------------------------------------------------------------------------
+
+
+class TranscriptSource(StrEnum):
+    """Where a lecture's transcript came from."""
+
+    CAPTIONS = "captions"
+    WHISPER = "whisper"
 
 
 class TranscriptSegment(BaseModel, frozen=True):

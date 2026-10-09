@@ -15,7 +15,7 @@ import structlog
 from bs4 import BeautifulSoup
 
 from sophia.domain.errors import AuthError, LectureTubeError
-from sophia.domain.models import Lecture, LectureTrack
+from sophia.domain.models import Lecture, LectureCaption, LectureTrack
 
 log = structlog.get_logger()
 
@@ -49,6 +49,31 @@ def _parse_paella_tracks(data: dict[str, Any]) -> list[LectureTrack]:
                     )
                 )
     return tracks
+
+
+def _parse_paella_captions(data: dict[str, Any]) -> list[LectureCaption]:
+    """Extract caption tracks from the Paella manifest's ``captions`` block.
+
+    Entries without a language or URL are dropped: nothing downstream can
+    choose or fetch a track it cannot name.
+    """
+    captions: list[LectureCaption] = []
+    raw = data.get("captions", [])
+    for item in raw if isinstance(raw, list) else []:
+        entry = cast("dict[str, Any]", item)
+        lang = str(entry.get("lang", "")).strip()
+        url = str(entry.get("url", "")).strip()
+        if not lang or not url:
+            continue
+        captions.append(
+            LectureCaption(
+                lang=lang,
+                url=url,
+                format=str(entry.get("format", "")).strip().lower(),
+                label=str(entry.get("text", "")),
+            )
+        )
+    return captions
 
 
 class OpencastAdapter:
@@ -152,4 +177,5 @@ class OpencastAdapter:
             created=str(metadata.get("startDate", "")),
             creator=str(metadata.get("presenter", "")),
             tracks=_parse_paella_tracks(data),
+            captions=_parse_paella_captions(data),
         )
