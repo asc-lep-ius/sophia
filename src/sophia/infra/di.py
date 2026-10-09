@@ -121,7 +121,7 @@ async def _startup_session(
         async with asyncio.timeout(_UPSTREAM_CHECK_TIMEOUT_S):
             if stored is not None and await tuwel_session_alive(stored, settings.tuwel_host):
                 return UpstreamSession(stored, UpstreamStatus("valid"))
-            log.info("upstream_session.renewing_at_startup", had_session=stored is not None)
+            log.info("upstream_session.renewing_at_startup", had_stored_login=stored is not None)
             renewed = await reauthenticate(
                 settings.config_dir, settings.tuwel_host, settings.tiss_host, stale=stored
             )
