@@ -2,22 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from structlog.testing import capture_logs
 
 from sophia.domain.errors import CaptionError, TranscriptionError
 from sophia.domain.models import HermesConfig, Lecture, LectureCaption, TranscriptSegment
+from sophia.infra.engine import create_session_factory, session_scope
+from sophia.services.hermes_manage import get_pipeline_status
 
 from .._sql import exec_sql
+from ..conftest import TEST_ORG_ID
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 def _run_sync(fn: Callable[..., Any], *args: Any) -> Any:
@@ -571,3 +577,90 @@ def test_whisper_refuses_an_unsupported_compute_type_before_loading(
     ):
         _create_transcriber(app)
     transcriber.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# Each transcript is committed as it finishes (#155)
+# ------------------------------------------------------------------
+
+
+async def _stage_states(
+    factory: async_sessionmaker[AsyncSession],
+) -> dict[str, tuple[str | None, str | None]]:
+    """Transcription and index state per episode, as another session reads them."""
+    async with session_scope(factory, org_id=TEST_ORG_ID) as reader:
+        episodes = await get_pipeline_status(reader, 42)
+    return {ep.episode_id: (ep.transcription_status, ep.index_status) for ep in episodes}
+
+
+async def test_another_session_sees_each_transcript_as_it_finishes(
+    tmp_path: Path, clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """While Whisper runs on the second episode, the first is visible as transcribed.
+
+    Its index state is visibly empty, so it does not read as ready, and an
+    uncaught error on the second episode, as #154's float16 refusal was,
+    keeps it rather than taking it back.
+    """
+    from sophia.services.hermes_transcribe import transcribe_lectures
+
+    factory = create_session_factory(clean_engine)
+    async with session_scope(factory, org_id=TEST_ORG_ID) as setup:
+        for episode_id in ("ep-001", "ep-002"):
+            await _insert_download(
+                setup, episode_id=episode_id, file_path=str(tmp_path / f"{episode_id}.m4a")
+            )
+
+    called: list[str] = []
+    second_started = threading.Event()
+    release = threading.Event()
+
+    def _transcribe(audio_path: Path) -> list[TranscriptSegment]:
+        called.append(audio_path.stem)
+        if len(called) == 1:
+            return _fake_segments()
+        second_started.set()
+        release.wait(timeout=10)
+        msg = "Requested float16 compute type, but the target device does not support it"
+        raise ValueError(msg)
+
+    transcriber = MagicMock()
+    transcriber.transcribe.side_effect = _transcribe
+    monkeypatch.setattr(
+        "sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber
+    )
+
+    async def _run() -> None:
+        async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+            await transcribe_lectures(MagicMock(), session, 42)
+
+    run = asyncio.create_task(_run())
+    assert await asyncio.to_thread(second_started.wait, 10)
+    seen_while_running = await _stage_states(factory)
+    release.set()
+    with pytest.raises(ValueError, match="float16"):
+        await run
+
+    first, second = called
+    assert seen_while_running == {first: ("completed", None), second: (None, None)}
+    assert await _stage_states(factory) == seen_while_running
+
+
+async def test_a_caption_transcript_read_before_a_failure_stays_read(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The captions pass commits each transcript, so TUWEL going away costs only the rest."""
+    from sophia.services.hermes_transcribe import transcribe_from_captions
+
+    factory = create_session_factory(clean_engine)
+    app = MagicMock()
+    _wire_opencast(app, [_captioned("ep-001", "L1", "de"), _captioned("ep-002", "L2", "de")])
+    app.caption_fetcher.fetch_captions = AsyncMock(
+        side_effect=[GERMAN_VTT, httpx.ConnectError("TUWEL went away")]
+    )
+
+    with pytest.raises(httpx.ConnectError):
+        async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+            await transcribe_from_captions(app, session, 42)
+
+    assert await _stage_states(factory) == {"ep-001": ("completed", None)}

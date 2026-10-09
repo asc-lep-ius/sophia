@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from sophia.infra.engine import commit_unit
 from sophia.services.athena_study import extract_topics_from_lectures
 from sophia.services.hermes_download import LectureDownloadResult, download_lectures
 from sophia.services.hermes_index import IndexingResult, index_lectures
@@ -65,6 +66,11 @@ async def run_pipeline(
     never downloaded or sent through Whisper; the download stage skips every
     episode that already has a transcript. Each stage handles per-episode
     failures internally — a single episode failure does not abort the pipeline.
+
+    Every finished unit is committed as it finishes: each episode within the
+    captions, download, transcribe and index stages, then the lecture numbers,
+    then the topics. A failure or an interrupt costs only the unit in flight,
+    and another session sees the rest while the run goes on.
     """
     result = PipelineResult()
 
@@ -98,12 +104,15 @@ async def run_pipeline(
         cancel_check=cancel_check,
     )
 
-    await assign_lecture_numbers(session, module_id)
-
     if cancel_check and cancel_check():
+        # Numbers gap-filled over part of a module would move once the rest
+        # arrives, so a download stage that stopped short leaves them unset.
         log.info("pipeline_cancelled", module_id=module_id, stage="after_download")
         result.cancelled = True
         return result
+
+    await assign_lecture_numbers(session, module_id)
+    await commit_unit(session)
 
     whisper_results = await transcribe_lectures(
         app,
@@ -141,6 +150,7 @@ async def run_pipeline(
         on_progress=on_topic_progress,
         force=True,
     )
+    await commit_unit(session)
 
     if index_materials and course_id is not None:
         from sophia.services.material_index import index_materials as _index_materials
