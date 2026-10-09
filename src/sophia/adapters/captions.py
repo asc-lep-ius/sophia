@@ -36,7 +36,10 @@ _CAPTION_FORMAT = "vtt"
 _MAX_CAPTION_BYTES = 20 * 1024**2
 _FETCH_TIMEOUT_S = 60.0
 
-_TIMESTAMP = r"(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})"
+# The millisecond field admits a sign: TU Wien's generator writes a cue that
+# starts just before the recording as ``00:00:00.-448``, and a lecture is not
+# Whisper's for that.
+_TIMESTAMP = r"(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](-?\d{1,3})"
 _CUE_TIMING_RE = re.compile(rf"^\s*{_TIMESTAMP}\s*-->\s*{_TIMESTAMP}(?:\s.*)?$")
 _TAG_RE = re.compile(r"<[^>]*>")
 _BLOCK_KEYWORDS = ("NOTE", "STYLE", "REGION")
@@ -70,14 +73,17 @@ def parse_vtt(text: str) -> list[TranscriptSegment]:
 
     Cue identifiers, settings after the timing, NOTE/STYLE/REGION blocks and
     inline tags such as ``<v Speaker>`` are dropped; the text of a multi-line
-    cue is joined with spaces. Raises ``CaptionError`` when the document is
-    not WebVTT at all.
+    cue is joined with spaces. A cue whose timing cannot be read is skipped
+    and counted in one warning, because one bad line in two thousand is not a
+    reason to send the lecture to Whisper. Raises ``CaptionError`` only when
+    the document is not WebVTT at all.
     """
-    body = text.lstrip("﻿")
+    body = text.lstrip("\ufeff")
     if not body.startswith("WEBVTT"):
         raise CaptionError("not a WebVTT document")
 
     segments: list[TranscriptSegment] = []
+    malformed: list[str] = []
     for block in re.split(r"\r?\n\r?\n+", body)[1:]:
         lines = block.strip().splitlines()
         if not lines or lines[0].split(maxsplit=1)[0] in _BLOCK_KEYWORDS:
@@ -87,26 +93,32 @@ def parse_vtt(text: str) -> list[TranscriptSegment]:
             continue
         timing = _CUE_TIMING_RE.match(lines[timing_index])
         if timing is None:
-            raise CaptionError(f"malformed cue timing: {lines[timing_index].strip()!r}")
+            malformed.append(lines[timing_index].strip())
+            continue
         cue_text = " ".join(
             _TAG_RE.sub("", line).strip() for line in lines[timing_index + 1 :]
         ).strip()
         if not cue_text:
             continue
         groups = timing.groups()
+        start = _to_seconds(groups[:4])
         segments.append(
-            TranscriptSegment(
-                start=_to_seconds(groups[:4]),
-                end=_to_seconds(groups[4:]),
-                text=cue_text,
-            )
+            TranscriptSegment(start=start, end=max(start, _to_seconds(groups[4:])), text=cue_text)
+        )
+    if malformed:
+        log.warning(
+            "captions_cues_dropped",
+            dropped=len(malformed),
+            kept=len(segments),
+            example=malformed[0],
         )
     return segments
 
 
 def _to_seconds(parts: Sequence[str | None]) -> float:
+    """Seconds since the start, clamped at zero for a cue that begins before it."""
     hours, minutes, seconds, millis = (int(part or 0) for part in parts)
-    return hours * 3600 + minutes * 60 + seconds + millis / 1000
+    return max(0.0, hours * 3600 + minutes * 60 + seconds + millis / 1000)
 
 
 class HttpCaptionFetcher:

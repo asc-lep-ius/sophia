@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 import pytest
 import respx
+from structlog.testing import capture_logs
 
 from sophia.adapters.captions import (
     HttpCaptionFetcher,
@@ -78,9 +79,39 @@ class TestParseVtt:
         with pytest.raises(CaptionError, match="not a WebVTT"):
             parse_vtt("<html>Not found</html>")
 
-    def test_rejects_a_malformed_timing_line(self) -> None:
-        with pytest.raises(CaptionError, match="malformed cue timing"):
-            parse_vtt("WEBVTT\n\n00:00:01 --> soon\nText\n")
+    def test_a_cue_that_starts_before_the_recording_is_clamped_to_zero(self) -> None:
+        # TU Wien's generator really writes this; seen on EP1's lecture of 2025-10-31.
+        document = "WEBVTT\n\n00:00:00.-448 --> 00:00:02.850 \n So, schönen guten Tag.\n"
+
+        segments = parse_vtt(document)
+
+        assert len(segments) == 1
+        assert segments[0].start == 0.0
+        assert segments[0].end == pytest.approx(2.85)
+
+    def test_skips_a_malformed_cue_and_keeps_the_rest(self) -> None:
+        document = (
+            "WEBVTT\n"
+            "\n"
+            "00:00:01 --> soon\n"
+            "Unreadable timing\n"
+            "\n"
+            "00:00:04.000 --> 00:00:05.000\n"
+            "Readable\n"
+        )
+
+        with capture_logs() as logs:
+            segments = parse_vtt(document)
+
+        assert [seg.text for seg in segments] == ["Readable"]
+        dropped = [entry for entry in logs if entry["event"] == "captions_cues_dropped"]
+        assert len(dropped) == 1
+        assert dropped[0]["dropped"] == 1
+        assert dropped[0]["kept"] == 1
+        assert dropped[0]["example"] == "00:00:01 --> soon"
+
+    def test_a_document_with_only_malformed_cues_has_no_segments(self) -> None:
+        assert parse_vtt("WEBVTT\n\n00:00:01 --> soon\nText\n") == []
 
 
 class TestSelectCaptionTrack:
