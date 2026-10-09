@@ -40,6 +40,7 @@ def _make_transcription(
     segment_count: int = 42,
     *,
     error: str | None = None,
+    source: str = "whisper",
 ) -> TranscriptionResult:
     return TranscriptionResult(
         episode_id=episode_id,
@@ -48,6 +49,7 @@ def _make_transcription(
         segment_count=segment_count,
         status=status,
         error=error,
+        source=source,
     )
 
 
@@ -81,12 +83,16 @@ def _make_topic(topic: str = "Linear Algebra", course_id: int = 42):
 
 @pytest.mark.asyncio
 async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
-    """All four stages are called sequentially: download → transcribe → index → topics."""
+    """Captions come first so a captioned lecture is never downloaded, then the rest in order."""
     from unittest.mock import patch
 
     from sophia.services.hermes_pipeline import run_pipeline
 
     call_order: list[str] = []
+
+    async def _captions(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("captions")
+        return [_make_transcription("ep-captioned", "Captioned", source="captions")]
 
     async def _download(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("download")
@@ -107,6 +113,7 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", side_effect=_captions),
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
@@ -115,7 +122,7 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
     ):
         await run_pipeline(container, db, module_id=42)
 
-    assert call_order == ["download", "transcribe", "index", "topics"]
+    assert call_order == ["captions", "download", "transcribe", "index", "topics"]
 
 
 # ------------------------------------------------------------------
@@ -130,6 +137,7 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
 
     from sophia.services.hermes_pipeline import run_pipeline
 
+    captioned = [_make_transcription("ep-000", "Captioned", source="captions")]
     downloads = [_make_download("ep-001"), _make_download("ep-002")]
     transcriptions = [_make_transcription("ep-001"), _make_transcription("ep-002")]
     indexing = [_make_indexing("ep-001"), _make_indexing("ep-002")]
@@ -138,6 +146,10 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=captioned),
+        ),
         patch(
             "sophia.services.hermes_pipeline.download_lectures",
             AsyncMock(return_value=downloads),
@@ -159,7 +171,7 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
         result = await run_pipeline(container, db, module_id=42)
 
     assert result.downloads == downloads
-    assert result.transcriptions == transcriptions
+    assert result.transcriptions == captioned + transcriptions
     assert result.indexing == indexing
     assert result.topics == topics
 
@@ -184,6 +196,10 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
@@ -212,16 +228,18 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
 
 @pytest.mark.asyncio
 async def test_pipeline_stops_on_cancel_before_first_stage(db: AsyncSession) -> None:
-    """cancel_check returning True immediately → downloads never called."""
+    """cancel_check returning True immediately → no stage is called."""
     from unittest.mock import patch
 
     from sophia.services.hermes_pipeline import run_pipeline
 
+    mock_captions = AsyncMock(return_value=[])
     mock_download = AsyncMock(return_value=[])
 
     container = MagicMock()
 
     with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", mock_captions),
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
@@ -234,6 +252,7 @@ async def test_pipeline_stops_on_cancel_before_first_stage(db: AsyncSession) -> 
         result = await run_pipeline(container, db, module_id=42, cancel_check=lambda: True)
 
     mock_download.assert_not_called()
+    mock_captions.assert_not_called()
     assert result.cancelled is True
 
 
@@ -249,6 +268,9 @@ async def test_pipeline_stops_between_stages(db: AsyncSession) -> None:
     def _cancel_after_download() -> bool:
         return call_count >= 1
 
+    async def _captions(*a: Any, **kw: Any) -> list[Any]:
+        return []
+
     async def _download(*a: Any, **kw: Any) -> list[Any]:
         nonlocal call_count
         call_count += 1
@@ -259,6 +281,7 @@ async def test_pipeline_stops_between_stages(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", side_effect=_captions),
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
@@ -286,6 +309,10 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
 
     call_order: list[str] = []
 
+    async def _captions(*a: Any, **kw: Any) -> list[Any]:
+        call_order.append("captions")
+        return []
+
     async def _download(*a: Any, **kw: Any) -> list[Any]:
         call_order.append("download")
         return []
@@ -305,6 +332,7 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
     container = MagicMock()
 
     with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", side_effect=_captions),
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
@@ -313,7 +341,7 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
     ):
         result = await run_pipeline(container, db, module_id=42, cancel_check=None)
 
-    assert call_order == ["download", "transcribe", "index", "topics"]
+    assert call_order == ["captions", "download", "transcribe", "index", "topics"]
     assert result.cancelled is False
 
 
@@ -327,6 +355,10 @@ async def test_pipeline_result_cancelled_flag(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
         patch("sophia.services.hermes_pipeline.download_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
@@ -360,6 +392,10 @@ async def test_cancel_check_forwarded_to_stages(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
@@ -391,6 +427,10 @@ async def test_pipeline_empty_module(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
         patch("sophia.services.hermes_pipeline.download_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
@@ -436,6 +476,10 @@ async def test_pipeline_mixed_episode_results(db: AsyncSession) -> None:
 
     with (
         patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
             "sophia.services.hermes_pipeline.download_lectures",
             AsyncMock(return_value=downloads),
         ),
@@ -474,6 +518,7 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
 
     from sophia.services.hermes_pipeline import run_pipeline
 
+    mock_captions = AsyncMock(return_value=[])
     mock_download = AsyncMock(return_value=[])
     mock_transcribe = AsyncMock(return_value=[])
     mock_index = AsyncMock(return_value=[])
@@ -481,6 +526,8 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
 
     container = MagicMock()
 
+    on_caption_start = MagicMock()
+    on_caption_complete = MagicMock()
     on_download = MagicMock()
     on_transcribe_start = MagicMock()
     on_transcribe_complete = MagicMock()
@@ -489,6 +536,7 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
     on_topic_progress = MagicMock()
 
     with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", mock_captions),
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
@@ -499,6 +547,8 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
             container,
             db,
             module_id=42,
+            on_caption_start=on_caption_start,
+            on_caption_complete=on_caption_complete,
             on_download_progress=on_download,
             on_transcribe_start=on_transcribe_start,
             on_transcribe_complete=on_transcribe_complete,
@@ -507,6 +557,8 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
             on_topic_progress=on_topic_progress,
         )
 
+    assert mock_captions.call_args.kwargs["on_start"] is on_caption_start
+    assert mock_captions.call_args.kwargs["on_complete"] is on_caption_complete
     assert mock_download.call_args.kwargs["on_progress"] is on_download
     assert mock_transcribe.call_args.kwargs["on_start"] is on_transcribe_start
     assert mock_transcribe.call_args.kwargs["on_complete"] is on_transcribe_complete
@@ -525,6 +577,10 @@ async def test_pipeline_calls_assign_lecture_numbers(db: AsyncSession) -> None:
     container = MagicMock()
 
     with (
+        patch(
+            "sophia.services.hermes_pipeline.transcribe_from_captions",
+            AsyncMock(return_value=[]),
+        ),
         patch("sophia.services.hermes_pipeline.download_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),

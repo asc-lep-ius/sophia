@@ -18,6 +18,7 @@ from sophia.adapters.auth import (
     load_session,
     session_path,
 )
+from sophia.adapters.captions import HttpCaptionFetcher
 from sophia.adapters.lecture_downloader import HttpLectureDownloader
 from sophia.adapters.lecturetube import OpencastAdapter
 from sophia.adapters.moodle import MoodleAdapter
@@ -63,6 +64,7 @@ class AppContainer:
     tiss: TissAdapter
     opencast: OpencastAdapter
     lecture_downloader: HttpLectureDownloader
+    caption_fetcher: HttpCaptionFetcher
     upstream: UpstreamSession = field(default_factory=UpstreamSession)
 
     def session(self, *, org_id: str | None = None) -> AbstractAsyncContextManager[AsyncSession]:
@@ -173,6 +175,7 @@ async def _init_resources(
     tiss = TissAdapter(http=http, host=settings.tiss_host)
     opencast = OpencastAdapter(http=http, host=settings.tuwel_host)
     lecture_downloader = HttpLectureDownloader(http=http)
+    caption_fetcher = HttpCaptionFetcher(http=http)
 
     return AppContainer(
         settings=settings,
@@ -183,5 +186,6 @@ async def _init_resources(
         tiss=tiss,
         opencast=opencast,
         lecture_downloader=lecture_downloader,
+        caption_fetcher=caption_fetcher,
         upstream=upstream,
     )

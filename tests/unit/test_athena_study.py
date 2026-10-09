@@ -351,6 +351,43 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession)
     assert rows[0][1] == "ep-001_0"
 
 
+@pytest.mark.asyncio
+async def test_lecture_context_grounds_on_caption_transcripts_without_a_download(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """A transcript read from captions scopes retrieval and names its lecture."""
+    from sophia.services.athena_study import get_lecture_context
+
+    await exec_sql(
+        db,
+        "INSERT INTO transcriptions (episode_id, module_id, status, source, title) "
+        "VALUES ('ep-cc', 42, 'completed', 'captions', 'Vorlesung - VU vom 2026-01-16')",
+    )
+    chunk = KnowledgeChunk(
+        chunk_id="ep-cc_3",
+        episode_id="ep-cc",
+        chunk_index=3,
+        text="Die ArrayList ist generisch.",
+        start_time=125.0,
+        end_time=131.5,
+    )
+    mock_store = MagicMock()
+    mock_store.search.return_value = [(chunk, 0.9)]
+
+    with (
+        patch("sophia.services.athena_study._get_or_create_embedder", return_value=MagicMock()),
+        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
+        ),
+    ):
+        context = await get_lecture_context(app, db, 42, "Generics", with_provenance=True)
+
+    assert mock_store.search.call_args[1]["episode_ids"] == ["ep-cc"]
+    assert context == "[Vorlesung - VU vom 2026-0…, 02:05]\nDie ArrayList ist generisch."
+
+
 # ---------------------------------------------------------------------------
 # StudySession model
 # ---------------------------------------------------------------------------

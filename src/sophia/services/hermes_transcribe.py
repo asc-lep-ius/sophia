@@ -1,4 +1,11 @@
-"""Hermes transcription orchestration — transcribe downloaded lectures via Whisper."""
+"""Hermes transcription orchestration — published captions first, Whisper for the rest.
+
+Two passes produce the same shape of transcript. ``transcribe_from_captions``
+runs before anything is downloaded and reads the player's own WebVTT track for
+every episode that has one; ``transcribe_lectures`` runs Whisper over the
+audio that was downloaded for the episodes that had none. Each row says which
+pass wrote it. See docs/captions-as-transcript.md.
+"""
 
 from __future__ import annotations
 
@@ -12,14 +19,21 @@ import structlog
 from sqlalchemy import delete, insert, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from sophia.adapters.captions import (
+    DEFAULT_CAPTION_LANGUAGE,
+    parse_vtt,
+    select_caption_track,
+)
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
-from sophia.domain.errors import TranscriptionError
-from sophia.domain.models import HermesConfig
+from sophia.domain.errors import CaptionError, TranscriptionError
+from sophia.domain.models import HermesConfig, TranscriptSource
 from sophia.infra.schema import (
     lecture_downloads,
     transcript_segments,
     transcriptions,
 )
+from sophia.services.content_language import get_learning_path_settings
+from sophia.services.hermes_catalog import get_lecture_module_course_id
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
@@ -27,7 +41,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.domain.models import TranscriptSegment
+    from sophia.domain.models import Lecture, LectureCaption, TranscriptSegment
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
@@ -46,6 +60,183 @@ class TranscriptionResult:
     segment_count: int
     status: str  # "completed", "skipped", "failed"
     error: str | None = None
+    source: str = TranscriptSource.WHISPER.value
+
+
+async def resolve_caption_language(session: AsyncSession, module_id: int) -> str:
+    """The language whose caption track becomes the transcript.
+
+    The course's configured language, read from the learning path the module
+    was discovered under; German when the module's course is unknown or has
+    no settings yet. The per-course transcription language #128 plans belongs
+    here once it exists.
+    """
+    course_id = await get_lecture_module_course_id(session, module_id)
+    if course_id is None or not course_id.isdigit():
+        return DEFAULT_CAPTION_LANGUAGE
+    settings = await get_learning_path_settings(session, int(course_id))
+    if settings is None:
+        return DEFAULT_CAPTION_LANGUAGE
+    return settings.exam_language.value
+
+
+async def transcribe_from_captions(
+    app: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+    *,
+    on_start: Callable[[str, str], None] | None = None,
+    on_complete: Callable[[str, int], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> list[TranscriptionResult]:
+    """Read the player's captions as the transcript of every episode that has them.
+
+    Runs before the download stage, so a captioned lecture is never
+    downloaded. An episode with no usable track, or whose caption file cannot
+    be fetched or parsed, is left for Whisper: the reason is logged and
+    nothing is written for it. Returns one result per episode handled here.
+    """
+    episodes = await app.opencast.get_series_episodes(module_id)
+    if not episodes:
+        return []
+
+    sources = await _get_transcript_sources(session, module_id)
+    language = await resolve_caption_language(session, module_id)
+    results: list[TranscriptionResult] = []
+
+    for episode in episodes:
+        if cancel_check and cancel_check():
+            log.info("captions_cancelled", module_id=module_id, completed=len(results))
+            break
+
+        source = sources.get(episode.episode_id)
+        if source == TranscriptSource.CAPTIONS.value:
+            results.append(_skipped(episode, TranscriptSource.CAPTIONS))
+            continue
+        if source is not None:
+            # Whisper's, and the Whisper pass is what reports it.
+            continue
+
+        result = await _transcribe_from_captions(
+            app,
+            session,
+            module_id,
+            episode,
+            language,
+            on_start=on_start,
+            on_complete=on_complete,
+        )
+        if result is not None:
+            results.append(result)
+
+    return results
+
+
+def _skipped(episode: Lecture, source: TranscriptSource) -> TranscriptionResult:
+    return TranscriptionResult(
+        episode_id=episode.episode_id,
+        title=episode.title,
+        srt_path=None,
+        segment_count=0,
+        status="skipped",
+        source=source.value,
+    )
+
+
+async def _transcribe_from_captions(
+    app: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+    episode: Lecture,
+    language: str,
+    *,
+    on_start: Callable[[str, str], None] | None,
+    on_complete: Callable[[str, int], None] | None,
+) -> TranscriptionResult | None:
+    """Store one episode's caption track as its transcript, or None to leave it to Whisper."""
+    detail = await app.opencast.get_episode_detail(module_id, episode.episode_id)
+    captions = detail.captions if detail is not None else []
+    track = select_caption_track(captions, language)
+    if track is None:
+        log.info(
+            "captions_unavailable",
+            episode_id=episode.episode_id,
+            source=TranscriptSource.WHISPER.value,
+            reason=f"no caption track in {language!r} or {DEFAULT_CAPTION_LANGUAGE!r}",
+            offered=[caption.lang for caption in captions],
+        )
+        return None
+
+    if on_start:
+        on_start(episode.episode_id, episode.title)
+
+    try:
+        segments = parse_vtt(await app.caption_fetcher.fetch_captions(track.url))
+        if not segments:
+            raise CaptionError("caption file has no cues")
+    except CaptionError as exc:
+        log.warning(
+            "captions_fallback",
+            episode_id=episode.episode_id,
+            source=TranscriptSource.WHISPER.value,
+            reason=str(exc),
+            url=track.url,
+        )
+        return None
+
+    await _store_caption_transcript(session, module_id, episode, track, segments)
+
+    if on_complete:
+        on_complete(episode.episode_id, len(segments))
+
+    log.info(
+        "transcript_source",
+        episode_id=episode.episode_id,
+        source=TranscriptSource.CAPTIONS.value,
+        lang=track.lang,
+        segments=len(segments),
+        url=track.url,
+    )
+    return TranscriptionResult(
+        episode_id=episode.episode_id,
+        title=episode.title,
+        srt_path=None,
+        segment_count=len(segments),
+        status="completed",
+        source=TranscriptSource.CAPTIONS.value,
+    )
+
+
+async def _store_caption_transcript(
+    session: AsyncSession,
+    module_id: int,
+    episode: Lecture,
+    track: LectureCaption,
+    segments: list[TranscriptSegment],
+) -> None:
+    now = datetime.now(UTC)
+    values: dict[str, object] = {
+        "module_id": module_id,
+        "language": track.lang,
+        "status": "completed",
+        "source": TranscriptSource.CAPTIONS.value,
+        "title": episode.title,
+        "caption_url": track.url,
+        "segment_count": len(segments),
+        "duration_s": segments[-1].end,
+        "srt_path": None,
+        "error": None,
+        "started_at": now,
+        "completed_at": now,
+    }
+    statement = pg_insert(transcriptions).values(episode_id=episode.episode_id, **values)
+    await session.execute(
+        statement.on_conflict_do_update(
+            index_elements=[transcriptions.c.episode_id],
+            set_={key: statement.excluded[key] for key in values},
+        )
+    )
+    await _persist_segments(session, episode.episode_id, segments)
 
 
 async def transcribe_lectures(
@@ -57,7 +248,7 @@ async def transcribe_lectures(
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
 ) -> list[TranscriptionResult]:
-    """Orchestrate transcription for downloaded lectures in a module.
+    """Orchestrate Whisper transcription for downloaded lectures in a module.
 
     Returns one result per episode (completed / skipped / failed).
     """
@@ -128,11 +319,20 @@ async def _get_downloads(session: AsyncSession, module_id: int) -> list[tuple[st
 
 
 async def _get_transcribed_ids(session: AsyncSession, module_id: int) -> set[str]:
-    query = select(transcriptions.c.episode_id).where(
-        transcriptions.c.module_id == module_id,
-        transcriptions.c.status == "completed",
-    )
-    return set((await session.scalars(query)).all())
+    return set(await _get_transcript_sources(session, module_id))
+
+
+async def _get_transcript_sources(session: AsyncSession, module_id: int) -> dict[str, str]:
+    """Completed transcripts of a module, episode id to the source that wrote it."""
+    rows = (
+        await session.execute(
+            select(transcriptions.c.episode_id, transcriptions.c.source).where(
+                transcriptions.c.module_id == module_id,
+                transcriptions.c.status == "completed",
+            )
+        )
+    ).all()
+    return {row.episode_id: row.source for row in rows}
 
 
 async def _set_transcription_state(
@@ -160,11 +360,20 @@ async def _transcribe_episode(
     if on_start:
         on_start(episode_id, title)
 
+    log.info(
+        "transcript_source",
+        episode_id=episode_id,
+        source=TranscriptSource.WHISPER.value,
+        audio=str(audio_path),
+    )
+
     statement = pg_insert(transcriptions).values(
         episode_id=episode_id,
         module_id=module_id,
         language="de",
         status="processing",
+        source=TranscriptSource.WHISPER.value,
+        title=title,
         started_at=datetime.now(UTC),
     )
     await session.execute(
@@ -174,12 +383,15 @@ async def _transcribe_episode(
                 "module_id": statement.excluded.module_id,
                 "language": statement.excluded.language,
                 "status": statement.excluded.status,
+                "source": statement.excluded.source,
+                "title": statement.excluded.title,
                 "started_at": statement.excluded.started_at,
                 # See hermes_index: a retry must not inherit the previous run's
                 # result, which INSERT OR REPLACE used to discard.
                 "duration_s": None,
                 "segment_count": None,
                 "srt_path": None,
+                "caption_url": None,
                 "error": None,
                 "completed_at": None,
             },

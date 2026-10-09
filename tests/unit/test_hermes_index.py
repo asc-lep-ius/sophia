@@ -69,6 +69,22 @@ async def _insert_transcription(
     )
 
 
+async def _insert_caption_transcription(
+    db: AsyncSession,
+    *,
+    episode_id: str = "ep-001",
+    module_id: int = 42,
+    title: str = "Captioned lecture",
+) -> None:
+    """A transcript read from the player's captions: no download row behind it."""
+    await exec_sql(
+        db,
+        "INSERT INTO transcriptions (episode_id, module_id, segment_count, status, source, title) "
+        "VALUES (?, ?, 5, 'completed', 'captions', ?)",
+        (episode_id, module_id, title),
+    )
+
+
 async def _insert_segments(
     db: AsyncSession,
     *,
@@ -210,6 +226,35 @@ async def test_index_lectures_happy_path(app: MagicMock, db: AsyncSession) -> No
 
 
 @pytest.mark.asyncio
+async def test_index_lectures_reads_a_caption_transcript_without_a_download(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """A caption transcript is indexed like a Whisper one and keeps its own title."""
+    from sophia.services.hermes_index import index_lectures
+
+    await _insert_caption_transcription(db, title="Vorlesung - VU vom 2026-01-16")
+    await _insert_segments(db, count=5)
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed.return_value = [[0.1] * 10 for _ in range(3)]
+    on_start = MagicMock()
+
+    with (
+        patch("sophia.services.hermes_index.load_hermes_config", return_value=HermesConfig()),
+        patch(
+            "sophia.services.hermes_index.SentenceTransformerEmbedder", return_value=mock_embedder
+        ),
+        patch("sophia.services.hermes_index.ChromaKnowledgeStore", return_value=MagicMock()),
+        patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
+    ):
+        results = await index_lectures(app, db, 42, on_start=on_start)
+
+    assert [(r.episode_id, r.status) for r in results] == [("ep-001", "completed")]
+    assert results[0].chunk_count > 0
+    on_start.assert_called_once_with("ep-001", "Vorlesung - VU vom 2026-01-16")
+
+
+@pytest.mark.asyncio
 async def test_index_lectures_skips_completed(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.hermes_index import index_lectures
 
@@ -298,6 +343,43 @@ async def test_search_lectures(app: MagicMock, db: AsyncSession) -> None:
     call_kwargs = mock_store.search.call_args[1]
     assert "episode_ids" in call_kwargs
     assert call_kwargs["episode_ids"] == ["ep-001"]
+
+
+@pytest.mark.asyncio
+async def test_search_lectures_scopes_to_caption_transcripts_too(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """A module's search scope is its episodes, downloaded or captioned."""
+    from sophia.services.hermes_index import search_lectures
+
+    await _insert_download(db, episode_id="ep-dl", title="Downloaded")
+    await _insert_caption_transcription(db, episode_id="ep-cc", title="Captioned")
+
+    mock_embedder = MagicMock()
+    mock_embedder.embed_query.return_value = [0.2] * 10
+    chunk = KnowledgeChunk(
+        chunk_id="ep-cc_0",
+        episode_id="ep-cc",
+        chunk_index=0,
+        text="Generische Datenstrukturen",
+        start_time=2.91,
+        end_time=6.4,
+    )
+    mock_store = MagicMock()
+    mock_store.search.return_value = [(chunk, 0.9)]
+
+    with (
+        patch("sophia.services.hermes_index.load_hermes_config", return_value=HermesConfig()),
+        patch(
+            "sophia.services.hermes_index.SentenceTransformerEmbedder", return_value=mock_embedder
+        ),
+        patch("sophia.services.hermes_index.ChromaKnowledgeStore", return_value=mock_store),
+        patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
+    ):
+        results = await search_lectures(app, db, 42, "Datenstrukturen")
+
+    assert sorted(mock_store.search.call_args[1]["episode_ids"]) == ["ep-cc", "ep-dl"]
+    assert [(r.episode_id, r.title) for r in results] == [("ep-cc", "Captioned")]
 
 
 @pytest.mark.asyncio

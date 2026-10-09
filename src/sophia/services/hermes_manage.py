@@ -18,6 +18,15 @@ from sophia.infra.schema import (
     transcript_segments,
     transcriptions,
 )
+from sophia.services.hermes_episodes import (
+    episode_id as episode_id_of,
+)
+from sophia.services.hermes_episodes import (
+    episode_module_id,
+    episode_title,
+    episodes_from,
+    module_episode_ids_query,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy import Row
@@ -83,6 +92,11 @@ async def assign_lecture_numbers(session: AsyncSession, module_id: int) -> None:
     log.info("lecture_numbers_assigned", module_id=module_id, count=len(inferred))
 
 
+# What the download column says for an episode that was never downloaded,
+# because its transcript came from the player's captions.
+DOWNLOAD_NOT_NEEDED = "none"
+
+
 @dataclass
 class EpisodeStatus:
     episode_id: str
@@ -93,6 +107,7 @@ class EpisodeStatus:
     index_status: str | None
     lecture_number: int | None = None
     missed_at: str | None = None
+    transcription_source: str | None = None
 
 
 async def _set_episode_state(
@@ -176,25 +191,23 @@ def _episode_status_query(module_id: int):
     """Per-episode pipeline state, joined across download, transcription, index."""
     return (
         select(
-            lecture_downloads.c.episode_id,
-            lecture_downloads.c.title,
+            episode_id_of().label("episode_id"),
+            episode_title().label("title"),
             lecture_downloads.c.status.label("download_status"),
             lecture_downloads.c.skip_reason,
             transcriptions.c.status.label("transcription_status"),
+            transcriptions.c.source.label("transcription_source"),
             knowledge_index.c.status.label("index_status"),
             lecture_downloads.c.lecture_number,
             lecture_downloads.c.missed_at,
         )
-        .select_from(lecture_downloads)
-        .outerjoin(
-            transcriptions,
-            transcriptions.c.episode_id == lecture_downloads.c.episode_id,
+        .select_from(
+            episodes_from().outerjoin(
+                knowledge_index,
+                knowledge_index.c.episode_id == episode_id_of(),
+            )
         )
-        .outerjoin(
-            knowledge_index,
-            knowledge_index.c.episode_id == lecture_downloads.c.episode_id,
-        )
-        .where(lecture_downloads.c.module_id == module_id)
+        .where(episode_module_id() == module_id)
     )
 
 
@@ -202,12 +215,13 @@ def _row_to_episode_status(row: Row[tuple[object, ...]]) -> EpisodeStatus:
     return EpisodeStatus(
         episode_id=row.episode_id,
         title=row.title,
-        download_status=row.download_status,
+        download_status=row.download_status or DOWNLOAD_NOT_NEEDED,
         skip_reason=row.skip_reason,
         transcription_status=row.transcription_status,
         index_status=row.index_status,
         lecture_number=row.lecture_number,
         missed_at=row.missed_at.isoformat() if row.missed_at else None,
+        transcription_source=row.transcription_source,
     )
 
 
@@ -287,7 +301,7 @@ async def get_catch_up_info(
 
 async def get_pipeline_status(session: AsyncSession, module_id: int) -> list[EpisodeStatus]:
     """Query per-episode pipeline state for a module."""
-    query = _episode_status_query(module_id).order_by(lecture_downloads.c.title)
+    query = _episode_status_query(module_id).order_by(episode_title())
     return [_row_to_episode_status(row) for row in (await session.execute(query)).all()]
 
 
@@ -310,10 +324,7 @@ async def purge_episode(
     """Remove indexed content for an episode. Preserves the download record and audio file."""
     # Ownership check: episode must belong to this module
     owned = await session.scalar(
-        select(lecture_downloads.c.episode_id).where(
-            lecture_downloads.c.episode_id == episode_id,
-            lecture_downloads.c.module_id == module_id,
-        )
+        module_episode_ids_query(module_id).where(episode_id_of() == episode_id)
     )
     if owned is None:
         return PurgeResult()
@@ -384,15 +395,7 @@ async def purge_module(
     Calls purge_episode for each episode and accumulates results.
     Preserves download records and audio files (same as single-episode purge).
     """
-    episode_ids = list(
-        (
-            await session.scalars(
-                select(lecture_downloads.c.episode_id).where(
-                    lecture_downloads.c.module_id == module_id,
-                )
-            )
-        ).all()
-    )
+    episode_ids = list((await session.scalars(module_episode_ids_query(module_id))).all())
     if not episode_ids:
         return PurgeResult()
 
@@ -421,8 +424,6 @@ async def purge_module(
 async def get_episode_count(session: AsyncSession, module_id: int) -> int:
     """Return the number of episodes for a module."""
     total = await session.scalar(
-        select(func.count())
-        .select_from(lecture_downloads)
-        .where(lecture_downloads.c.module_id == module_id)
+        select(func.count()).select_from(episodes_from()).where(episode_module_id() == module_id)
     )
     return total or 0

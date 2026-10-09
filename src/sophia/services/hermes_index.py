@@ -27,6 +27,7 @@ from sophia.infra.schema import (
     transcript_segments,
     transcriptions,
 )
+from sophia.services.hermes_episodes import episode_title, module_episode_titles_query
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
@@ -99,8 +100,8 @@ async def _get_transcriptions(session: AsyncSession, module_id: int) -> list[tup
     """Return (episode_id, title) for completed transcriptions in a module."""
     rows = (
         await session.execute(
-            select(transcriptions.c.episode_id, lecture_downloads.c.title)
-            .join(
+            select(transcriptions.c.episode_id, episode_title().label("title"))
+            .outerjoin(
                 lecture_downloads,
                 transcriptions.c.episode_id == lecture_downloads.c.episode_id,
             )
@@ -303,10 +304,7 @@ async def search_lectures(
 ) -> list[LectureSearchResult]:
     """Semantic search over indexed lecture content."""
     # Fetch episode IDs for this module to scope the search
-    episode_query = select(
-        lecture_downloads.c.episode_id,
-        lecture_downloads.c.title,
-    ).where(lecture_downloads.c.module_id == module_id)
+    episode_query = module_episode_titles_query(module_id)
     if missed_only:
         episode_query = episode_query.where(lecture_downloads.c.missed_at.is_not(None))
 

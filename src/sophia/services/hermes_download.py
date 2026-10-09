@@ -17,7 +17,7 @@ from sophia.adapters.lecture_downloader import (
     select_best_track,
 )
 from sophia.domain.errors import LectureDownloadError
-from sophia.infra.schema import lecture_downloads
+from sophia.infra.schema import lecture_downloads, transcriptions
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -91,12 +91,23 @@ async def download_lectures(
 
 
 async def _get_skip_ids(session: AsyncSession, module_id: int) -> set[str]:
-    """Return episode IDs that should be skipped (completed, skipped, or discarded)."""
-    query = select(lecture_downloads.c.episode_id).where(
+    """Return episode IDs that should be skipped (completed, skipped, discarded, or transcribed).
+
+    An episode that already has a transcript has nothing left to download for.
+    That is how a lecture whose captions were read — a pass that runs before
+    this stage — never costs the audio.
+    """
+    downloaded = select(lecture_downloads.c.episode_id).where(
         lecture_downloads.c.module_id == module_id,
         lecture_downloads.c.status.in_(("completed", "skipped", "discarded")),
     )
-    return set((await session.scalars(query)).all())
+    transcribed = select(transcriptions.c.episode_id).where(
+        transcriptions.c.module_id == module_id,
+        transcriptions.c.status == "completed",
+    )
+    return set((await session.scalars(downloaded)).all()) | set(
+        (await session.scalars(transcribed)).all()
+    )
 
 
 async def _download_episode(

@@ -49,6 +49,7 @@ from sophia.services.athena_session import (
 from sophia.services.athena_session import (
     start_study_session as start_study_session,
 )
+from sophia.services.hermes_episodes import episode_titles_query, module_episode_ids_query
 from sophia.services.hermes_setup import load_hermes_config
 from sophia.services.idempotency import insert_or_fetch_row
 
@@ -103,15 +104,7 @@ def _get_or_create_store(settings: Any) -> ChromaKnowledgeStore:
 
 async def _get_episode_ids(session: AsyncSession, module_id: int) -> list[str]:
     """Fetch episode IDs for a module to scope ChromaDB searches."""
-    return list(
-        (
-            await session.scalars(
-                select(lecture_downloads.c.episode_id).where(
-                    lecture_downloads.c.module_id == module_id,
-                )
-            )
-        ).all()
-    )
+    return list((await session.scalars(module_episode_ids_query(module_id))).all())
 
 
 async def _get_material_episode_ids(
@@ -534,13 +527,7 @@ async def get_lecture_context(
     ep_ids = list({chunk.episode_id for chunk, _ in search_results})
     title_map: dict[str, str] = {}
     if ep_ids:
-        rows = (
-            await session.execute(
-                select(lecture_downloads.c.episode_id, lecture_downloads.c.title).where(
-                    lecture_downloads.c.episode_id.in_(ep_ids),
-                )
-            )
-        ).all()
+        rows = (await session.execute(episode_titles_query(ep_ids))).all()
         title_map = {row.episode_id: row.title for row in rows}
 
     parts: list[str] = []

@@ -121,6 +121,35 @@ async def test_download_lectures_skips_completed(tmp_path: Path, db: AsyncSessio
     assert completed[0].episode_id == "ep-002"
 
 
+async def test_download_lectures_skips_episodes_that_already_have_a_transcript(
+    tmp_path: Path, db: AsyncSession
+) -> None:
+    """A lecture whose captions were read has nothing left to download for."""
+    await exec_sql(
+        db,
+        """INSERT INTO transcriptions (episode_id, module_id, status, source, title)
+           VALUES ('ep-001', 42, 'completed', 'captions', 'Lecture 1')""",
+    )
+    lectures = [
+        _make_lecture(episode_id="ep-001", title="Lecture 1"),
+        _make_lecture(episode_id="ep-002", title="Lecture 2"),
+    ]
+    container = _make_container(db, tmp_path, episodes=lectures)
+
+    results = await download_lectures(container, db, module_id=42)
+
+    assert [(r.episode_id, r.status) for r in results] == [
+        ("ep-001", "skipped"),
+        ("ep-002", "completed"),
+    ]
+    container.lecture_downloader.download_track.assert_called_once()
+    row = (
+        await exec_sql(db, "SELECT count(*) FROM lecture_downloads WHERE episode_id = 'ep-001'")
+    ).fetchone()
+    assert row is not None
+    assert row[0] == 0
+
+
 # ------------------------------------------------------------------
 # No tracks available
 # ------------------------------------------------------------------
