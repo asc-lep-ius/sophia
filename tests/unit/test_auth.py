@@ -472,6 +472,43 @@ class TestLoginBoth:
         assert tuwel_creds.moodle_session == "test-moodle-session"
         assert tiss_creds is None
 
+    @respx.mock
+    async def test_a_failed_tiss_step_never_logs_the_password(
+        self, capsys: pytest.CaptureFixture[str]
+    ):
+        """#153: a traceback here printed login_both's locals, password included.
+
+        Reachable unattended since #124: a re-login that passes MFA can still
+        fail at TISS, and SESSION_CMD runs with console-style logging.
+        """
+        from sophia.infra.logging import setup_logging
+
+        respx.get(f"{HOST}/auth/saml2/login.php").mock(
+            return_value=httpx.Response(200, text=IDP_LOGIN_FORM_HTML)
+        )
+        respx.post(IDP_URL).mock(return_value=httpx.Response(200, text=SAML_RESPONSE_HTML))
+        respx.post(ACS_URL).mock(
+            return_value=httpx.Response(
+                200,
+                text=DASHBOARD_HTML,
+                headers={"set-cookie": "MoodleSession=test-moodle-session; path=/"},
+            )
+        )
+        respx.get(f"{TISS_HOST}/admin/authentifizierung").mock(
+            side_effect=httpx.ConnectError("TISS unreachable")
+        )
+
+        setup_logging(json_logs=False)
+        try:
+            await login_both(HOST, TISS_HOST, "testuser", "pw-that-must-not-leak", "123456")
+        finally:
+            setup_logging()
+
+        printed = capsys.readouterr().out
+        assert "tiss_login_failed_during_unified_login" in printed
+        assert "ConnectError" in printed
+        assert "pw-that-must-not-leak" not in printed
+
 
 class TestAuthLoginCommand:
     """CLI login prompt behavior."""
@@ -561,6 +598,36 @@ class TestAuthLoginCommand:
 
         login_both_mock.assert_awaited_once()
         assert load_credentials_from_keyring() == StoredCredentials("testuser", "testpass")
+
+
+class TestSavedCredentialsReport:
+    """What the CLI says after saving, now that a skipped secret is kept."""
+
+    def _report(self, *, new_secret: bool) -> str:
+        from rich.console import Console
+
+        from sophia.cli.auth import (
+            _report_saved_credentials,  # pyright: ignore[reportPrivateUsage]
+        )
+
+        console = Console(record=True, width=200)
+        _report_saved_credentials(console, new_secret=new_secret)
+        return console.export_text()
+
+    def test_says_a_stored_secret_was_kept(self, memory_keyring: MemoryKeyring):
+        with patch.dict("os.environ", {"PYTHON_KEYRING_BACKEND": "tests.MemoryKeyring"}):
+            save_credentials_to_keyring("testuser", "oldpass", "JBSWY3DPEHPK3PXP")
+        save_credentials_to_keyring("testuser", "newpass")
+
+        assert "already stored was kept" in self._report(new_secret=False)
+
+    def test_warns_when_no_secret_is_stored(self, memory_keyring: MemoryKeyring):
+        save_credentials_to_keyring("testuser", "testpass")
+
+        assert "without a TOTP secret" in self._report(new_secret=False)
+
+    def test_says_a_new_secret_was_saved(self, memory_keyring: MemoryKeyring):
+        assert "Credentials and TOTP secret saved" in self._report(new_secret=True)
 
 
 class TestKeyringCredentials:
