@@ -126,7 +126,7 @@ class HttpCaptionFetcher:
             response = await self._http.get(url, timeout=_FETCH_TIMEOUT_S)
         except httpx.HTTPError as exc:
             raise CaptionError(f"fetching {url}: {exc}") from exc
-        if response.status_code != httpx.codes.OK:
+        if not response.is_success:
             raise CaptionError(f"HTTP {response.status_code} fetching {url}")
         if len(response.content) > self._max_bytes:
             raise CaptionError(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import structlog
 from sqlalchemy import delete, func, select, update
@@ -211,7 +211,7 @@ def _episode_status_query(module_id: int):
     )
 
 
-def _row_to_episode_status(row: Row[tuple[object, ...]]) -> EpisodeStatus:
+def _row_to_episode_status(row: Row[Any]) -> EpisodeStatus:
     return EpisodeStatus(
         episode_id=row.episode_id,
         title=row.title,

@@ -59,8 +59,8 @@ def _parse_paella_captions(data: dict[str, Any]) -> list[LectureCaption]:
     """
     captions: list[LectureCaption] = []
     raw = data.get("captions", [])
-    for item in raw if isinstance(raw, list) else []:
-        entry = cast("dict[str, Any]", item)
+    entries = cast("list[dict[str, Any]]", raw) if isinstance(raw, list) else []
+    for entry in entries:
         lang = str(entry.get("lang", "")).strip()
         url = str(entry.get("url", "")).strip()
         if not lang or not url:
