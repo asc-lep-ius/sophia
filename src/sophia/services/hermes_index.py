@@ -20,6 +20,7 @@ from sophia.domain.models import (
     LectureSearchResult,
     TranscriptSegment,
 )
+from sophia.infra.engine import commit_unit
 from sophia.infra.schema import (
     course_materials,
     knowledge_index,
@@ -249,7 +250,9 @@ async def index_lectures(
     """Orchestrate indexing for transcribed lectures in a module.
 
     Queries transcriptions for completed episodes, skips already-indexed ones,
-    then chunks, embeds, and stores each episode's segments.
+    then chunks, embeds, and stores each episode's segments. Each episode's
+    row is committed once its chunks are in the store; an episode interrupted
+    in between is indexed again next time, which the store's upsert absorbs.
     """
     transcriptions = await _get_transcriptions(session, module_id)
     if not transcriptions:
@@ -286,6 +289,7 @@ async def index_lectures(
             on_start=on_start,
             on_complete=on_complete,
         )
+        await commit_unit(session)
         results.append(result)
 
     return results

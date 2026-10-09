@@ -11,6 +11,8 @@ from sophia.infra.engine import (
     ORG_SETTING,
     apply_org_context,
     check_connection,
+    commit_unit,
+    create_session_factory,
     current_org_setting,
     session_scope,
 )
@@ -20,6 +22,10 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 pytestmark = pytest.mark.postgres
+
+_INSERT_FLASHCARD = text(
+    "INSERT INTO student_flashcards (course_id, topic, front, back) VALUES (12, :topic, 'Q', 'A')"
+)
 
 
 async def test_org_context_is_visible_inside_the_transaction(
@@ -68,6 +74,43 @@ async def test_org_context_does_not_leak_between_tenants_on_a_pooled_connection(
             seen.append(await current_org_setting(session))
 
     assert seen == ["org-a", "", "org-b", "", "org-c", ""]
+
+
+async def test_a_write_after_a_unit_commit_still_carries_the_org(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The commit ends the transaction SET LOCAL was bound to; the next one is bound again."""
+    async with session_scope(create_session_factory(clean_engine), org_id="tu-wien") as session:
+        await commit_unit(session)
+        await session.execute(_INSERT_FLASHCARD, {"topic": "after"})
+        assert await current_org_setting(session) == "tu-wien"
+
+
+async def test_a_failure_after_a_unit_commit_keeps_what_was_committed(
+    clean_engine: AsyncEngine,
+) -> None:
+    factory = create_session_factory(clean_engine)
+
+    with pytest.raises(RuntimeError, match="deliberate"):
+        async with session_scope(factory, org_id="tu-wien") as session:
+            await session.execute(_INSERT_FLASHCARD, {"topic": "finished"})
+            await commit_unit(session)
+            await session.execute(_INSERT_FLASHCARD, {"topic": "in flight"})
+            msg = "deliberate failure after the commit"
+            raise RuntimeError(msg)
+
+    async with session_scope(factory, org_id="tu-wien") as reader:
+        topics = (await reader.scalars(text("SELECT topic FROM student_flashcards"))).all()
+    assert topics == ["finished"]
+
+
+async def test_commit_unit_refuses_a_session_with_no_recorded_org(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Rebinding to the ambient scope could bind another tenant than the one begun with."""
+    async with session_factory() as session, session.begin():
+        with pytest.raises(RuntimeError, match="session_scope"):
+            await commit_unit(session)
 
 
 async def test_org_context_defaults_to_the_ambient_scope(
