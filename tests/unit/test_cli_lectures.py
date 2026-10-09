@@ -333,6 +333,7 @@ class TestProcessMaterialsFlag:
         container = MagicMock()
 
         with (
+            patch("sophia.services.hermes_pipeline.check_whisper_config", MagicMock()),
             patch(
                 "sophia.services.hermes_pipeline.transcribe_from_captions",
                 AsyncMock(return_value=[]),

@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 ORG_SETTING = "app.org_id"
+_ORG_INFO_KEY = "sophia_org_id"
 _SET_ORG_SQL = text("SELECT set_config(:setting, :org_id, true)")
 _PING_SQL = text("SELECT 1")
 
@@ -91,11 +92,40 @@ async def session_scope(
 
     One session per request or per task — never shared across concurrent tasks,
     because an ``AsyncSession`` is not safe to use from two coroutines at once.
+
+    Commits on clean exit and rolls back on any exception, so work that must
+    keep what it has finished calls :func:`commit_unit` as each unit ends. The
+    transaction is begun and ended by hand rather than by ``session.begin()``'s
+    context manager, which refuses to go on after a commit inside it.
     """
     resolved_org_id = org_id if org_id is not None else get_org_id()
-    async with session_factory() as session, session.begin():
-        await apply_org_context(session, resolved_org_id)
-        yield session
+    async with session_factory() as session:
+        session.info[_ORG_INFO_KEY] = resolved_org_id
+        await _begin_bound(session)
+        try:
+            yield session
+        except BaseException:
+            await session.rollback()
+            raise
+        await session.commit()
+
+
+async def commit_unit(session: AsyncSession) -> None:
+    """Commit the work so far and go on in a new transaction under the same org.
+
+    ``SET LOCAL`` dies with the transaction it was set in, so a bare commit
+    would leave the next statement to autobegin with no org bound at all.
+    """
+    if _ORG_INFO_KEY not in session.info:
+        msg = "commit_unit needs a session opened by session_scope, which records its org"
+        raise RuntimeError(msg)
+    await session.commit()
+    await _begin_bound(session)
+
+
+async def _begin_bound(session: AsyncSession) -> None:
+    await session.begin()
+    await apply_org_context(session, session.info[_ORG_INFO_KEY])
 
 
 async def apply_org_context(session: AsyncSession, org_id: str) -> None:

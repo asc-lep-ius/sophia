@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+from sqlalchemy import select
+
 from sophia.domain.errors import LectureDownloadError
 from sophia.domain.models import DownloadProgressEvent, Lecture, LectureTrack
+from sophia.infra.engine import create_session_factory, current_org_setting, session_scope
+from sophia.infra.schema import lecture_downloads
 from sophia.services.hermes_download import download_lectures
 
 from .._sql import exec_sql
+from ..conftest import TEST_ORG_ID
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 
 def _make_lecture(
@@ -217,3 +224,62 @@ async def test_a_retry_does_not_inherit_the_previous_attempts_result(
     assert row.skip_reason is None
     # Catalogue metadata describes the lecture, not the attempt, so it survives.
     assert row.lecture_number == 3
+
+
+# ------------------------------------------------------------------
+# Each episode is committed as it finishes (#155)
+# ------------------------------------------------------------------
+
+
+async def _download_states(factory: async_sessionmaker[AsyncSession]) -> dict[str, str]:
+    """What a session other than the download's own can see."""
+    async with session_scope(factory, org_id=TEST_ORG_ID) as reader:
+        rows = await reader.execute(
+            select(lecture_downloads.c.episode_id, lecture_downloads.c.status)
+        )
+        return {row.episode_id: row.status for row in rows}
+
+
+async def test_an_interrupt_keeps_the_episodes_already_downloaded(
+    tmp_path: Path, clean_engine: AsyncEngine
+) -> None:
+    """Ctrl-C during the second episode leaves the first recorded as completed.
+
+    Another session sees the first while the second is still downloading, and
+    the second's own row, which says it is downloading, goes with the interrupt.
+    """
+    factory = create_session_factory(clean_engine)
+    second_started = asyncio.Event()
+    org_during_second: list[str] = []
+
+    async def _run() -> None:
+        async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+
+            async def _download(_url: str, dest: Path):
+                if dest.stem == "ep-002":
+                    org_during_second.append(await current_org_setting(session))
+                    second_started.set()
+                    await asyncio.Event().wait()
+                yield DownloadProgressEvent(bytes_downloaded=1, total_bytes=1, speed_bps=1.0)
+
+            container = _make_container(
+                session,
+                tmp_path,
+                episodes=[
+                    _make_lecture(episode_id="ep-001", title="Lecture 1"),
+                    _make_lecture(episode_id="ep-002", title="Lecture 2"),
+                ],
+            )
+            container.lecture_downloader.download_track = MagicMock(side_effect=_download)
+            await download_lectures(container, session, module_id=42)
+
+    run = asyncio.create_task(_run())
+    await asyncio.wait_for(second_started.wait(), timeout=10)
+    seen_while_running = await _download_states(factory)
+    run.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await run
+
+    assert seen_while_running == {"ep-001": "completed"}
+    assert await _download_states(factory) == {"ep-001": "completed"}
+    assert org_during_second == [TEST_ORG_ID]

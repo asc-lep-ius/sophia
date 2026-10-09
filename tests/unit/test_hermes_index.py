@@ -12,14 +12,16 @@ from sophia.domain.models import (
     KnowledgeChunk,
     TranscriptSegment,
 )
+from sophia.infra.engine import create_session_factory, session_scope
 
 from .._sql import exec_sql
+from ..conftest import TEST_ORG_ID
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
 def _run_sync(fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
@@ -422,3 +424,34 @@ async def test_search_lectures_pdf_filter_includes_material_ids(
     # Must include both lecture and material episode IDs
     assert "ep-001" in episode_ids
     assert "mat-10" in episode_ids
+
+
+async def test_an_episode_indexed_before_a_failure_stays_indexed(
+    tmp_path: Path, clean_engine: AsyncEngine
+) -> None:
+    """Each episode's row is committed once its chunks are stored (#155)."""
+    from sophia.services.hermes_index import index_lectures
+
+    factory = create_session_factory(clean_engine)
+    async with session_scope(factory, org_id=TEST_ORG_ID) as setup:
+        for episode_id in ("ep-001", "ep-002"):
+            await _insert_transcription(setup, episode_id=episode_id)
+            await _insert_segments(setup, episode_id=episode_id, count=3)
+
+    embedder = MagicMock()
+    embedder.embed.side_effect = [[[0.1] * 4], RuntimeError("CUDA error: no kernel image")]
+    app = MagicMock()
+    app.settings.data_dir = tmp_path
+
+    with (
+        patch("sophia.services.hermes_index._create_embedder", return_value=embedder),
+        patch("sophia.services.hermes_index._create_store", return_value=MagicMock()),
+        pytest.raises(RuntimeError, match="no kernel image"),
+    ):
+        async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+            await index_lectures(app, session, 42)
+
+    async with session_scope(factory, org_id=TEST_ORG_ID) as reader:
+        rows = (await exec_sql(reader, "SELECT episode_id, status FROM knowledge_index")).all()
+    assert len(rows) == 1
+    assert rows[0].status == "completed"

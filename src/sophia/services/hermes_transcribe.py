@@ -27,6 +27,7 @@ from sophia.adapters.captions import (
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
 from sophia.domain.errors import CaptionError, TranscriptionError
 from sophia.domain.models import HermesConfig, TranscriptSource
+from sophia.infra.engine import commit_unit
 from sophia.infra.schema import (
     lecture_downloads,
     transcript_segments,
@@ -34,14 +35,19 @@ from sophia.infra.schema import (
 )
 from sophia.services.content_language import get_learning_path_settings
 from sophia.services.hermes_catalog import get_lecture_module_course_id
-from sophia.services.hermes_setup import load_hermes_config
+from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.domain.models import Lecture, LectureCaption, TranscriptSegment
+    from sophia.domain.models import (
+        HermesWhisperConfig,
+        Lecture,
+        LectureCaption,
+        TranscriptSegment,
+    )
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
@@ -94,7 +100,8 @@ async def transcribe_from_captions(
     Runs before the download stage, so a captioned lecture is never
     downloaded. An episode with no usable track, or whose caption file cannot
     be fetched or parsed, is left for Whisper: the reason is logged and
-    nothing is written for it. Returns one result per episode handled here.
+    nothing is written for it. Each transcript is committed as it is stored.
+    Returns one result per episode handled here.
     """
     episodes = await app.opencast.get_series_episodes(module_id)
     if not episodes:
@@ -138,6 +145,7 @@ async def transcribe_from_captions(
             on_complete=on_complete,
         )
         if result is not None:
+            await commit_unit(session)
             results.append(result)
 
     return results
@@ -268,6 +276,8 @@ async def transcribe_lectures(
 ) -> list[TranscriptionResult]:
     """Orchestrate Whisper transcription for downloaded lectures in a module.
 
+    Each episode's outcome is committed as soon as it is known, so an hour of
+    GPU time is not lost to a failure or an interrupt on the episode after it.
     Returns one result per episode (completed / skipped / failed).
     """
     downloads = await _get_downloads(session, module_id)
@@ -308,16 +318,22 @@ async def transcribe_lectures(
             on_start=on_start,
             on_complete=on_complete,
         )
+        await commit_unit(session)
         results.append(result)
 
     return results
 
 
+def check_whisper_config(app: AppContainer) -> HermesWhisperConfig:
+    """Load the Whisper config, failing now if its compute type cannot run on its device."""
+    config = load_hermes_config(app.settings.config_dir) or HermesConfig()
+    verify_compute_type(config.whisper)
+    return config.whisper
+
+
 def _create_transcriber(app: AppContainer) -> WhisperTranscriber:
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        config = HermesConfig()
-    return WhisperTranscriber(config.whisper, model_dir=app.settings.cache_dir / "whisper")
+    whisper = check_whisper_config(app)
+    return WhisperTranscriber(whisper, model_dir=app.settings.cache_dir / "whisper")
 
 
 async def _get_downloads(session: AsyncSession, module_id: int) -> list[tuple[str, str, str]]:

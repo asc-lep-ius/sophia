@@ -2,18 +2,44 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import select
 
+from sophia.domain.errors import TranscriptionError
+from sophia.domain.models import (
+    ComputeDevice,
+    ComputeType,
+    DownloadProgressEvent,
+    HermesConfig,
+    HermesWhisperConfig,
+    Lecture,
+    LectureTrack,
+    TranscriptSegment,
+)
+from sophia.infra.engine import create_session_factory, session_scope
+from sophia.infra.schema import lecture_downloads
 from sophia.services.hermes_download import LectureDownloadResult
 from sophia.services.hermes_index import IndexingResult
 from sophia.services.hermes_transcribe import TranscriptionResult
 
+from ..conftest import TEST_ORG_ID
+
 if TYPE_CHECKING:
-    from sqlalchemy.ext.asyncio import AsyncSession
+    from collections.abc import AsyncIterator
+
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+
+@pytest.fixture(autouse=True)
+def _whisper_config_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The containers here are mocks with no config dir; the check has its own test."""
+    monkeypatch.setattr("sophia.services.hermes_pipeline.check_whisper_config", MagicMock())
 
 
 def _make_download(
@@ -123,6 +149,47 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
         await run_pipeline(container, db, module_id=42)
 
     assert call_order == ["captions", "download", "transcribe", "index", "topics"]
+
+
+@pytest.mark.asyncio
+async def test_pipeline_refuses_unsupported_compute_type_before_any_stage(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A float16 config on a Pascal GPU fails at once, naming what the GPU supports."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_pipeline
+    from sophia.services.hermes_setup import save_hermes_config
+    from sophia.services.hermes_transcribe import check_whisper_config
+
+    monkeypatch.setattr(
+        "sophia.services.hermes_pipeline.check_whisper_config", check_whisper_config
+    )
+    save_hermes_config(
+        HermesConfig(
+            whisper=HermesWhisperConfig(device=ComputeDevice.CUDA, compute_type=ComputeType.FLOAT16)
+        ),
+        tmp_path,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "ctranslate2",
+        SimpleNamespace(get_supported_compute_types=lambda _d: {"float32", "int8", "int8_float32"}),
+    )
+    container = MagicMock()
+    container.settings.config_dir = tmp_path
+    captions = AsyncMock(return_value=[])
+    download = AsyncMock(return_value=[])
+
+    with (
+        patch("sophia.services.hermes_pipeline.transcribe_from_captions", captions),
+        patch("sophia.services.hermes_pipeline.download_lectures", download),
+        pytest.raises(TranscriptionError, match="float32, int8, int8_float32"),
+    ):
+        await run_pipeline(container, db, module_id=42)
+
+    captions.assert_not_awaited()
+    download.assert_not_awaited()
 
 
 # ------------------------------------------------------------------
@@ -596,3 +663,155 @@ async def test_pipeline_calls_assign_lecture_numbers(db: AsyncSession) -> None:
         await run_pipeline(container, db, module_id=42)
 
     mock_assign.assert_called_once_with(db, 42)
+
+
+# ------------------------------------------------------------------
+# Finished units outlive a later failure (#155)
+#
+# These drive the real download, numbering and Whisper stages against
+# Postgres, each run in its own session_scope as `lectures process` opens
+# it, and read the outcome back through another session.
+# ------------------------------------------------------------------
+
+
+def _recording(episode_id: str, title: str) -> Lecture:
+    return Lecture(
+        episode_id=episode_id,
+        title=title,
+        series_id="series-1",
+        tracks=[
+            LectureTrack(
+                flavor="presenter/audio",
+                url=f"https://example.com/{episode_id}.m4a",
+                mimetype="audio/mp4",
+            )
+        ],
+    )
+
+
+async def _write_recording(_url: str, dest: Path) -> AsyncIterator[DownloadProgressEvent]:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"audio")
+    yield DownloadProgressEvent(bytes_downloaded=5, total_bytes=5, speed_bps=5.0)
+
+
+def _opencast_app(tmp_path: Path, lectures: list[Lecture]) -> MagicMock:
+    by_id = {lecture.episode_id: lecture for lecture in lectures}
+    app = MagicMock()
+    app.settings.data_dir = tmp_path
+    app.opencast.get_series_episodes = AsyncMock(return_value=lectures)
+    app.opencast.get_episode_detail = AsyncMock(side_effect=lambda _mid, eid: by_id.get(eid))  # type: ignore[arg-type]
+    app.lecture_downloader.download_track = MagicMock(side_effect=_write_recording)
+    return app
+
+
+def _whisper(monkeypatch: pytest.MonkeyPatch, transcribe: MagicMock) -> None:
+    transcriber = MagicMock()
+    transcriber.transcribe = transcribe
+    monkeypatch.setattr(
+        "sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber
+    )
+
+
+def _no_index_or_topics(monkeypatch: pytest.MonkeyPatch) -> None:
+    for stage in ("index_lectures", "extract_topics_from_lectures"):
+        monkeypatch.setattr(f"sophia.services.hermes_pipeline.{stage}", AsyncMock(return_value=[]))
+
+
+async def _downloads(
+    factory: async_sessionmaker[AsyncSession],
+) -> dict[str, tuple[str, int | None]]:
+    """Each download's status and lecture number, as another session reads them."""
+    async with session_scope(factory, org_id=TEST_ORG_ID) as reader:
+        rows = await reader.execute(
+            select(
+                lecture_downloads.c.episode_id,
+                lecture_downloads.c.status,
+                lecture_downloads.c.lecture_number,
+            )
+        )
+        return {row.episode_id: (row.status, row.lecture_number) for row in rows}
+
+
+async def _process(app: MagicMock, factory: async_sessionmaker[AsyncSession], **kw: Any) -> Any:
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+        return await run_pipeline(app, session, 42, **kw)
+
+
+async def test_a_transcription_failure_keeps_every_download(
+    tmp_path: Path, clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """#154's float16 refusal, raised past the per-episode handler, no longer costs the downloads.
+
+    The rerun downloads nothing again, and the lecture numbers the failed run
+    assigned are the ones the finished run keeps.
+    """
+    factory = create_session_factory(clean_engine)
+    app = _opencast_app(
+        tmp_path,
+        [
+            _recording("ep-intro", "Einführung"),
+            _recording("ep-vo1", "Vorlesung 1"),
+            _recording("ep-review", "Wiederholung"),
+        ],
+    )
+    _no_index_or_topics(monkeypatch)
+    _whisper(
+        monkeypatch,
+        MagicMock(side_effect=ValueError("Requested float16 compute type, but the device …")),
+    )
+
+    with pytest.raises(ValueError, match="float16"):
+        await _process(app, factory)
+
+    after_failure = await _downloads(factory)
+    assert after_failure == {
+        "ep-vo1": ("completed", 1),
+        "ep-intro": ("completed", 2),
+        "ep-review": ("completed", 3),
+    }
+
+    _whisper(monkeypatch, MagicMock(return_value=[TranscriptSegment(start=0, end=1, text="x")]))
+    result = await _process(app, factory)
+
+    assert app.lecture_downloader.download_track.call_count == 3
+    assert {download.status for download in result.downloads} == {"skipped"}
+    assert {tr.status for tr in result.transcriptions} == {"completed"}
+    assert await _downloads(factory) == after_failure
+
+
+async def test_a_download_stage_cancelled_part_way_leaves_lecture_numbers_unset(
+    tmp_path: Path, clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gap-filled over part of a module, a number would move once the rest arrived.
+
+    Alone, "Einführung" is lecture 1; once "Vorlesung 1" is downloaded it is
+    lecture 2. So the cut-short run leaves it unnumbered, and the full run
+    numbers both exactly as one uninterrupted run would.
+    """
+    factory = create_session_factory(clean_engine)
+    app = _opencast_app(
+        tmp_path, [_recording("ep-intro", "Einführung"), _recording("ep-vo1", "Vorlesung 1")]
+    )
+    monkeypatch.setattr(
+        "sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])
+    )
+    _no_index_or_topics(monkeypatch)
+
+    partial = await _process(
+        app,
+        factory,
+        cancel_check=lambda: app.lecture_downloader.download_track.call_count >= 1,
+    )
+
+    assert partial.cancelled is True
+    assert await _downloads(factory) == {"ep-intro": ("completed", None)}
+
+    await _process(app, factory)
+
+    assert await _downloads(factory) == {
+        "ep-intro": ("completed", 2),
+        "ep-vo1": ("completed", 1),
+    }
