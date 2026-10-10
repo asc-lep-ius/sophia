@@ -1,4 +1,4 @@
-.PHONY: db.up db.down db.migrate db.downgrade db.revision db.import db.verify db.backup db.restore dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend deploy-config test-all
+.PHONY: db.up db.down db.migrate db.downgrade db.revision db.import db.verify db.backup db.restore dev setup-hermes test lint typecheck openapi openapi.check blocking-audit secret-policy deployment-policy deploy-smoke frontend.install frontend.check frontend.test frontend.a11y frontend.size run format clean clean-all docker-build docker-up docker-down docker-logs docker-config docker-prod-config docker-validate docker-build-api docker-build-frontend docker-build-worker deploy-config test-all
 
 PROD_IMAGE_TAG ?= $(shell git rev-parse --verify HEAD)
 SOPHIA_SMOKE_BASE_URL ?= http://localhost
@@ -107,6 +107,9 @@ docker-build-api:                ## Build API Docker image
 
 docker-build-frontend:           ## Build frontend Docker image
 	docker compose build frontend
+
+docker-build-worker:             ## Build the processing worker image (Whisper, embedder, ffmpeg)
+	docker compose build worker
 
 docker-up:                       ## Start services (detached)
 	docker compose up -d

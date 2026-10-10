@@ -9,7 +9,13 @@ import pytest
 from sqlalchemy import insert, select
 
 from sophia.domain.models import Course, CourseSection, Lecture, ModuleInfo
-from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules, transcriptions
+from sophia.infra.schema import (
+    DEFAULT_SCOPE,
+    lecture_downloads,
+    lecture_modules,
+    lecture_recordings,
+    transcriptions,
+)
 from sophia.services.hermes_catalog import (
     discover_lecture_module_course,
     discover_lecture_modules,
@@ -57,6 +63,35 @@ async def test_discovery_persists_the_owning_course(db: AsyncSession) -> None:
         select(lecture_modules.c.course_id).where(lecture_modules.c.module_id == 456),
     )
     assert course_id == "12"
+
+
+@pytest.mark.asyncio
+async def test_discovery_registers_each_recording_with_its_date(db: AsyncSession) -> None:
+    """The scan is what tells the page how many older recordings are waiting (#128)."""
+    from datetime import date
+
+    container = _container()
+    container.opencast.get_series_episodes.return_value = [
+        _EPISODE,
+        Lecture(episode_id="e2", title="VU vom 2026-06-15", series_id="s1", created="2026-06-15"),
+    ]
+
+    await discover_lecture_modules(container, db)
+
+    rows = (
+        await db.execute(
+            select(
+                lecture_recordings.c.episode_id,
+                lecture_recordings.c.module_id,
+                lecture_recordings.c.recorded_on,
+                lecture_recordings.c.course_id,
+            ).order_by(lecture_recordings.c.episode_id)
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [
+        ("e1", 456, None, "12"),
+        ("e2", 456, date(2026, 6, 15), "12"),
+    ]
 
 
 @pytest.mark.asyncio

@@ -8,11 +8,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import case, delete, func, insert, select
+from sqlalchemy import case, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from sophia.adapters.topic_extractor import LLMTopicExtractor
-from sophia.domain.errors import TopicExtractionError
+from sophia.domain.errors import EmbeddingError, TopicExtractionError
+from sophia.domain.learning import QuestionFallbackReason
 from sophia.domain.models import (
     CardReviewAttempt,
     FlashcardSource,
@@ -26,13 +26,10 @@ from sophia.infra.engine import affected_rows
 from sophia.infra.schema import (
     card_review_attempts,
     course_materials,
-    lecture_modules,
     self_explanations,
     student_flashcards,
     topic_lecture_links,
     topic_mappings,
-    transcript_segments,
-    transcriptions,
 )
 from sophia.services.athena_session import (
     complete_study_session as complete_study_session,
@@ -49,12 +46,18 @@ from sophia.services.athena_session import (
 from sophia.services.athena_session import (
     start_study_session as start_study_session,
 )
+from sophia.services.athena_topics import (
+    create_topic_extractor as _create_topic_extractor,
+)
+from sophia.services.athena_topics import (
+    drop_unrated_orphans,
+    extract_topics_per_lecture,
+)
 from sophia.services.hermes_episodes import (
     course_episode_ids_query,
-    course_module_ids_query,
     episode_titles_query,
 )
-from sophia.services.hermes_setup import load_hermes_config
+from sophia.services.hermes_index import knowledge_store, query_embedder
 from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
@@ -63,47 +66,10 @@ if TYPE_CHECKING:
     from sqlalchemy import Row, Select
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.adapters.embedder import SentenceTransformerEmbedder
     from sophia.adapters.knowledge_store import ChromaKnowledgeStore
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
-
-_MAX_TRANSCRIPT_CHARS = 12_000
-
-
-def _create_topic_extractor(app: AppContainer) -> LLMTopicExtractor:
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        raise TopicExtractionError("Hermes not configured — run: sophia hermes setup")
-    return LLMTopicExtractor(config.llm)
-
-
-# Module-level caches — one instance per CLI session, not per function call.
-# The ~500 MB embedding model is expensive to reload; ChromaDB benefits from
-# persistent client reuse as well.
-_embedder_cache: SentenceTransformerEmbedder | None = None
-_store_cache: ChromaKnowledgeStore | None = None
-
-
-def _get_or_create_embedder(config: Any) -> SentenceTransformerEmbedder:
-    """Return a cached embedder, creating it on first call."""
-    from sophia.adapters.embedder import SentenceTransformerEmbedder
-
-    global _embedder_cache
-    if _embedder_cache is None:
-        _embedder_cache = SentenceTransformerEmbedder(config.embeddings)
-    return _embedder_cache
-
-
-def _get_or_create_store(settings: Any) -> ChromaKnowledgeStore:
-    """Return a cached knowledge store, creating it on first call."""
-    from sophia.adapters.knowledge_store import ChromaKnowledgeStore
-
-    global _store_cache
-    if _store_cache is None:
-        _store_cache = ChromaKnowledgeStore(settings.data_dir / "knowledge")
-    return _store_cache
 
 
 async def _get_episode_ids(session: AsyncSession, course_id: int) -> list[str]:
@@ -151,61 +117,6 @@ async def _search_material_chunks(
     return results, name_map
 
 
-async def _get_course_name(session: AsyncSession, course_id: int) -> str:
-    """The course's name as discovery recorded it, to give the LLM context."""
-    name = await session.scalar(
-        select(lecture_modules.c.course_name)
-        .where(lecture_modules.c.course_id == str(course_id))
-        .limit(1)
-    )
-    return name or ""
-
-
-async def _get_transcript_text(session: AsyncSession, course_id: int) -> str:
-    """Representative transcript text from every module the course owns.
-
-    The character budget is split evenly between the modules that have
-    transcripts. Spent in segment order instead, it would go entirely to the
-    first module's first lecture, and a course's later modules would never be
-    read at all.
-    """
-    rows = (
-        await session.execute(
-            select(transcriptions.c.module_id, transcript_segments.c.text)
-            .join(
-                transcriptions,
-                transcriptions.c.episode_id == transcript_segments.c.episode_id,
-            )
-            .where(
-                transcriptions.c.module_id.in_(course_module_ids_query(course_id)),
-                transcriptions.c.status == "completed",
-            )
-            .order_by(
-                transcriptions.c.module_id,
-                transcriptions.c.episode_id,
-                transcript_segments.c.segment_index,
-            )
-        )
-    ).all()
-    texts_by_module: dict[int, list[str]] = {}
-    for row in rows:
-        texts_by_module.setdefault(row.module_id, []).append(row.text)
-    if not texts_by_module:
-        return ""
-
-    share = _MAX_TRANSCRIPT_CHARS // len(texts_by_module)
-    parts: list[str] = []
-    for texts in texts_by_module.values():
-        total = 0
-        for text in texts:
-            if total + len(text) > share:
-                break
-            parts.append(text)
-            total += len(text)
-
-    return " ".join(parts)
-
-
 async def extract_topics_from_lectures(
     app: AppContainer,
     session: AsyncSession,
@@ -214,100 +125,30 @@ async def extract_topics_from_lectures(
     on_progress: Callable[[str], None] | None = None,
     force: bool = False,
 ) -> list[TopicMapping]:
-    """Extract a course's topics from the transcripts of every module it owns.
+    """Extract a course's topics, one lecture at a time, and return its lecture topics.
 
     Topics are stored under the course, the id the browser reads them by, never
     under one of its Opencast modules (#127). Which modules a course owns is
     what discovery recorded in ``lecture_modules``.
 
-    When ``force=False`` (default) and lecture topics already exist for this
-    course, the LLM call is skipped and the cached topics are returned.  This
-    prevents the pipeline and the ``study topics`` CLI command from producing
-    mixed-language duplicates when both are run against the same course.
-    Manual topics do not count: they share the course key, but no extraction
-    produced them.
+    Each lecture is read on its own and remembered in ``topic_extractions``, so
+    a run reads only the lectures no run has read before: with nothing new,
+    the model is not called and the stored topics come back as they are (#128).
+    Manual topics do not count as read: they share the course key, but no
+    extraction produced them, and they are never returned here.
 
-    Pass ``force=True`` (used by the full pipeline after fresh transcription)
-    to delete existing lecture topics and re-extract.
-
-    1. Return cached topics if present (unless force=True)
-    2. Load transcript segments from DB for the course's modules
-    3. Concatenate representative text (budgeted to _MAX_TRANSCRIPT_CHARS)
-    4. Call LLM TopicExtractor to get topic labels
-    5. Persist to topic_mappings table
-    6. Return the extracted topics
+    ``force=True`` reads every lecture again. Topics the student rated or has a
+    review for are kept whatever the model says this time; the rest of the
+    ones no lecture names any more are dropped.
     """
-    if not force:
-        existing = [
-            topic
-            for topic in await get_course_topics(session, course_id)
-            if topic.source == TopicSource.LECTURE
-        ]
-        if existing:
-            log.info("topics_cached", course_id=course_id, count=len(existing))
-            return existing
-
+    await extract_topics_per_lecture(app, session, course_id, force=force, on_progress=on_progress)
     if force:
-        await session.execute(
-            delete(topic_mappings).where(
-                topic_mappings.c.course_id == course_id,
-                topic_mappings.c.source == TopicSource.LECTURE.value,
-            )
-        )
-
-    text = await _get_transcript_text(session, course_id)
-    if not text:
-        log.info("no_transcripts_for_topics", course_id=course_id)
-        return []
-
-    if on_progress:
-        on_progress("Extracting topics from lecture transcripts…")
-
-    extractor = _create_topic_extractor(app)
-
-    course_name = await _get_course_name(session, course_id)
-    topic_labels = await extractor.extract_topics(text, course_context=course_name)
-
-    if not topic_labels:
-        log.info("no_topics_extracted", course_id=course_id)
-        return []
-
-    # Persist with upsert (idempotent)
-    mappings: list[TopicMapping] = []
-    for label in topic_labels:
-        statement = pg_insert(topic_mappings).values(
-            topic=label,
-            course_id=course_id,
-            source=TopicSource.LECTURE.value,
-            frequency=1,
-        )
-        await session.execute(
-            statement.on_conflict_do_update(
-                index_elements=[
-                    topic_mappings.c.topic,
-                    topic_mappings.c.course_id,
-                    topic_mappings.c.source,
-                ],
-                set_={"frequency": topic_mappings.c.frequency + 1},
-            )
-        )
-        mappings.append(TopicMapping(topic=label, course_id=course_id, source=TopicSource.LECTURE))
-
-    # Reconcile manual predictions against extracted topics
-    from sophia.services.athena_reconciliation import reconcile_manual_topics
-
-    result = await reconcile_manual_topics(session, course_id)
-    if result.matched or result.unmatched_manual or result.new_moodle:
-        log.info(
-            "topics_reconciled",
-            course_id=course_id,
-            matched=len(result.matched),
-            unmatched=len(result.unmatched_manual),
-            new_moodle=len(result.new_moodle),
-        )
-
-    log.info("topics_extracted", course_id=course_id, count=len(mappings))
-    return mappings
+        await drop_unrated_orphans(session, course_id)
+    return [
+        topic
+        for topic in await get_course_topics(session, course_id)
+        if topic.source == TopicSource.LECTURE
+    ]
 
 
 async def link_topics_to_lectures(
@@ -334,13 +175,8 @@ async def link_topics_to_lectures(
         log.info("no_episodes_for_linking", course_id=course_id)
         return {}
 
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        from sophia.domain.models import HermesConfig
-
-        config = HermesConfig()
-    embedder = _get_or_create_embedder(config)
-    store = _get_or_create_store(app.settings)
+    embedder = query_embedder(app)
+    store = knowledge_store(app.settings)
 
     results: dict[str, list[tuple[KnowledgeChunk, float]]] = {}
 
@@ -454,24 +290,20 @@ class GroundedQuestion:
     """A practice question and the lecture chunks it was generated from.
 
     ``sources`` is empty for the template fallback: nothing grounds it, so there
-    is nothing to show the learner beside it.
+    is nothing to show the learner beside it. ``fallback_reason`` says why, when
+    the learner is to be told.
     """
 
     prompt: str
     sources: tuple[KnowledgeChunk, ...] = ()
+    fallback_reason: QuestionFallbackReason | None = None
 
 
 async def _embed_topic(app: AppContainer, topic: str) -> tuple[ChromaKnowledgeStore, list[float]]:
     """The knowledge store and the topic's query embedding, ready for a scoped search."""
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        from sophia.domain.models import HermesConfig
-
-        config = HermesConfig()
-    embedder = _get_or_create_embedder(config)
-    store = _get_or_create_store(app.settings)
+    embedder = query_embedder(app)
     query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
-    return store, query_embedding
+    return knowledge_store(app.settings), query_embedding
 
 
 async def retrieve_lecture_chunks(
@@ -485,7 +317,7 @@ async def retrieve_lecture_chunks(
     """The course's lecture transcript chunks most relevant to a topic, best first.
 
     Searched across every module the course owns. Empty when none of them has
-    lecture data.
+    lecture data; ``EmbeddingError`` when the index cannot be read.
     """
     episode_ids = await _get_episode_ids(session, course_id)
     if not episode_ids:
@@ -581,9 +413,19 @@ async def generate_grounded_questions(
     Falls back to generic questions if no lecture data or no LLM. The chunks are
     returned rather than dropped because they are what the study surface shows
     at reveal: without them the learner self-grades against nothing.
+
+    An index that cannot be read falls back too, with the reason attached: the
+    learner is told why their lectures are missing, never handed a server error.
     """
-    chunks = tuple(await retrieve_lecture_chunks(app, session, course_id, topic))
     fallback = GroundedQuestion(prompt=_FALLBACK_QUESTION.format(topic=topic))
+    try:
+        chunks = tuple(await retrieve_lecture_chunks(app, session, course_id, topic))
+    except EmbeddingError as exc:
+        log.warning("lecture_index_unavailable", course_id=course_id, topic=topic, error=str(exc))
+        unreadable = GroundedQuestion(
+            prompt=fallback.prompt, fallback_reason=QuestionFallbackReason.INDEX_UNAVAILABLE
+        )
+        return [unreadable] * count
 
     if not chunks:
         return [fallback] * count
@@ -596,8 +438,8 @@ async def generate_grounded_questions(
             q = await extractor.generate_question(topic, lecture_context, difficulty=difficulty)
             if q and q not in prompts:
                 prompts.append(q)
-        except TopicExtractionError:
-            log.warning("question_generation_failed", topic=topic)
+        except TopicExtractionError as exc:
+            log.warning("question_generation_failed", topic=topic, error=str(exc))
             break
 
     questions = [GroundedQuestion(prompt=prompt, sources=chunks) for prompt in prompts]

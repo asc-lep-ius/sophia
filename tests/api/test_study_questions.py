@@ -94,10 +94,8 @@ def stub_lecture_retrieval(
     extractor = MagicMock()
     extractor.generate_question = AsyncMock(side_effect=generated)
 
-    monkeypatch.setattr(
-        "sophia.services.athena_study._get_or_create_embedder", lambda _config: embedder
-    )
-    monkeypatch.setattr("sophia.services.athena_study._get_or_create_store", lambda _s: store)
+    monkeypatch.setattr("sophia.services.athena_study.query_embedder", lambda _app: embedder)
+    monkeypatch.setattr("sophia.services.athena_study.knowledge_store", lambda _s: store)
     monkeypatch.setattr(
         "sophia.services.athena_study._create_topic_extractor", lambda _app: extractor
     )

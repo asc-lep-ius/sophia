@@ -159,6 +159,43 @@ describe("study card", () => {
     expect(screen.queryByText(ANSWER)).toBeNull();
   });
 
+  it("names the lecture and the moment each revealed excerpt comes from", async () => {
+    renderCard([], {
+      ...groundedQuestion,
+      provenance: {
+        ...groundedQuestion.provenance,
+        source_spans: [
+          {
+            content_item_id: "6a0995b4",
+            content_item_title: "Vorlesung - VU vom 2026-10-06",
+            start_char: null,
+            end_char: null,
+            start_ms: 737_670,
+            end_ms: 748_200,
+            excerpt: EXCERPT,
+          },
+        ],
+      },
+    });
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+
+    expect(screen.getByText(EXCERPT)).toBeTruthy();
+    expect(
+      screen.getByText("Vorlesung - VU vom 2026-10-06, at 12:17"),
+    ).toBeTruthy();
+  });
+
+  it("says why a card is not from the lectures when they could not be searched", () => {
+    renderCard([], { ...question, fallback_reason: "index_unavailable" });
+
+    expect(
+      screen.getByText(/^Not from your lectures: they could not be searched/),
+    ).toBeTruthy();
+  });
+
   it("says a question with no source material is free recall", async () => {
     renderCard();
     await fireEvent.input(screen.getByLabelText("Your answer"), {

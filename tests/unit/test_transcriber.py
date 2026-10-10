@@ -202,3 +202,18 @@ def test_transcriber_wraps_exceptions(tmp_path: Path) -> None:
 
     with pytest.raises(TranscriptionError, match="GPU out of memory"):
         transcriber.transcribe(audio)
+
+
+def test_transcribe_lecture_lets_whisper_detect_the_language(tmp_path: Path) -> None:
+    audio = tmp_path / "lecture.mp3"
+    audio.touch()
+    mock_model = MagicMock()
+    mock_info = MagicMock()
+    mock_info.language = "en"
+    mock_model.transcribe.return_value = (iter([MockSegment(0.0, 5.0, "Welcome back.")]), mock_info)
+
+    transcript = _make_transcriber(mock_model).transcribe_lecture(audio, None)
+
+    assert mock_model.transcribe.call_args.kwargs["language"] is None
+    assert transcript.language == "en"
+    assert [segment.text for segment in transcript.segments] == ["Welcome back."]

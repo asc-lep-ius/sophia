@@ -680,6 +680,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning-paths/{learning_path_id}/ingestion": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Ingestion Status */
+        get: operations["readIngestionStatus"];
+        put?: never;
+        /**
+         * Start Ingestion
+         * @description Queue the learning path's recordings from its own semester, and follow it.
+         *
+         *     409 when a job is already queued or running for it; 503, with the reason,
+         *     when no worker can process here. The first Process subscribes the path:
+         *     from then on new recordings are processed without another press.
+         */
+        post: operations["startIngestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning-paths/{learning_path_id}/ingestion/older": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Older Ingestion
+         * @description Queue a one-off job over the recordings from other semesters.
+         *
+         *     The same rules as Process — 409 while a job runs, 503 with the reason
+         *     when no worker can process — plus 409 when nothing older is left. It
+         *     neither subscribes the learning path nor changes what later presses of
+         *     Process and the nightly run cover.
+         */
+        post: operations["startOlderIngestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/learning-paths/{learning_path_id}/ingestion/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Ingestion Settings Route
+         * @description Stop or resume following the learning path, and set its transcription language.
+         */
+        put: operations["saveIngestionSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning-paths/{learning_path_id}/topics": {
         parameters: {
             query?: never;
@@ -1314,6 +1384,7 @@ export interface components {
              *     }
              */
             engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -1353,6 +1424,8 @@ export interface components {
         ContentItemResponse: {
             /** Download Status */
             download_status: string;
+            /** Failure Reason */
+            failure_reason?: string | null;
             /** Id */
             id: string;
             /** Index Status */
@@ -1365,6 +1438,8 @@ export interface components {
             skip_reason: string | null;
             /** Title */
             title: string;
+            /** Topic Status */
+            topic_status?: string | null;
             /** Transcription Status */
             transcription_status: string | null;
         };
@@ -1884,6 +1959,62 @@ export interface components {
              */
             status: "ok";
         };
+        /** IngestionJobResponse */
+        IngestionJobResponse: {
+            /** Content Source Id */
+            content_source_id: number | null;
+            /** Error */
+            error: string | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Requested At */
+            requested_at: string;
+            /** Requested By */
+            requested_by: string;
+            /** Scope */
+            scope: string;
+            /** Stage */
+            stage: string | null;
+            /** Started At */
+            started_at: string | null;
+            state: components["schemas"]["IngestionState"];
+        };
+        /**
+         * IngestionSettingsRequest
+         * @description How a learning path is processed from now on.
+         *
+         *     ``transcription_language`` is an ISO 639-1 code, or null to let the
+         *     transcriber detect each recording's language itself.
+         */
+        IngestionSettingsRequest: {
+            /** Subscribed */
+            subscribed: boolean;
+            /** Transcription Language */
+            transcription_language?: string | null;
+        };
+        /** IngestionSettingsResponse */
+        IngestionSettingsResponse: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Subscribed */
+            subscribed: boolean;
+            /** Transcription Language */
+            transcription_language: string | null;
+        };
+        /**
+         * IngestionSourceResponse
+         * @description A content source the learning path owns, whose items processing covers.
+         */
+        IngestionSourceResponse: {
+            /** Id */
+            id: number;
+            /** Title */
+            title: string;
+        };
         /**
          * IngestionState
          * @description Where an accepted upload sits in the processing that follows it.
@@ -1894,6 +2025,30 @@ export interface components {
          * @enum {string}
          */
         IngestionState: "queued" | "processing" | "failed" | "ready";
+        /** IngestionStatusResponse */
+        IngestionStatusResponse: {
+            job: components["schemas"]["IngestionJobResponse"] | null;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Older Recordings Pending */
+            older_recordings_pending: number;
+            settings: components["schemas"]["IngestionSettingsResponse"];
+            /** Sources */
+            sources: components["schemas"]["IngestionSourceResponse"][];
+            worker: components["schemas"]["IngestionWorkerResponse"];
+        };
+        /**
+         * IngestionWorkerResponse
+         * @description Whether processing can start here, and if not, the reason shown as the refusal.
+         */
+        IngestionWorkerResponse: {
+            /** Available */
+            available: boolean;
+            /** Gpu Name */
+            gpu_name: string;
+            /** Reason */
+            reason: string;
+        };
         JsonPrimitive: string | number | boolean | null;
         /**
          * LearningEventBatchRequest
@@ -1999,6 +2154,7 @@ export interface components {
              *     }
              */
             engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -2036,6 +2192,7 @@ export interface components {
             content_language: components["schemas"]["ContentLanguage"];
             difficulty: components["schemas"]["QuestionDifficulty"];
             engagement_policy: components["schemas"]["ElaborationPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -2094,6 +2251,12 @@ export interface components {
          * @enum {string}
          */
         QuestionDifficulty: "cued" | "explain" | "transfer";
+        /**
+         * QuestionFallbackReason
+         * @description Why a question is a template rather than one generated from the lectures.
+         * @enum {string}
+         */
+        QuestionFallbackReason: "index_unavailable";
         /**
          * QuestionOption
          * @description One selectable option of a multiple-choice question.
@@ -2305,11 +2468,14 @@ export interface components {
          *
          *     Character offsets locate text material and millisecond offsets locate
          *     time-based material; both are optional because a span may be known only as
-         *     a whole content item.
+         *     a whole content item. ``content_item_title`` names the item — a lecture's
+         *     title — where the server knows one.
          */
         SourceSpan: {
             /** Content Item Id */
             content_item_id: string;
+            /** Content Item Title */
+            content_item_title?: string | null;
             /** End Char */
             end_char?: number | null;
             /** End Ms */
@@ -2881,6 +3047,18 @@ export interface components {
         TopicConfidenceResponse: {
             rating: components["schemas"]["TopicConfidenceRatingResponse"];
         };
+        /**
+         * TopicContentItemResponse
+         * @description A content item a topic was extracted from, as the topic list names it.
+         */
+        TopicContentItemResponse: {
+            /** Id */
+            id: string;
+            /** Sequence Number */
+            sequence_number: number | null;
+            /** Title */
+            title: string;
+        };
         /** TopicExtractionRequest */
         TopicExtractionRequest: {
             /** Content Source Id */
@@ -2907,6 +3085,11 @@ export interface components {
         };
         /** TopicMappingResponse */
         TopicMappingResponse: {
+            /**
+             * Content Items
+             * @default []
+             */
+            content_items: components["schemas"]["TopicContentItemResponse"][];
             /** Frequency */
             frequency: number;
             /** Learning Path Id */
@@ -4510,6 +4693,222 @@ export interface operations {
             };
         };
     };
+    readIngestionStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionStatusResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    startIngestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionJobResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    startOlderIngestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionJobResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveIngestionSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestionSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionSettingsResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     listTopics: {
         parameters: {
             query?: never;
@@ -5158,6 +5557,16 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;

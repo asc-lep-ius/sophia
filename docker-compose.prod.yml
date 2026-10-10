@@ -94,6 +94,51 @@ services:
       retries: 3
       start_period: 15s
 
+  worker:
+    image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/worker:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
+    # Behind a profile until CI builds and pushes this image: deploy:production
+    # pulls every default service, and a pull of an image nobody pushed fails
+    # the whole deploy. Start it with `--profile worker` once the image exists.
+    profiles: ["worker"]
+    restart: unless-stopped
+    environment:
+      SOPHIA_PRODUCTION: "true"
+      SOPHIA_DATA_DIR: /data
+      SOPHIA_CONFIG_DIR: /config
+      SOPHIA_CACHE_DIR: /data/cache
+      HF_HOME: /data/cache/huggingface
+      SOPHIA_LOG_FORMAT: json
+      SOPHIA_DOCKER: "1"
+      SOPHIA_DATABASE_URL: postgresql+asyncpg://${SOPHIA_POSTGRES_USER}:${SOPHIA_POSTGRES_PASSWORD}@postgres:5432/${SOPHIA_POSTGRES_DB}
+      SOPHIA_GEMINI_API_KEY: ${SOPHIA_GEMINI_API_KEY:-}
+    volumes:
+      - sophia-data:/data
+      - sophia-config:/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import faster_whisper, chromadb, sentence_transformers"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 30s
+
   postgres:
     image: postgres@sha256:a02db8cac496f15b094798a38254f14d6e00741f709360e5e00bb6668ea31636
     restart: unless-stopped

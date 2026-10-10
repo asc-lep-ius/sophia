@@ -6,6 +6,7 @@ dependency; a clear ``TranscriptionError`` is raised if it is missing.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -87,6 +88,14 @@ def segments_to_srt(segments: list[TranscriptSegment]) -> str:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True, slots=True)
+class Transcript:
+    """What one Whisper run produced: the kept segments and the language it ran in."""
+
+    segments: list[TranscriptSegment]
+    language: str | None
+
+
 class WhisperTranscriber:
     """Transcriber backed by faster-whisper with hallucination filtering."""
 
@@ -121,12 +130,20 @@ class WhisperTranscriber:
         return self._model  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
 
     def transcribe(self, audio_path: Path) -> list[TranscriptSegment]:
-        """Transcribe an audio file, filtering hallucinations and duplicates."""
+        """Transcribe an audio file in the configured language."""
+        return self.transcribe_lecture(audio_path, language=self._config.language).segments
+
+    def transcribe_lecture(self, audio_path: Path, language: str | None = None) -> Transcript:
+        """Transcribe an audio file, filtering hallucinations and duplicates.
+
+        ``language=None`` lets Whisper detect the language itself; the one it
+        settled on comes back with the segments so it can be recorded (#128).
+        """
         model: Any = self._ensure_model()
         try:
-            segments_iter, _info = model.transcribe(
+            segments_iter, info = model.transcribe(
                 str(audio_path),
-                language=self._config.language,
+                language=language,
                 vad_filter=self._config.vad_filter,
                 word_timestamps=False,
                 hallucination_silence_threshold=_HALLUCINATION_SILENCE_THRESHOLD,
@@ -136,6 +153,7 @@ class WhisperTranscriber:
             raise
         except Exception as exc:
             raise TranscriptionError(str(exc)) from exc
+        detected = getattr(info, "language", None)
 
         log.info("transcription_raw", path=str(audio_path), segment_count=len(raw_segments))
 
@@ -154,4 +172,7 @@ class WhisperTranscriber:
 
         dropped = len(raw_segments) - len(result)
         log.info("transcription_filtered", path=str(audio_path), kept=len(result), dropped=dropped)
-        return result
+        return Transcript(
+            segments=result,
+            language=detected if isinstance(detected, str) else language,
+        )
