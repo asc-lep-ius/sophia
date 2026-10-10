@@ -57,6 +57,10 @@ compose files request every GPU on the host. A worker that finds no usable GPU
 or no `hermes.toml` keeps running and reports why, and the API refuses Process
 with that reason rather than queueing a job nobody can run (#128). CI does not
 build or push this image yet; build it locally with `make docker-build-worker`.
+In production the service sits behind the `worker` compose profile, so
+`deploy:production`'s `pull` and `up` skip it instead of failing on an image
+the registry does not have; once the image is pushed, start it with
+`docker compose -f docker-compose.prod.yml --profile worker up -d worker`.
 The NiceGUI image that used to do this was removed by #102; see
 [docs/nicegui-retirement.md](docs/nicegui-retirement.md) for which image did
 what.

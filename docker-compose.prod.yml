@@ -96,6 +96,10 @@ services:
 
   worker:
     image: "${LOCAL_REGISTRY:-gitlab.hephaestus:5050/mipkovich/sophia}/worker:${IMAGE_TAG:?set IMAGE_TAG to a full commit SHA}"
+    # Behind a profile until CI builds and pushes this image: deploy:production
+    # pulls every default service, and a pull of an image nobody pushed fails
+    # the whole deploy. Start it with `--profile worker` once the image exists.
+    profiles: ["worker"]
     restart: unless-stopped
     environment:
       SOPHIA_PRODUCTION: "true"

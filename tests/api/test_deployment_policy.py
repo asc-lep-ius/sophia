@@ -508,3 +508,12 @@ def test_the_dev_compose_worker_and_the_stack_worker_keep_their_caches_on_the_vo
     stack = (REPO_ROOT / "scripts" / "stack" / "worker.yml").read_text(encoding="utf-8")
     for binding in ("SOPHIA_STACK_CACHE_DIR", "SOPHIA_STACK_HF_HOME"):
         assert f"${{{binding}:?}}:${{{binding}:?}}" in stack
+
+
+def test_the_prod_worker_stays_behind_a_profile_until_ci_pushes_its_image() -> None:
+    """deploy:production pulls every default service, so a worker whose image no
+    CI job pushes would fail the whole deploy on `pull` (#128)."""
+    prod = yaml.safe_load((REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8"))
+    ci = (REPO_ROOT / ".gitlab-ci.yml").read_text(encoding="utf-8")
+    ci_pushes_worker = "docker-worker-build" in ci
+    assert ci_pushes_worker or prod["services"]["worker"].get("profiles") == ["worker"]
