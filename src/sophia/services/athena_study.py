@@ -438,8 +438,8 @@ async def generate_grounded_questions(
             q = await extractor.generate_question(topic, lecture_context, difficulty=difficulty)
             if q and q not in prompts:
                 prompts.append(q)
-        except TopicExtractionError:
-            log.warning("question_generation_failed", topic=topic)
+        except TopicExtractionError as exc:
+            log.warning("question_generation_failed", topic=topic, error=str(exc))
             break
 
     questions = [GroundedQuestion(prompt=prompt, sources=chunks) for prompt in prompts]
