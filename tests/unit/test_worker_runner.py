@@ -10,6 +10,7 @@ from sqlalchemy import insert, select
 from sophia.infra.engine import create_session_factory
 from sophia.infra.schema import ingestion_jobs, ingestion_workers, lecture_modules
 from sophia.services.ingestion_jobs import heartbeat, request_ingestion
+from sophia.services.ingestion_scope import OLDER, register_recordings
 from sophia.worker.capability import WorkerCapability
 from sophia.worker.runner import NO_MODULES_REASON, StageOutcome, run_worker
 
@@ -26,15 +27,35 @@ LAST_SEMESTER = 78417
 LAST_SEMESTER_MODULE = 2856855
 
 
-async def _seed(db: AsyncSession, *, modules: tuple[int, ...] = (3022060, 3022498)) -> int:
+async def _seed(
+    db: AsyncSession, *, modules: tuple[int, ...] = (3022060, 3022498), scope: str | None = None
+) -> int:
     for module_id in modules:
-        await db.execute(insert(lecture_modules).values(module_id=module_id, course_id=str(EP1)))
+        await db.execute(
+            insert(lecture_modules).values(
+                module_id=module_id, course_id=str(EP1), course_shortname="185.A91-2026W"
+            )
+        )
     # Last semester's module, which Process must leave alone unless asked.
     await db.execute(
         insert(lecture_modules).values(module_id=LAST_SEMESTER_MODULE, course_id=str(LAST_SEMESTER))
     )
     await heartbeat(db, "seed", hostname="x", capable=True, reason="", gpu_name="GTX 1070")
-    return (await request_ingestion(db, EP1)).id
+    if scope is None:
+        return (await request_ingestion(db, EP1)).id
+    return (await request_ingestion(db, EP1, scope=scope)).id
+
+
+async def _register_one_recording_per_module(db: AsyncSession) -> None:
+    """3022060 holds this semester's recording, 3022498 last semester's — both the course's."""
+    from sophia.domain.models import Lecture
+
+    await register_recordings(
+        db, 3022060, [Lecture(episode_id="ep-oct", title="x", series_id="", created="2026-10-09")]
+    )
+    await register_recordings(
+        db, 3022498, [Lecture(episode_id="ep-jun", title="x", series_id="", created="2026-06-15")]
+    )
 
 
 async def _job_row(engine: AsyncEngine, job_id: int):
@@ -340,3 +361,54 @@ async def test_the_worker_keeps_reporting_in_while_a_job_runs(
 
     assert seen == {"orphaned": [], "available": True, "second_press": {"job_id": job_id}}
     assert (await _job_row(clean_engine, job_id)).status == "completed"
+
+
+async def test_a_semester_job_never_starts_the_module_whose_recordings_are_all_older(
+    clean_engine: AsyncEngine, db: AsyncSession
+) -> None:
+    """Operator decision 2026-10-10: last semester's series costs no GPU time unless asked."""
+    await _register_one_recording_per_module(db)
+    job_id = await _seed(db)
+    await db.commit()
+    calls: list[tuple[str, int]] = []
+
+    async def fake_stage(group: str, module_id: int, _course: int, _job: int) -> StageOutcome:
+        calls.append((group, module_id))
+        return StageOutcome(0, "")
+
+    await run_worker(
+        _settings(clean_engine),
+        worker_id="test:1",
+        run_stage=fake_stage,
+        capability=CAPABLE,
+        stop_when_idle=True,
+    )
+
+    assert calls == [("media", 3022060), ("knowledge", 3022060)]
+    row = await _job_row(clean_engine, job_id)
+    assert (row.status, row.scope) == ("completed", "semester")
+
+
+async def test_an_older_job_starts_only_the_module_with_older_recordings(
+    clean_engine: AsyncEngine, db: AsyncSession
+) -> None:
+    await _register_one_recording_per_module(db)
+    job_id = await _seed(db, scope=OLDER)
+    await db.commit()
+    calls: list[tuple[str, int]] = []
+
+    async def fake_stage(group: str, module_id: int, _course: int, _job: int) -> StageOutcome:
+        calls.append((group, module_id))
+        return StageOutcome(0, "")
+
+    await run_worker(
+        _settings(clean_engine),
+        worker_id="test:1",
+        run_stage=fake_stage,
+        capability=CAPABLE,
+        stop_when_idle=True,
+    )
+
+    assert calls == [("media", 3022498), ("knowledge", 3022498)]
+    row = await _job_row(clean_engine, job_id)
+    assert (row.status, row.scope) == ("completed", "older")

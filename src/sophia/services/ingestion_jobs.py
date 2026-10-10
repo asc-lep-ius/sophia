@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 
 from sophia.domain.errors import IngestionAlreadyRunning, IngestionUnavailable
 from sophia.infra.schema import ingestion_jobs, ingestion_workers
+from sophia.services.ingestion_scope import CURRENT_SEMESTER
 from sophia.services.ingestion_settings import subscribed_course_ids
 
 if TYPE_CHECKING:
@@ -52,6 +53,9 @@ class IngestionJob:
     course_id: int
     status: str
     requested_by: str
+    # Which of the course's recordings the job covers: ``semester`` for those
+    # dated within the course's own semester, ``older`` for the rest (#128).
+    scope: str
     stage: str | None
     module_id: int | None
     error: str | None
@@ -102,13 +106,15 @@ async def request_ingestion(
     course_id: int,
     *,
     requested_by: str = "student",
+    scope: str = CURRENT_SEMESTER,
     stale_after_s: int = DEFAULT_WORKER_STALE_S,
 ) -> IngestionJob:
     """Queue a job for the course, or say why not.
 
     Raises :class:`IngestionUnavailable` when no live worker can process, and
     :class:`IngestionAlreadyRunning` when the course already has a job that
-    has not finished — the second press of Process starts nothing.
+    has not finished — the second press of Process starts nothing, and so
+    does "Process older recordings too" while a job runs.
     """
     availability = await worker_availability(session, stale_after_s=stale_after_s)
     if not availability.available:
@@ -124,7 +130,7 @@ async def request_ingestion(
             row = (
                 await session.execute(
                     insert(ingestion_jobs)
-                    .values(course_id=course_id, requested_by=requested_by)
+                    .values(course_id=course_id, requested_by=requested_by, scope=scope)
                     .returning(ingestion_jobs)
                 )
             ).one()
@@ -132,8 +138,21 @@ async def request_ingestion(
         # The partial unique index caught a request racing this one.
         raced = await active_job(session, course_id)
         raise IngestionAlreadyRunning(raced.id if raced else 0) from None
-    log.info("ingestion_requested", job_id=row.id, course_id=course_id, requested_by=requested_by)
+    log.info(
+        "ingestion_requested",
+        job_id=row.id,
+        course_id=course_id,
+        requested_by=requested_by,
+        scope=scope,
+    )
     return _row_to_job(row)
+
+
+async def get_job(session: AsyncSession, job_id: int) -> IngestionJob | None:
+    row = (
+        await session.execute(select(ingestion_jobs).where(ingestion_jobs.c.id == job_id))
+    ).one_or_none()
+    return None if row is None else _row_to_job(row)
 
 
 async def active_job(session: AsyncSession, course_id: int) -> IngestionJob | None:
@@ -333,6 +352,7 @@ def _row_to_job(row: Row[Any]) -> IngestionJob:
         course_id=row.course_id,
         status=row.status,
         requested_by=row.requested_by,
+        scope=row.scope,
         stage=row.stage,
         module_id=row.module_id,
         error=row.error,

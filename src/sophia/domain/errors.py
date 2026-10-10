@@ -91,6 +91,14 @@ class IngestionAlreadyRunning(HermesError):
         self.params: dict[str, str | int] = {"job_id": job_id}
 
 
+class IngestionNothingOlder(HermesError):
+    """ "Process older recordings too" was asked for a course with none left to process."""
+
+    def __init__(self, course_id: int) -> None:
+        super().__init__(f"course {course_id} has no unprocessed recordings from other semesters")
+        self.params: dict[str, str | int] = {"learning_path_id": course_id}
+
+
 class EmbeddingError(HermesError):
     """Embedding or knowledge base indexing failed."""
 

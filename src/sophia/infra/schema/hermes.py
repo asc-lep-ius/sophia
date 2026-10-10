@@ -6,6 +6,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Column,
+    Date,
     Float,
     ForeignKey,
     Index,
@@ -28,6 +29,25 @@ lecture_modules = Table(
     Column("course_shortname", Text, nullable=False, server_default=""),
     org_id_column(),
     text_course_id_column(),
+)
+
+# Every recording a module's series page lists, with the date the page gives
+# it, written at discovery and refreshed by the media stage. The date decides
+# whether Process covers a recording: only those dated within the course's own
+# semester, the rest on request (#128). A recording is "processed" once it has
+# a completed transcript; this table never says so itself.
+lecture_recordings = Table(
+    "lecture_recordings",
+    metadata,
+    Column("episode_id", Text, primary_key=True),
+    Column("module_id", Integer, nullable=False),
+    Column("title", Text, nullable=False, server_default=""),
+    Column("recorded_on", Date),
+    Column("first_seen_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("last_seen_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
+    text_course_id_column(),
+    Index("idx_lecture_recordings_module", "module_id"),
 )
 
 lecture_downloads = Table(
@@ -125,7 +145,9 @@ knowledge_index = Table(
 # subscribed course, and reads the row back for status; the worker claims it,
 # records which stage of which module it is on, and finishes it. The partial
 # unique index is the "one job per course" rule, enforced where two requests
-# racing each other cannot both get past it (#128).
+# racing each other cannot both get past it (#128). ``scope`` says which of
+# the course's recordings the job covers: ``semester`` for those dated within
+# the course's own semester, ``older`` for the one-off run over the rest.
 ingestion_jobs = Table(
     "ingestion_jobs",
     metadata,
@@ -133,6 +155,7 @@ ingestion_jobs = Table(
     Column("course_id", Integer, nullable=False),
     Column("status", Text, nullable=False, server_default="queued"),
     Column("requested_by", Text, nullable=False, server_default="student"),
+    Column("scope", Text, nullable=False, server_default="semester"),
     Column("stage", Text),
     Column("module_id", Integer),
     Column("error", Text),
@@ -145,6 +168,7 @@ ingestion_jobs = Table(
         "status IN ('queued', 'running', 'completed', 'failed')",
         name="status_allowed",
     ),
+    CheckConstraint("scope IN ('semester', 'older')", name="scope_allowed"),
     Index("idx_ingestion_jobs_course", "course_id"),
     Index(
         "uq_ingestion_jobs_active_course",

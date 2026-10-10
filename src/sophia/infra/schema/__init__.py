@@ -42,6 +42,7 @@ from sophia.infra.schema.hermes import (
     knowledge_index,
     lecture_downloads,
     lecture_modules,
+    lecture_recordings,
     transcript_segments,
     transcriptions,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "learning_path_settings",
     "lecture_downloads",
     "lecture_modules",
+    "lecture_recordings",
     "metacognition_log",
     "metadata",
     "module_course_rekeys",

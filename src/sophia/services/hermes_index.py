@@ -32,7 +32,7 @@ from sophia.services.hermes_episodes import episode_title, module_episode_titles
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -246,6 +246,7 @@ async def index_lectures(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[IndexingResult]:
     """Orchestrate indexing for transcribed lectures in a module.
 
@@ -253,8 +254,11 @@ async def index_lectures(
     then chunks, embeds, and stores each episode's segments. Each episode's
     row is committed once its chunks are in the store; an episode interrupted
     in between is indexed again next time, which the store's upsert absorbs.
+    ``only_episodes`` narrows the run to those ids.
     """
     transcriptions = await _get_transcriptions(session, module_id)
+    if only_episodes is not None:
+        transcriptions = [row for row in transcriptions if row[0] in only_episodes]
     if not transcriptions:
         return []
 

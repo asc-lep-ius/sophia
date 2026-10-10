@@ -3,6 +3,8 @@
 Process queues a job for the worker and subscribes the learning path, so new
 recordings are processed on the next scan or overnight without another press.
 Status is read back from the queue, so it survives a reload and a closed tab.
+Process covers the recordings dated within the learning path's own semester;
+"Process older recordings too" is a one-off job over the rest.
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from sophia.api.schemas.ingestion import (
     IngestionWorkerResponse,
 )
 from sophia.api.transactions import TransactionalRoute
+from sophia.domain.errors import IngestionNothingOlder
 from sophia.infra.schema import lecture_modules
 from sophia.services.ingestion_jobs import (
     COMPLETED,
@@ -39,6 +42,7 @@ from sophia.services.ingestion_jobs import (
     request_ingestion,
     worker_availability,
 )
+from sophia.services.ingestion_scope import OLDER, older_recordings_pending
 from sophia.services.ingestion_settings import (
     IngestionSettings,
     get_ingestion_settings,
@@ -88,6 +92,7 @@ async def read_ingestion_status(
         ),
         job=None if job is None else _job_response(job),
         sources=await _sources(db, learning_path_id),
+        older_recordings_pending=await older_recordings_pending(db, learning_path_id),
     )
 
 
@@ -126,6 +131,37 @@ async def start_ingestion(
                 transcription_language=current.transcription_language,
             ),
         )
+    return _job_response(job)
+
+
+@router.post(
+    "/learning-paths/{learning_path_id}/ingestion/older",
+    response_model=IngestionJobResponse,
+    operation_id="startOlderIngestion",
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        status.HTTP_403_FORBIDDEN: {"model": ErrorEnvelope},
+        status.HTTP_409_CONFLICT: {"model": ErrorEnvelope},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorEnvelope},
+    },
+)
+async def start_older_ingestion(
+    learning_path_id: LearningPathIdPath,
+    request: Request,
+) -> IngestionJobResponse:
+    """Queue a one-off job over the recordings from other semesters.
+
+    The same rules as Process — 409 while a job runs, 503 with the reason
+    when no worker can process — plus 409 when nothing older is left. It
+    neither subscribes the learning path nor changes what later presses of
+    Process and the nightly run cover.
+    """
+    await require_csrf_learning_path_scope(request, learning_path_id)
+    db = await request_session(request)
+    if await older_recordings_pending(db, learning_path_id) == 0:
+        raise IngestionNothingOlder(learning_path_id)
+    stale_after = get_settings(request).ingestion_worker_stale_seconds
+    job = await request_ingestion(db, learning_path_id, scope=OLDER, stale_after_s=stale_after)
     return _job_response(job)
 
 
@@ -181,6 +217,7 @@ def _job_response(job: IngestionJob) -> IngestionJobResponse:
         learning_path_id=job.course_id,
         state=_STATE_BY_STATUS.get(job.status, IngestionState.QUEUED),
         requested_by=job.requested_by,
+        scope=job.scope,
         stage=job.stage,
         content_source_id=job.module_id,
         error=job.error,

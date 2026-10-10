@@ -841,6 +841,30 @@ async def test_a_download_stage_cancelled_part_way_leaves_lecture_numbers_unset(
     }
 
 
+async def test_the_media_stages_leave_recordings_outside_the_job_scope_untouched(
+    tmp_path: Path, clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A semester job's stages never download or transcribe last semester's recording (#128)."""
+    from sophia.services.hermes_pipeline import run_media_stages
+
+    factory = create_session_factory(clean_engine)
+    app = _opencast_app(
+        tmp_path,
+        [_recording("ep-oct", "VU vom 2026-10-09"), _recording("ep-jun", "VU vom 2026-06-15")],
+    )
+    transcribe = MagicMock(return_value=[TranscriptSegment(start=0, end=1, text="x")])
+    _whisper(monkeypatch, transcribe)
+
+    async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+        result = await run_media_stages(app, session, 42, only_episodes={"ep-oct"})
+
+    assert [download.episode_id for download in result.downloads] == ["ep-oct"]
+    assert [tr.episode_id for tr in result.transcriptions] == ["ep-oct"]
+    assert app.lecture_downloader.download_track.call_count == 1
+    assert transcribe.call_count == 1
+    assert await _downloads(factory) == {"ep-oct": ("completed", 1)}
+
+
 # ------------------------------------------------------------------
 # Topics are the course's, not the module's (#127)
 # ------------------------------------------------------------------

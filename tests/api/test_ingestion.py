@@ -8,14 +8,20 @@ which is exactly what the API reads to decide whether it can refuse.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlalchemy import insert, select
 
 from sophia.api.routers import content_sources as content_sources_router
-from sophia.infra.schema import ingestion_jobs, learning_path_settings, lecture_modules
+from sophia.infra.schema import (
+    ingestion_jobs,
+    learning_path_settings,
+    lecture_modules,
+    lecture_recordings,
+    transcriptions,
+)
 from sophia.services.ingestion_jobs import (
     NO_WORKER_REASON,
     WORKER_GONE_REASON,
@@ -23,6 +29,7 @@ from sophia.services.ingestion_jobs import (
     finish_job,
     heartbeat,
 )
+from sophia.services.ingestion_scope import scoped_episode_ids
 
 from ._db_harness import DbHarness, db_harness, learning_path_tenant
 
@@ -36,16 +43,39 @@ pytestmark = pytest.mark.postgres
 EP1 = 82774
 GDS = 83629
 STATUS = f"/api/learning-paths/{EP1}/ingestion"
+OLDER = f"/api/learning-paths/{EP1}/ingestion/older"
 SETTINGS = f"/api/learning-paths/{EP1}/ingestion/settings"
+THIS_SEMESTER = 3022060
+# Last semester's series, linked into the 2026W page: the course owns it, but
+# its recordings are dated 2026S.
+LAST_SEMESTER = 3022498
 
 
 async def _seed_course(session: AsyncSession) -> None:
-    for module_id in (3022060, 3022498):
+    for module_id in (THIS_SEMESTER, LAST_SEMESTER):
         await session.execute(
             insert(lecture_modules).values(
                 module_id=module_id,
                 course_id=str(EP1),
+                course_shortname="185.A91-2026W",
                 course_name="185.A91 Einführung in die Programmierung 1",
+            )
+        )
+
+
+async def _seed_recordings(session: AsyncSession) -> None:
+    """One recording of this semester and one of last semester, both the course's own."""
+    for episode_id, module_id, recorded_on in (
+        ("ep-oct", THIS_SEMESTER, date(2026, 10, 9)),
+        ("ep-jun", LAST_SEMESTER, date(2026, 6, 15)),
+    ):
+        await session.execute(
+            insert(lecture_recordings).values(
+                episode_id=episode_id,
+                module_id=module_id,
+                title=f"Vorlesung - VU vom {recorded_on.isoformat()}",
+                recorded_on=recorded_on,
+                course_id=str(EP1),
             )
         )
 
@@ -307,3 +337,106 @@ async def test_a_status_read_fails_a_job_whose_worker_went_away(
     assert shown["worker"]["available"] is False
     assert shown["job"]["state"] == "failed"
     assert shown["job"]["error"] == WORKER_GONE_REASON
+
+
+async def test_process_and_the_scan_cover_only_this_semesters_recordings(
+    clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario "per course, not per source", as the operator settled it on 2026-10-10.
+
+    Last semester's series is linked on the course's TUWEL page, so the
+    course owns it; its June recording is still not what Process, the scan
+    or the nightly run queue. They cover the October one, and the page is
+    told one older recording is waiting.
+    """
+
+    async def fake_discover(_app: object, session: AsyncSession) -> list[DiscoveredLectureModule]:
+        return []
+
+    monkeypatch.setattr(content_sources_router, "discover_lecture_modules", fake_discover)
+    async with _harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_course(session)
+            await _seed_recordings(session)
+            await _worker(session)
+        await harness.login()
+        pressed = await harness.client.post(STATUS, headers=harness.csrf_headers())
+        shown = await _status(harness)
+        async with harness.seed() as session:
+            job = pressed.json()
+            this_semester = await scoped_episode_ids(session, EP1, THIS_SEMESTER, job["scope"])
+            last_semester = await scoped_episode_ids(session, EP1, LAST_SEMESTER, job["scope"])
+            claimed = await claim_next_job(session, "hephaestus:1")
+            assert claimed is not None
+            await finish_job(session, claimed.id)
+        scanned = await harness.client.post(
+            "/api/content-sources/discover", headers=harness.csrf_headers()
+        )
+        after_scan = await _status(harness)
+        async with harness.seed() as session:
+            scan_job = after_scan["job"]
+            scanned_last = await scoped_episode_ids(session, EP1, LAST_SEMESTER, scan_job["scope"])
+
+    assert pressed.status_code == 202
+    assert job["scope"] == "semester"
+    assert this_semester == {"ep-oct"}
+    assert last_semester == frozenset()
+    assert shown["older_recordings_pending"] == 1
+    assert scanned.status_code == 200
+    assert (scan_job["requested_by"], scan_job["scope"]) == ("scan", "semester")
+    assert scanned_last == frozenset()
+
+
+async def test_process_older_recordings_too_is_a_one_off_job_under_the_same_rules(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The second button: refused without a worker or while a job runs, never a subscription."""
+    async with _harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_course(session)
+            await _seed_recordings(session)
+        await harness.login()
+        no_worker = await harness.client.post(OLDER, headers=harness.csrf_headers())
+
+        async with harness.seed() as session:
+            await _worker(session)
+        queued = await harness.client.post(OLDER, headers=harness.csrf_headers())
+        shown = await _status(harness)
+        async with harness.seed() as session:
+            covered = await scoped_episode_ids(session, EP1, LAST_SEMESTER, queued.json()["scope"])
+            not_covered = await scoped_episode_ids(
+                session, EP1, THIS_SEMESTER, queued.json()["scope"]
+            )
+        again = await harness.client.post(OLDER, headers=harness.csrf_headers())
+        process_meanwhile = await harness.client.post(STATUS, headers=harness.csrf_headers())
+
+        async with harness.seed() as session:
+            claimed = await claim_next_job(session, "hephaestus:1")
+            assert claimed is not None
+            await finish_job(session, claimed.id)
+            await session.execute(
+                insert(transcriptions).values(
+                    episode_id="ep-jun", module_id=LAST_SEMESTER, status="completed"
+                )
+            )
+        nothing_left = await _status(harness)
+        nothing_older = await harness.client.post(OLDER, headers=harness.csrf_headers())
+
+    assert no_worker.status_code == 503
+    assert no_worker.json()["detail"]["code"] == "ingestion.unavailable"
+    assert queued.status_code == 202, queued.text
+    assert (queued.json()["scope"], queued.json()["requested_by"]) == ("older", "student")
+    assert covered == {"ep-jun"}
+    assert not_covered == frozenset()
+    # One job per course, whichever button queued it.
+    assert again.status_code == 409
+    assert again.json()["detail"]["code"] == "ingestion.already_running"
+    assert process_meanwhile.status_code == 409
+    # A one-off: the course is not followed because of it.
+    assert shown["settings"]["subscribed"] is False
+    assert shown["job"]["scope"] == "older"
+    assert nothing_left["older_recordings_pending"] == 0
+    assert nothing_older.status_code == 409
+    assert nothing_older.json() == {
+        "detail": {"code": "ingestion.nothing_older", "params": {"learning_path_id": EP1}}
+    }

@@ -31,7 +31,7 @@ from sophia.services.hermes_transcribe import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -66,6 +66,7 @@ async def run_media_stages(
     on_transcribe_start: Callable[[str, str], None] | None = None,
     on_transcribe_complete: Callable[[str, int], None] | None = None,
     on_stage: Callable[[str], None] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> PipelineResult:
     """Captions, download, lecture numbers and Whisper — everything that needs the GPU.
 
@@ -73,7 +74,8 @@ async def run_media_stages(
     downloaded or sent through Whisper; the download stage skips every episode
     that already has a transcript. Each stage handles per-episode failures
     internally and commits every finished episode, so a failure or an
-    interrupt costs only the unit in flight.
+    interrupt costs only the unit in flight. ``only_episodes`` is the job's
+    scope: the recordings outside it are not touched by any stage (#128).
     """
     result = PipelineResult()
     log.info("pipeline_start", module_id=module_id)
@@ -90,6 +92,7 @@ async def run_media_stages(
         on_start=on_caption_start,
         on_complete=on_caption_complete,
         cancel_check=cancel_check,
+        only_episodes=only_episodes,
     )
     if cancel_check and cancel_check():
         return _cancelled(result, module_id, "after_captions")
@@ -101,6 +104,7 @@ async def run_media_stages(
         module_id,
         on_progress=on_download_progress,
         cancel_check=cancel_check,
+        only_episodes=only_episodes,
     )
     if cancel_check and cancel_check():
         # Numbers gap-filled over part of a module would move once the rest
@@ -118,6 +122,7 @@ async def run_media_stages(
         on_start=on_transcribe_start,
         on_complete=on_transcribe_complete,
         cancel_check=cancel_check,
+        only_episodes=only_episodes,
     )
     result.transcriptions = [*result.transcriptions, *whisper_results]
     if cancel_check and cancel_check():
@@ -137,6 +142,7 @@ async def run_knowledge_stages(
     on_topic_progress: Callable[[str], None] | None = None,
     on_stage: Callable[[str], None] | None = None,
     strict: bool = False,
+    only_episodes: Collection[str] | None = None,
 ) -> PipelineResult:
     """Index the module's transcripts and extract each lecture's topics.
 
@@ -161,6 +167,7 @@ async def run_knowledge_stages(
         on_start=on_index_start,
         on_complete=on_index_complete,
         cancel_check=cancel_check,
+        only_episodes=only_episodes,
     )
     if strict:
         _raise_if_all_failed(
@@ -184,6 +191,7 @@ async def run_knowledge_stages(
         module_id=module_id,
         on_progress=on_topic_progress,
         cancel_check=cancel_check,
+        only_episodes=only_episodes,
     )
     if strict:
         _raise_if_all_failed(

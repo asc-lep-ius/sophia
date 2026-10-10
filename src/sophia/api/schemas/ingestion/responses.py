@@ -21,6 +21,9 @@ class IngestionJobResponse(ApiModel):
     learning_path_id: int
     state: IngestionState
     requested_by: str
+    # "semester": the recordings dated within the learning path's own semester;
+    # "older": the one-off run over the rest.
+    scope: str
     stage: str | None
     content_source_id: int | None
     error: str | None
@@ -49,3 +52,6 @@ class IngestionStatusResponse(ApiModel):
     # The job in flight, else the last one, else null when nothing was ever started.
     job: IngestionJobResponse | None
     sources: list[IngestionSourceResponse]
+    # Recordings from other semesters that are not processed yet: what
+    # "Process older recordings too" would cover, shown only while non-zero.
+    older_recordings_pending: int

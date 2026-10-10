@@ -40,7 +40,7 @@ from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
 from sophia.services.ingestion_settings import get_ingestion_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,6 +111,7 @@ async def transcribe_from_captions(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[TranscriptionResult]:
     """Read the player's captions as the transcript of every episode that has them.
 
@@ -118,9 +119,12 @@ async def transcribe_from_captions(
     downloaded. An episode with no usable track, or whose caption file cannot
     be fetched or parsed, is left for Whisper: the reason is logged and
     nothing is written for it. Each transcript is committed as it is stored.
-    Returns one result per episode handled here.
+    Returns one result per episode handled here, within ``only_episodes``
+    when given.
     """
     episodes = await app.opencast.get_series_episodes(module_id)
+    if only_episodes is not None:
+        episodes = [episode for episode in episodes if episode.episode_id in only_episodes]
     if not episodes:
         return []
 
@@ -290,14 +294,18 @@ async def transcribe_lectures(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[TranscriptionResult]:
     """Orchestrate Whisper transcription for downloaded lectures in a module.
 
     Each episode's outcome is committed as soon as it is known, so an hour of
     GPU time is not lost to a failure or an interrupt on the episode after it.
-    Returns one result per episode (completed / skipped / failed).
+    Returns one result per episode (completed / skipped / failed), within
+    ``only_episodes`` when given.
     """
     downloads = await _get_downloads(session, module_id)
+    if only_episodes is not None:
+        downloads = [row for row in downloads if row[0] in only_episodes]
     if not downloads:
         return []
 

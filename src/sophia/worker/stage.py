@@ -15,13 +15,20 @@ from typing import TYPE_CHECKING
 import structlog
 
 from sophia.infra.di import create_app
-from sophia.services.hermes_pipeline import run_knowledge_stages, run_media_stages
-from sophia.services.ingestion_jobs import mark_progress
+from sophia.infra.engine import commit_unit
+from sophia.services.hermes_pipeline import PipelineResult, run_knowledge_stages, run_media_stages
+from sophia.services.ingestion_jobs import get_job, mark_progress
+from sophia.services.ingestion_scope import (
+    CURRENT_SEMESTER,
+    register_recordings,
+    scoped_episode_ids,
+)
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.config import Settings
     from sophia.infra.di import AppContainer
-    from sophia.services.hermes_pipeline import PipelineResult
 
 log = structlog.get_logger()
 
@@ -75,9 +82,24 @@ async def run_stage_group(
         progress = JobProgress(container, job_id, module_id)
         try:
             async with container.session() as session:
-                if group == MEDIA:
+                only_episodes = await _job_scope(
+                    container, session, group, module_id, course_id, job_id
+                )
+                if only_episodes is not None and not only_episodes:
+                    log.info(
+                        "ingestion_module_out_of_scope",
+                        job_id=job_id,
+                        module_id=module_id,
+                        group=group,
+                    )
+                    result = PipelineResult()
+                elif group == MEDIA:
                     result = await run_media_stages(
-                        container, session, module_id, on_stage=progress.note
+                        container,
+                        session,
+                        module_id,
+                        on_stage=progress.note,
+                        only_episodes=only_episodes,
                     )
                 else:
                     result = await run_knowledge_stages(
@@ -87,6 +109,7 @@ async def run_stage_group(
                         course_id=course_id,
                         on_stage=progress.note,
                         strict=True,
+                        only_episodes=only_episodes,
                     )
         finally:
             await progress.flush()
@@ -102,3 +125,26 @@ async def run_stage_group(
         lecture_topics=len(result.lecture_topics),
     )
     return result
+
+
+async def _job_scope(
+    container: AppContainer,
+    session: AsyncSession,
+    group: str,
+    module_id: int,
+    course_id: int,
+    job_id: int,
+) -> frozenset[str] | None:
+    """The recordings this job covers in this module, by the job's scope.
+
+    The media group lists the series first, so the dates the scope is read
+    from are the page's current ones; the knowledge group has no GPU and no
+    need to, it works from what the media group recorded.
+    """
+    job = await get_job(session, job_id)
+    scope = job.scope if job is not None else CURRENT_SEMESTER
+    if group == MEDIA:
+        episodes = await container.opencast.get_series_episodes(module_id)
+        await register_recordings(session, module_id, episodes, course_id=str(course_id))
+        await commit_unit(session)
+    return await scoped_episode_ids(session, course_id, module_id, scope)

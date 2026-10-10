@@ -40,7 +40,7 @@ from sophia.services.hermes_episodes import course_module_ids_query, episode_tit
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -102,11 +102,13 @@ async def extract_topics_per_lecture(
     force: bool = False,
     on_progress: Callable[[str], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[LectureTopicResult]:
     """Extract topics from every lecture of the course that has none yet.
 
-    ``module_id`` narrows the run to one of the course's modules; ``force``
-    reads every lecture again, replacing what it contributed last time. Each
+    ``module_id`` narrows the run to one of the course's modules and
+    ``only_episodes`` to those lectures; ``force`` reads every lecture
+    again, replacing what it contributed last time. Each
     lecture's outcome is committed as it is known, and a lecture whose model
     call fails is marked failed with the reason and left for the next run
     rather than stopping the others.
@@ -114,6 +116,8 @@ async def extract_topics_per_lecture(
     if force:
         await _forget_extractions(session, course_id, module_id)
     lectures = await _pending_lectures(session, course_id, module_id)
+    if only_episodes is not None:
+        lectures = [lecture for lecture in lectures if lecture.episode_id in only_episodes]
     if not lectures:
         return []
 

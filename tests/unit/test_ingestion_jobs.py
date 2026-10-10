@@ -68,6 +68,19 @@ async def test_a_stale_heartbeat_counts_as_no_worker(db: AsyncSession) -> None:
     assert (availability.available, availability.reason) == (False, NO_WORKER_REASON)
 
 
+async def test_the_nightly_and_the_scan_queue_semester_jobs(db: AsyncSession) -> None:
+    """What follows automatically is this semester's recordings, never the older ones."""
+    await _worker(db)
+    await save_ingestion_settings(db, IngestionSettings(course_id=EP1, subscribed=True))
+
+    queued = await enqueue_subscribed(db, requested_by="nightly")
+
+    job = await active_job(db, EP1)
+    assert queued == [EP1]
+    assert job is not None
+    assert (job.scope, job.requested_by) == ("semester", "nightly")
+
+
 async def test_one_job_per_course(db: AsyncSession) -> None:
     """Scenario: pressing Process again starts nothing and says it is already running."""
     await _worker(db)

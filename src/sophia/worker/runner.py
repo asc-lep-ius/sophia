@@ -32,6 +32,7 @@ from sophia.services.ingestion_jobs import (
     heartbeat,
     mark_progress,
 )
+from sophia.services.ingestion_scope import scoped_episode_ids
 from sophia.worker.capability import WorkerCapability, probe_capability
 from sophia.worker.stage import KNOWLEDGE, MEDIA, STAGE_GROUPS
 
@@ -250,7 +251,9 @@ async def _run_job(
     A module whose stage failed is left there, with its error, and the next
     module still runs: one bad lecture must not sink the rest of the course.
     The job is marked failed with every module's error at the end, so the
-    reason stays visible and a retry is one press away.
+    reason stays visible and a retry is one press away. A module none of
+    whose registered recordings the job's scope covers is not started at all
+    (#128); the stage child decides again from the series page for the rest.
     """
     async with session_scope(factory) as session:
         modules = list(
@@ -266,6 +269,11 @@ async def _run_job(
 
     errors: list[str] = []
     for module_id in modules:
+        if await _out_of_scope(factory, job, module_id):
+            log.info(
+                "ingestion_module_skipped", job_id=job.id, module_id=module_id, scope=job.scope
+            )
+            continue
         for group in STAGE_GROUPS:
             if stop.is_set():
                 errors.append(WORKER_STOPPED_REASON)
@@ -287,6 +295,14 @@ async def _run_job(
                 )
                 break
     await _finish(factory, job.id, "; ".join(errors) if errors else None)
+
+
+async def _out_of_scope(
+    factory: async_sessionmaker[AsyncSession], job: IngestionJob, module_id: int
+) -> bool:
+    async with session_scope(factory) as session:
+        covered = await scoped_episode_ids(session, job.course_id, module_id, job.scope)
+    return covered is not None and not covered
 
 
 async def _finish(

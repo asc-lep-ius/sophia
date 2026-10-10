@@ -21,7 +21,7 @@ from sophia.infra.engine import commit_unit
 from sophia.infra.schema import lecture_downloads, transcriptions
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
     from pathlib import Path
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +50,7 @@ async def download_lectures(
     *,
     on_progress: Callable[[str, DownloadProgressEvent], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[LectureDownloadResult]:
     """Orchestrate lecture downloads for a given Opencast module.
 
@@ -57,9 +58,12 @@ async def download_lectures(
     interrupt nor a later stage's failure takes it back. Only the episode in
     flight is lost: its ``downloading`` row rolls back, and the next attempt
     resumes its partial file. Returns one result per episode discovered
-    (completed / skipped / failed).
+    (completed / skipped / failed). ``only_episodes`` narrows the run to those
+    ids; the others are not listed in the result at all.
     """
     episodes = await app.opencast.get_series_episodes(module_id)
+    if only_episodes is not None:
+        episodes = [ep for ep in episodes if ep.episode_id in only_episodes]
     if not episodes:
         return []
 
