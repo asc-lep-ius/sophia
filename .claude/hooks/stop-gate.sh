@@ -85,6 +85,18 @@ pass() {
 BASE_SHA=$(baseline_head "$BASE_FILE")
 [[ "$BASE_FP" == "$CUR_FP" ]] && pass  # read-only session
 
+# --- somebody else's tree -------------------------------------------------
+# A live milestone run in this checkout moves the tree under every session
+# watching it. Lint and tests on its half-edited tree measure work this session
+# cannot fix, and a red gate there would block the watcher — so neither gate
+# runs, and nothing is recorded as a bypass, because this session's work is not
+# what moved. The runner's own turns carry MILESTONE_RUN and are gated as ever.
+if [[ -z "${MILESTONE_RUN:-}" ]] && LIVE_RUN=$(live_run_in "$ROOT"); then
+    printf 'gate: milestone run %s (pid %s) owns this checkout — not gating this session\n' \
+           "${LIVE_RUN% *}" "${LIVE_RUN##* }" >&2
+    pass
+fi
+
 # --- gate 1: build health -------------------------------------------------
 # Skipped when this exact tree has already passed, so the gates cost one run
 # per change rather than one run per turn. Skipped too when every path this
@@ -116,7 +128,18 @@ fi
 # to tell the user, because the model has no legal way to start /ship there. The
 # runner keeps the gate on for its ship and nudge turns, and a ship turn that
 # stopped at step 6 over a deferred HIGH must stay blocked, not ship again.
+#
+# A /ship already running in this session is not asked to start again: a turn
+# that ends while its reviewer works, or after a fix commit moved the tree, is
+# the run in progress, not finished work. Not in a milestone turn — a headless
+# turn cannot end mid-run, and the stop after a step 6 refusal must still block.
 if [[ ! -f "${STATE}/reviewed-${CUR_FP}.ok" ]]; then
+    if [[ -z "${MILESTONE_RUN:-}" ]] \
+       && SHIP_SINCE=$(ship_running_since "$STATE" "$SESSION_ID"); then
+        printf 'gate: /ship is running in this session (since %s) — not asking\n' \
+               "$(date -d "@$SHIP_SINCE" +%H:%M 2>/dev/null || date -r "$SHIP_SINCE" +%H:%M)" >&2
+        pass
+    fi
     NUDGE_FILE="${STATE}/nudged-${SESSION_ID}-${CUR_FP}"
     REQUEST_FILE=$(ship_request_marker "$STATE" "$SESSION_ID" "$CUR_FP")
     if [[ -f "$NUDGE_FILE" || -f "$REQUEST_FILE" ]]; then
