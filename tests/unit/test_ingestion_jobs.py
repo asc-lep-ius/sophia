@@ -179,3 +179,17 @@ async def test_a_request_fails_a_stranded_job_and_queues_anew(db: AsyncSession) 
         select(ingestion_jobs.c.status).where(ingestion_jobs.c.id == stranded.id)
     )
     assert status == "failed"
+
+
+async def test_a_job_failed_as_orphaned_keeps_that_outcome(db: AsyncSession) -> None:
+    """A worker's late finish must not overwrite what the sweep recorded."""
+    await _worker(db)
+    job = await request_ingestion(db, EP1)
+    await claim_next_job(db, "hephaestus:1")
+    later = datetime.now(UTC) + timedelta(seconds=200)
+    assert await fail_orphaned_jobs(db, now=lambda: later) == [job.id]
+
+    await finish_job(db, job.id)
+
+    shown = await latest_job(db, EP1)
+    assert shown is not None and (shown.status, shown.error) == ("failed", WORKER_GONE_REASON)

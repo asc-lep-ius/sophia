@@ -81,7 +81,7 @@ class Settings(BaseSettings):
     # for the worker, as an hour of the UTC day (#128).
     ingestion_nightly_hour_utc: int = Field(default=3, ge=0, le=23)
     # A worker heartbeat older than this means the worker is gone.
-    ingestion_worker_stale_seconds: int = Field(default=90, ge=10)
+    ingestion_worker_stale_seconds: int = Field(default=90, ge=3)
     # Matches the proxy's `@api_uploads` ceiling on purpose. Two different
     # numbers would mean an upload the proxy accepts and the API refuses, or
     # the reverse, and the learner would only ever see the second one.

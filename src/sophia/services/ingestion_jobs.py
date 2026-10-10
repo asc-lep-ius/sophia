@@ -280,9 +280,10 @@ async def mark_progress(
 
 
 async def finish_job(session: AsyncSession, job_id: int, *, error: str | None = None) -> None:
+    """Record the outcome of a running job; a job already failed as orphaned keeps that."""
     await session.execute(
         update(ingestion_jobs)
-        .where(ingestion_jobs.c.id == job_id)
+        .where(ingestion_jobs.c.id == job_id, ingestion_jobs.c.status == RUNNING)
         .values(
             status=FAILED if error else COMPLETED,
             error=error,

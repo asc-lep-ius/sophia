@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from sqlalchemy import insert, select
 
+from sophia.infra.engine import create_session_factory
 from sophia.infra.schema import ingestion_jobs, ingestion_workers, lecture_modules
 from sophia.services.ingestion_jobs import heartbeat, request_ingestion
 from sophia.worker.capability import WorkerCapability
@@ -227,10 +228,13 @@ async def test_an_incapable_worker_reports_its_reason_and_claims_nothing(
     assert (worker.capable, worker.reason) == (False, "No usable NVIDIA GPU")
 
 
-def _settings(engine: AsyncEngine):
+def _settings(engine: AsyncEngine, *, stale_seconds: int = 90):
     from sophia.config import Settings
 
-    return Settings(database_url=engine.url.render_as_string(hide_password=False))
+    return Settings(
+        database_url=engine.url.render_as_string(hide_password=False),
+        ingestion_worker_stale_seconds=stale_seconds,
+    )
 
 
 async def test_the_worker_stops_when_asked_even_while_idle(
@@ -258,3 +262,49 @@ async def test_the_worker_stops_when_asked_even_while_idle(
     stop.set()
 
     assert await asyncio.wait_for(worker, timeout=5) == 0
+
+
+async def test_the_worker_keeps_reporting_in_while_a_job_runs(
+    clean_engine: AsyncEngine, db: AsyncSession
+) -> None:
+    """A job longer than the stale window must not be failed as orphaned mid-run."""
+    import asyncio
+
+    from sophia.domain.errors import IngestionAlreadyRunning
+    from sophia.infra.engine import session_scope
+    from sophia.services.ingestion_jobs import (
+        fail_orphaned_jobs,
+        request_ingestion,
+        worker_availability,
+    )
+
+    job_id = await _seed(db)
+    await db.commit()
+    factory = create_session_factory(clean_engine)
+    seen: dict[str, object] = {}
+
+    async def slow_stage(group: str, module_id: int, _course: int, _job: int) -> StageOutcome:
+        if (group, module_id) == ("media", 3022060):
+            # Longer than the window the checks below use; the heartbeat loop
+            # (every stale/3 = 1 s here) is what keeps the worker alive.
+            await asyncio.sleep(2.6)
+            async with session_scope(factory) as session:
+                seen["orphaned"] = await fail_orphaned_jobs(session, stale_after_s=2)
+                seen["available"] = (await worker_availability(session, stale_after_s=2)).available
+                try:
+                    await request_ingestion(session, EP1, stale_after_s=2)
+                except IngestionAlreadyRunning as exc:
+                    seen["second_press"] = exc.params
+        return StageOutcome(0, "")
+
+    await run_worker(
+        _settings(clean_engine, stale_seconds=3),
+        worker_id="test:1",
+        run_stage=slow_stage,
+        capability=CAPABLE,
+        poll_interval_s=1.0,
+        stop_when_idle=True,
+    )
+
+    assert seen == {"orphaned": [], "available": True, "second_press": {"job_id": job_id}}
+    assert (await _job_row(clean_engine, job_id)).status == "completed"

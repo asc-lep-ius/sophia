@@ -173,12 +173,47 @@ async def run_worker(
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), poll_interval_s)
                 continue
-            await _run_job(factory, job, run_stage, stop)
+            # The job runs for minutes; the heartbeat has to keep going beside
+            # it, or the API's orphan sweep fails a job its worker is still on.
+            beat = asyncio.create_task(
+                _heartbeat_loop(factory, worker_id, capability, settings, poll_interval_s)
+            )
+            try:
+                await _run_job(factory, job, run_stage, stop)
+            finally:
+                beat.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await beat
             processed += 1
     finally:
         await engine.dispose()
     log.info("worker_stopped", worker_id=worker_id, jobs=processed)
     return processed
+
+
+async def _beat(session: AsyncSession, worker_id: str, capability: WorkerCapability) -> None:
+    await heartbeat(
+        session,
+        worker_id,
+        hostname=socket.gethostname(),
+        capable=capability.capable,
+        reason=capability.reason,
+        gpu_name=capability.gpu_name,
+    )
+
+
+async def _heartbeat_loop(
+    factory: async_sessionmaker[AsyncSession],
+    worker_id: str,
+    capability: WorkerCapability,
+    settings: Settings,
+    poll_interval_s: float,
+) -> None:
+    interval = min(poll_interval_s, settings.ingestion_worker_stale_seconds / 3)
+    while True:
+        await asyncio.sleep(interval)
+        async with session_scope(factory) as session:
+            await _beat(session, worker_id, capability)
 
 
 async def _poll(
@@ -188,14 +223,7 @@ async def _poll(
     settings: Settings,
 ) -> IngestionJob | None:
     async with session_scope(factory) as session:
-        await heartbeat(
-            session,
-            worker_id,
-            hostname=socket.gethostname(),
-            capable=capability.capable,
-            reason=capability.reason,
-            gpu_name=capability.gpu_name,
-        )
+        await _beat(session, worker_id, capability)
         await fail_orphaned_jobs(session, stale_after_s=settings.ingestion_worker_stale_seconds)
         if not capability.capable:
             return None
