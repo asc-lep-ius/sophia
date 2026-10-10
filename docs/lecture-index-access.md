@@ -7,7 +7,7 @@ Status: accepted 2026-10-10 — issue #129
 Grounded study questions and lecture search both start the same way: embed a
 short text (the topic, or the phrase the student typed) and look its nearest
 transcript chunks up in the ChromaDB index under `$SOPHIA_DATA_DIR/knowledge`.
-The processing worker (#128) builds that index; the API only reads it.
+The processing worker (#128) builds that index; the API only queries it.
 
 Until this change the API could not read it anywhere:
 
@@ -78,7 +78,10 @@ change builds:
 - **Freshness.** The store compares the index files' modification stamps on
   every call and reopens the index when another process has written to it
   since. A read changes neither stamp, so the check costs a `stat` and the
-  reopen happens once per worker write.
+  reopen happens once per worker write. The reopen itself writes to
+  `chroma.sqlite3`, so the API is not strictly read-only, and chromadb does not
+  promise that clients in two processes may share one path; a failure there
+  reaches the learner as the cases below, never as a 500.
 
 ## When the index cannot be read
 
