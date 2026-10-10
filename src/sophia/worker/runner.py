@@ -8,7 +8,9 @@ given no CUDA device at all, so Whisper and PyTorch never share a process.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
+import signal
 import socket
 import sys
 from collections.abc import Awaitable, Callable
@@ -57,10 +59,16 @@ class StageOutcome:
 type StageRunner = Callable[[str, int, int, int], Awaitable[StageOutcome]]
 
 
+# The stage child in flight, so a SIGTERM to the worker reaches it too: a
+# container stop must not leave Whisper running on the GPU behind it.
+_current_stage: asyncio.subprocess.Process | None = None
+
+
 async def run_stage_in_subprocess(
     group: str, module_id: int, course_id: int, job_id: int
 ) -> StageOutcome:
     """``sophia worker stage`` in a child, with the GPU hidden from the knowledge group."""
+    global _current_stage
     env = dict(os.environ)
     if group == KNOWLEDGE:
         env["CUDA_VISIBLE_DEVICES"] = ""
@@ -81,13 +89,37 @@ async def run_stage_in_subprocess(
         stderr=asyncio.subprocess.STDOUT,
     )
     assert process.stdout is not None
+    _current_stage = process
     tail = ""
-    async for raw in process.stdout:
-        line = raw.decode("utf-8", errors="replace")
-        sys.stdout.write(line)
-        tail = (tail + line)[-ERROR_TAIL_CHARS:]
-    returncode = await process.wait()
+    try:
+        async for raw in process.stdout:
+            line = raw.decode("utf-8", errors="replace")
+            sys.stdout.write(line)
+            tail = (tail + line)[-ERROR_TAIL_CHARS:]
+        returncode = await process.wait()
+    finally:
+        _current_stage = None
     return StageOutcome(returncode, tail.strip())
+
+
+def _install_stop_handlers(stop: asyncio.Event) -> None:
+    """Stop on SIGTERM and SIGINT.
+
+    As PID 1 of its container the worker gets no default handler, so without
+    this a `docker stop` waits out the grace period and then kills it — and
+    the harness that tears the proof stack down had already given up by then.
+    """
+    loop = asyncio.get_running_loop()
+
+    def request_stop() -> None:
+        stop.set()
+        if _current_stage is not None and _current_stage.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                _current_stage.terminate()
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(signum, request_stop)
 
 
 async def run_worker(
@@ -98,15 +130,19 @@ async def run_worker(
     run_stage: StageRunner = run_stage_in_subprocess,
     capability: WorkerCapability | None = None,
     stop_when_idle: bool = False,
+    stop: asyncio.Event | None = None,
 ) -> int:
     """Poll for jobs until stopped. Returns the number of jobs run.
 
     ``stop_when_idle`` returns as soon as the queue is empty, for tests and
-    for a one-shot run; the service keeps polling.
+    for a one-shot run; the service keeps polling until ``stop`` is set,
+    which SIGTERM and SIGINT do.
     """
     settings = settings or Settings()
     worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}"
     capability = capability or probe_capability(settings)
+    stop = stop or asyncio.Event()
+    _install_stop_handlers(stop)
     if capability.capable:
         log.info("worker_started", worker_id=worker_id, gpu=capability.gpu_name)
     else:
@@ -117,17 +153,20 @@ async def run_worker(
     factory = create_session_factory(engine)
     processed = 0
     try:
-        while True:
+        while not stop.is_set():
             job = await _poll(factory, worker_id, capability, settings)
             if job is None:
                 if stop_when_idle:
-                    return processed
-                await asyncio.sleep(poll_interval_s)
+                    break
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), poll_interval_s)
                 continue
             await _run_job(factory, job, run_stage)
             processed += 1
     finally:
         await engine.dispose()
+    log.info("worker_stopped", worker_id=worker_id, jobs=processed)
+    return processed
 
 
 async def _poll(

@@ -146,3 +146,30 @@ def _settings(engine: AsyncEngine):
     from sophia.config import Settings
 
     return Settings(database_url=engine.url.render_as_string(hide_password=False))
+
+
+async def test_the_worker_stops_when_asked_even_while_idle(
+    clean_engine: AsyncEngine, db: AsyncSession
+) -> None:
+    """A `docker stop` must not wait out the grace period on a PID 1 that ignores it."""
+    import asyncio
+
+    stop = asyncio.Event()
+
+    async def never(*_args: object) -> StageOutcome:
+        raise AssertionError("no stage should run")
+
+    worker = asyncio.create_task(
+        run_worker(
+            _settings(clean_engine),
+            worker_id="test:1",
+            run_stage=never,
+            capability=CAPABLE,
+            poll_interval_s=30.0,
+            stop=stop,
+        )
+    )
+    await asyncio.sleep(0.5)
+    stop.set()
+
+    assert await asyncio.wait_for(worker, timeout=5) == 0

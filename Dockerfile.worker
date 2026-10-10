@@ -9,6 +9,9 @@ RUN pip install uv
 FROM base AS builder
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
+# Dependencies before the source, so a change to src/ does not fetch the
+# gigabytes of CUDA wheels again: only the project itself is reinstalled.
+RUN uv sync --no-dev --frozen --no-install-project --extra hermes --extra llm
 COPY src/ src/
 RUN uv sync --no-dev --frozen --extra hermes --extra llm
 

@@ -102,10 +102,14 @@ WEB_PID=$!
 # reuses a running one.
 cleanup() {
     kill "$API_PID" "$WEB_PID" 2>/dev/null
-    docker stop "$REDIS_NAME" >/dev/null 2>&1
+    # The worker first, and with a short timeout: the harness gives this trap
+    # a few seconds before it kills the whole group, and the worker stops on
+    # SIGTERM at once. A lecture mid-transcription is lost; each finished one
+    # was committed.
     if [[ "$WORKER_STARTED" == 1 ]]; then
-        docker compose -p "$WORKER_PROJECT" -f "$WORKER_COMPOSE" down >/dev/null 2>&1
+        docker compose -p "$WORKER_PROJECT" -f "$WORKER_COMPOSE" down --timeout 3 >/dev/null 2>&1
     fi
+    docker stop "$REDIS_NAME" >/dev/null 2>&1
 }
 trap cleanup EXIT INT TERM
 wait -n "$API_PID" "$WEB_PID"
