@@ -111,7 +111,7 @@ async def start_ingestion(
     learning_path_id: LearningPathIdPath,
     request: Request,
 ) -> IngestionJobResponse:
-    """Queue processing of every recording the learning path owns, and follow it.
+    """Queue the learning path's recordings from its own semester, and follow it.
 
     409 when a job is already queued or running for it; 503, with the reason,
     when no worker can process here. The first Process subscribes the path:

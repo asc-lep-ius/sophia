@@ -2,6 +2,7 @@
   import { enhance } from "$app/forms";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
   import {
+    formatFinishedAt,
     itemOutcome,
     TRANSCRIPTION_LANGUAGES,
     type IngestionJob,
@@ -20,6 +21,7 @@
     processFailed: boolean;
     settingsSaved: boolean;
     settingsFailed: boolean;
+    uiLocale: string;
   };
 
   let {
@@ -30,6 +32,7 @@
     processFailed,
     settingsSaved,
     settingsFailed,
+    uiLocale,
   }: Props = $props();
 
   const current = $derived(status.data);
@@ -82,7 +85,9 @@
         });
       default:
         return m.content_processing_state_ready({
-          at: current.finished_at ?? "",
+          at: current.finished_at
+            ? formatFinishedAt(current.finished_at, uiLocale)
+            : "",
         });
     }
   }

@@ -202,6 +202,7 @@
   {processFailed}
   {settingsSaved}
   {settingsFailed}
+  uiLocale={data.uiLocale}
 />
 
 <PanelSection

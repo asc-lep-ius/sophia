@@ -87,13 +87,6 @@ export const actions: Actions = {
   },
 
   /**
-   * Re-scan the connected systems for sources.
-   *
-   * Kept on this page rather than on the catalog: #100 makes the setup surface
-   * the one place a content source arrives from, whether it is discovered or
-   * uploaded, so an ingestion adapter added later has a home already.
-   */
-  /**
    * Press Process: queue the selected course for the worker.
    *
    * The two refusals the API makes on purpose — already running, and no
@@ -160,6 +153,13 @@ export const actions: Actions = {
     return { settingsSaved: true };
   },
 
+  /**
+   * Re-scan the connected systems for sources.
+   *
+   * Kept on this page rather than on the catalog: #100 makes the setup surface
+   * the one place a content source arrives from, whether it is discovered or
+   * uploaded, so an ingestion adapter added later has a home already.
+   */
   discover: async (event) => {
     requireAuthenticated(event);
 

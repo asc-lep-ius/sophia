@@ -6,6 +6,7 @@ import ProcessingPanel from "../../src/lib/components/content/ProcessingPanel.sv
 import TopicsPage from "../../src/routes/topics/+page.svelte";
 import { actions } from "../../src/routes/content/sources/+page.server";
 import {
+  formatFinishedAt,
   isJobActive,
   itemOutcome,
   readIngestionStatus,
@@ -40,6 +41,25 @@ describe("processing panel", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Not processed yet",
     );
+  });
+
+  it("says when the last run finished, in the student's locale and not in ISO", () => {
+    render(
+      ProcessingPanel,
+      panelProps({
+        status: readyStatus({
+          job: job({
+            state: "ready",
+            stage: "topics",
+            finished_at: "2026-10-10T17:20:47.315168+00:00",
+          }),
+        }),
+      }),
+    );
+
+    const text = screen.getByRole("status").textContent ?? "";
+    expect(text).toContain("Last run finished Oct 10, 2026, 17:20 UTC.");
+    expect(text).not.toContain("T17:20:47");
   });
 
   it("shows the running stage and keeps Process from being pressed again", () => {
@@ -325,6 +345,13 @@ describe("ingestion helpers", () => {
     expect(itemOutcome(item({ download_status: "failed" }))).toBe("failed");
   });
 
+  it("formats a finish time for the locale and hands back what it cannot read", () => {
+    expect(formatFinishedAt("2026-10-10T17:20:47.315168+00:00", "de")).toBe(
+      "10. Okt. 2026, 17:20 UTC",
+    );
+    expect(formatFinishedAt("not a time", "en")).toBe("not a time");
+  });
+
   it("reads the reason out of the error envelope and nothing else", () => {
     expect(
       readRefusalReason({ detail: { code: "x", params: { reason: "r" } } }),
@@ -458,6 +485,7 @@ function panelProps(overrides: {
     } as Panel<IngestionStatus | null>,
     sources: overrides.sources ?? [],
     processResult: overrides.processResult ?? null,
+    uiLocale: "en",
     processFailed: false,
     settingsSaved: false,
     settingsFailed: false,

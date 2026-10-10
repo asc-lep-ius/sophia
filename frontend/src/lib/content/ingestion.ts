@@ -120,3 +120,27 @@ function isJob(value: unknown): boolean {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
+/**
+ * When the last run finished, for the student: a date and a time in their
+ * locale rather than the API's ISO timestamp. Read in UTC and labelled so,
+ * the same choice `formatDueDate` makes, so the server-rendered page and the
+ * hydrated one agree whatever zone the browser is in.
+ */
+export function formatFinishedAt(finishedAt: string, locale: string): string {
+  const at = new Date(finishedAt);
+  if (Number.isNaN(at.getTime())) {
+    return finishedAt;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    day: "2-digit",
+    hour: "2-digit",
+    // A timetable clock in every locale: "17:20", never "05:20 PM".
+    hourCycle: "h23",
+    minute: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    timeZoneName: "short",
+    year: "numeric",
+  }).format(at);
+}
