@@ -215,7 +215,7 @@ async def test_the_stage_child_hands_both_stage_groups_the_jobs_scope(
         yield db
 
     @asynccontextmanager
-    async def _create_app(settings=None):
+    async def _create_app(settings: object = None):
         yield container
 
     container.session = _session
