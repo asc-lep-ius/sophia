@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules
 from sophia.services.hermes_episodes import episode_module_id, episodes_from
+from sophia.services.ingestion_scope import register_recordings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -89,6 +90,33 @@ async def get_lecture_module_course_id(session: AsyncSession, module_id: int) ->
     return str(course_id)
 
 
+async def lecture_module_course(session: AsyncSession, module_id: int) -> int | None:
+    """The owning course as the integer every study table is keyed by, or ``None``."""
+    course_id = await get_lecture_module_course_id(session, module_id)
+    if course_id is None or not course_id.isdigit():
+        return None
+    return int(course_id)
+
+
+async def discover_lecture_module_course(
+    container: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+) -> int | None:
+    """The course that owns a module, running discovery first if none is recorded.
+
+    For the CLI, which reaches a module by id or name without ever passing the
+    browser's discovery: without this, a module processed there would have no
+    course to file its topics under. ``None`` means the module belongs to none
+    of the learner's enrolled courses.
+    """
+    course_id = await lecture_module_course(session, module_id)
+    if course_id is not None:
+        return course_id
+    await discover_lecture_modules(container, session)
+    return await lecture_module_course(session, module_id)
+
+
 async def discover_lecture_modules(
     container: AppContainer,
     session: AsyncSession,
@@ -138,6 +166,12 @@ async def discover_lecture_modules(
             for _, module_id, _ in opencast_modules
         ),
     )
+    # The scan is what registers recordings with their dates, so the page can
+    # say how many older ones are waiting before any job has run (#128).
+    for (course, module_id, _module_name), episodes in zip(
+        opencast_modules, episode_lists, strict=True
+    ):
+        await register_recordings(session, module_id, episodes, course_id=str(course.id))
 
     return [
         DiscoveredLectureModule(

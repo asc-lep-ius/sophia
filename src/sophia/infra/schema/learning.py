@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     Column,
     Float,
@@ -29,6 +30,9 @@ learning_path_settings = Table(
     Column("content_origin", Text, nullable=False, server_default="tuwel"),
     org_id_column(),
     Column("updated_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    # NULL means Whisper detects each lecture's language itself (#128).
+    Column("transcription_language", Text),
+    Column("ingestion_subscribed", Boolean(), nullable=False, server_default=text("false")),
 )
 
 content_provenance = Table(

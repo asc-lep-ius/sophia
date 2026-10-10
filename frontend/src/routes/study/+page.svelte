@@ -4,6 +4,7 @@
   import PageHeader from "$lib/components/PageHeader.svelte";
   import CarriedLink from "$lib/components/content/CarriedLink.svelte";
   import { m } from "$lib/paraglide/messages.js";
+  import { confidenceGap } from "$lib/study/topicChoice";
   import type { ActionData, PageData } from "./$types";
 
   type Props = {
@@ -15,8 +16,13 @@
 
   const studyPath = resolve("/study", {});
   const syncPath = resolve("/content/sources", {});
+  const contentPath = resolve("/content", {});
 
   const errorMessage = $derived(errorText(form?.error));
+  /** The order only says something once a topic has a known gap to rank by. */
+  const rankedByGap = $derived(
+    data.topics.data.some((row) => confidenceGap(row) > 0),
+  );
 
   function errorText(code: string | undefined): string | null {
     switch (code) {
@@ -81,11 +87,50 @@
 {:else}
   <section class="start" aria-labelledby="study-start-heading">
     <h2 id="study-start-heading">{m.study_start_heading()}</h2>
-    <form method="POST" action="?/start" use:enhance>
-      <label for="study-topic">{m.study_topic_label()}</label>
-      <input id="study-topic" name="topic" type="text" required />
-      <button type="submit">{m.study_start()}</button>
-    </form>
+    {#if data.topics.status !== "ready"}
+      <p class="notice" role="status">{m.study_topics_unavailable()}</p>
+    {:else if data.topics.data.length === 0}
+      <div class="empty-state">
+        <p class="empty-title">{m.study_topics_empty_title()}</p>
+        <p class="notice">{m.study_topics_empty_body()}</p>
+        <CarriedLink
+          action={contentPath}
+          label={m.study_topics_open_content()}
+          primary
+        />
+      </div>
+    {:else}
+      {#if rankedByGap}
+        <p class="notice">{m.study_topics_summary()}</p>
+      {/if}
+      <!-- One form, one submit button per topic: the button that was pressed
+           is the topic, so a single click starts it with or without JS. -->
+      <form method="POST" action="?/start" use:enhance>
+        <ul aria-label={m.study_topics_legend()}>
+          {#each data.topics.data as row, index (row.topic.topic)}
+            <li>
+              <span class="session-copy">
+                <strong>{row.topic.topic}</strong>
+                {#if index === 0}
+                  <span>{m.study_topic_suggested()}</span>
+                {/if}
+              </span>
+              <button
+                type="submit"
+                name="topic"
+                value={row.topic.topic}
+                aria-label={m.study_topic_start_named({
+                  topic: row.topic.topic,
+                })}
+                class:primary={index === 0}
+              >
+                {m.study_topic_start()}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </form>
+    {/if}
     {#if errorMessage}
       <p class="error" role="alert">{errorMessage}</p>
     {/if}
@@ -201,6 +246,10 @@
 
   .empty-title {
     margin: 0;
+  }
+
+  button.primary {
+    background: var(--accent-soft);
   }
 
   .change-path {

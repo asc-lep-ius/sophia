@@ -2,8 +2,8 @@
 
 The selection lives on the session tenant and nowhere else: every scoped route
 already reads it from there. Changing it moves nothing: sessions, decks and
-review schedules stay under the learning path they were created in, and show
-again when that one is selected.
+review schedules stay under the learning path they were created in. Sessions
+and decks show again when that one is selected; reviews show under any (#131).
 """
 
 from __future__ import annotations

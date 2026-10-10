@@ -55,6 +55,11 @@ hermes = [
     "sentence-transformers>=3.0",
     "openai>=1.50",
 ]
+# The lecture index's read side, which the API image installs (#129).
+index = [
+    "chromadb>=1.0",
+    "sentence-transformers>=3.0",
+]
 athena = [
     "genanki>=0.13",
 ]

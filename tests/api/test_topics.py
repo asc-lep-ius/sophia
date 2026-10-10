@@ -3,15 +3,21 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from sqlalchemy import insert
 
 from sophia.api.routers import topics as topics_router
 from sophia.api.sessions import SessionTenant
 from sophia.domain.models import ConfidenceRating, TopicMapping, TopicSource
+from sophia.infra.schema import lecture_modules, transcript_segments, transcriptions
 
+from ._db_harness import db_harness
 from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
 if TYPE_CHECKING:
-    import pytest
+    from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
     from sophia.infra.di import AppContainer
 
@@ -23,6 +29,19 @@ def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
         cohort_id="cohort-a",
         role="student",
     )
+
+
+def stub_module_owners(monkeypatch: pytest.MonkeyPatch, owners: dict[int, str]) -> None:
+    """Pin which learning path owns which content source, without a database."""
+
+    async def fake_owner(_db: object, module_id: int) -> str | None:
+        return owners.get(module_id)
+
+    monkeypatch.setattr(topics_router, "get_lecture_module_course_id", fake_owner)
+
+
+async def _no_origins(_db: object, _course_id: int) -> dict[str, list[object]]:
+    return {}
 
 
 def test_topic_routes_require_authentication() -> None:
@@ -62,6 +81,7 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
         ]
 
     monkeypatch.setattr(topics_router, "get_course_topics", fake_get_course_topics)
+    monkeypatch.setattr(topics_router, "get_topic_origins", _no_origins)
 
     response = harness.client.get("/api/learning-paths/12/topics")
 
@@ -74,6 +94,7 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
                 "learning_path_id": 12,
                 "source": "transcript",
                 "frequency": 3,
+                "content_items": [],
             },
         ],
     }
@@ -98,16 +119,17 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
         tenant=learning_path_tenant(),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {456: "12"})
 
     async def fake_extract_topics_from_lectures(
         app: AppContainer,
         db: object,
-        module_id: int,
+        course_id: int,
         *,
         force: bool = False,
     ) -> list[TopicMapping]:
         assert db is fake_app.db
-        assert module_id == 12
+        assert course_id == 12
         assert force is True
         return [TopicMapping(topic="Graphs", course_id=12, source=TopicSource.LECTURE)]
 
@@ -119,19 +141,20 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
 
     response = harness.client.post(
         "/api/learning-paths/12/topics/extract",
-        json={"content_source_id": 12, "force": True},
+        json={"content_source_id": 456, "force": True},
         headers=csrf_headers(harness),
     )
 
     assert response.status_code == 200
     assert response.json() == {
-        "content_source_id": 12,
+        "content_source_id": 456,
         "topics": [
             {
                 "topic": "Graphs",
                 "learning_path_id": 12,
                 "source": "transcript",
                 "frequency": 1,
+                "content_items": [],
             },
         ],
     }
@@ -183,6 +206,7 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
             "learning_path_id": 12,
             "source": "manual",
             "frequency": 1,
+            "content_items": [],
         },
     }
 
@@ -373,16 +397,18 @@ def test_extract_topics_rejects_cross_scope_content_source_before_service_call(
         tenant=learning_path_tenant(12),
     )
     login(harness)
+    stub_module_owners(monkeypatch, {99: "99"})
     calls: list[int] = []
 
     async def fake_extract_topics_from_lectures(
         _app: AppContainer,
-        module_id: int,
+        _db: object,
+        course_id: int,
         *,
         force: bool = False,
     ) -> list[TopicMapping]:
-        calls.append(module_id)
-        return [TopicMapping(topic="Graphs", course_id=module_id, source=TopicSource.LECTURE)]
+        calls.append(course_id)
+        return [TopicMapping(topic="Graphs", course_id=course_id, source=TopicSource.LECTURE)]
 
     monkeypatch.setattr(
         topics_router,
@@ -435,3 +461,93 @@ def test_topics_openapi_contract_is_visible() -> None:
     assert openapi["paths"][f"{topics_path}/extract"]["post"]["operationId"] == "extractTopics"
     assert openapi["paths"][confidence_path]["get"]["operationId"] == "listTopicConfidenceRatings"
     assert openapi["paths"][confidence_path]["post"]["operationId"] == "saveTopicConfidenceRating"
+
+
+async def _seed_course(session: AsyncSession) -> None:
+    """EP1 2026W's shape (#127): two lecture modules, both owned by learning path 12."""
+    for module_id, episode_id, text in (
+        (3022060, "ep-w1", "Schleifen und Verzweigungen"),
+        (3022498, "ep-w2", "Arrays und Referenzen"),
+    ):
+        await session.execute(
+            insert(lecture_modules).values(module_id=module_id, course_id="12", course_name="EP1")
+        )
+        await session.execute(
+            insert(transcriptions).values(
+                episode_id=episode_id, module_id=module_id, status="completed"
+            )
+        )
+        await session.execute(
+            insert(transcript_segments).values(
+                episode_id=episode_id, segment_index=0, start_time=0.0, end_time=1.0, text=text
+            )
+        )
+    await session.execute(insert(lecture_modules).values(module_id=2856855, course_id="99"))
+
+
+@pytest.mark.postgres
+async def test_topics_extracted_for_an_owned_module_are_listed_under_its_learning_path(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#127: module 3022498 is learning path 12's, and 3022498 != 12.
+
+    The extraction reads both of the path's modules, and the topics are listed
+    under the path the browser asks for.
+    """
+    extractor = MagicMock()
+    extractor.extract_topics = AsyncMock(return_value=["Schleifen", "Arrays"])
+    monkeypatch.setattr(
+        "sophia.services.athena_topics.create_topic_extractor", lambda _app: extractor
+    )
+
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_course(session)
+        await harness.login()
+        extracted = await harness.client.post(
+            "/api/learning-paths/12/topics/extract",
+            json={"content_source_id": 3022498},
+            headers=harness.csrf_headers(),
+        )
+        listed = await harness.client.get("/api/learning-paths/12/topics")
+
+    assert extracted.status_code == 200
+    texts_sent = [call.args[0] for call in extractor.extract_topics.call_args_list]
+    assert any("Schleifen und Verzweigungen" in text for text in texts_sent)
+    assert any("Arrays und Referenzen" in text for text in texts_sent)
+    assert listed.status_code == 200
+    assert {(topic["topic"], topic["learning_path_id"]) for topic in listed.json()["topics"]} == {
+        ("Schleifen", 12),
+        ("Arrays", 12),
+    }
+
+
+@pytest.mark.postgres
+@pytest.mark.parametrize(
+    "content_source_id",
+    [
+        pytest.param(2856855, id="another-learning-paths-module"),
+        pytest.param(4040404, id="module-with-no-recorded-owner"),
+    ],
+)
+async def test_extraction_is_refused_for_a_module_the_learning_path_does_not_own(
+    clean_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+    content_source_id: int,
+) -> None:
+    extract = AsyncMock(return_value=[])
+    monkeypatch.setattr(topics_router, "extract_topics_from_lectures", extract)
+
+    async with db_harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_course(session)
+        await harness.login()
+        response = await harness.client.post(
+            "/api/learning-paths/12/topics/extract",
+            json={"content_source_id": content_source_id},
+            headers=harness.csrf_headers(),
+        )
+
+    assert response.status_code == 403
+    extract.assert_not_called()

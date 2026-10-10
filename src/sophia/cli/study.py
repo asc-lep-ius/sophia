@@ -38,7 +38,11 @@ async def study_topics(
     from rich.status import Status
     from rich.table import Table
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AuthError, EmbeddingError, TopicExtractionError
     from sophia.infra.di import create_app
     from sophia.services.athena_study import (
@@ -52,8 +56,9 @@ async def study_topics(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
             with Status("Extracting topics from lectures…", console=console):
-                topics = await extract_topics_from_lectures(container, db, resolved_id)
+                topics = await extract_topics_from_lectures(container, db, course_id)
 
             if not topics:
                 console.print(
@@ -69,8 +74,7 @@ async def study_topics(
                 links = await link_topics_to_lectures(
                     container,
                     db,
-                    resolved_id,
-                    resolved_id,
+                    course_id,
                     topic_labels,
                 )
 
@@ -157,7 +161,11 @@ async def study_confidence(
     from rich.prompt import IntPrompt
     from rich.table import Table
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AuthError, ConfidenceError
     from sophia.infra.di import create_app
     from sophia.services.athena_confidence import (
@@ -173,7 +181,8 @@ async def study_confidence(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            topics = await get_course_topics(db, resolved_id)
+                course_id = await resolve_course_id(resolved_id, container, db)
+            topics = await get_course_topics(db, course_id)
 
             if not topics:
                 console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
@@ -195,11 +204,11 @@ async def study_confidence(
                     default=3,
                     console=console,
                 )
-                await rate_confidence(db, tm.topic, resolved_id, rating)
+                await rate_confidence(db, tm.topic, course_id, rating)
 
             console.print()
 
-            all_ratings = await get_confidence_ratings(db, resolved_id)
+            all_ratings = await get_confidence_ratings(db, course_id)
 
             table = Table(title="Confidence Assessment")
             table.add_column("Topic", style="cyan")
@@ -278,7 +287,11 @@ async def study_session(
     import structlog
     from rich.console import Console
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AuthError, StudySessionError
     from sophia.infra.di import create_app
     from sophia.services.athena_session import run_interactive_session, run_interleaved_session
@@ -291,7 +304,8 @@ async def study_session(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
-            topics = await get_course_topics(db, resolved_id)
+                course_id = await resolve_course_id(resolved_id, container, db)
+            topics = await get_course_topics(db, course_id)
 
             if not topics:
                 console.print("[yellow]No topics found. Run 'sophia study topics' first.[/yellow]")
@@ -301,7 +315,7 @@ async def study_session(
                 try:
                     from sophia.services.athena_confidence import get_blind_spots
 
-                    blind_spots = await get_blind_spots(db, resolved_id)
+                    blind_spots = await get_blind_spots(db, course_id)
                     if blind_spots:
                         topic = blind_spots[0].topic
                         console.print(f"[dim]Auto-selected blind spot:[/dim] [bold]{topic}[/bold]")
@@ -316,7 +330,7 @@ async def study_session(
                 await run_interleaved_session(
                     container,
                     db,
-                    resolved_id,
+                    course_id,
                     console=console,
                     feedback_delay=feedback_delay,
                 )
@@ -325,7 +339,7 @@ async def study_session(
                 await run_interactive_session(
                     container,
                     db,
-                    resolved_id,
+                    course_id,
                     topic,
                     console,
                     feedback_delay=feedback_delay,
@@ -367,7 +381,11 @@ async def study_review(
     from rich.prompt import Confirm, Prompt
     from rich.table import Table
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AuthError, CardReviewError
     from sophia.infra.di import create_app
     from sophia.services.athena_study import (
@@ -383,8 +401,9 @@ async def study_review(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
             review_topic = None if interleave else topic
-            cards = await get_due_cards(db, resolved_id, topic=review_topic, limit=count)
+            cards = await get_due_cards(db, course_id, topic=review_topic, limit=count)
 
             if not cards:
                 console.print(
@@ -413,7 +432,7 @@ async def study_review(
 
             # Calibrate all reviewed topics
             for t in reviewed_topics:
-                await update_topic_calibration(db, course_id=resolved_id, topic=t)
+                await update_topic_calibration(db, course_id=course_id, topic=t)
 
             # Summary
             accuracy = correct / len(cards) if cards else 0.0
@@ -427,7 +446,7 @@ async def study_review(
             table.add_column("Rate", justify="right")
 
             for t in sorted(reviewed_topics):
-                stats = await get_review_stats(db, resolved_id, topic=t)
+                stats = await get_review_stats(db, course_id, topic=t)
                 table.add_row(
                     t,
                     str(stats["total_reviews"]),
@@ -465,7 +484,11 @@ async def study_explain(
     from rich.panel import Panel
     from rich.prompt import Prompt
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AuthError
     from sophia.infra.di import create_app
     from sophia.services.athena_study import (
@@ -483,9 +506,10 @@ async def study_explain(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
             cards = await get_failed_review_cards(
                 db,
-                resolved_id,
+                course_id,
                 topic=topic,
                 limit=count,
             )
@@ -497,7 +521,7 @@ async def study_explain(
                 )
                 return
 
-            exp_count = await get_explanation_count(db, resolved_id)
+            exp_count = await get_explanation_count(db, course_id)
             level = get_scaffold_level(exp_count)
             prompts = get_scaffold_prompts(level)
 
@@ -533,7 +557,7 @@ async def study_explain(
                 saved += 1
 
                 # Show lecture context
-                context = await get_lecture_context(container, db, resolved_id, card.topic)
+                context = await get_lecture_context(container, db, course_id, card.topic)
                 if context:
                     console.print(Panel(context, title="Lecture Context", style="dim"))
                 console.print()
@@ -567,7 +591,11 @@ async def study_export(
     from rich.console import Console
     from rich.panel import Panel
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.domain.errors import AthenaError
     from sophia.infra.di import create_app
     from sophia.services.athena_export import export_anki_deck
@@ -578,10 +606,11 @@ async def study_export(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
             out_path = Path(output or f"sophia-{resolved_id}.apkg")
             count = await export_anki_deck(
                 db,
-                resolved_id,
+                course_id,
                 out_path,
                 interleaved=not blocked,
                 deck_name=deck_name,
@@ -618,7 +647,11 @@ async def study_due(
     from rich.console import Console
     from rich.table import Table
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import (
+        handle_resolve_error,
+        resolve_course_id,
+        resolve_module_id,
+    )
     from sophia.infra.di import create_app
     from sophia.services.athena_chronos import get_exam_for_course
     from sophia.services.athena_review import get_due_reviews, get_upcoming_reviews
@@ -628,7 +661,8 @@ async def study_due(
     async with create_app() as container, container.session() as db:
         if module_id:
             async with handle_resolve_error():
-                course_id = await resolve_module_id(module_id, container.moodle)
+                resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
         else:
             course_id = None
         due = await get_due_reviews(db, course_id=course_id)

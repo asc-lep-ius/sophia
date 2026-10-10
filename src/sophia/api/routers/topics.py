@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 
 from sophia.api.deps import (
-    ensure_learning_path_scope,
     get_app_container,
     request_session,
     require_csrf_learning_path_scope,
@@ -20,6 +19,7 @@ from sophia.api.schemas.topics import (
     TopicConfidenceRatingResponse,
     TopicConfidenceRequest,
     TopicConfidenceResponse,
+    TopicContentItemResponse,
     TopicExtractionRequest,
     TopicExtractionResponse,
     TopicListResponse,
@@ -35,6 +35,9 @@ from sophia.services.athena_study import (
     get_course_topics,
     save_manual_topic,
 )
+from sophia.services.athena_topics import TopicOrigin as LectureOrigin
+from sophia.services.athena_topics import get_topic_origins
+from sophia.services.hermes_catalog import get_lecture_module_course_id
 
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating, TopicMapping
@@ -61,10 +64,18 @@ async def list_topics(
     request: Request,
 ) -> TopicListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    topics = await get_course_topics(await request_session(request), learning_path_id)
+    db = await request_session(request)
+    topics = await get_course_topics(db, learning_path_id)
+    origins = await get_topic_origins(db, learning_path_id)
     return TopicListResponse(
         learning_path_id=learning_path_id,
-        topics=[_topic_response(topic) for topic in topics],
+        topics=[
+            _topic_response(
+                topic,
+                origins.get(topic.topic, []) if topic.source == TopicSource.LECTURE else [],
+            )
+            for topic in topics
+        ],
     )
 
 
@@ -79,14 +90,20 @@ async def extract_topics(
     payload: TopicExtractionRequest,
     request: Request,
 ) -> TopicExtractionResponse:
-    auth_session = await require_csrf_learning_path_scope(request, learning_path_id)
-    # Content source ownership is not persisted yet, so the pre-existing scope
-    # equality check is kept verbatim rather than relaxed here. See #103.
-    ensure_learning_path_scope(auth_session, payload.content_source_id)
+    await require_csrf_learning_path_scope(request, learning_path_id)
+    # A content source id is a lecture module id, a different domain from the
+    # learning path id, so comparing the two numbers refused every real course
+    # (#127). Ownership comes from what discovery recorded instead, and the
+    # extraction covers every module the path owns: topics are stored per
+    # learning path, not per module.
+    db = await request_session(request)
+    owner_id = await get_lecture_module_course_id(db, payload.content_source_id)
+    if owner_id != str(learning_path_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
     topics = await extract_topics_from_lectures(
         get_app_container(request),
-        await request_session(request),
-        payload.content_source_id,
+        db,
+        learning_path_id,
         force=payload.force,
     )
     return TopicExtractionResponse(
@@ -164,12 +181,23 @@ async def save_topic_confidence_rating(
     return TopicConfidenceResponse(rating=_confidence_response(rating))
 
 
-def _topic_response(topic: TopicMapping) -> TopicMappingResponse:
+def _topic_response(
+    topic: TopicMapping,
+    origins: list[LectureOrigin] | None = None,
+) -> TopicMappingResponse:
     return TopicMappingResponse(
         topic=topic.topic,
         learning_path_id=topic.course_id,
         source=_TOPIC_ORIGIN_BY_SOURCE[topic.source],
         frequency=topic.frequency,
+        content_items=[
+            TopicContentItemResponse(
+                id=origin.episode_id,
+                title=origin.title,
+                sequence_number=origin.lecture_number,
+            )
+            for origin in origins or []
+        ],
     )
 
 

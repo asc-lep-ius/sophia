@@ -52,6 +52,46 @@ topic_lecture_links = Table(
     Index("idx_topic_lecture_links_episode", "episode_id"),
 )
 
+# One row per lecture whose transcript went through topic extraction, so a
+# course can be processed again without re-reading the lectures it already has
+# topics for, and a lecture whose extraction failed keeps its reason and is
+# retried next time (#128).
+topic_extractions = Table(
+    "topic_extractions",
+    metadata,
+    Column(
+        "episode_id",
+        Text,
+        ForeignKey("transcriptions.episode_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("course_id", Integer, nullable=False),
+    Column("status", Text, nullable=False, server_default="pending"),
+    Column("topic_count", Integer, nullable=False, server_default=text("0")),
+    Column("error", Text),
+    Column("extracted_at", TIMESTAMP(timezone=True)),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
+    Index("idx_topic_extractions_course", "course_id"),
+)
+
+# Which lectures a topic was extracted from. A topic stays one row in
+# ``topic_mappings`` however many lectures mention it, because ratings and
+# reviews are keyed by that one (topic, course) pair; this is what lets the
+# topic list say which lecture each one came from (#128).
+topic_origins = Table(
+    "topic_origins",
+    metadata,
+    Column("topic", Text, nullable=False),
+    Column("course_id", Integer, nullable=False),
+    Column("episode_id", Text, nullable=False),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
+    PrimaryKeyConstraint("topic", "course_id", "episode_id"),
+    Index("idx_topic_origins_course", "course_id"),
+    Index("idx_topic_origins_episode", "episode_id"),
+)
+
 topic_reconciliations = Table(
     "topic_reconciliations",
     metadata,
@@ -227,4 +267,23 @@ review_schedule = Table(
     org_id_column(),
     PrimaryKeyConstraint("topic", "course_id"),
     Index("idx_review_schedule_due", "next_review_at"),
+)
+
+# Each topic, rating and review row migration 0005 moved from an Opencast module
+# id to the course that owns the module, and where it came from. Only the
+# downgrade reads it: without it, rows from two modules of one course would be
+# indistinguishable once re-keyed, and could not be split back (#127).
+module_course_rekeys = Table(
+    "module_course_rekeys",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("table_name", Text, nullable=False),
+    # How the moved row is found again: its id where the table has one,
+    # otherwise its key columns besides course_id.
+    Column("row_id", Integer),
+    Column("topic", Text),
+    Column("chunk_id", Text),
+    Column("module_id", Integer, nullable=False),
+    Column("course_id", Integer, nullable=False),
+    org_id_column(),
 )

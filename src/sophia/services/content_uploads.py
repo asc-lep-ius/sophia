@@ -2,11 +2,13 @@
 
 Ingestion adapters are not in this phase's scope, so an accepted upload lands
 in a staging directory carrying the ``queued`` state and nothing reads it back
-yet. What does exist here is the boundary check every later adapter can rely
-on: a size ceiling, an extension allowlist, and a magic-byte sniff that has to
-agree with the extension. Browser-supplied metadata — the filename and the part
-header's ``Content-Type`` — decides nothing on its own, because a caller
-controls both.
+yet — which is why the upload form says the file is stored, not processed, until
+#133 wires uploads into processing and restores the processing copy
+(``frontend/tests/unit/content-upload-copy.test.ts`` guards the pairing). What
+does exist here is the boundary check every later adapter can rely on: a size
+ceiling, an extension allowlist, and a magic-byte sniff that has to agree with
+the extension. Browser-supplied metadata — the filename and the part header's
+``Content-Type`` — decides nothing on its own, because a caller controls both.
 
 **Where the upload is actually bounded.** Not here. Starlette spools a whole
 file part to a temporary file before a handler sees it, so by the time

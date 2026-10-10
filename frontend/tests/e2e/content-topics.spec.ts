@@ -32,9 +32,9 @@ test.describe("lecture upload without JavaScript", () => {
     await page.getByRole("button", { name: "Upload" }).click();
 
     await expect(page.getByRole("status")).toContainText("Graph algorithms");
-    // Queued, not finished: the processing that follows must not be implied by
-    // the upload having been accepted.
-    await expect(page.getByText(/queued for transcription/)).toBeVisible();
+    // Stored, not processed: nothing reads the staged file yet (#133).
+    await expect(page.getByText(/not yet processed/)).toBeVisible();
+    await expect(page.getByText(/queued/i)).toHaveCount(0);
   });
 
   test("a file the allowlist does not cover comes back as a validation error", async ({

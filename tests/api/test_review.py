@@ -17,6 +17,19 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 
+def stub_existing_review(monkeypatch: pytest.MonkeyPatch, *, exists: bool = True) -> None:
+    async def fake_get_review_schedule(
+        _db: object, topic: str, course_id: int
+    ) -> ReviewSchedule | None:
+        if not exists:
+            return None
+        return ReviewSchedule(
+            topic=topic, course_id=course_id, next_review_at="2026-05-27T12:00:00Z"
+        )
+
+    monkeypatch.setattr(review_router, "get_review_schedule", fake_get_review_schedule)
+
+
 def learning_path_tenant(learning_path_id: int = 12) -> SessionTenant:
     return SessionTenant(
         org_id="tu-wien",
@@ -30,6 +43,7 @@ def test_review_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
     due_response = harness.client.get("/api/review/due?learning_path_id=12")
+    every_course_response = harness.client.get("/api/review/due")
     upcoming_response = harness.client.get("/api/review/upcoming?learning_path_id=12")
     schedule_response = harness.client.post(
         "/api/review/schedules",
@@ -43,6 +57,7 @@ def test_review_routes_require_authentication() -> None:
     )
 
     assert due_response.status_code == 401
+    assert every_course_response.status_code == 401
     assert upcoming_response.status_code == 401
     assert schedule_response.status_code == 401
     assert complete_response.status_code == 401
@@ -221,6 +236,7 @@ def test_complete_review_returns_updated_schedule(monkeypatch: pytest.MonkeyPatc
         )
 
     monkeypatch.setattr(review_router, "complete_review", fake_complete_review)
+    stub_existing_review(monkeypatch)
 
     response = harness.client.post(
         "/api/review/complete",
@@ -266,17 +282,113 @@ def test_review_routes_reject_out_of_scope_course_ids() -> None:
         json={"learning_path_id": 99, "topic": "Graphs"},
         headers=csrf_headers(harness),
     )
-    complete_response = harness.client.post(
-        "/api/review/complete",
-        json={"learning_path_id": 99, "topic": "Graphs", "score": 0.75},
-        headers=csrf_headers(harness),
-    )
 
     assert due_response.status_code == 403
     assert upcoming_response.status_code == 403
     assert schedules_response.status_code == 403
     assert schedule_response.status_code == 403
-    assert complete_response.status_code == 403
+
+
+def test_review_lists_cover_every_course_when_none_is_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The selection scopes study, topics and content; review spans courses (#131)."""
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(34),
+    )
+    login(harness)
+    asked: list[int | None] = []
+
+    async def fake_get_due_reviews(
+        _db: object, course_id: int | None = None
+    ) -> list[ReviewSchedule]:
+        asked.append(course_id)
+        return [ReviewSchedule(topic="Graphs", course_id=12, next_review_at="2026-05-26T12:00:00Z")]
+
+    async def fake_get_upcoming_reviews(
+        _db: object, course_id: int | None = None, days_ahead: int = 3
+    ) -> list[ReviewSchedule]:
+        asked.append(course_id)
+        return []
+
+    monkeypatch.setattr(review_router, "get_due_reviews", fake_get_due_reviews)
+    monkeypatch.setattr(review_router, "get_upcoming_reviews", fake_get_upcoming_reviews)
+
+    due_response = harness.client.get("/api/review/due")
+    upcoming_response = harness.client.get("/api/review/upcoming?days_ahead=365")
+
+    assert asked == [None, None]
+    assert due_response.status_code == 200
+    assert due_response.json()["learning_path_id"] is None
+    assert due_response.json()["reviews"][0]["learning_path_id"] == 12
+    assert upcoming_response.status_code == 200
+    assert upcoming_response.json()["learning_path_id"] is None
+
+
+def test_complete_review_grades_a_review_held_by_an_unselected_course(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(34),
+    )
+    login(harness)
+    graded: list[tuple[str, int]] = []
+
+    async def fake_complete_review(
+        _db: object, topic: str, course_id: int, score: float
+    ) -> ReviewSchedule:
+        graded.append((topic, course_id))
+        return ReviewSchedule(
+            topic=topic,
+            course_id=course_id,
+            next_review_at="2026-05-28T12:00:00Z",
+            score_at_last_review=score,
+        )
+
+    monkeypatch.setattr(review_router, "complete_review", fake_complete_review)
+    stub_existing_review(monkeypatch)
+
+    response = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs", "self_rating": 3},
+        headers=csrf_headers(harness),
+    )
+
+    assert response.status_code == 200
+    assert graded == [("Graphs", 12)]
+
+
+def test_complete_review_refuses_a_topic_that_was_never_scheduled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Grading may move a date the learner was shown, never invent a schedule."""
+    harness = build_harness(
+        app_container=cast("AppContainer", FakeAppContainer(db=object())),
+        tenant=learning_path_tenant(12),
+    )
+    login(harness)
+
+    async def fail_complete_review(*_args: object) -> ReviewSchedule:
+        raise AssertionError("an unscheduled topic must not be graded")
+
+    monkeypatch.setattr(review_router, "complete_review", fail_complete_review)
+    stub_existing_review(monkeypatch, exists=False)
+
+    selected = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 12, "topic": "Graphs", "self_rating": 3},
+        headers=csrf_headers(harness),
+    )
+    elsewhere = harness.client.post(
+        "/api/review/complete",
+        json={"learning_path_id": 99, "topic": "Graphs", "self_rating": 3},
+        headers=csrf_headers(harness),
+    )
+
+    assert selected.status_code == 404
+    assert elsewhere.status_code == 404
 
 
 def test_review_openapi_contract_is_visible() -> None:
@@ -322,6 +434,7 @@ def test_complete_review_maps_self_rating_to_a_server_owned_score(
         )
 
     monkeypatch.setattr(review_router, "complete_review", fake_complete_review)
+    stub_existing_review(monkeypatch)
 
     response = harness.client.post(
         "/api/review/complete",

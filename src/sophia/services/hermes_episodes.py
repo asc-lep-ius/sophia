@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select
 
-from sophia.infra.schema import lecture_downloads, transcriptions
+from sophia.infra.schema import lecture_downloads, lecture_modules, transcriptions
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -53,6 +53,20 @@ def module_episode_ids_query(module_id: int) -> Select[tuple[str]]:
         select(episode_id().label("episode_id"))
         .select_from(episodes_from())
         .where(episode_module_id() == module_id)
+    )
+
+
+def course_module_ids_query(course_id: int) -> Select[tuple[int]]:
+    """The modules discovery recorded as the course's own (``lecture_modules.course_id``)."""
+    return select(lecture_modules.c.module_id).where(lecture_modules.c.course_id == str(course_id))
+
+
+def course_episode_ids_query(course_id: int) -> Select[tuple[str]]:
+    """Every episode of every module the course owns."""
+    return (
+        select(episode_id().label("episode_id"))
+        .select_from(episodes_from())
+        .where(episode_module_id().in_(course_module_ids_query(course_id)))
     )
 
 

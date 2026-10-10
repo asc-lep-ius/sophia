@@ -33,7 +33,7 @@ from sophia.services.athena_confidence import (
     get_confidence_ratings,
     get_topic_difficulty_level,
 )
-from sophia.services.athena_review import get_due_reviews
+from sophia.services.athena_review import get_due_reviews, schedule_review
 from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
@@ -149,7 +149,16 @@ async def finalize_study_session(session: AsyncSession, session_id: int) -> Stud
     and ``post_test`` attempts, so a client cannot post an improvement figure
     it invented. A phase with no attempts scores ``None`` rather than zero: not
     sitting a post-test is an absent measurement, not a failed one.
+
+    The first completion also schedules the topic's review, which is how a
+    finished session reaches ``/app/review``. A repeated completion of the same
+    session does not: it would push back a review the learner may already have
+    graded. A session that is never completed schedules nothing.
     """
+    before = await get_study_session(session, session_id)
+    if before is None:
+        return None
+
     means = await _phase_score_means(session, session_id)
     await session.execute(
         update(study_sessions)
@@ -160,6 +169,8 @@ async def finalize_study_session(session: AsyncSession, session_id: int) -> Stud
             completed_at=datetime.now(UTC),
         )
     )
+    if before.completed_at is None:
+        await schedule_review(session, before.topic, before.course_id)
     return await get_study_session(session, session_id)
 
 

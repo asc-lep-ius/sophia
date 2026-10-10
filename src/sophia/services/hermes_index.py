@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.adapters.embedder import SentenceTransformerEmbedder
 from sophia.adapters.knowledge_store import ChromaKnowledgeStore
-from sophia.domain.errors import EmbeddingError
+from sophia.domain.errors import EmbeddingError, LectureIndexUnavailable
 from sophia.domain.models import (
     HermesConfig,
     KnowledgeChunk,
@@ -32,16 +32,33 @@ from sophia.services.hermes_episodes import episode_title, module_episode_titles
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from sophia.config import Settings
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
 
 _CHUNK_SIZE = 3
 _CHUNK_OVERLAP = 1
+
+QUERY_DEVICE = "cpu"
+"""Where a query is embedded: the CPU, whatever the process can see.
+
+The API embeds study topics and search phrases itself (docs/lecture-index-access.md).
+One short query takes well under a second there, and it needs no GPU — the
+API image has none, and on a GPU PyTorch has no kernels for (hephaestus's
+GTX 1070) the default device turned every query into a 500 (#129). The model
+is the one the index was built with: both sides read ``[embeddings]`` from the
+same ``hermes.toml``.
+"""
+
+# One of each per process: the model is ~2 GB and takes seconds to load, and
+# chromadb shares one client per path per process anyway.
+_query_embedder_cache: SentenceTransformerEmbedder | None = None
+_store_cache: ChromaKnowledgeStore | None = None
 
 
 @dataclass
@@ -86,15 +103,35 @@ def chunk_segments(segments: list[TranscriptSegment], episode_id: str) -> list[K
     return chunks
 
 
+def embedding_config(app: AppContainer) -> HermesConfig:
+    """The Hermes config the index is built and queried with; the defaults without one."""
+    return load_hermes_config(app.settings.config_dir) or HermesConfig()
+
+
+def query_embedder(app: AppContainer) -> SentenceTransformerEmbedder:
+    """The process's query embedder, on the CPU, created on first use."""
+    global _query_embedder_cache
+    if _query_embedder_cache is None:
+        _query_embedder_cache = SentenceTransformerEmbedder(
+            embedding_config(app).embeddings, device=QUERY_DEVICE
+        )
+    return _query_embedder_cache
+
+
+def knowledge_store(settings: Settings) -> ChromaKnowledgeStore:
+    """The process's one knowledge store, created on first use."""
+    global _store_cache
+    if _store_cache is None:
+        _store_cache = ChromaKnowledgeStore(settings.data_dir / "knowledge")
+    return _store_cache
+
+
 def _create_embedder(app: AppContainer) -> SentenceTransformerEmbedder:
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        config = HermesConfig()
-    return SentenceTransformerEmbedder(config.embeddings)
+    return SentenceTransformerEmbedder(embedding_config(app).embeddings)
 
 
 def _create_store(app: AppContainer) -> ChromaKnowledgeStore:
-    return ChromaKnowledgeStore(app.settings.data_dir / "knowledge")
+    return knowledge_store(app.settings)
 
 
 async def _get_transcriptions(session: AsyncSession, module_id: int) -> list[tuple[str, str]]:
@@ -246,6 +283,7 @@ async def index_lectures(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[IndexingResult]:
     """Orchestrate indexing for transcribed lectures in a module.
 
@@ -253,8 +291,11 @@ async def index_lectures(
     then chunks, embeds, and stores each episode's segments. Each episode's
     row is committed once its chunks are in the store; an episode interrupted
     in between is indexed again next time, which the store's upsert absorbs.
+    ``only_episodes`` narrows the run to those ids.
     """
     transcriptions = await _get_transcriptions(session, module_id)
+    if only_episodes is not None:
+        transcriptions = [row for row in transcriptions if row[0] in only_episodes]
     if not transcriptions:
         return []
 
@@ -306,7 +347,10 @@ async def search_lectures(
     course_id: int | None = None,
     missed_only: bool = False,
 ) -> list[LectureSearchResult]:
-    """Semantic search over indexed lecture content."""
+    """Semantic search over indexed lecture content.
+
+    Raises ``LectureIndexUnavailable`` when the index cannot be read.
+    """
     # Fetch episode IDs for this module to scope the search
     episode_query = module_episode_titles_query(module_id)
     if missed_only:
@@ -332,18 +376,21 @@ async def search_lectures(
             episode_ids.append(mat_ep_id)
             title_map[mat_ep_id] = mat_row.name
 
-    embedder = _create_embedder(app)
-    store = _create_store(app)
-
-    query_embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
+    embedder = query_embedder(app)
+    store = knowledge_store(app.settings)
     effective_filter = source_filter if source_filter and source_filter != "all" else None
-    search_results = await asyncio.to_thread(
-        store.search,
-        query_embedding,
-        n_results=n_results,
-        episode_ids=episode_ids,
-        source_filter=effective_filter,
-    )
+    try:
+        query_embedding: list[float] = await asyncio.to_thread(embedder.embed_query, query)
+        search_results = await asyncio.to_thread(
+            store.search,
+            query_embedding,
+            n_results=n_results,
+            episode_ids=episode_ids,
+            source_filter=effective_filter,
+        )
+    except EmbeddingError as exc:
+        log.warning("lecture_index_unavailable", module_id=module_id, error=str(exc))
+        raise LectureIndexUnavailable(str(exc)) from exc
 
     if not search_results:
         return []

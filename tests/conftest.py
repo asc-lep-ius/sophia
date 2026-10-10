@@ -21,9 +21,10 @@ from sophia.config import Settings
 from sophia.infra.alembic_runner import upgrade
 from sophia.infra.engine import create_engine, create_session_factory, session_scope
 from sophia.infra.schema import metadata
+from sophia.services import hermes_index
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Iterator
     from pathlib import Path as PathType
 
     from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -31,6 +32,18 @@ if TYPE_CHECKING:
 DEFAULT_TEST_DATABASE_URL = "postgresql+asyncpg://sophia:sophia@localhost:5432/sophia_test"
 TEST_DATABASE_URL_ENV = "SOPHIA_TEST_DATABASE_URL"
 TEST_ORG_ID = "test-org"
+
+
+@pytest.fixture(autouse=True)
+def _fresh_lecture_index_reader() -> Iterator[None]:
+    """Start every test without the process's cached query embedder and store.
+
+    They live for the process in production; in a test run that would hand one
+    test's fake to the next.
+    """
+    yield
+    hermes_index._query_embedder_cache = None  # pyright: ignore[reportPrivateUsage]
+    hermes_index._store_cache = None  # pyright: ignore[reportPrivateUsage]
 
 
 @pytest.fixture

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import insert, select
 
 from sophia.domain.errors import TranscriptionError
 from sophia.domain.models import (
@@ -23,7 +23,7 @@ from sophia.domain.models import (
     TranscriptSegment,
 )
 from sophia.infra.engine import create_session_factory, session_scope
-from sophia.infra.schema import lecture_downloads
+from sophia.infra.schema import lecture_downloads, lecture_modules, topic_mappings
 from sophia.services.hermes_download import LectureDownloadResult
 from sophia.services.hermes_index import IndexingResult
 from sophia.services.hermes_transcribe import TranscriptionResult
@@ -96,6 +96,11 @@ def _make_indexing(
     )
 
 
+async def _own(db: AsyncSession, module_id: int = 42, course_id: int = 7) -> None:
+    """Record the module's owning course, as discovery does."""
+    await db.execute(insert(lecture_modules).values(module_id=module_id, course_id=str(course_id)))
+
+
 def _make_topic(topic: str = "Linear Algebra", course_id: int = 42):
     from sophia.domain.models import TopicMapping
 
@@ -136,6 +141,7 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
         call_order.append("topics")
         return [_make_topic()]
 
+    await _own(db)
     container = MagicMock()
 
     with (
@@ -143,7 +149,7 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(container, db, module_id=42)
@@ -210,6 +216,7 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
     indexing = [_make_indexing("ep-001"), _make_indexing("ep-002")]
     topics = [_make_topic("Algebra"), _make_topic("Calculus")]
 
+    await _own(db)
     container = MagicMock()
 
     with (
@@ -230,7 +237,11 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
             AsyncMock(return_value=indexing),
         ),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "sophia.services.hermes_pipeline.get_course_topics",
             AsyncMock(return_value=topics),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -260,6 +271,7 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
     mock_index = AsyncMock(return_value=[])
     mock_topics = AsyncMock(return_value=[])
 
+    await _own(db, module_id=99)
     container = MagicMock()
 
     with (
@@ -270,7 +282,7 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", mock_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", mock_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(container, db, module_id=99)
@@ -285,7 +297,8 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
     assert mock_index.call_args[0] == (container, db, 99)
 
     mock_topics.assert_called_once()
-    assert mock_topics.call_args[0] == (container, db, 99)
+    # Topics belong to the course that owns the module, not to the module.
+    assert mock_topics.call_args[0] == (container, db, 7)
 
 
 # ------------------------------------------------------------------
@@ -311,7 +324,7 @@ async def test_pipeline_stops_on_cancel_before_first_stage(db: AsyncSession) -> 
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -353,7 +366,7 @@ async def test_pipeline_stops_between_stages(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -396,6 +409,7 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
         call_order.append("topics")
         return []
 
+    await _own(db)
     container = MagicMock()
 
     with (
@@ -403,7 +417,7 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         result = await run_pipeline(container, db, module_id=42, cancel_check=None)
@@ -430,7 +444,7 @@ async def test_pipeline_result_cancelled_flag(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -467,7 +481,7 @@ async def test_cancel_check_forwarded_to_stages(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -502,7 +516,7 @@ async def test_pipeline_empty_module(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -539,6 +553,7 @@ async def test_pipeline_mixed_episode_results(db: AsyncSession) -> None:
     indexing = [_make_indexing("ep-001", status="completed")]
     topics = [_make_topic("Topic A")]
 
+    await _own(db)
     container = MagicMock()
 
     with (
@@ -559,7 +574,11 @@ async def test_pipeline_mixed_episode_results(db: AsyncSession) -> None:
             AsyncMock(return_value=indexing),
         ),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "sophia.services.hermes_pipeline.get_course_topics",
             AsyncMock(return_value=topics),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -591,6 +610,7 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
     mock_index = AsyncMock(return_value=[])
     mock_topics = AsyncMock(return_value=[])
 
+    await _own(db)
     container = MagicMock()
 
     on_caption_start = MagicMock()
@@ -607,7 +627,7 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", mock_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", mock_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(
@@ -652,7 +672,7 @@ async def test_pipeline_calls_assign_lecture_numbers(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch(
@@ -706,15 +726,19 @@ def _opencast_app(tmp_path: Path, lectures: list[Lecture]) -> MagicMock:
 
 
 def _whisper(monkeypatch: pytest.MonkeyPatch, transcribe: MagicMock) -> None:
+    from sophia.adapters.transcriber import Transcript
+
     transcriber = MagicMock()
-    transcriber.transcribe = transcribe
+    transcriber.transcribe_lecture = lambda path, language=None: Transcript(
+        transcribe(path), language
+    )
     monkeypatch.setattr(
         "sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber
     )
 
 
 def _no_index_or_topics(monkeypatch: pytest.MonkeyPatch) -> None:
-    for stage in ("index_lectures", "extract_topics_from_lectures"):
+    for stage in ("index_lectures", "extract_topics_per_lecture"):
         monkeypatch.setattr(f"sophia.services.hermes_pipeline.{stage}", AsyncMock(return_value=[]))
 
 
@@ -815,3 +839,214 @@ async def test_a_download_stage_cancelled_part_way_leaves_lecture_numbers_unset(
         "ep-intro": ("completed", 2),
         "ep-vo1": ("completed", 1),
     }
+
+
+async def test_the_media_stages_leave_recordings_outside_the_job_scope_untouched(
+    tmp_path: Path, clean_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A semester job's stages never download or transcribe last semester's recording (#128)."""
+    from sophia.services.hermes_pipeline import run_media_stages
+
+    factory = create_session_factory(clean_engine)
+    app = _opencast_app(
+        tmp_path,
+        [_recording("ep-oct", "VU vom 2026-10-09"), _recording("ep-jun", "VU vom 2026-06-15")],
+    )
+    transcribe = MagicMock(return_value=[TranscriptSegment(start=0, end=1, text="x")])
+    _whisper(monkeypatch, transcribe)
+
+    async with session_scope(factory, org_id=TEST_ORG_ID) as session:
+        result = await run_media_stages(app, session, 42, only_episodes={"ep-oct"})
+
+    assert [download.episode_id for download in result.downloads] == ["ep-oct"]
+    assert [tr.episode_id for tr in result.transcriptions] == ["ep-oct"]
+    assert app.lecture_downloader.download_track.call_count == 1
+    assert transcribe.call_count == 1
+    assert await _downloads(factory) == {"ep-oct": ("completed", 1)}
+
+
+# ------------------------------------------------------------------
+# Topics are the course's, not the module's (#127)
+# ------------------------------------------------------------------
+
+
+def _stages_done(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every stage before topics has nothing left to do."""
+    for stage in (
+        "transcribe_from_captions",
+        "download_lectures",
+        "transcribe_lectures",
+        "index_lectures",
+    ):
+        monkeypatch.setattr(f"sophia.services.hermes_pipeline.{stage}", AsyncMock(return_value=[]))
+    monkeypatch.setattr("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock())
+
+
+async def _transcript(db: AsyncSession, module_id: int, episode_id: str, text: str) -> None:
+    from sophia.infra.schema import transcript_segments, transcriptions
+
+    await db.execute(
+        insert(transcriptions).values(
+            episode_id=episode_id, module_id=module_id, status="completed"
+        )
+    )
+    await db.execute(
+        insert(transcript_segments).values(
+            episode_id=episode_id, segment_index=0, start_time=0.0, end_time=1.0, text=text
+        )
+    )
+
+
+async def _topic_rows(db: AsyncSession) -> list[tuple[int, str]]:
+    rows = await db.execute(select(topic_mappings.c.course_id, topic_mappings.c.topic))
+    return sorted((row.course_id, row.topic) for row in rows)
+
+
+@pytest.mark.asyncio
+async def test_processing_one_module_files_the_course_topics_under_the_course(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """EP1 2026W: processing module 3022498 extracts from both modules, into course 82774."""
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    _stages_done(monkeypatch)
+    await _own(db, module_id=3022060, course_id=82774)
+    await _own(db, module_id=3022498, course_id=82774)
+    await _transcript(db, 3022060, "ep-w1", "Schleifen und Verzweigungen")
+    await _transcript(db, 3022498, "ep-w2", "Arrays und Referenzen")
+    extractor = MagicMock()
+    extractor.extract_topics = AsyncMock(return_value=["Schleifen", "Arrays"])
+    monkeypatch.setattr(
+        "sophia.services.athena_topics.create_topic_extractor", lambda _app: extractor
+    )
+
+    result = await run_pipeline(MagicMock(), db, module_id=3022498)
+
+    texts_sent = [call.args[0] for call in extractor.extract_topics.call_args_list]
+    # Per lecture, and only this module's lectures (#128): the sibling module
+    # is the worker's next job step, or the CLI's next invocation, not a
+    # re-read of the whole course on every run.
+    assert any("Arrays und Referenzen" in text for text in texts_sent)
+    assert not any("Schleifen und Verzweigungen" in text for text in texts_sent)
+    assert sorted(topic.course_id for topic in result.topics) == [82774, 82774]
+    assert await _topic_rows(db) == [(82774, "Arrays"), (82774, "Schleifen")]
+
+
+@pytest.mark.asyncio
+async def test_a_module_with_no_known_owner_gets_no_topics_under_its_own_id(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filed under the module id, the browser could never read them."""
+    from sophia.services.hermes_pipeline import run_pipeline
+
+    _stages_done(monkeypatch)
+    await _transcript(db, 3022498, "ep-w2", "Arrays und Referenzen")
+    extract = AsyncMock(return_value=[])
+    monkeypatch.setattr("sophia.services.hermes_pipeline.extract_topics_per_lecture", extract)
+
+    result = await run_pipeline(MagicMock(), db, module_id=3022498)
+
+    extract.assert_not_called()
+    assert result.topics == []
+    assert await _topic_rows(db) == []
+
+
+# ------------------------------------------------------------------
+# Strict knowledge stages: every lecture failing is a failure (#128)
+# ------------------------------------------------------------------
+
+
+def _make_lecture_topics(episode_id: str, status: str, *, error: str | None = None):
+    from sophia.services.athena_topics import LectureTopicResult
+
+    return LectureTopicResult(episode_id=episode_id, title=episode_id, status=status, error=error)
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_fail_when_no_lecture_could_be_indexed(
+    db: AsyncSession,
+) -> None:
+    """The operator's rule: an index stage in which every episode failed is a failure.
+
+    That is the GPU or the model being unusable, not one bad lecture, and the
+    worker must report it; skipped lectures do not count as attempts.
+    """
+    from unittest.mock import patch
+
+    from sophia.domain.errors import EmbeddingError
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    all_failed = [
+        _make_indexing("ep-1", status="failed", error="no kernel image is available"),
+        _make_indexing("ep-2", status="failed", error="no kernel image is available"),
+        _make_indexing("ep-3", status="skipped"),
+    ]
+    topics = AsyncMock(return_value=[])
+    with (
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=all_failed)),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", topics),
+    ):
+        with pytest.raises(EmbeddingError, match="indexing failed for every lecture.*no kernel"):
+            await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+        topics.assert_not_awaited()
+
+        # The same outcomes are a completion when nobody asked for strictness.
+        lenient = await run_knowledge_stages(MagicMock(), db, 42)
+    assert [item.status for item in lenient.indexing] == ["failed", "failed", "skipped"]
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_go_on_while_one_lecture_indexed(db: AsyncSession) -> None:
+    """One failed lecture beside a completed one is that lecture's failure, not the stage's."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    mixed = [_make_indexing("ep-1", status="failed", error="boom"), _make_indexing("ep-2")]
+    with (
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=mixed)),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[_make_lecture_topics("ep-2", "completed")]),
+        ),
+    ):
+        result = await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+
+    assert [item.status for item in result.indexing] == ["failed", "completed"]
+    assert [item.status for item in result.lecture_topics] == ["completed"]
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_fail_when_no_lecture_got_topics(db: AsyncSession) -> None:
+    """The same rule for topic extraction: Gemini refusing every lecture is a failed job."""
+    from unittest.mock import patch
+
+    from sophia.domain.errors import TopicExtractionError
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    all_failed = [
+        _make_lecture_topics("ep-1", "failed", error="503 UNAVAILABLE"),
+        _make_lecture_topics("ep-2", "failed", error="503 UNAVAILABLE"),
+    ]
+    one_failed = [
+        _make_lecture_topics("ep-1", "failed", error="503"),
+        _make_lecture_topics("ep-2", "completed"),
+    ]
+    with patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])):
+        with (
+            patch(
+                "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+                AsyncMock(return_value=all_failed),
+            ),
+            pytest.raises(TopicExtractionError, match="topic extraction failed for every.*503"),
+        ):
+            await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+        with patch(
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=one_failed),
+        ):
+            result = await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+    assert [item.status for item in result.lecture_topics] == ["failed", "completed"]

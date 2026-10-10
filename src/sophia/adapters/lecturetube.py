@@ -23,6 +23,31 @@ log = structlog.get_logger()
 # Regex to find the prefix for window.episode assignment
 _EPISODE_PREFIX_RE = re.compile(r"window\.episode\s*=\s*")
 
+# The series list's Date cell, as Moodle renders it for the user's language:
+# "09/10/26" in English, "09.10.26" in German, with a four-digit year either way.
+_SERIES_DATE_RE = re.compile(r"^(\d{1,2})[./](\d{1,2})[./](\d{2}|\d{4})$")
+
+
+def _recording_date(link: Any) -> str:
+    """The ISO date of the row a series-list link sits in, or "" when the page has none.
+
+    The series page is the only place a recording's date can be read without
+    opening its player page, and a course may list dozens; the date is what
+    decides whether a recording belongs to the course's own semester (#128).
+    """
+    row = link.find_parent("tr")
+    if row is None:
+        return ""
+    for cell in row.find_all("td"):
+        match = _SERIES_DATE_RE.match(cell.get_text(strip=True))
+        if match is None:
+            continue
+        day, month, year = (int(group) for group in match.groups())
+        if year < 100:
+            year += 2000
+        return f"{year:04d}-{month:02d}-{day:02d}"
+    return ""
+
 
 def _parse_paella_tracks(data: dict[str, Any]) -> list[LectureTrack]:
     """Extract tracks from Paella player manifest's ``streams`` block."""
@@ -129,6 +154,7 @@ class OpencastAdapter:
                     title=ep_title or episode_id,
                     series_id="",
                     series_title=series_title,
+                    created=_recording_date(link),
                 )
             )
 

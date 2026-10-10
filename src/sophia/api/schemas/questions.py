@@ -28,6 +28,12 @@ class QuestionDifficulty(StrEnum):
     TRANSFER = "transfer"
 
 
+class QuestionFallbackReason(StrEnum):
+    """Why a question is a template rather than one generated from the lectures."""
+
+    INDEX_UNAVAILABLE = "index_unavailable"
+
+
 class QuestionOption(ApiModel):
     """One selectable option of a multiple-choice question."""
 
@@ -51,6 +57,7 @@ class QuestionBase(ApiModel):
     content_language: ContentLanguage
     provenance: Provenance
     translations: list[ContentTranslation] = Field(default_factory=list[ContentTranslation])
+    fallback_reason: QuestionFallbackReason | None = None
 
 
 class OpenResponseQuestion(QuestionBase):

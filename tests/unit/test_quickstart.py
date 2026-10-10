@@ -60,11 +60,13 @@ async def _insert_knowledge_index(
     )
 
 
-async def _insert_topic(db: AsyncSession, *, topic: str, course_id: int) -> None:
+async def _insert_topic(
+    db: AsyncSession, *, topic: str, course_id: int, source: str = "lecture"
+) -> None:
     await exec_sql(
         db,
-        "INSERT INTO topic_mappings (topic, course_id) VALUES (?, ?)",
-        (topic, course_id),
+        "INSERT INTO topic_mappings (topic, course_id, source) VALUES (?, ?, ?)",
+        (topic, course_id, source),
     )
 
 
@@ -151,6 +153,14 @@ async def test_has_topics_present(db: AsyncSession) -> None:
     await _insert_topic(db, topic="Algebra", course_id=42)
 
     assert await _has_topics(db, 42) is True
+
+
+@pytest.mark.asyncio
+async def test_manual_topics_alone_do_not_count_as_extracted(db: AsyncSession) -> None:
+    """Since #127 the browser's manual topics share the course key; extraction must still run."""
+    await _insert_topic(db, topic="Mein Thema", course_id=42, source="manual")
+
+    assert await _has_topics(db, 42) is False
 
 
 # ── _has_confidence ────────────────────────────────────────────────────────

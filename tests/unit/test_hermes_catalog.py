@@ -9,11 +9,19 @@ import pytest
 from sqlalchemy import insert, select
 
 from sophia.domain.models import Course, CourseSection, Lecture, ModuleInfo
-from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules, transcriptions
+from sophia.infra.schema import (
+    DEFAULT_SCOPE,
+    lecture_downloads,
+    lecture_modules,
+    lecture_recordings,
+    transcriptions,
+)
 from sophia.services.hermes_catalog import (
+    discover_lecture_module_course,
     discover_lecture_modules,
     get_lecture_module_course_id,
     get_lecture_modules,
+    lecture_module_course,
 )
 
 if TYPE_CHECKING:
@@ -58,6 +66,35 @@ async def test_discovery_persists_the_owning_course(db: AsyncSession) -> None:
 
 
 @pytest.mark.asyncio
+async def test_discovery_registers_each_recording_with_its_date(db: AsyncSession) -> None:
+    """The scan is what tells the page how many older recordings are waiting (#128)."""
+    from datetime import date
+
+    container = _container()
+    container.opencast.get_series_episodes.return_value = [
+        _EPISODE,
+        Lecture(episode_id="e2", title="VU vom 2026-06-15", series_id="s1", created="2026-06-15"),
+    ]
+
+    await discover_lecture_modules(container, db)
+
+    rows = (
+        await db.execute(
+            select(
+                lecture_recordings.c.episode_id,
+                lecture_recordings.c.module_id,
+                lecture_recordings.c.recorded_on,
+                lecture_recordings.c.course_id,
+            ).order_by(lecture_recordings.c.episode_id)
+        )
+    ).all()
+    assert [tuple(row) for row in rows] == [
+        ("e1", 456, None, "12"),
+        ("e2", 456, date(2026, 6, 15), "12"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_rediscovery_refreshes_a_stale_owner(db: AsyncSession) -> None:
     await _insert_module(db, 456, course_id=DEFAULT_SCOPE)
 
@@ -84,6 +121,31 @@ async def test_pre_tenancy_module_has_no_owner(db: AsyncSession) -> None:
     await _insert_module(db, 456, course_id=DEFAULT_SCOPE)
 
     assert await get_lecture_module_course_id(db, 456) is None
+
+
+@pytest.mark.asyncio
+async def test_the_cli_finds_an_undiscovered_modules_course_by_discovering(
+    db: AsyncSession,
+) -> None:
+    """A module the browser never scanned still files its study data under its course."""
+    container = _container()
+
+    assert await discover_lecture_module_course(container, db, 456) == 12
+    assert await lecture_module_course(db, 456) == 12
+
+
+@pytest.mark.asyncio
+async def test_a_recorded_owner_is_used_without_scanning_again(db: AsyncSession) -> None:
+    await _insert_module(db, 456, course_id="12")
+    container = _container()
+
+    assert await discover_lecture_module_course(container, db, 456) == 12
+    container.moodle.get_enrolled_courses.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_module_in_no_enrolled_course_has_no_course(db: AsyncSession) -> None:
+    assert await discover_lecture_module_course(_container(), db, 789) is None
 
 
 @pytest.mark.asyncio
