@@ -6,6 +6,7 @@ dependency; a clear ``EmbeddingError`` is raised if it is missing.
 
 from __future__ import annotations
 
+import threading
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -22,16 +23,27 @@ _E5_PREFIX_PASSAGE = "passage: "
 
 
 class SentenceTransformerEmbedder:
-    """Embedder backed by sentence-transformers with E5 prefix handling."""
+    """Embedder backed by sentence-transformers with E5 prefix handling.
 
-    def __init__(self, config: HermesEmbeddingConfig) -> None:
+    ``device`` is passed to sentence-transformers as it is; ``None`` lets it
+    pick, which means a CUDA device whenever PyTorch can see one.
+    """
+
+    def __init__(self, config: HermesEmbeddingConfig, *, device: str | None = None) -> None:
         self._config = config
+        self._device = device
         self._model: Any = None
+        # Two first requests at once would otherwise load the model twice.
+        self._load_lock = threading.Lock()
 
     def _ensure_model(self) -> Any:
         """Lazy-load the SentenceTransformer model on first use."""
-        if self._model is not None:
+        with self._load_lock:
+            if self._model is None:
+                self._model = self._load_model()
             return self._model  # pyright: ignore[reportUnknownVariableType]
+
+    def _load_model(self) -> Any:
         try:
             from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
         except ImportError:
@@ -39,9 +51,15 @@ class SentenceTransformerEmbedder:
                 "sentence-transformers not installed — run: uv pip install sophia[hermes]"
             ) from None
 
-        log.info("loading_embedding_model", model=self._config.model)
-        self._model = SentenceTransformer(self._config.model)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-        return self._model  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        log.info("loading_embedding_model", model=self._config.model, device=self._device)
+        try:
+            return SentenceTransformer(self._config.model, device=self._device)  # pyright: ignore[reportUnknownVariableType]
+        # A model missing from the cache with no network, a device PyTorch has
+        # no kernels for: whatever stops the load stops every embedding.
+        except Exception as exc:
+            raise EmbeddingError(
+                f"Embedding model {self._config.model} could not be loaded: {exc}"
+            ) from exc
 
     @property
     def _is_e5(self) -> bool:

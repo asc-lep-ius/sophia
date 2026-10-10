@@ -23,6 +23,7 @@ from sophia.domain.errors import (
     IngestionAlreadyRunning,
     IngestionNothingOlder,
     IngestionUnavailable,
+    LectureIndexUnavailable,
     MoodleError,
     RegistrationError,
     SophiaError,
@@ -64,6 +65,10 @@ _DOMAIN_ERROR_SPECS: tuple[tuple[type[SophiaError], ErrorSpec], ...] = (
     (IngestionUnavailable, ErrorSpec("ingestion.unavailable", HTTPStatus.SERVICE_UNAVAILABLE)),
     (IngestionAlreadyRunning, ErrorSpec("ingestion.already_running", HTTPStatus.CONFLICT)),
     (IngestionNothingOlder, ErrorSpec("ingestion.nothing_older", HTTPStatus.CONFLICT)),
+    (
+        LectureIndexUnavailable,
+        ErrorSpec("lecture_index.unavailable", HTTPStatus.SERVICE_UNAVAILABLE),
+    ),
     (HermesError, ErrorSpec("hermes.failed", HTTPStatus.INTERNAL_SERVER_ERROR)),
     (AthenaError, ErrorSpec("athena.failed", HTTPStatus.INTERNAL_SERVER_ERROR)),
     (ChronosError, ErrorSpec("chronos.failed", HTTPStatus.INTERNAL_SERVER_ERROR)),

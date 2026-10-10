@@ -11,7 +11,8 @@ import structlog
 from sqlalchemy import case, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from sophia.domain.errors import TopicExtractionError
+from sophia.domain.errors import EmbeddingError, TopicExtractionError
+from sophia.domain.learning import QuestionFallbackReason
 from sophia.domain.models import (
     CardReviewAttempt,
     FlashcardSource,
@@ -56,7 +57,7 @@ from sophia.services.hermes_episodes import (
     course_episode_ids_query,
     episode_titles_query,
 )
-from sophia.services.hermes_setup import load_hermes_config
+from sophia.services.hermes_index import knowledge_store, query_embedder
 from sophia.services.idempotency import insert_or_fetch_row
 
 if TYPE_CHECKING:
@@ -65,37 +66,10 @@ if TYPE_CHECKING:
     from sqlalchemy import Row, Select
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from sophia.adapters.embedder import SentenceTransformerEmbedder
     from sophia.adapters.knowledge_store import ChromaKnowledgeStore
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
-
-# Module-level caches — one instance per CLI session, not per function call.
-# The ~500 MB embedding model is expensive to reload; ChromaDB benefits from
-# persistent client reuse as well.
-_embedder_cache: SentenceTransformerEmbedder | None = None
-_store_cache: ChromaKnowledgeStore | None = None
-
-
-def _get_or_create_embedder(config: Any) -> SentenceTransformerEmbedder:
-    """Return a cached embedder, creating it on first call."""
-    from sophia.adapters.embedder import SentenceTransformerEmbedder
-
-    global _embedder_cache
-    if _embedder_cache is None:
-        _embedder_cache = SentenceTransformerEmbedder(config.embeddings)
-    return _embedder_cache
-
-
-def _get_or_create_store(settings: Any) -> ChromaKnowledgeStore:
-    """Return a cached knowledge store, creating it on first call."""
-    from sophia.adapters.knowledge_store import ChromaKnowledgeStore
-
-    global _store_cache
-    if _store_cache is None:
-        _store_cache = ChromaKnowledgeStore(settings.data_dir / "knowledge")
-    return _store_cache
 
 
 async def _get_episode_ids(session: AsyncSession, course_id: int) -> list[str]:
@@ -201,13 +175,8 @@ async def link_topics_to_lectures(
         log.info("no_episodes_for_linking", course_id=course_id)
         return {}
 
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        from sophia.domain.models import HermesConfig
-
-        config = HermesConfig()
-    embedder = _get_or_create_embedder(config)
-    store = _get_or_create_store(app.settings)
+    embedder = query_embedder(app)
+    store = knowledge_store(app.settings)
 
     results: dict[str, list[tuple[KnowledgeChunk, float]]] = {}
 
@@ -321,24 +290,20 @@ class GroundedQuestion:
     """A practice question and the lecture chunks it was generated from.
 
     ``sources`` is empty for the template fallback: nothing grounds it, so there
-    is nothing to show the learner beside it.
+    is nothing to show the learner beside it. ``fallback_reason`` says why, when
+    the learner is to be told.
     """
 
     prompt: str
     sources: tuple[KnowledgeChunk, ...] = ()
+    fallback_reason: QuestionFallbackReason | None = None
 
 
 async def _embed_topic(app: AppContainer, topic: str) -> tuple[ChromaKnowledgeStore, list[float]]:
     """The knowledge store and the topic's query embedding, ready for a scoped search."""
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        from sophia.domain.models import HermesConfig
-
-        config = HermesConfig()
-    embedder = _get_or_create_embedder(config)
-    store = _get_or_create_store(app.settings)
+    embedder = query_embedder(app)
     query_embedding = await asyncio.to_thread(embedder.embed_query, topic)
-    return store, query_embedding
+    return knowledge_store(app.settings), query_embedding
 
 
 async def retrieve_lecture_chunks(
@@ -352,7 +317,7 @@ async def retrieve_lecture_chunks(
     """The course's lecture transcript chunks most relevant to a topic, best first.
 
     Searched across every module the course owns. Empty when none of them has
-    lecture data.
+    lecture data; ``EmbeddingError`` when the index cannot be read.
     """
     episode_ids = await _get_episode_ids(session, course_id)
     if not episode_ids:
@@ -448,9 +413,19 @@ async def generate_grounded_questions(
     Falls back to generic questions if no lecture data or no LLM. The chunks are
     returned rather than dropped because they are what the study surface shows
     at reveal: without them the learner self-grades against nothing.
+
+    An index that cannot be read falls back too, with the reason attached: the
+    learner is told why their lectures are missing, never handed a server error.
     """
-    chunks = tuple(await retrieve_lecture_chunks(app, session, course_id, topic))
     fallback = GroundedQuestion(prompt=_FALLBACK_QUESTION.format(topic=topic))
+    try:
+        chunks = tuple(await retrieve_lecture_chunks(app, session, course_id, topic))
+    except EmbeddingError as exc:
+        log.warning("lecture_index_unavailable", course_id=course_id, topic=topic, error=str(exc))
+        unreadable = GroundedQuestion(
+            prompt=fallback.prompt, fallback_reason=QuestionFallbackReason.INDEX_UNAVAILABLE
+        )
+        return [unreadable] * count
 
     if not chunks:
         return [fallback] * count

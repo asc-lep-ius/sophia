@@ -64,7 +64,11 @@ from sophia.services.athena_session import (
 from sophia.services.athena_study import save_self_explanation_idempotent
 from sophia.services.provenance import get_provenance_map, learner_authored, record_provenance
 from sophia.services.study_events import append_event
-from sophia.services.study_questions import attempted_question_ids, get_session_questions
+from sophia.services.study_questions import (
+    attempted_question_ids,
+    get_session_questions,
+    source_titles,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -278,11 +282,12 @@ async def list_study_session_questions(
         ContentKind.QUESTION,
         [question.id for question in questions],
     )
+    titles = await source_titles(db, provenance.values())
     return StudySessionQuestionListResponse(
         session_id=session_id,
         learning_path_id=scope.course_id,
         questions=[
-            question_response(question, require_provenance(provenance, question))
+            question_response(question, require_provenance(provenance, question), titles)
             for question in questions
         ],
         attempted_question_ids=await attempted_question_ids(db, session_id, auth_session.user.id),

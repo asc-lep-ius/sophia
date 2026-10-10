@@ -18,6 +18,8 @@ from sophia.domain.learning import ProvenanceAgent as DomainProvenanceAgent
 from sophia.domain.learning import StoredContentOrigin
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from sophia.domain.learning import ContentProvenance
 
 API_CONTENT_ORIGIN = {StoredContentOrigin.TUWEL: ContentOrigin.LMS}
@@ -27,8 +29,15 @@ API_PROVENANCE_AGENT = {
 }
 
 
-def api_provenance(provenance: ContentProvenance) -> Provenance:
-    """Project a stored provenance record onto the published contract."""
+def api_provenance(
+    provenance: ContentProvenance,
+    titles: Mapping[str, str] | None = None,
+) -> Provenance:
+    """Project a stored provenance record onto the published contract.
+
+    ``titles`` names the content items the spans point into, by id.
+    """
+    titles = titles or {}
     return Provenance(
         origin=API_CONTENT_ORIGIN[provenance.origin],
         generated_by=API_PROVENANCE_AGENT[provenance.generated_by],
@@ -39,6 +48,7 @@ def api_provenance(provenance: ContentProvenance) -> Provenance:
         source_spans=[
             SourceSpan(
                 content_item_id=span.content_item_id,
+                content_item_title=titles.get(span.content_item_id),
                 start_char=span.start_char,
                 end_char=span.end_char,
                 start_ms=span.start_ms,
