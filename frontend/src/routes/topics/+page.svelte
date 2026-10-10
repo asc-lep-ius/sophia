@@ -22,6 +22,8 @@
 
   const listPath = resolve("/topics", {});
   const quickstartPath = resolve("/quickstart", {});
+  /** Posted straight to the study page's action: no JS, no second click. */
+  const startPath = `${resolve("/study", {})}?/start`;
 
   const params = $derived(
     topicParams(data.filters, data.contentLanguage.override),
@@ -150,6 +152,13 @@
             <span class="confidence" class:unrated={row.confidence === null}>
               {confidenceLabel(row)}
             </span>
+            <form method="POST" action={startPath}>
+              <button type="submit" name="topic" value={row.topic.topic}>
+                {m.study_topic_start()}<span class="sr-only"
+                  >: {row.topic.topic}</span
+                >
+              </button>
+            </form>
           </span>
         </li>
       {/each}
@@ -234,7 +243,26 @@
     color: var(--muted);
   }
 
-  .notice,
+  .meta button {
+    min-height: 2.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-raised);
+    color: var(--text);
+    padding: 0.35rem 0.8rem;
+    font: inherit;
+    overflow-wrap: anywhere;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
   .empty-title,
   .empty-body {
     margin: 0;

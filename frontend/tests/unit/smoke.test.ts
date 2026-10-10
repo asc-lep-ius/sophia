@@ -62,13 +62,28 @@ describe("frontend scaffold smoke", () => {
             improvement: null,
           },
         ],
+        topics: {
+          status: "ready",
+          data: [
+            {
+              confidence: null,
+              topic: {
+                topic: "Graphs",
+                learning_path_id: 12,
+                source: "transcript",
+                frequency: 1,
+              },
+            },
+          ],
+        },
       },
       form: null,
     });
 
     expect(screen.getByRole("heading", { name: "Study" })).toBeTruthy();
-    expect(screen.getByLabelText("Topic")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start session" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Study this: Graphs" }),
+    ).toBeTruthy();
     expect(
       screen.getByRole("link", { name: "Resume" }).getAttribute("href"),
     ).toBe("/app/study/5/act");
@@ -81,11 +96,12 @@ describe("frontend scaffold smoke", () => {
         learningPathId: null,
         learningPaths: { status: "ready", data: [] },
         sessions: [],
+        topics: { status: "error", data: [] },
       },
       form: null,
     });
 
-    expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Study this/ })).toBeNull();
     expect(
       screen.getByRole("heading", { name: "Choose a course to study" }),
     ).toBeTruthy();

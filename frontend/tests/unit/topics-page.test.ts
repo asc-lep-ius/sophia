@@ -183,6 +183,27 @@ describe("topics page", () => {
     expect(screen.getByText("Graphen").getAttribute("lang")).toBe("de");
   });
 
+  it("starts a session on a topic from its row, as a plain form post", () => {
+    render(TopicsPage, {
+      data: pageData({
+        rows: {
+          data: [topicRow("Sorting", null), topicRow("Graphs", 0.9)],
+          status: "ready",
+        },
+      }),
+    });
+
+    const study = screen.getByRole("button", { name: "Study this: Graphs" });
+    const form = study.closest("form");
+    expect(form?.getAttribute("method")).toBe("POST");
+    expect(form?.getAttribute("action")).toBe("/app/study?/start");
+    expect(study.getAttribute("name")).toBe("topic");
+    expect(study.getAttribute("value")).toBe("Graphs");
+    expect(
+      screen.getAllByRole("button", { name: /^Study this: / }),
+    ).toHaveLength(2);
+  });
+
   it("says a topic is unpredicted rather than showing it as zero", () => {
     render(TopicsPage, {
       data: pageData({
