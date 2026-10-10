@@ -172,6 +172,38 @@ async def test_a_stop_between_stages_fails_the_job_rather_than_starting_the_next
     assert (row.status, row.error) == ("failed", WORKER_STOPPED_REASON)
 
 
+async def test_a_stage_killed_by_the_stop_is_recorded_as_stopped_not_as_its_last_lines(
+    clean_engine: AsyncEngine, db: AsyncSession
+) -> None:
+    """`docker stop` mid-Whisper must not leave the learner a page of log as the reason."""
+    import asyncio
+
+    from sophia.worker.runner import WORKER_STOPPED_REASON
+
+    job_id = await _seed(db)
+    await db.commit()
+    stop = asyncio.Event()
+    calls: list[tuple[str, int]] = []
+
+    async def killed_stage(group: str, module_id: int, _course: int, _job: int) -> StageOutcome:
+        calls.append((group, module_id))
+        stop.set()
+        return StageOutcome(-15, '{"event": "transcript_source", "audio": "/data/x.m4a"}')
+
+    await run_worker(
+        _settings(clean_engine),
+        worker_id="test:1",
+        run_stage=killed_stage,
+        capability=CAPABLE,
+        stop_when_idle=True,
+        stop=stop,
+    )
+
+    assert calls == [("media", 3022060)]
+    row = await _job_row(clean_engine, job_id)
+    assert (row.status, row.error) == ("failed", WORKER_STOPPED_REASON)
+
+
 def test_the_default_worker_id_is_unique_per_process_start() -> None:
     """PID 1 of a restarted container must not inherit the dead worker's id."""
     from sophia.worker.runner import default_worker_id

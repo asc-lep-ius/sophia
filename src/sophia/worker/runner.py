@@ -274,6 +274,12 @@ async def _run_job(
             async with session_scope(factory) as session:
                 await mark_progress(session, job.id, stage=group, module_id=module_id)
             outcome = await run_stage(group, module_id, job.course_id, job.id)
+            if outcome.returncode < 0 and stop.is_set():
+                # Killed by our own stop handler: the lecture in flight is
+                # the loss, not whatever the child had printed last.
+                errors.append(WORKER_STOPPED_REASON)
+                await _finish(factory, job.id, "; ".join(errors))
+                return
             if outcome.returncode != 0:
                 errors.append(
                     f"{_group_name(group)} failed for recordings {module_id} "
