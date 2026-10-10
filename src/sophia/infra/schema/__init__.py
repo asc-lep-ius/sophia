@@ -9,6 +9,7 @@ from sophia.infra.schema._shared import DEFAULT_SCOPE, NAMING_CONVENTION, metada
 from sophia.infra.schema.athena import (
     card_review_attempts,
     confidence_ratings,
+    module_course_rekeys,
     review_schedule,
     self_explanations,
     student_flashcards,
@@ -75,6 +76,7 @@ __all__ = [
     "lecture_modules",
     "metacognition_log",
     "metadata",
+    "module_course_rekeys",
     "question_attempts",
     "review_schedule",
     "scheduled_jobs",

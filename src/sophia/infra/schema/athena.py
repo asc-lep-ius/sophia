@@ -228,3 +228,22 @@ review_schedule = Table(
     PrimaryKeyConstraint("topic", "course_id"),
     Index("idx_review_schedule_due", "next_review_at"),
 )
+
+# Each topic, rating and review row migration 0005 moved from an Opencast module
+# id to the course that owns the module, and where it came from. Only the
+# downgrade reads it: without it, rows from two modules of one course would be
+# indistinguishable once re-keyed, and could not be split back (#127).
+module_course_rekeys = Table(
+    "module_course_rekeys",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("table_name", Text, nullable=False),
+    # How the moved row is found again: its id where the table has one,
+    # otherwise its key columns besides course_id.
+    Column("row_id", Integer),
+    Column("topic", Text),
+    Column("chunk_id", Text),
+    Column("module_id", Integer, nullable=False),
+    Column("course_id", Integer, nullable=False),
+    org_id_column(),
+)
