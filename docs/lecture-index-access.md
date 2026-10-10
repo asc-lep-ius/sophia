@@ -36,7 +36,7 @@ Until this change the API could not read it anywhere:
 
 ## Decision
 
-Fork: how the API reads the lecture index. Taken: embed queries in the API process on the CPU, with chromadb and a CPU-only PyTorch in the API image. Rejected: route queries to the worker. Why: a query is 0.05 s on a CPU, and routing would make every study session and search depend on a worker that has no request channel and is not yet deployed in production.
+Fork: how the API reads the lecture index. Taken: embed queries in the API process on the CPU, with chromadb and a CPU-only PyTorch in the API image, using the `[embeddings]` model the index was built with. Rejected: route queries to the worker. Why: it predicts an API image of 2.01 GB instead of 452 MB, a query embedded in ~0.05 s after a 5–8 s model load on a process's first query, ~2 GB more resident per API process and no GPU ever touched, while routing would make every study session and search depend on a worker that has no request channel and is not yet deployed in production.
 
 The second option needs a request/response channel the worker does not have —
 it polls Postgres for jobs every 5 s and runs its stages in child processes so
