@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Column,
     Float,
@@ -117,6 +118,57 @@ knowledge_index = Table(
     org_id_column(),
     text_course_id_column(),
     Index("idx_knowledge_index_status", "status"),
+)
+
+# The queue between the API and the processing worker. The API inserts a
+# queued row when a learner presses Process, a scan or the nightly run finds a
+# subscribed course, and reads the row back for status; the worker claims it,
+# records which stage of which module it is on, and finishes it. The partial
+# unique index is the "one job per course" rule, enforced where two requests
+# racing each other cannot both get past it (#128).
+ingestion_jobs = Table(
+    "ingestion_jobs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("course_id", Integer, nullable=False),
+    Column("status", Text, nullable=False, server_default="queued"),
+    Column("requested_by", Text, nullable=False, server_default="student"),
+    Column("stage", Text),
+    Column("module_id", Integer),
+    Column("error", Text),
+    Column("worker_id", Text),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("started_at", TIMESTAMP(timezone=True)),
+    Column("finished_at", TIMESTAMP(timezone=True)),
+    org_id_column(),
+    CheckConstraint(
+        "status IN ('queued', 'running', 'completed', 'failed')",
+        name="status_allowed",
+    ),
+    Index("idx_ingestion_jobs_course", "course_id"),
+    Index(
+        "uq_ingestion_jobs_active_course",
+        "course_id",
+        unique=True,
+        postgresql_where=text("status IN ('queued', 'running')"),
+    ),
+)
+
+# One row per worker process, refreshed every poll. ``capable`` and ``reason``
+# are what the API shows a learner who presses Process on a box with no usable
+# GPU or no Hermes install: a refusal with the reason, never a job that sits
+# queued forever (#128).
+ingestion_workers = Table(
+    "ingestion_workers",
+    metadata,
+    Column("worker_id", Text, primary_key=True),
+    Column("hostname", Text, nullable=False, server_default=""),
+    Column("capable", Boolean(), nullable=False, server_default=text("false")),
+    Column("reason", Text, nullable=False, server_default=""),
+    Column("gpu_name", Text, nullable=False, server_default=""),
+    Column("started_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    Column("last_seen_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
 )
 
 course_materials = Table(

@@ -15,8 +15,10 @@ from sophia.infra.schema.athena import (
     student_flashcards,
     study_reflections,
     study_sessions,
+    topic_extractions,
     topic_lecture_links,
     topic_mappings,
+    topic_origins,
     topic_reconciliations,
 )
 from sophia.infra.schema.chronos import (
@@ -35,6 +37,8 @@ from sophia.infra.schema.core import (
 )
 from sophia.infra.schema.hermes import (
     course_materials,
+    ingestion_jobs,
+    ingestion_workers,
     knowledge_index,
     lecture_downloads,
     lecture_modules,
@@ -69,6 +73,8 @@ __all__ = [
     "downloads",
     "effort_estimates",
     "generated_questions",
+    "ingestion_jobs",
+    "ingestion_workers",
     "knowledge_index",
     "learning_events",
     "learning_path_settings",
@@ -86,8 +92,10 @@ __all__ = [
     "study_reflections",
     "study_sessions",
     "time_entries",
+    "topic_extractions",
     "topic_lecture_links",
     "topic_mappings",
+    "topic_origins",
     "topic_reconciliations",
     "transcript_segments",
     "transcriptions",
