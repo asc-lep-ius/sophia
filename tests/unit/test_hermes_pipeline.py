@@ -718,15 +718,19 @@ def _opencast_app(tmp_path: Path, lectures: list[Lecture]) -> MagicMock:
 
 
 def _whisper(monkeypatch: pytest.MonkeyPatch, transcribe: MagicMock) -> None:
+    from sophia.adapters.transcriber import Transcript
+
     transcriber = MagicMock()
-    transcriber.transcribe = transcribe
+    transcriber.transcribe_lecture = lambda path, language=None: Transcript(
+        transcribe(path), language
+    )
     monkeypatch.setattr(
         "sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber
     )
 
 
 def _no_index_or_topics(monkeypatch: pytest.MonkeyPatch) -> None:
-    for stage in ("index_lectures", "extract_topics_from_lectures"):
+    for stage in ("index_lectures", "extract_topics_per_lecture", "extract_topics_from_lectures"):
         monkeypatch.setattr(f"sophia.services.hermes_pipeline.{stage}", AsyncMock(return_value=[]))
 
 
@@ -881,15 +885,15 @@ async def test_processing_one_module_files_the_course_topics_under_the_course(
     extractor = MagicMock()
     extractor.extract_topics = AsyncMock(return_value=["Schleifen", "Arrays"])
     monkeypatch.setattr(
-        "sophia.services.athena_study._create_topic_extractor", lambda _app: extractor
+        "sophia.services.athena_topics.create_topic_extractor", lambda _app: extractor
     )
 
     result = await run_pipeline(MagicMock(), db, module_id=3022498)
 
-    text_sent = extractor.extract_topics.call_args.args[0]
-    assert "Schleifen und Verzweigungen" in text_sent
-    assert "Arrays und Referenzen" in text_sent
-    assert [topic.course_id for topic in result.topics] == [82774, 82774]
+    texts_sent = [call.args[0] for call in extractor.extract_topics.call_args_list]
+    assert any("Schleifen und Verzweigungen" in text for text in texts_sent)
+    assert any("Arrays und Referenzen" in text for text in texts_sent)
+    assert sorted(topic.course_id for topic in result.topics) == [82774, 82774]
     assert await _topic_rows(db) == [(82774, "Arrays"), (82774, "Schleifen")]
 
 

@@ -8,10 +8,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from sqlalchemy import case, delete, func, insert, select
+from sqlalchemy import case, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from sophia.adapters.topic_extractor import LLMTopicExtractor
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.models import (
     CardReviewAttempt,
@@ -26,13 +25,10 @@ from sophia.infra.engine import affected_rows
 from sophia.infra.schema import (
     card_review_attempts,
     course_materials,
-    lecture_modules,
     self_explanations,
     student_flashcards,
     topic_lecture_links,
     topic_mappings,
-    transcript_segments,
-    transcriptions,
 )
 from sophia.services.athena_session import (
     complete_study_session as complete_study_session,
@@ -49,9 +45,15 @@ from sophia.services.athena_session import (
 from sophia.services.athena_session import (
     start_study_session as start_study_session,
 )
+from sophia.services.athena_topics import (
+    create_topic_extractor as _create_topic_extractor,
+)
+from sophia.services.athena_topics import (
+    drop_unrated_orphans,
+    extract_topics_per_lecture,
+)
 from sophia.services.hermes_episodes import (
     course_episode_ids_query,
-    course_module_ids_query,
     episode_titles_query,
 )
 from sophia.services.hermes_setup import load_hermes_config
@@ -68,16 +70,6 @@ if TYPE_CHECKING:
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
-
-_MAX_TRANSCRIPT_CHARS = 12_000
-
-
-def _create_topic_extractor(app: AppContainer) -> LLMTopicExtractor:
-    config = load_hermes_config(app.settings.config_dir)
-    if config is None:
-        raise TopicExtractionError("Hermes not configured — run: sophia hermes setup")
-    return LLMTopicExtractor(config.llm)
-
 
 # Module-level caches — one instance per CLI session, not per function call.
 # The ~500 MB embedding model is expensive to reload; ChromaDB benefits from
@@ -151,61 +143,6 @@ async def _search_material_chunks(
     return results, name_map
 
 
-async def _get_course_name(session: AsyncSession, course_id: int) -> str:
-    """The course's name as discovery recorded it, to give the LLM context."""
-    name = await session.scalar(
-        select(lecture_modules.c.course_name)
-        .where(lecture_modules.c.course_id == str(course_id))
-        .limit(1)
-    )
-    return name or ""
-
-
-async def _get_transcript_text(session: AsyncSession, course_id: int) -> str:
-    """Representative transcript text from every module the course owns.
-
-    The character budget is split evenly between the modules that have
-    transcripts. Spent in segment order instead, it would go entirely to the
-    first module's first lecture, and a course's later modules would never be
-    read at all.
-    """
-    rows = (
-        await session.execute(
-            select(transcriptions.c.module_id, transcript_segments.c.text)
-            .join(
-                transcriptions,
-                transcriptions.c.episode_id == transcript_segments.c.episode_id,
-            )
-            .where(
-                transcriptions.c.module_id.in_(course_module_ids_query(course_id)),
-                transcriptions.c.status == "completed",
-            )
-            .order_by(
-                transcriptions.c.module_id,
-                transcriptions.c.episode_id,
-                transcript_segments.c.segment_index,
-            )
-        )
-    ).all()
-    texts_by_module: dict[int, list[str]] = {}
-    for row in rows:
-        texts_by_module.setdefault(row.module_id, []).append(row.text)
-    if not texts_by_module:
-        return ""
-
-    share = _MAX_TRANSCRIPT_CHARS // len(texts_by_module)
-    parts: list[str] = []
-    for texts in texts_by_module.values():
-        total = 0
-        for text in texts:
-            if total + len(text) > share:
-                break
-            parts.append(text)
-            total += len(text)
-
-    return " ".join(parts)
-
-
 async def extract_topics_from_lectures(
     app: AppContainer,
     session: AsyncSession,
@@ -214,100 +151,30 @@ async def extract_topics_from_lectures(
     on_progress: Callable[[str], None] | None = None,
     force: bool = False,
 ) -> list[TopicMapping]:
-    """Extract a course's topics from the transcripts of every module it owns.
+    """Extract a course's topics, one lecture at a time, and return its lecture topics.
 
     Topics are stored under the course, the id the browser reads them by, never
     under one of its Opencast modules (#127). Which modules a course owns is
     what discovery recorded in ``lecture_modules``.
 
-    When ``force=False`` (default) and lecture topics already exist for this
-    course, the LLM call is skipped and the cached topics are returned.  This
-    prevents the pipeline and the ``study topics`` CLI command from producing
-    mixed-language duplicates when both are run against the same course.
-    Manual topics do not count: they share the course key, but no extraction
-    produced them.
+    Each lecture is read on its own and remembered in ``topic_extractions``, so
+    a run reads only the lectures no run has read before: with nothing new,
+    the model is not called and the stored topics come back as they are (#128).
+    Manual topics do not count as read: they share the course key, but no
+    extraction produced them, and they are never returned here.
 
-    Pass ``force=True`` (used by the full pipeline after fresh transcription)
-    to delete existing lecture topics and re-extract.
-
-    1. Return cached topics if present (unless force=True)
-    2. Load transcript segments from DB for the course's modules
-    3. Concatenate representative text (budgeted to _MAX_TRANSCRIPT_CHARS)
-    4. Call LLM TopicExtractor to get topic labels
-    5. Persist to topic_mappings table
-    6. Return the extracted topics
+    ``force=True`` reads every lecture again. Topics the student rated or has a
+    review for are kept whatever the model says this time; the rest of the
+    ones no lecture names any more are dropped.
     """
-    if not force:
-        existing = [
-            topic
-            for topic in await get_course_topics(session, course_id)
-            if topic.source == TopicSource.LECTURE
-        ]
-        if existing:
-            log.info("topics_cached", course_id=course_id, count=len(existing))
-            return existing
-
+    await extract_topics_per_lecture(app, session, course_id, force=force, on_progress=on_progress)
     if force:
-        await session.execute(
-            delete(topic_mappings).where(
-                topic_mappings.c.course_id == course_id,
-                topic_mappings.c.source == TopicSource.LECTURE.value,
-            )
-        )
-
-    text = await _get_transcript_text(session, course_id)
-    if not text:
-        log.info("no_transcripts_for_topics", course_id=course_id)
-        return []
-
-    if on_progress:
-        on_progress("Extracting topics from lecture transcripts…")
-
-    extractor = _create_topic_extractor(app)
-
-    course_name = await _get_course_name(session, course_id)
-    topic_labels = await extractor.extract_topics(text, course_context=course_name)
-
-    if not topic_labels:
-        log.info("no_topics_extracted", course_id=course_id)
-        return []
-
-    # Persist with upsert (idempotent)
-    mappings: list[TopicMapping] = []
-    for label in topic_labels:
-        statement = pg_insert(topic_mappings).values(
-            topic=label,
-            course_id=course_id,
-            source=TopicSource.LECTURE.value,
-            frequency=1,
-        )
-        await session.execute(
-            statement.on_conflict_do_update(
-                index_elements=[
-                    topic_mappings.c.topic,
-                    topic_mappings.c.course_id,
-                    topic_mappings.c.source,
-                ],
-                set_={"frequency": topic_mappings.c.frequency + 1},
-            )
-        )
-        mappings.append(TopicMapping(topic=label, course_id=course_id, source=TopicSource.LECTURE))
-
-    # Reconcile manual predictions against extracted topics
-    from sophia.services.athena_reconciliation import reconcile_manual_topics
-
-    result = await reconcile_manual_topics(session, course_id)
-    if result.matched or result.unmatched_manual or result.new_moodle:
-        log.info(
-            "topics_reconciled",
-            course_id=course_id,
-            matched=len(result.matched),
-            unmatched=len(result.unmatched_manual),
-            new_moodle=len(result.new_moodle),
-        )
-
-    log.info("topics_extracted", course_id=course_id, count=len(mappings))
-    return mappings
+        await drop_unrated_orphans(session, course_id)
+    return [
+        topic
+        for topic in await get_course_topics(session, course_id)
+        if topic.source == TopicSource.LECTURE
+    ]
 
 
 async def link_topics_to_lectures(

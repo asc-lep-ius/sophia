@@ -61,7 +61,7 @@ async def test_a_session_starts_on_exactly_the_topic_picked_from_the_list(
     extractor = MagicMock()
     extractor.extract_topics = AsyncMock(return_value=TOPICS)
     monkeypatch.setattr(
-        "sophia.services.athena_study._create_topic_extractor", lambda _app: extractor
+        "sophia.services.athena_topics.create_topic_extractor", lambda _app: extractor
     )
 
     async with db_harness(clean_engine) as harness:

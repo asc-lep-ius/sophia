@@ -388,6 +388,17 @@
             "title": "Download Status",
             "type": "string"
           },
+          "failure_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Failure Reason"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -439,6 +450,17 @@
           "title": {
             "title": "Title",
             "type": "string"
+          },
+          "topic_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Topic Status"
           },
           "transcription_status": {
             "anyOf": [
@@ -4493,6 +4515,37 @@
         "title": "TopicConfidenceResponse",
         "type": "object"
       },
+      "TopicContentItemResponse": {
+        "description": "A content item a topic was extracted from, as the topic list names it.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "sequence_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sequence Number"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "sequence_number"
+        ],
+        "title": "TopicContentItemResponse",
+        "type": "object"
+      },
       "TopicExtractionRequest": {
         "properties": {
           "content_source_id": {
@@ -4556,6 +4609,14 @@
       },
       "TopicMappingResponse": {
         "properties": {
+          "content_items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/TopicContentItemResponse"
+            },
+            "title": "Content Items",
+            "type": "array"
+          },
           "frequency": {
             "title": "Frequency",
             "type": "integer"

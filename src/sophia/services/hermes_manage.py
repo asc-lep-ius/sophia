@@ -14,6 +14,7 @@ from sophia.infra.engine import affected_rows
 from sophia.infra.schema import (
     knowledge_index,
     lecture_downloads,
+    topic_extractions,
     topic_lecture_links,
     transcript_segments,
     transcriptions,
@@ -108,6 +109,9 @@ class EpisodeStatus:
     lecture_number: int | None = None
     missed_at: str | None = None
     transcription_source: str | None = None
+    topic_status: str | None = None
+    # The first stage's error, so a lecture marked failed says why (#128).
+    failure_reason: str | None = None
 
 
 async def _set_episode_state(
@@ -200,11 +204,23 @@ def _episode_status_query(module_id: int):
             knowledge_index.c.status.label("index_status"),
             lecture_downloads.c.lecture_number,
             lecture_downloads.c.missed_at,
+            topic_extractions.c.status.label("topic_status"),
+            func.coalesce(
+                lecture_downloads.c.error,
+                transcriptions.c.error,
+                knowledge_index.c.error,
+                topic_extractions.c.error,
+            ).label("failure_reason"),
         )
         .select_from(
-            episodes_from().outerjoin(
+            episodes_from()
+            .outerjoin(
                 knowledge_index,
                 knowledge_index.c.episode_id == episode_id_of(),
+            )
+            .outerjoin(
+                topic_extractions,
+                topic_extractions.c.episode_id == episode_id_of(),
             )
         )
         .where(episode_module_id() == module_id)
@@ -222,6 +238,8 @@ def _row_to_episode_status(row: Row[Any]) -> EpisodeStatus:
         lecture_number=row.lecture_number,
         missed_at=row.missed_at.isoformat() if row.missed_at else None,
         transcription_source=row.transcription_source,
+        topic_status=row.topic_status,
+        failure_reason=row.failure_reason,
     )
 
 

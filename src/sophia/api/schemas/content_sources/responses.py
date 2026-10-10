@@ -40,6 +40,10 @@ class ContentItemResponse(ApiModel):
     index_status: str | None
     sequence_number: int | None
     missed_at: str | None
+    topic_status: str | None = None
+    # Why the item is marked failed, from whichever stage failed first, so the
+    # learner can see the reason and retry rather than wonder (#128).
+    failure_reason: str | None = None
 
 
 class ContentItemListResponse(ApiModel):

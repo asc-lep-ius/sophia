@@ -104,6 +104,8 @@ def test_list_content_items_returns_status_rows(monkeypatch: pytest.MonkeyPatch)
                 "index_status": "completed",
                 "sequence_number": 1,
                 "missed_at": None,
+                "topic_status": None,
+                "failure_reason": None,
             },
         ],
     }

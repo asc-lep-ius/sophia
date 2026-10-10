@@ -36,6 +36,7 @@ from sophia.infra.schema import (
 from sophia.services.content_language import get_learning_path_settings
 from sophia.services.hermes_catalog import lecture_module_course
 from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
+from sophia.services.ingestion_settings import get_ingestion_settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -72,18 +73,33 @@ class TranscriptionResult:
 async def resolve_caption_language(session: AsyncSession, module_id: int) -> str:
     """The language whose caption track becomes the transcript.
 
-    The course's configured language, read from the learning path the module
-    was discovered under; German when the module's course is unknown or has
-    no settings yet. The per-course transcription language #128 plans belongs
-    here once it exists.
+    The course's transcription language where one is set (#128), otherwise
+    its exam language as discovery recorded it; German when the module's
+    course is unknown or has no settings yet.
     """
     course_id = await lecture_module_course(session, module_id)
     if course_id is None:
         return DEFAULT_CAPTION_LANGUAGE
+    chosen = await resolve_transcription_language(session, module_id)
+    if chosen is not None:
+        return chosen
     settings = await get_learning_path_settings(session, course_id)
     if settings is None:
         return DEFAULT_CAPTION_LANGUAGE
     return settings.exam_language.value
+
+
+async def resolve_transcription_language(session: AsyncSession, module_id: int) -> str | None:
+    """The language Whisper is told to transcribe the module's lectures in.
+
+    ``None``, the default, means Whisper detects each lecture's language
+    itself. Set per course, never per installation: a course taught in
+    another language is transcribed correctly with nothing to set up (#128).
+    """
+    course_id = await lecture_module_course(session, module_id)
+    if course_id is None:
+        return None
+    return (await get_ingestion_settings(session, course_id)).transcription_language
 
 
 async def transcribe_from_captions(
@@ -285,6 +301,7 @@ async def transcribe_lectures(
         return []
 
     completed_ids = await _get_transcribed_ids(session, module_id)
+    language = await resolve_transcription_language(session, module_id)
     results: list[TranscriptionResult] = []
     transcriber: WhisperTranscriber | None = None
 
@@ -315,6 +332,7 @@ async def transcribe_lectures(
             module_id,
             title,
             Path(file_path),
+            language=language,
             on_start=on_start,
             on_complete=on_complete,
         )
@@ -400,10 +418,15 @@ async def _transcribe_episode(
     title: str,
     audio_path: Path,
     *,
+    language: str | None = None,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
 ) -> TranscriptionResult:
-    """Transcribe a single episode: run Whisper → save SRT → persist to DB."""
+    """Transcribe a single episode: run Whisper → save SRT → persist to DB.
+
+    ``language=None`` has Whisper detect it, and the language it detected is
+    what the row records.
+    """
     if on_start:
         on_start(episode_id, title)
 
@@ -417,7 +440,7 @@ async def _transcribe_episode(
     statement = pg_insert(transcriptions).values(
         episode_id=episode_id,
         module_id=module_id,
-        language="de",
+        language=language or "auto",
         status="processing",
         source=TranscriptSource.WHISPER.value,
         title=title,
@@ -446,10 +469,11 @@ async def _transcribe_episode(
     )
 
     try:
-        segments: list[TranscriptSegment] = await asyncio.wait_for(
-            asyncio.to_thread(transcriber.transcribe, audio_path),
+        transcript = await asyncio.wait_for(
+            asyncio.to_thread(transcriber.transcribe_lecture, audio_path, language),
             timeout=_TRANSCRIPTION_TIMEOUT_S,
         )
+        segments: list[TranscriptSegment] = transcript.segments
 
         srt_content = segments_to_srt(segments)
         srt_path = audio_path.with_suffix(audio_path.suffix + ".srt")
@@ -463,6 +487,7 @@ async def _transcribe_episode(
             episode_id,
             {
                 "status": "completed",
+                "language": transcript.language or language or "auto",
                 "segment_count": len(segments),
                 "duration_s": duration_s,
                 "srt_path": str(srt_path),

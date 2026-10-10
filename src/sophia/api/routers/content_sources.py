@@ -179,4 +179,6 @@ def _content_item_response(episode: EpisodeStatus) -> ContentItemResponse:
         index_status=episode.index_status,
         sequence_number=episode.lecture_number,
         missed_at=episode.missed_at,
+        topic_status=episode.topic_status,
+        failure_reason=episode.failure_reason,
     )
