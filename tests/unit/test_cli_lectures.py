@@ -389,8 +389,8 @@ class TestSearchSourceFilter:
         mock_store.search = MagicMock(return_value=[])
 
         with (
-            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
-            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+            patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         ):
             await search_lectures(container, db, 42, "test query", source_filter="pdf")
 
@@ -427,8 +427,8 @@ class TestSearchSourceFilter:
         mock_store.search = MagicMock(return_value=[(chunk, 0.95)])
 
         with (
-            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
-            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+            patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         ):
             results = await search_lectures(container, db, 42, "test query")
 
@@ -669,8 +669,8 @@ class TestSearchMissedFlag:
         mock_store.search = MagicMock(return_value=[])
 
         with (
-            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
-            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+            patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         ):
             await search_lectures(container, db, 42, "test query", missed_only=True)
 
@@ -695,8 +695,8 @@ class TestSearchMissedFlag:
         mock_store.search = MagicMock(return_value=[])
 
         with (
-            patch("sophia.services.hermes_index._create_embedder", return_value=mock_embedder),
-            patch("sophia.services.hermes_index._create_store", return_value=mock_store),
+            patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+            patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         ):
             await search_lectures(container, db, 42, "test query")
 

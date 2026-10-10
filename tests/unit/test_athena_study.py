@@ -556,11 +556,11 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession)
 
     with (
         patch(
-            "sophia.services.athena_study._get_or_create_embedder",
+            "sophia.services.athena_study.query_embedder",
             return_value=mock_embedder,
         ),
         patch(
-            "sophia.services.athena_study._get_or_create_store",
+            "sophia.services.athena_study.knowledge_store",
             return_value=mock_store,
         ),
         patch(
@@ -609,8 +609,8 @@ async def test_lecture_context_grounds_on_caption_transcripts_without_a_download
     mock_store.search.return_value = [(chunk, 0.9)]
 
     with (
-        patch("sophia.services.athena_study._get_or_create_embedder", return_value=MagicMock()),
-        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch("sophia.services.athena_study.query_embedder", return_value=MagicMock()),
+        patch("sophia.services.athena_study.knowledge_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study.asyncio.to_thread",
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
@@ -639,8 +639,8 @@ async def test_grounding_searches_every_module_the_course_owns(
     mock_store.search.return_value = []
 
     with (
-        patch("sophia.services.athena_study._get_or_create_embedder", return_value=MagicMock()),
-        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch("sophia.services.athena_study.query_embedder", return_value=MagicMock()),
+        patch("sophia.services.athena_study.knowledge_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study.asyncio.to_thread",
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
@@ -906,8 +906,8 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: AsyncSessio
     )
 
     with (
-        patch("sophia.services.athena_study._get_or_create_embedder", return_value=mock_embedder),
-        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch("sophia.services.athena_study.query_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study.knowledge_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study._create_topic_extractor",
             return_value=mock_extractor,
@@ -972,8 +972,8 @@ async def test_generate_study_questions_llm_partial_failure(
     )
 
     with (
-        patch("sophia.services.athena_study._get_or_create_embedder", return_value=mock_embedder),
-        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch("sophia.services.athena_study.query_embedder", return_value=mock_embedder),
+        patch("sophia.services.athena_study.knowledge_store", return_value=mock_store),
         patch(
             "sophia.services.athena_study._create_topic_extractor",
             return_value=mock_extractor,
@@ -1357,11 +1357,11 @@ async def test_get_lecture_context_include_materials(app: MagicMock, db: AsyncSe
 
     with (
         patch(
-            "sophia.services.athena_study._get_or_create_embedder",
+            "sophia.services.athena_study.query_embedder",
             return_value=mock_embedder,
         ),
         patch(
-            "sophia.services.athena_study._get_or_create_store",
+            "sophia.services.athena_study.knowledge_store",
             return_value=mock_store,
         ),
         patch(
@@ -1411,11 +1411,11 @@ async def test_get_lecture_context_without_materials_flag(app: MagicMock, db: As
 
     with (
         patch(
-            "sophia.services.athena_study._get_or_create_embedder",
+            "sophia.services.athena_study.query_embedder",
             return_value=mock_embedder,
         ),
         patch(
-            "sophia.services.athena_study._get_or_create_store",
+            "sophia.services.athena_study.knowledge_store",
             return_value=mock_store,
         ),
         patch(

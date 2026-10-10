@@ -8,13 +8,14 @@ import {
 } from "$lib/dashboard/panels";
 import type { ContentSource } from "$lib/content/filters";
 import {
+  INDEX_UNAVAILABLE_CODE,
   MAX_RESULTS,
   QUERY_PARAM,
   SOURCE_FILTER_PARAM,
   SOURCE_PARAM,
   readSearchResults,
   readSourceFilter,
-  type SearchResult,
+  type SearchAnswer,
   type SearchSourceFilter,
 } from "$lib/search/results";
 import type { PageServerLoad } from "./$types";
@@ -64,7 +65,7 @@ type SearchScope = {
 async function loadResults(
   event: ApiEvent,
   scope: SearchScope,
-): Promise<Panel<SearchResult[]> | null> {
+): Promise<SearchAnswer | null> {
   if (
     scope.query === "" ||
     scope.contentSourceId === null ||
@@ -88,9 +89,26 @@ async function loadResults(
       headers: { "content-type": "application/json" },
       method: "POST",
     });
+    if (await answersIndexUnavailable(response)) {
+      return { status: "unavailable", data: [] };
+    }
     return await panelFromResponse(response, readSearchResults, []);
   } catch {
     return unavailablePanel([]);
+  }
+}
+
+async function answersIndexUnavailable(response: Response): Promise<boolean> {
+  if (response.status !== 503) {
+    return false;
+  }
+  try {
+    const body = (await response.clone().json()) as {
+      detail?: { code?: unknown };
+    };
+    return body.detail?.code === INDEX_UNAVAILABLE_CODE;
+  } catch {
+    return false;
   }
 }
 

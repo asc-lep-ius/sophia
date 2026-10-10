@@ -10,6 +10,7 @@
     SOURCE_FILTER_PARAM,
     SOURCE_PARAM,
     formatTimestamp,
+    resultKey,
     scoreBand,
     type SearchResult,
   } from "$lib/search/results";
@@ -104,10 +105,15 @@
     `${data.query}|${data.selectedSourceId}|${data.sourceFilter}`,
   );
   const selectedResult = $derived(
-    results.find((result) => result.content_item_id === selected) ?? null,
+    results.find((result) => resultKey(result) === selected) ?? null,
   );
   const searchable = $derived(
     data.selectedSourceId !== null && data.learningPathId !== null,
+  );
+  /** The lecture series a transcript passage was spoken in. */
+  const seriesTitle = $derived(
+    data.sources.data.find((source) => source.id === data.selectedSourceId)
+      ?.title ?? null,
   );
 
   // A navigation carries a fresh server answer, so the live one is retired.
@@ -139,7 +145,7 @@
   }
 
   function toggleResult(result: SearchResult): void {
-    selected = selected === result.content_item_id ? null : result.content_item_id;
+    selected = selected === resultKey(result) ? null : resultKey(result);
     retrieval = "";
     retrievalMissing = false;
   }
@@ -168,6 +174,9 @@
     }
     if (status === "error") {
       return m.search_status_error();
+    }
+    if (status === "unavailable") {
+      return m.search_status_index_unavailable();
     }
     if (answeredQuery === "") {
       return m.search_status_idle();
@@ -243,21 +252,28 @@
   >
     {#snippet empty()}
       <p class="empty-body">
-        {answeredQuery === ""
-          ? m.search_status_idle()
-          : m.search_no_results({ query: answeredQuery })}
+        {#if status === "unavailable"}
+          {m.search_status_index_unavailable()}
+        {:else if answeredQuery === ""}
+          {m.search_status_idle()}
+        {:else}
+          {m.search_no_results({ query: answeredQuery })}
+        {/if}
       </p>
     {/snippet}
 
     <ul class="results">
-      {#each results as result (result.content_item_id)}
+      {#each results as result (resultKey(result))}
         {@const band = scoreBand(result.score)}
-        <li class="result" class:selected={selected === result.content_item_id}>
+        <li class="result" class:selected={selected === resultKey(result)}>
           <div class="result-head">
             <h3>{result.title}</h3>
             <span class="band" data-band={band}>{bandLabels[band]()}</span>
           </div>
           <p class="meta">
+            {#if result.source === "transcript" && seriesTitle}
+              <span class="series">{seriesTitle}</span>
+            {/if}
             <span
               >{m.search_timespan({
                 end: formatTimestamp(result.end_time),
@@ -269,10 +285,10 @@
           <p class="preview">{result.chunk_text}</p>
           <button
             type="button"
-            aria-expanded={selected === result.content_item_id}
+            aria-expanded={selected === resultKey(result)}
             onclick={() => toggleResult(result)}
           >
-            {selected === result.content_item_id
+            {selected === resultKey(result)
               ? m.search_close_result()
               : m.search_open_result()}
           </button>

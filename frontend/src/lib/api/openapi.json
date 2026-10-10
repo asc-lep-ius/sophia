@@ -295,6 +295,16 @@
               "kind": "none"
             }
           },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionFallbackReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2310,6 +2320,16 @@
               "kind": "none"
             }
           },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionFallbackReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2382,6 +2402,16 @@
           },
           "engagement_policy": {
             "$ref": "#/components/schemas/ElaborationPolicy"
+          },
+          "fallback_reason": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/QuestionFallbackReason"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "id": {
             "title": "Id",
@@ -2557,6 +2587,14 @@
           "transfer"
         ],
         "title": "QuestionDifficulty",
+        "type": "string"
+      },
+      "QuestionFallbackReason": {
+        "description": "Why a question is a template rather than one generated from the lectures.",
+        "enum": [
+          "index_unavailable"
+        ],
+        "title": "QuestionFallbackReason",
         "type": "string"
       },
       "QuestionOption": {
@@ -3159,11 +3197,22 @@
         "type": "object"
       },
       "SourceSpan": {
-        "description": "A located region of ingested material backing a piece of content.\n\nCharacter offsets locate text material and millisecond offsets locate\ntime-based material; both are optional because a span may be known only as\na whole content item.",
+        "description": "A located region of ingested material backing a piece of content.\n\nCharacter offsets locate text material and millisecond offsets locate\ntime-based material; both are optional because a span may be known only as\na whole content item. ``content_item_title`` names the item \u2014 a lecture's\ntitle \u2014 where the server knows one.",
         "properties": {
           "content_item_id": {
             "title": "Content Item Id",
             "type": "string"
+          },
+          "content_item_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Item Title"
           },
           "end_char": {
             "anyOf": [
@@ -7956,7 +8005,7 @@
         ]
       },
       "post": {
-        "description": "Queue processing of every recording the learning path owns, and follow it.\n\n409 when a job is already queued or running for it; 503, with the reason,\nwhen no worker can process here. The first Process subscribes the path:\nfrom then on new recordings are processed without another press.",
+        "description": "Queue the learning path's recordings from its own semester, and follow it.\n\n409 when a job is already queued or running for it; 503, with the reason,\nwhen no worker can process here. The first Process subscribes the path:\nfrom then on new recordings are processed without another press.",
         "operationId": "startIngestion",
         "parameters": [
           {
@@ -9452,6 +9501,24 @@
               }
             },
             "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable",
             "headers": {
               "X-Request-ID": {
                 "description": "Request correlation identifier.",

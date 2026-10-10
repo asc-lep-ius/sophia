@@ -1,6 +1,11 @@
-import type { SearchResult } from "$lib/search/results";
+import { isIndexUnavailable, type SearchResult } from "$lib/search/results";
 
-export type SearchStatus = "idle" | "loading" | "ready" | "error";
+export type SearchStatus =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "error"
+  | "unavailable";
 
 export type SearchRun = (
   query: string,
@@ -143,7 +148,7 @@ export class SearchController {
       this.#results = results;
       this.#submitted = query;
       this.#status = "ready";
-    } catch {
+    } catch (error) {
       // An abort is not a failure the learner should be told about: it means
       // a newer search replaced this one, and that search owns the status.
       if (sequence !== this.#issued || controller.signal.aborted) {
@@ -151,7 +156,7 @@ export class SearchController {
       }
       this.#results = [];
       this.#submitted = query;
-      this.#status = "error";
+      this.#status = isIndexUnavailable(error) ? "unavailable" : "error";
     } finally {
       if (this.#inflight === controller) {
         this.#inflight = null;

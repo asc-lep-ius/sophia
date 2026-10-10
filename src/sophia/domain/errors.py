@@ -103,6 +103,14 @@ class EmbeddingError(HermesError):
     """Embedding or knowledge base indexing failed."""
 
 
+class LectureIndexUnavailable(HermesError):
+    """The lecture index could not be read to answer a query.
+
+    Raised to the API's caller rather than as an ``EmbeddingError``: the
+    learner is told search is unavailable, never handed a server error.
+    """
+
+
 class AthenaError(SophiaError):
     """Athena study companion error."""
 

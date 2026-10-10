@@ -7,6 +7,7 @@ import {
   formatTimestamp,
   scoreBand,
   readSourceFilter,
+  type SearchAnswer,
   type SearchResult,
 } from "../../src/lib/search/results";
 import type { ContentSource } from "../../src/lib/content/filters";
@@ -136,6 +137,23 @@ describe("search server load", () => {
     expect(data.results?.status).toBe("error");
   });
 
+  it("keeps an unreadable lecture index apart from a failed search", async () => {
+    const fetch = vi.fn(async (url: string | URL) =>
+      String(url).includes("/api/search")
+        ? jsonResponse(
+            { detail: { code: "lecture_index.unavailable", params: {} } },
+            503,
+          )
+        : fetchFixture()(url),
+    );
+
+    const data = (await load(
+      createLoadEvent({ fetch, url: `${SEARCH_URL}?q=graph` }) as never,
+    )) as SearchData;
+
+    expect(data.results).toEqual({ data: [], status: "unavailable" });
+  });
+
   it("sends an unauthenticated visitor to sign in", async () => {
     await expect(
       load(
@@ -169,10 +187,38 @@ describe("search page", () => {
     });
 
     expect(screen.getByText("Graphen")).toBeTruthy();
+    // The lecture series, the recording and where in it.
+    expect(
+      screen.getByText("Algorithmen und Datenstrukturen", {
+        selector: "li span",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText("01:05 – 02:08")).toBeTruthy();
     expect(screen.getByText("Strong match")).toBeTruthy();
     expect(screen.getByRole("status").textContent).toContain(
       "1 passages found",
     );
+  });
+
+  it("lists several passages from the same lecture", () => {
+    render(SearchPage, {
+      data: pageData({
+        query: "Bytecode",
+        results: {
+          data: [
+            { ...result("Vorlesung - VU vom 2026-10-06"), start_time: 2703.44 },
+            { ...result("Vorlesung - VU vom 2026-10-06"), start_time: 2751.44 },
+          ],
+          status: "ready",
+        },
+      }),
+    });
+
+    expect(screen.getAllByText("Vorlesung - VU vom 2026-10-06")).toHaveLength(
+      2,
+    );
+    expect(screen.getByText("45:03 – 02:08")).toBeTruthy();
+    expect(screen.getByText("45:51 – 02:08")).toBeTruthy();
   });
 
   it("says a search found nothing, naming the query it answered", () => {
@@ -199,6 +245,24 @@ describe("search page", () => {
       .map((node) => node.textContent)
       .join(" ");
     expect(announced).toContain("did not answer");
+  });
+
+  it("says in words that the lecture index could not be read", () => {
+    render(SearchPage, {
+      data: pageData({
+        query: "graph",
+        results: { data: [], status: "unavailable" },
+      }),
+    });
+
+    const announced = screen
+      .getAllByRole("status")
+      .map((node) => node.textContent)
+      .join(" ");
+    expect(announced).toContain(
+      "Lecture search is not available right now: the index of your lectures could not be read.",
+    );
+    expect(announced).not.toContain("did not answer");
   });
 
   /**
@@ -267,7 +331,7 @@ type SearchData = {
   csrfToken: string | null;
   learningPathId: number | null;
   query: string;
-  results: Panel<SearchResult[]> | null;
+  results: SearchAnswer | null;
   selectedSourceId: number | null;
   sourceFilter: "all" | "document" | "transcript";
   sources: Panel<ContentSource[]>;

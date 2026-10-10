@@ -16,6 +16,7 @@ from sophia.adapters.lecture_downloader import (
     extract_audio,
 )
 from sophia.domain.errors import LectureDownloadError
+from sophia.domain.models import HermesConfig
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
@@ -206,93 +207,81 @@ async def test_enrichment_all_fail_gracefully() -> None:
 
 
 class TestEmbedderCaching:
-    """Verify SentenceTransformerEmbedder is created once and reused."""
-
-    def setup_method(self) -> None:
-        from sophia.services import athena_study
-
-        athena_study._embedder_cache = None
-
-    def teardown_method(self) -> None:
-        from sophia.services import athena_study
-
-        athena_study._embedder_cache = None
+    """Verify the query embedder is created once per process, on the CPU."""
 
     def test_embedder_cached_across_calls(self) -> None:
-        from sophia.services.athena_study import _get_or_create_embedder
+        from sophia.services.hermes_index import query_embedder
 
-        fake_config = MagicMock()
+        fake_app = MagicMock()
+        config = HermesConfig()
 
-        with patch("sophia.adapters.embedder.SentenceTransformerEmbedder") as mock_cls:
+        with (
+            patch("sophia.services.hermes_index.load_hermes_config", return_value=config),
+            patch("sophia.services.hermes_index.SentenceTransformerEmbedder") as mock_cls,
+        ):
             mock_cls.return_value = MagicMock(name="embedder_instance")
 
-            first = _get_or_create_embedder(fake_config)
-            second = _get_or_create_embedder(fake_config)
+            first = query_embedder(fake_app)
+            second = query_embedder(fake_app)
 
         assert first is second
-        mock_cls.assert_called_once()
+        # The literal, not the constant: left to pick its own device, the
+        # embedder took hephaestus's GTX 1070 and every deck was a 500 (#129).
+        mock_cls.assert_called_once_with(config.embeddings, device="cpu")
 
     def test_embedder_cache_reset(self) -> None:
-        from sophia.services import athena_study
-        from sophia.services.athena_study import _get_or_create_embedder
+        from sophia.services import hermes_index
+        from sophia.services.hermes_index import query_embedder
 
-        fake_config = MagicMock()
+        fake_app = MagicMock()
 
-        with patch("sophia.adapters.embedder.SentenceTransformerEmbedder") as mock_cls:
+        with (
+            patch("sophia.services.hermes_index.load_hermes_config", return_value=None),
+            patch("sophia.services.hermes_index.SentenceTransformerEmbedder") as mock_cls,
+        ):
             mock_cls.return_value = MagicMock(name="instance_a")
-            first = _get_or_create_embedder(fake_config)
+            first = query_embedder(fake_app)
 
-            # Reset cache
-            athena_study._embedder_cache = None
+            hermes_index._query_embedder_cache = None  # pyright: ignore[reportPrivateUsage]
 
             mock_cls.return_value = MagicMock(name="instance_b")
-            after_reset = _get_or_create_embedder(fake_config)
+            after_reset = query_embedder(fake_app)
 
         assert first is not after_reset
         assert mock_cls.call_count == 2
 
 
 class TestStoreCaching:
-    """Verify ChromaKnowledgeStore is created once and reused."""
-
-    def setup_method(self) -> None:
-        from sophia.services import athena_study
-
-        athena_study._store_cache = None
-
-    def teardown_method(self) -> None:
-        from sophia.services import athena_study
-
-        athena_study._store_cache = None
+    """Verify the knowledge store is created once per process."""
 
     def test_store_cached_across_calls(self) -> None:
-        from sophia.services.athena_study import _get_or_create_store
+        from sophia.services.hermes_index import knowledge_store
 
         fake_settings = MagicMock()
 
-        with patch("sophia.adapters.knowledge_store.ChromaKnowledgeStore") as mock_cls:
+        with patch("sophia.services.hermes_index.ChromaKnowledgeStore") as mock_cls:
             mock_cls.return_value = MagicMock(name="store_instance")
 
-            first = _get_or_create_store(fake_settings)
-            second = _get_or_create_store(fake_settings)
+            first = knowledge_store(fake_settings)
+            second = knowledge_store(fake_settings)
 
         assert first is second
         mock_cls.assert_called_once()
 
     def test_store_cache_reset(self) -> None:
-        from sophia.services import athena_study
-        from sophia.services.athena_study import _get_or_create_store
+        from sophia.services import hermes_index
+        from sophia.services.hermes_index import knowledge_store
 
         fake_settings = MagicMock()
 
-        with patch("sophia.adapters.knowledge_store.ChromaKnowledgeStore") as mock_cls:
+        with patch("sophia.services.hermes_index.ChromaKnowledgeStore") as mock_cls:
             mock_cls.return_value = MagicMock(name="store_a")
-            first = _get_or_create_store(fake_settings)
+            first = knowledge_store(fake_settings)
 
-            athena_study._store_cache = None
+            hermes_index._store_cache = None  # pyright: ignore[reportPrivateUsage]
 
             mock_cls.return_value = MagicMock(name="store_b")
-            after_reset = _get_or_create_store(fake_settings)
+            after_reset = knowledge_store(fake_settings)
 
         assert first is not after_reset
         assert mock_cls.call_count == 2

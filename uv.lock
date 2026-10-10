@@ -3816,6 +3816,10 @@ hermes = [
     { name = "openai" },
     { name = "sentence-transformers" },
 ]
+index = [
+    { name = "chromadb" },
+    { name = "sentence-transformers" },
+]
 llm = [
     { name = "google-genai" },
     { name = "groq" },
@@ -3853,6 +3857,7 @@ requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12" },
     { name = "bibtexparser", marker = "extra == 'export'", specifier = ">=1.4" },
     { name = "chromadb", marker = "extra == 'hermes'", specifier = ">=1.0" },
+    { name = "chromadb", marker = "extra == 'index'", specifier = ">=1.0" },
     { name = "cyclopts", specifier = ">=3.0" },
     { name = "fastapi", specifier = "==0.135.1" },
     { name = "faster-whisper", marker = "extra == 'hermes'", specifier = ">=1.1" },
@@ -3878,6 +3883,7 @@ requires-dist = [
     { name = "redis", specifier = "==7.4.0" },
     { name = "rich", specifier = ">=13.0" },
     { name = "sentence-transformers", marker = "extra == 'hermes'", specifier = ">=3.0" },
+    { name = "sentence-transformers", marker = "extra == 'index'", specifier = ">=3.0" },
     { name = "sentry-sdk", specifier = "==2.60.0" },
     { name = "slowapi", specifier = "==0.1.9" },
     { name = "sqlalchemy", specifier = "==2.0.49" },
@@ -3886,7 +3892,7 @@ requires-dist = [
     { name = "textual", specifier = ">=0.80" },
     { name = "uvicorn", extras = ["standard"], specifier = "==0.41.0" },
 ]
-provides-extras = ["llm", "pdf", "reports", "calibre", "export", "hermes", "athena", "test"]
+provides-extras = ["llm", "pdf", "reports", "calibre", "export", "hermes", "index", "athena", "test"]
 
 [package.metadata.requires-dev]
 dev = [

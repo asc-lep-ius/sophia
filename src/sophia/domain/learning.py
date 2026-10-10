@@ -60,6 +60,16 @@ class QuestionKind(StrEnum):
     CLOZE = "cloze"
 
 
+class QuestionFallbackReason(StrEnum):
+    """Why a question is the template rather than one generated from the lectures.
+
+    Only a reason the learner is told about is recorded. A course with no
+    processed lectures needs none: its cards say they are free recall.
+    """
+
+    INDEX_UNAVAILABLE = "index_unavailable"
+
+
 class AttemptPhase(StrEnum):
     """Which part of the equilibration cycle an attempt was made in.
 

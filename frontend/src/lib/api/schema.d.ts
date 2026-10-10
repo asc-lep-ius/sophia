@@ -692,7 +692,7 @@ export interface paths {
         put?: never;
         /**
          * Start Ingestion
-         * @description Queue processing of every recording the learning path owns, and follow it.
+         * @description Queue the learning path's recordings from its own semester, and follow it.
          *
          *     409 when a job is already queued or running for it; 503, with the reason,
          *     when no worker can process here. The first Process subscribes the path:
@@ -1384,6 +1384,7 @@ export interface components {
              *     }
              */
             engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -2153,6 +2154,7 @@ export interface components {
              *     }
              */
             engagement_policy: components["schemas"]["NoEngagementPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -2190,6 +2192,7 @@ export interface components {
             content_language: components["schemas"]["ContentLanguage"];
             difficulty: components["schemas"]["QuestionDifficulty"];
             engagement_policy: components["schemas"]["ElaborationPolicy"];
+            fallback_reason?: components["schemas"]["QuestionFallbackReason"] | null;
             /** Id */
             id: string;
             /**
@@ -2248,6 +2251,12 @@ export interface components {
          * @enum {string}
          */
         QuestionDifficulty: "cued" | "explain" | "transfer";
+        /**
+         * QuestionFallbackReason
+         * @description Why a question is a template rather than one generated from the lectures.
+         * @enum {string}
+         */
+        QuestionFallbackReason: "index_unavailable";
         /**
          * QuestionOption
          * @description One selectable option of a multiple-choice question.
@@ -2459,11 +2468,14 @@ export interface components {
          *
          *     Character offsets locate text material and millisecond offsets locate
          *     time-based material; both are optional because a span may be known only as
-         *     a whole content item.
+         *     a whole content item. ``content_item_title`` names the item — a lecture's
+         *     title — where the server knows one.
          */
         SourceSpan: {
             /** Content Item Id */
             content_item_id: string;
+            /** Content Item Title */
+            content_item_title?: string | null;
             /** End Char */
             end_char?: number | null;
             /** End Ms */
@@ -5545,6 +5557,16 @@ export interface operations {
             };
             /** @description Unprocessable Content */
             422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;
