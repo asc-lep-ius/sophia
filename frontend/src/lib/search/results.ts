@@ -1,6 +1,18 @@
 import type { components } from "$lib/api/schema";
+import { SophiaApiError } from "$lib/api/client";
+import type { PanelStatus } from "$lib/dashboard/panels";
 
 export type SearchResult = components["schemas"]["ContentSearchResultResponse"];
+
+/**
+ * What one search came back as. `unavailable` is its own state, not an error:
+ * the index could not be read, which is worth saying in words, and trying
+ * again in a moment will not change it.
+ */
+export type SearchAnswer = {
+  status: PanelStatus | "unavailable";
+  data: SearchResult[];
+};
 export type SearchSourceFilter =
   components["schemas"]["ContentSearchSourceFilter"];
 
@@ -13,6 +25,9 @@ export const SEARCH_SOURCE_FILTERS = [
 export const QUERY_PARAM = "q";
 export const SOURCE_PARAM = "source";
 export const SOURCE_FILTER_PARAM = "kind";
+
+/** The API's code when the lecture index cannot be read. */
+export const INDEX_UNAVAILABLE_CODE = "lecture_index.unavailable";
 
 /** What `/api/search` will accept, so a doomed request is never sent. */
 export const MAX_RESULTS = 5;
@@ -50,6 +65,13 @@ export function scoreBand(score: number): ScoreBand {
     return "strong";
   }
   return score >= SCORE_MODERATE ? "moderate" : "weak";
+}
+
+export function isIndexUnavailable(error: unknown): boolean {
+  return (
+    error instanceof SophiaApiError &&
+    error.detail.code === INDEX_UNAVAILABLE_CODE
+  );
 }
 
 export function readSourceFilter(value: string | null): SearchSourceFilter {

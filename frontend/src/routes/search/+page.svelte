@@ -109,6 +109,11 @@
   const searchable = $derived(
     data.selectedSourceId !== null && data.learningPathId !== null,
   );
+  /** The lecture series a transcript passage was spoken in. */
+  const seriesTitle = $derived(
+    data.sources.data.find((source) => source.id === data.selectedSourceId)
+      ?.title ?? null,
+  );
 
   // A navigation carries a fresh server answer, so the live one is retired.
   $effect(() => {
@@ -168,6 +173,9 @@
     }
     if (status === "error") {
       return m.search_status_error();
+    }
+    if (status === "unavailable") {
+      return m.search_status_index_unavailable();
     }
     if (answeredQuery === "") {
       return m.search_status_idle();
@@ -243,9 +251,13 @@
   >
     {#snippet empty()}
       <p class="empty-body">
-        {answeredQuery === ""
-          ? m.search_status_idle()
-          : m.search_no_results({ query: answeredQuery })}
+        {#if status === "unavailable"}
+          {m.search_status_index_unavailable()}
+        {:else if answeredQuery === ""}
+          {m.search_status_idle()}
+        {:else}
+          {m.search_no_results({ query: answeredQuery })}
+        {/if}
       </p>
     {/snippet}
 
@@ -258,6 +270,9 @@
             <span class="band" data-band={band}>{bandLabels[band]()}</span>
           </div>
           <p class="meta">
+            {#if result.source === "transcript" && seriesTitle}
+              <span class="series">{seriesTitle}</span>
+            {/if}
             <span
               >{m.search_timespan({
                 end: formatTimestamp(result.end_time),
