@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).parents[2]
@@ -396,7 +397,11 @@ def _valid_compose() -> dict[str, Any]:
             f"registry.example/sophia/worker:{COMMIT_SHA}",
             volumes=["sophia-data:/data", "sophia-config:/config"],
             depends_on={"postgres": {"condition": "service_healthy"}},
-            environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
+            environment={
+                "SOPHIA_DATABASE_URL": DATABASE_URL,
+                "SOPHIA_CACHE_DIR": "/data/cache",
+                "HF_HOME": "/data/cache/huggingface",
+            },
         ),
         "redis": _service(
             "redis:8.6.3-alpine",
@@ -458,3 +463,48 @@ def _service(
     if environment is not None:
         service["environment"] = environment
     return service
+
+
+@pytest.mark.parametrize(
+    ("environment", "message"),
+    [
+        ({"SOPHIA_DATABASE_URL": DATABASE_URL}, "SOPHIA_CACHE_DIR must be set under"),
+        (
+            {
+                "SOPHIA_DATABASE_URL": DATABASE_URL,
+                "SOPHIA_CACHE_DIR": "/data/cache",
+                "HF_HOME": "/home/sophia/.cache/huggingface",
+            },
+            "HF_HOME must be set under the sophia-data mount",
+        ),
+    ],
+)
+def test_worker_caches_must_live_on_the_data_volume(
+    tmp_path: Path, environment: dict[str, str], message: str
+) -> None:
+    """Scenario 'caches are writable' (#128): a cache off the volume is a policy violation."""
+    compose = _valid_compose()
+    compose["services"]["worker"]["environment"] = environment
+
+    result = _run_policy_for_compose(tmp_path, compose)
+
+    assert result.returncode == 1
+    assert message in result.stderr
+
+
+def test_the_dev_compose_worker_and_the_stack_worker_keep_their_caches_on_the_volume() -> None:
+    """The same rule, read off the files that actually run here."""
+    dev = yaml.safe_load((REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+    worker = dev["services"]["worker"]
+    env = dict(item.split("=", 1) for item in worker["environment"])
+    assert "sophia-data:/data" in worker["volumes"]
+    assert env["SOPHIA_CACHE_DIR"].startswith("/data/")
+    assert env["HF_HOME"].startswith("/data/")
+
+    dockerfile = (REPO_ROOT / "Dockerfile.worker").read_text(encoding="utf-8")
+    assert "SOPHIA_CACHE_DIR=/data/cache" in dockerfile
+    assert "HF_HOME=/data/cache/huggingface" in dockerfile
+
+    stack = (REPO_ROOT / "scripts" / "stack" / "worker.yml").read_text(encoding="utf-8")
+    for binding in ("SOPHIA_STACK_CACHE_DIR", "SOPHIA_STACK_HF_HOME"):
+        assert f"${{{binding}:?}}:${{{binding}:?}}" in stack

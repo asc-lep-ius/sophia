@@ -344,7 +344,7 @@ class TestProcessMaterialsFlag:
             ),
             patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
             patch(
-                "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+                "sophia.services.hermes_pipeline.extract_topics_per_lecture",
                 AsyncMock(return_value=[]),
             ),
             patch(

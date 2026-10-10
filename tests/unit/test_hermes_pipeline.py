@@ -149,7 +149,7 @@ async def test_pipeline_calls_stages_in_order(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(container, db, module_id=42)
@@ -237,7 +237,11 @@ async def test_pipeline_aggregates_results(db: AsyncSession) -> None:
             AsyncMock(return_value=indexing),
         ),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "sophia.services.hermes_pipeline.get_course_topics",
             AsyncMock(return_value=topics),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -278,7 +282,7 @@ async def test_pipeline_passes_module_id(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", mock_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", mock_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(container, db, module_id=99)
@@ -320,7 +324,7 @@ async def test_pipeline_stops_on_cancel_before_first_stage(db: AsyncSession) -> 
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -362,7 +366,7 @@ async def test_pipeline_stops_between_stages(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -413,7 +417,7 @@ async def test_pipeline_cancel_check_none_processes_all(db: AsyncSession) -> Non
         patch("sophia.services.hermes_pipeline.download_lectures", side_effect=_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", side_effect=_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", side_effect=_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", side_effect=_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", side_effect=_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         result = await run_pipeline(container, db, module_id=42, cancel_check=None)
@@ -440,7 +444,7 @@ async def test_pipeline_result_cancelled_flag(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -477,7 +481,7 @@ async def test_cancel_check_forwarded_to_stages(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -512,7 +516,7 @@ async def test_pipeline_empty_module(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -570,7 +574,11 @@ async def test_pipeline_mixed_episode_results(db: AsyncSession) -> None:
             AsyncMock(return_value=indexing),
         ),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "sophia.services.hermes_pipeline.get_course_topics",
             AsyncMock(return_value=topics),
         ),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
@@ -619,7 +627,7 @@ async def test_pipeline_forwards_callbacks(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.download_lectures", mock_download),
         patch("sophia.services.hermes_pipeline.transcribe_lectures", mock_transcribe),
         patch("sophia.services.hermes_pipeline.index_lectures", mock_index),
-        patch("sophia.services.hermes_pipeline.extract_topics_from_lectures", mock_topics),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", mock_topics),
         patch("sophia.services.hermes_pipeline.assign_lecture_numbers", AsyncMock()),
     ):
         await run_pipeline(
@@ -664,7 +672,7 @@ async def test_pipeline_calls_assign_lecture_numbers(db: AsyncSession) -> None:
         patch("sophia.services.hermes_pipeline.transcribe_lectures", AsyncMock(return_value=[])),
         patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])),
         patch(
-            "sophia.services.hermes_pipeline.extract_topics_from_lectures",
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=[]),
         ),
         patch(
@@ -730,7 +738,7 @@ def _whisper(monkeypatch: pytest.MonkeyPatch, transcribe: MagicMock) -> None:
 
 
 def _no_index_or_topics(monkeypatch: pytest.MonkeyPatch) -> None:
-    for stage in ("index_lectures", "extract_topics_per_lecture", "extract_topics_from_lectures"):
+    for stage in ("index_lectures", "extract_topics_per_lecture"):
         monkeypatch.setattr(f"sophia.services.hermes_pipeline.{stage}", AsyncMock(return_value=[]))
 
 
@@ -891,8 +899,11 @@ async def test_processing_one_module_files_the_course_topics_under_the_course(
     result = await run_pipeline(MagicMock(), db, module_id=3022498)
 
     texts_sent = [call.args[0] for call in extractor.extract_topics.call_args_list]
-    assert any("Schleifen und Verzweigungen" in text for text in texts_sent)
+    # Per lecture, and only this module's lectures (#128): the sibling module
+    # is the worker's next job step, or the CLI's next invocation, not a
+    # re-read of the whole course on every run.
     assert any("Arrays und Referenzen" in text for text in texts_sent)
+    assert not any("Schleifen und Verzweigungen" in text for text in texts_sent)
     assert sorted(topic.course_id for topic in result.topics) == [82774, 82774]
     assert await _topic_rows(db) == [(82774, "Arrays"), (82774, "Schleifen")]
 
@@ -907,7 +918,7 @@ async def test_a_module_with_no_known_owner_gets_no_topics_under_its_own_id(
     _stages_done(monkeypatch)
     await _transcript(db, 3022498, "ep-w2", "Arrays und Referenzen")
     extract = AsyncMock(return_value=[])
-    monkeypatch.setattr("sophia.services.hermes_pipeline.extract_topics_from_lectures", extract)
+    monkeypatch.setattr("sophia.services.hermes_pipeline.extract_topics_per_lecture", extract)
 
     result = await run_pipeline(MagicMock(), db, module_id=3022498)
 

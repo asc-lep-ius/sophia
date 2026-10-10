@@ -15,8 +15,9 @@ from typing import TYPE_CHECKING
 import structlog
 
 from sophia.domain.errors import EmbeddingError, TopicExtractionError
+from sophia.domain.models import TopicSource
 from sophia.infra.engine import commit_unit
-from sophia.services.athena_study import extract_topics_from_lectures
+from sophia.services.athena_study import get_course_topics
 from sophia.services.athena_topics import LectureTopicResult, extract_topics_per_lecture
 from sophia.services.hermes_catalog import lecture_module_course
 from sophia.services.hermes_download import LectureDownloadResult, download_lectures
@@ -190,9 +191,13 @@ async def run_knowledge_stages(
             TopicExtractionError,
             "topic extraction",
         )
-    result.topics = await extract_topics_from_lectures(
-        app, session, owner_id, on_progress=on_topic_progress
-    )
+    # The course's lecture topics as stored, not a second extraction: one
+    # would retry the lectures that just failed, outside the strict check.
+    result.topics = [
+        topic
+        for topic in await get_course_topics(session, owner_id)
+        if topic.source == TopicSource.LECTURE
+    ]
     await commit_unit(session)
     return result
 

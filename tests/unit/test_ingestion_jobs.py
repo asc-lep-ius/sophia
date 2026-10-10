@@ -153,3 +153,29 @@ async def test_nothing_is_queued_for_subscriptions_without_a_worker(db: AsyncSes
 
     assert await enqueue_subscribed(db, requested_by="scan") == []
     assert await active_job(db, EP1) is None
+
+
+async def test_a_request_fails_a_stranded_job_and_queues_anew(db: AsyncSession) -> None:
+    """A job whose worker died must not answer "already running" for good."""
+    from sqlalchemy import select, update
+
+    from sophia.infra.schema import ingestion_jobs, ingestion_workers
+
+    await _worker(db, "hephaestus:1:dead")
+    stranded = await request_ingestion(db, EP1)
+    await claim_next_job(db, "hephaestus:1:dead")
+    # The dead worker stops heartbeating; a restarted one reports under a new id.
+    await db.execute(
+        update(ingestion_workers)
+        .where(ingestion_workers.c.worker_id == "hephaestus:1:dead")
+        .values(last_seen_at=datetime.now(UTC) - timedelta(hours=1))
+    )
+    await _worker(db, "hephaestus:1:new")
+
+    fresh = await request_ingestion(db, EP1)
+
+    assert fresh.id != stranded.id
+    status = await db.scalar(
+        select(ingestion_jobs.c.status).where(ingestion_jobs.c.id == stranded.id)
+    )
+    assert status == "failed"

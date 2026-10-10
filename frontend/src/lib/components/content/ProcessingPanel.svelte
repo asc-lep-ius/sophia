@@ -37,8 +37,10 @@
   const jobActive = $derived(
     job?.state === "queued" || job?.state === "processing",
   );
+  // Shown while a job is active too: a worker that died mid-job is exactly
+  // when the learner needs to know the worker is gone.
   const workerBlocked = $derived(
-    current !== null && !current.worker.available && !jobActive,
+    current !== null && !current.worker.available,
   );
   const itemCount = $derived(
     sources.reduce((count, source) => count + source.items.length, 0),

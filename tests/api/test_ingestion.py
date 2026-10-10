@@ -8,6 +8,7 @@ which is exactly what the API reads to decide whether it can refuse.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -15,7 +16,13 @@ from sqlalchemy import insert, select
 
 from sophia.api.routers import content_sources as content_sources_router
 from sophia.infra.schema import ingestion_jobs, learning_path_settings, lecture_modules
-from sophia.services.ingestion_jobs import NO_WORKER_REASON, claim_next_job, finish_job, heartbeat
+from sophia.services.ingestion_jobs import (
+    NO_WORKER_REASON,
+    WORKER_GONE_REASON,
+    claim_next_job,
+    finish_job,
+    heartbeat,
+)
 
 from ._db_harness import DbHarness, db_harness, learning_path_tenant
 
@@ -270,3 +277,33 @@ async def test_a_scan_queues_the_subscribed_course(
     assert scanned.status_code == 200
     assert shown["job"] is not None
     assert (shown["job"]["state"], shown["job"]["requested_by"]) == ("queued", "scan")
+
+
+async def test_a_status_read_fails_a_job_whose_worker_went_away(
+    clean_engine: AsyncEngine,
+) -> None:
+    """Scenario 'processing outlives the page' must not become 'processing forever'."""
+    from sqlalchemy import update
+
+    from sophia.infra.schema import ingestion_workers
+
+    async with _harness(clean_engine) as harness:
+        async with harness.seed() as session:
+            await _seed_course(session)
+            await _worker(session)
+        await harness.login()
+        started = await harness.client.post(STATUS, headers=harness.csrf_headers())
+        async with harness.seed() as session:
+            claimed = await claim_next_job(session, "hephaestus:1")
+            assert claimed is not None
+            await session.execute(
+                update(ingestion_workers).values(
+                    last_seen_at=datetime.now(UTC) - timedelta(hours=1)
+                )
+            )
+        shown = await _status(harness)
+
+    assert started.status_code == 202
+    assert shown["worker"]["available"] is False
+    assert shown["job"]["state"] == "failed"
+    assert shown["job"]["error"] == WORKER_GONE_REASON

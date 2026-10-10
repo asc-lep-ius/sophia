@@ -67,7 +67,7 @@ start_worker() {
     # reach a container that has no keyring backend.
     local env_file="${SOPHIA_ENV_FILE:-$SOPHIA_STACK_CONFIG_DIR/env}"
     if [[ -z "${SOPHIA_GEMINI_API_KEY:-}" && -r "$env_file" ]]; then
-        SOPHIA_GEMINI_API_KEY="$(sed -n 's/^\(export \)\{0,1\}SOPHIA_GEMINI_API_KEY=//p' "$env_file" | tail -1)"
+        SOPHIA_GEMINI_API_KEY="$("$ROOT/scripts/stack/env_value.sh" SOPHIA_GEMINI_API_KEY "$env_file")"
         export SOPHIA_GEMINI_API_KEY
     fi
     if nvidia-smi -L >/dev/null 2>&1; then

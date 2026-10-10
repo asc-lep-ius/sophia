@@ -34,6 +34,7 @@ from sophia.services.ingestion_jobs import (
     COMPLETED,
     FAILED,
     RUNNING,
+    fail_orphaned_jobs,
     latest_job,
     request_ingestion,
     worker_availability,
@@ -74,6 +75,8 @@ async def read_ingestion_status(
     db = await request_session(request)
     stale_after = get_settings(request).ingestion_worker_stale_seconds
     availability = await worker_availability(db, stale_after_s=stale_after)
+    # So a page polling a job whose worker died sees it failed, not running forever.
+    await fail_orphaned_jobs(db, stale_after_s=stale_after)
     job = await latest_job(db, learning_path_id)
     return IngestionStatusResponse(
         learning_path_id=learning_path_id,

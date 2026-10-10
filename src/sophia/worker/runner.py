@@ -13,6 +13,7 @@ import os
 import signal
 import socket
 import sys
+import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -48,6 +49,7 @@ ERROR_TAIL_CHARS = 1500
 NO_MODULES_REASON = (
     "No lecture recordings are known for this course yet — scan for new lectures first"
 )
+WORKER_STOPPED_REASON = "The processing worker was stopped before this job finished"
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +124,16 @@ def _install_stop_handlers(stop: asyncio.Event) -> None:
             loop.add_signal_handler(signum, request_stop)
 
 
+def default_worker_id() -> str:
+    """Unique per process start, not per host and pid.
+
+    As PID 1 of its container every restart would be ``<host>:1`` again, and a
+    restarted worker heartbeating under the dead one's id would keep that
+    worker's unfinished job "running" for good.
+    """
+    return f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+
+
 async def run_worker(
     settings: Settings | None = None,
     *,
@@ -139,7 +151,7 @@ async def run_worker(
     which SIGTERM and SIGINT do.
     """
     settings = settings or Settings()
-    worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}"
+    worker_id = worker_id or default_worker_id()
     capability = capability or probe_capability(settings)
     stop = stop or asyncio.Event()
     _install_stop_handlers(stop)
@@ -161,7 +173,7 @@ async def run_worker(
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(stop.wait(), poll_interval_s)
                 continue
-            await _run_job(factory, job, run_stage)
+            await _run_job(factory, job, run_stage, stop)
             processed += 1
     finally:
         await engine.dispose()
@@ -194,7 +206,15 @@ async def _run_job(
     factory: async_sessionmaker[AsyncSession],
     job: IngestionJob,
     run_stage: StageRunner,
+    stop: asyncio.Event,
 ) -> None:
+    """Every module of the course, both stage groups each; a failure costs one module.
+
+    A module whose stage failed is left there, with its error, and the next
+    module still runs: one bad lecture must not sink the rest of the course.
+    The job is marked failed with every module's error at the end, so the
+    reason stays visible and a retry is one press away.
+    """
     async with session_scope(factory) as session:
         modules = list(
             await session.scalars(
@@ -207,19 +227,23 @@ async def _run_job(
         await _finish(factory, job.id, NO_MODULES_REASON)
         return
 
+    errors: list[str] = []
     for module_id in modules:
         for group in STAGE_GROUPS:
+            if stop.is_set():
+                errors.append(WORKER_STOPPED_REASON)
+                await _finish(factory, job.id, "; ".join(errors))
+                return
             async with session_scope(factory) as session:
                 await mark_progress(session, job.id, stage=group, module_id=module_id)
             outcome = await run_stage(group, module_id, job.course_id, job.id)
             if outcome.returncode != 0:
-                error = (
+                errors.append(
                     f"{_group_name(group)} failed for recordings {module_id} "
                     f"(exit {outcome.returncode}): {outcome.output_tail}"
                 )
-                await _finish(factory, job.id, error)
-                return
-    await _finish(factory, job.id, None)
+                break
+    await _finish(factory, job.id, "; ".join(errors) if errors else None)
 
 
 async def _finish(

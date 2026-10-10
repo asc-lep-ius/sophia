@@ -113,6 +113,9 @@ async def request_ingestion(
     availability = await worker_availability(session, stale_after_s=stale_after_s)
     if not availability.available:
         raise IngestionUnavailable(availability.reason)
+    # A job whose worker died must not block the course until the next worker
+    # happens to poll; a request is the moment the learner would notice.
+    await fail_orphaned_jobs(session, stale_after_s=stale_after_s)
     active = await active_job(session, course_id)
     if active is not None:
         raise IngestionAlreadyRunning(active.id)
