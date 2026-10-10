@@ -72,6 +72,10 @@ async def run_stage_in_subprocess(
     """``sophia worker stage`` in a child, with the GPU hidden from the knowledge group."""
     global _current_stage
     env = dict(os.environ)
+    # Unbuffered, or the child's lines reach this process only when a pipe
+    # buffer fills: a twenty-minute Whisper run then reads as silence, and the
+    # line that says what failed arrives long after it did.
+    env["PYTHONUNBUFFERED"] = "1"
     if group == KNOWLEDGE:
         env["CUDA_VISIBLE_DEVICES"] = ""
     process = await asyncio.create_subprocess_exec(
