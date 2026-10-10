@@ -146,4 +146,3 @@ def _settings(engine: AsyncEngine):
     from sophia.config import Settings
 
     return Settings(database_url=engine.url.render_as_string(hide_password=False))
-

@@ -126,7 +126,26 @@ The master password is fixed on the encrypted store's **first** use. If it was
 initialised with the wrong one, delete `~/.local/share/python_keyring/crypted_pass.cfg`
 and log in again.
 
-### 5. Verify
+### 5. Build the processing worker image
+
+    make docker-build-worker        # sophia-worker:latest, ~5 GB, minutes
+
+`scripts/run_stack.sh` starts the worker from that image as its own compose
+project (`sophia-stack`, from `scripts/stack/worker.yml`), binding
+`~/.local/share/sophia`, `~/.config/sophia` and the two caches at the same
+paths the host API uses, and reads `SOPHIA_GEMINI_API_KEY` out of
+`~/.config/sophia/env` for it. It never builds the image itself: a build inside
+`RUN_CMD` would turn a 10 s start into a timeout. Without the image the stack
+still starts and Process is refused with "no processing worker is running".
+
+The worker needs the box's GPU through the NVIDIA container runtime. When
+`nvidia-smi` fails on the host — an unattended driver upgrade leaves the loaded
+kernel module older than the libraries until the next reboot, which is what
+happened on hephaestus on 2026-10-10 — `run_stack.sh` starts the worker without
+the GPU, and Process is refused with "no usable NVIDIA GPU" instead of a
+container that never starts (#128).
+
+### 6. Verify
 
     ls ~/.config/sophia/            # a TUWEL and a TISS session
     uv run sophia auth status       # "Session is active."
