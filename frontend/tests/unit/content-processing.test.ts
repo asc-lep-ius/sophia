@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/svelte";
-import type { RequestEvent } from "@sveltejs/kit";
+import type { Actions, RequestEvent } from "@sveltejs/kit";
 import { describe, expect, it, vi } from "vitest";
 
 import ProcessingPanel from "../../src/lib/components/content/ProcessingPanel.svelte";
@@ -18,7 +18,16 @@ import type { ContentItem, TopicRow } from "../../src/lib/content/filters";
 import type { Panel } from "../../src/lib/dashboard/panels";
 
 const LEARNING_PATH = 82774;
-const { process, settings } = actions as Required<typeof actions>;
+
+function requireAction(name: "process" | "settings") {
+  const action = (actions as Actions)[name];
+  if (!action) {
+    throw new Error(`the sources page has no ${name} action`);
+  }
+  return action;
+}
+const process = requireAction("process");
+const settings = requireAction("settings");
 
 describe("processing panel", () => {
   it("offers Process and says nothing has run yet", () => {
