@@ -458,6 +458,7 @@
   "study_summary": "Vorhersagen, arbeiten und reflektieren in einem Aequilibrationszyklus. Die Bewertung kommt vom Server; hier zaehlt nicht, ob ueberhaupt etwas getippt wurde.",
   "study_topic_required": "Wähle ein Thema zum Lernen.",
   "study_topic_start": "Dieses Thema lernen",
+  "study_topic_start_named": "Dieses Thema lernen: {topic}",
   "study_topic_suggested": "Vorgeschlagen",
   "study_topics_empty_body": "Themen entstehen aus verarbeiteten Vorlesungen und Materialien. Sobald eines davon verarbeitet ist, erscheinen seine Themen hier.",
   "study_topics_empty_title": "Noch keine Themen zum Lernen",

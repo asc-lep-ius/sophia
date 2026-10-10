@@ -112,11 +112,12 @@
                 type="submit"
                 name="topic"
                 value={row.topic.topic}
+                aria-label={m.study_topic_start_named({
+                  topic: row.topic.topic,
+                })}
                 class:primary={index === 0}
               >
-                {m.study_topic_start()}<span class="sr-only"
-                  >: {row.topic.topic}</span
-                >
+                {m.study_topic_start()}
               </button>
             </li>
           {/each}
@@ -238,15 +239,6 @@
 
   .empty-title {
     margin: 0;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
   }
 
   button.primary {

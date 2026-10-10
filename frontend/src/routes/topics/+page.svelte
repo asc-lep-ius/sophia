@@ -153,10 +153,15 @@
               {confidenceLabel(row)}
             </span>
             <form method="POST" action={startPath}>
-              <button type="submit" name="topic" value={row.topic.topic}>
-                {m.study_topic_start()}<span class="sr-only"
-                  >: {row.topic.topic}</span
-                >
+              <button
+                type="submit"
+                name="topic"
+                value={row.topic.topic}
+                aria-label={m.study_topic_start_named({
+                  topic: row.topic.topic,
+                })}
+              >
+                {m.study_topic_start()}
               </button>
             </form>
           </span>
@@ -252,15 +257,6 @@
     padding: 0.35rem 0.8rem;
     font: inherit;
     overflow-wrap: anywhere;
-  }
-
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
   }
 
   .empty-title,
