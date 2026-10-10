@@ -401,7 +401,7 @@
   "study_path_required": "Wähle zuerst einen Kurs.",
   "study_path_select": "Diesen Kurs lernen",
   "study_path_select_failed": "Dieser Kurs konnte nicht ausgewählt werden. Versuch es noch einmal.",
-  "study_path_summary": "Sitzungen und Wiederholungen gehören zu jeweils einem Kurs. Ein späterer Wechsel behält, was du in den anderen gemacht hast.",
+  "study_path_summary": "Sitzungen gehören zu jeweils einem Kurs; die Wiederholung zeigt alle deine Kurse. Ein späterer Wechsel behält, was du in den anderen gemacht hast.",
   "study_path_unavailable": "Deine Kurse konnten gerade nicht aus TUWEL geladen werden. Lade die Seite neu, um es noch einmal zu versuchen.",
   "study_pause": "Pause",
   "study_paused_notice": "Pausiert. Die Zeitmessung steht.",

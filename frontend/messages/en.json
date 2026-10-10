@@ -401,7 +401,7 @@
   "study_path_required": "Choose a course first.",
   "study_path_select": "Study this course",
   "study_path_select_failed": "That course could not be selected. Try again.",
-  "study_path_summary": "Sessions and reviews belong to one course at a time. Switching later keeps what you did in the others.",
+  "study_path_summary": "Sessions belong to one course at a time; review shows all your courses. Switching later keeps what you did in the others.",
   "study_path_unavailable": "Your courses could not be loaded from TUWEL just now. Reload the page to try again.",
   "study_pause": "Pause",
   "study_paused_notice": "Paused. Timers are stopped.",
