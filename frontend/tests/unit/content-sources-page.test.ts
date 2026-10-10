@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 
 import SourcesPage from "../../src/routes/content/sources/+page.svelte";
 import type { ContentSource } from "../../src/lib/content/filters";
+import type {
+  IngestionSourceStatus,
+  IngestionStatus,
+} from "../../src/lib/content/ingestion";
 import type { ContentLanguageState } from "../../src/lib/content/language";
 import type { Panel } from "../../src/lib/dashboard/panels";
 
@@ -97,6 +101,9 @@ describe("content sources page", () => {
 
 type SourcesData = {
   contentLanguage: ContentLanguageState;
+  ingestion: Panel<IngestionStatus | null>;
+  ingestionSources: IngestionSourceStatus[];
+  learningPathId: number | null;
   sources: Panel<ContentSource[]>;
   uiLocale: "de" | "en";
 };
@@ -122,6 +129,9 @@ function pageData(overrides: Partial<SourcesData>) {
       origin: "learning_path",
       override: null,
     } satisfies ContentLanguageState,
+    ingestion: { data: null, status: "ready" } as Panel<IngestionStatus | null>,
+    ingestionSources: [],
+    learningPathId: null,
     sources: { data: [], status: "ready" } as Panel<ContentSource[]>,
     uiLocale: "en" as const,
     ...overrides,

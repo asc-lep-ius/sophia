@@ -1,6 +1,8 @@
 <script lang="ts">
   import { enhance } from "$app/forms";
+  import { invalidateAll } from "$app/navigation";
   import { resolve } from "$app/paths";
+  import ProcessingPanel from "$lib/components/content/ProcessingPanel.svelte";
   import CarriedLink from "$lib/components/content/CarriedLink.svelte";
   import ContentLanguageNotice from "$lib/components/content/ContentLanguageNotice.svelte";
   import PanelSection from "$lib/components/dashboard/PanelSection.svelte";
@@ -33,6 +35,7 @@
   const sourcesPath = resolve("/content/sources", {});
   const catalogPath = resolve("/content", {});
   const maxMegabytes = Math.floor(MAX_UPLOAD_BYTES / (1024 * 1024));
+  const POLL_INTERVAL_MS = 5000;
 
   /** The only state this page carries onward is the content language. */
   const languageOnly = $derived(languageParams(data.contentLanguage.override));
@@ -40,6 +43,29 @@
   const rejection = $derived(
     form && "rejection" in form ? (form.rejection as UploadRejection) : null,
   );
+  const processResult = $derived(
+    form && "process" in form ? (form.process ?? null) : null,
+  );
+  const processFailed = $derived(Boolean(form && "processFailed" in form));
+  const settingsSaved = $derived(Boolean(form && "settingsSaved" in form));
+  const settingsFailed = $derived(Boolean(form && "settingsFailed" in form));
+  const jobActive = $derived(
+    data.ingestion.data?.job?.state === "queued" ||
+      data.ingestion.data?.job?.state === "processing",
+  );
+
+  /**
+   * While a job is in flight the page asks the server again every few
+   * seconds. The job lives in the worker, not here: closing the tab changes
+   * nothing, and reopening it lands on the same status from the same load.
+   */
+  $effect(() => {
+    if (!jobActive) {
+      return;
+    }
+    const timer = setInterval(() => void invalidateAll(), POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  });
   const accepted = $derived(form && "accepted" in form ? form.accepted : null);
   const rejectionMessage = $derived(
     rejection === null ? null : rejectionText(rejection),
@@ -167,6 +193,16 @@
     </p>
   {/if}
 </section>
+
+<ProcessingPanel
+  learningPathId={data.learningPathId}
+  status={data.ingestion}
+  sources={data.ingestionSources}
+  {processResult}
+  {processFailed}
+  {settingsSaved}
+  {settingsFailed}
+/>
 
 <PanelSection
   id="content-known-sources"

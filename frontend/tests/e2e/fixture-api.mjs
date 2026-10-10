@@ -422,6 +422,12 @@ const routes = [
   ["GET", /^\/api\/content-sources$/, listContentSources],
   ["POST", /^\/api\/content-sources\/discover$/, discoverContentSources],
   ["GET", /^\/api\/content-sources\/(\d+)\/content-items$/, listContentItems],
+  [
+    "GET",
+    /^\/api\/content-sources\/(\d+)\/ingestion-status$/,
+    listContentItems,
+  ],
+  ["GET", /^\/api\/learning-paths\/(\d+)\/ingestion$/, ingestionStatus],
   ["GET", /^\/api\/learning-paths\/(\d+)\/topics$/, listTopics],
   [
     "GET",
@@ -660,6 +666,21 @@ function listContentSources() {
   return { sources: CONTENT_SOURCES };
 }
 
+/** Nothing processed yet and a worker that could: the panel's resting state. */
+function ingestionStatus(match) {
+  return {
+    learning_path_id: Number(match[1]),
+    settings: {
+      learning_path_id: Number(match[1]),
+      subscribed: false,
+      transcription_language: null,
+    },
+    worker: { available: true, reason: "", gpu_name: "fixture" },
+    job: null,
+    sources: CONTENT_SOURCES.map(({ id, title }) => ({ id, title })),
+  };
+}
+
 function discoverContentSources() {
   return {
     sources: [
@@ -687,6 +708,7 @@ function catalogTopic({ topic, source }) {
     learning_path_id: LEARNING_PATH_ID,
     source,
     frequency: 2,
+    content_items: [],
   };
 }
 
