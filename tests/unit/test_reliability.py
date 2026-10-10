@@ -210,7 +210,7 @@ class TestEmbedderCaching:
     """Verify the query embedder is created once per process, on the CPU."""
 
     def test_embedder_cached_across_calls(self) -> None:
-        from sophia.services.hermes_index import QUERY_DEVICE, query_embedder
+        from sophia.services.hermes_index import query_embedder
 
         fake_app = MagicMock()
         config = HermesConfig()
@@ -225,7 +225,9 @@ class TestEmbedderCaching:
             second = query_embedder(fake_app)
 
         assert first is second
-        mock_cls.assert_called_once_with(config.embeddings, device=QUERY_DEVICE)
+        # The literal, not the constant: left to pick its own device, the
+        # embedder took hephaestus's GTX 1070 and every deck was a 500 (#129).
+        mock_cls.assert_called_once_with(config.embeddings, device="cpu")
 
     def test_embedder_cache_reset(self) -> None:
         from sophia.services import hermes_index
