@@ -274,6 +274,39 @@ async def test_handle_resolve_error_passes_through_other_exceptions() -> None:
             raise RuntimeError(msg)
 
 
+# --- module → owning course ---
+
+
+@pytest.mark.asyncio
+async def test_resolve_course_id_is_the_course_that_owns_the_module(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Study data is filed under the course, never the module that names it (#127)."""
+    from sophia.cli._resolver import resolve_course_id
+
+    owner = AsyncMock(return_value=82774)
+    monkeypatch.setattr("sophia.services.hermes_catalog.discover_lecture_module_course", owner)
+    container, session = object(), object()
+
+    assert await resolve_course_id(3022498, container, session) == 82774  # type: ignore[arg-type]
+    owner.assert_awaited_once_with(container, session, 3022498)
+
+
+@pytest.mark.asyncio
+async def test_resolve_course_id_refuses_a_module_of_no_enrolled_course(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from sophia.cli._resolver import resolve_course_id
+
+    monkeypatch.setattr(
+        "sophia.services.hermes_catalog.discover_lecture_module_course",
+        AsyncMock(return_value=None),
+    )
+
+    with pytest.raises(ValueError, match="none of your enrolled courses"):
+        await resolve_course_id(3022498, object(), object())  # type: ignore[arg-type]
+
+
 # --- identifier strip ---
 
 

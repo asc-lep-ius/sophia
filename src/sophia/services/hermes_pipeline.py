@@ -9,6 +9,7 @@ import structlog
 
 from sophia.infra.engine import commit_unit
 from sophia.services.athena_study import extract_topics_from_lectures
+from sophia.services.hermes_catalog import lecture_module_course
 from sophia.services.hermes_download import LectureDownloadResult, download_lectures
 from sophia.services.hermes_index import IndexingResult, index_lectures
 from sophia.services.hermes_manage import assign_lecture_numbers
@@ -71,6 +72,12 @@ async def run_pipeline(
     captions, download, transcribe and index stages, then the lecture numbers,
     then the topics. A failure or an interrupt costs only the unit in flight,
     and another session sees the rest while the run goes on.
+
+    Topics belong to the course that owns the module, ``course_id`` when the
+    caller knows it and the one discovery recorded otherwise, and are
+    re-extracted from all of that course's modules. A module with no known
+    owner gets no topics: filed under the module id, the browser could never
+    read them (#127).
     """
     result = PipelineResult()
 
@@ -143,14 +150,20 @@ async def run_pipeline(
         result.cancelled = True
         return result
 
-    result.topics = await extract_topics_from_lectures(
-        app,
-        session,
-        module_id,
-        on_progress=on_topic_progress,
-        force=True,
+    owner_id = (
+        course_id if course_id is not None else await lecture_module_course(session, module_id)
     )
-    await commit_unit(session)
+    if owner_id is None:
+        log.warning("pipeline_topics_skipped_no_owner", module_id=module_id)
+    else:
+        result.topics = await extract_topics_from_lectures(
+            app,
+            session,
+            owner_id,
+            on_progress=on_topic_progress,
+            force=True,
+        )
+        await commit_unit(session)
 
     if index_materials and course_id is not None:
         from sophia.services.material_index import index_materials as _index_materials

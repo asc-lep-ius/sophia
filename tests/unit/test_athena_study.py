@@ -88,6 +88,15 @@ async def _insert_transcription(
     )
 
 
+async def _own(db: AsyncSession, *, module_id: int = 42, course_id: int = 7) -> None:
+    """Record the module's owning course, as discovery does."""
+    await exec_sql(
+        db,
+        "INSERT INTO lecture_modules (module_id, course_id, course_name) VALUES (?, ?, ?)",
+        (module_id, str(course_id), "185.A91 Einführung in die Programmierung 1"),
+    )
+
+
 async def _insert_segments(
     db: AsyncSession,
     *,
@@ -147,7 +156,9 @@ async def test_get_course_topics_returns_persisted(app: MagicMock, db: AsyncSess
 async def test_extract_topics_no_transcripts(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import extract_topics_from_lectures
 
-    result = await extract_topics_from_lectures(app, db, module_id=42)
+    await _own(db)
+
+    result = await extract_topics_from_lectures(app, db, course_id=7)
     assert result == []
 
 
@@ -155,6 +166,7 @@ async def test_extract_topics_no_transcripts(app: MagicMock, db: AsyncSession) -
 async def test_extract_topics_from_lectures_success(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import extract_topics_from_lectures
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
     await _insert_transcription(db, episode_id="ep-001", module_id=42)
     await _insert_segments(db, episode_id="ep-001", count=5)
@@ -166,25 +178,66 @@ async def test_extract_topics_from_lectures_success(app: MagicMock, db: AsyncSes
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        result = await extract_topics_from_lectures(app, db, module_id=42)
+        result = await extract_topics_from_lectures(app, db, course_id=7)
 
     assert len(result) == 2
     assert result[0].topic == "Linear Algebra"
     assert result[0].source == TopicSource.LECTURE
+    assert mock_extractor.extract_topics.call_args.kwargs["course_context"] == (
+        "185.A91 Einführung in die Programmierung 1"
+    )
 
-    # Verify persisted to DB
     from sophia.services.athena_study import get_course_topics
 
-    # Get course_id from the lecture_downloads
-    cursor = await exec_sql(
-        db, "SELECT DISTINCT module_id FROM lecture_downloads WHERE module_id = 42"
-    )
-    row = cursor.fetchone()
-    assert row is not None
+    # Stored under the course the browser reads, never under the module.
+    assert len(await get_course_topics(db, course_id=7)) == 2
+    assert await get_course_topics(db, course_id=42) == []
 
-    # Topics should be in the DB now — use course_id from result
-    topics = await get_course_topics(db, course_id=result[0].course_id)
-    assert len(topics) == 2
+
+@pytest.mark.asyncio
+async def test_extract_topics_covers_every_module_the_course_owns(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """#127: EP1 2026W has two modules; both are read, and the topics land on the course."""
+    from sophia.services.athena_study import _MAX_TRANSCRIPT_CHARS, extract_topics_from_lectures
+
+    for module_id, episode_id, words in (
+        (3022060, "ep-w1", "Schleife"),
+        (3022498, "ep-w2", "Array"),
+    ):
+        await _own(db, module_id=module_id, course_id=82774)
+        await _insert_transcription(db, episode_id=episode_id, module_id=module_id)
+        # Each module alone would fill the whole budget, so a budget spent in
+        # segment order would never reach the second one.
+        for i in range(40):
+            await exec_sql(
+                db,
+                "INSERT INTO transcript_segments "
+                "(episode_id, segment_index, start_time, end_time, text) VALUES (?, ?, ?, ?, ?)",
+                (episode_id, i, float(i), float(i + 1), f"{words} {i} " + "x" * 600),
+            )
+    await _own(db, module_id=2856855, course_id=78417)
+    await _insert_transcription(db, episode_id="ep-other-course", module_id=2856855)
+    await _insert_segments(db, episode_id="ep-other-course", count=1)
+
+    mock_extractor = AsyncMock()
+    mock_extractor.extract_topics = AsyncMock(return_value=["Schleifen", "Arrays"])
+
+    with patch(
+        "sophia.services.athena_study._create_topic_extractor",
+        return_value=mock_extractor,
+    ):
+        result = await extract_topics_from_lectures(app, db, course_id=82774)
+
+    text_sent = mock_extractor.extract_topics.call_args.args[0]
+    assert "Schleife 0" in text_sent
+    assert "Array 0" in text_sent
+    assert "Segment about topic" not in text_sent
+    assert len(text_sent) <= _MAX_TRANSCRIPT_CHARS + 80
+    assert {(topic.topic, topic.course_id) for topic in result} == {
+        ("Schleifen", 82774),
+        ("Arrays", 82774),
+    }
 
 
 @pytest.mark.asyncio
@@ -192,6 +245,7 @@ async def test_extract_topics_idempotent(app: MagicMock, db: AsyncSession) -> No
     """Re-running extraction upserts but doesn't duplicate topics."""
     from sophia.services.athena_study import extract_topics_from_lectures
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
     await _insert_transcription(db, episode_id="ep-001", module_id=42)
     await _insert_segments(db, episode_id="ep-001", count=3)
@@ -203,9 +257,9 @@ async def test_extract_topics_idempotent(app: MagicMock, db: AsyncSession) -> No
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        await extract_topics_from_lectures(app, db, module_id=42)
+        await extract_topics_from_lectures(app, db, course_id=7)
         # Run again — should upsert, not duplicate
-        await extract_topics_from_lectures(app, db, module_id=42)
+        await extract_topics_from_lectures(app, db, course_id=7)
 
     cursor = await exec_sql(db, "SELECT COUNT(*) FROM topic_mappings WHERE topic = 'Sorting'")
     row = cursor.fetchone()
@@ -228,12 +282,12 @@ async def test_extract_topics_skips_llm_when_cached(app: MagicMock, db: AsyncSes
     await exec_sql(
         db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
-        ("Mathematische Aussagen", 42, "lecture", 1),
+        ("Mathematische Aussagen", 7, "lecture", 1),
     )
     await exec_sql(
         db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
-        ("Direkter Beweis", 42, "lecture", 1),
+        ("Direkter Beweis", 7, "lecture", 1),
     )
 
     mock_create_extractor = MagicMock()
@@ -242,7 +296,7 @@ async def test_extract_topics_skips_llm_when_cached(app: MagicMock, db: AsyncSes
         "sophia.services.athena_study._create_topic_extractor",
         mock_create_extractor,
     ):
-        result = await extract_topics_from_lectures(app, db, module_id=42)
+        result = await extract_topics_from_lectures(app, db, course_id=7)
 
     # LLM extractor must never be instantiated
     mock_create_extractor.assert_not_called()
@@ -256,6 +310,7 @@ async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSes
     """With force=True the existing topics are deleted and the LLM is called."""
     from sophia.services.athena_study import extract_topics_from_lectures
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
     await _insert_transcription(db, episode_id="ep-001", module_id=42)
     await _insert_segments(db, episode_id="ep-001", count=3)
@@ -264,7 +319,7 @@ async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSes
     await exec_sql(
         db,
         "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
-        ("Old Topic", 42, "lecture", 1),
+        ("Old Topic", 7, "lecture", 1),
     )
 
     mock_extractor = AsyncMock()
@@ -274,7 +329,7 @@ async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSes
         "sophia.services.athena_study._create_topic_extractor",
         return_value=mock_extractor,
     ):
-        result = await extract_topics_from_lectures(app, db, module_id=42, force=True)
+        result = await extract_topics_from_lectures(app, db, course_id=7, force=True)
 
     assert len(result) == 1
     assert result[0].topic == "Neues Thema"
@@ -283,6 +338,34 @@ async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSes
     row = cursor.fetchone()
     assert row is not None
     assert row[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_extract_topics_runs_when_the_course_has_only_manual_topics(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """A learner's own topic shares the course key, but is not an extraction to reuse."""
+    from sophia.services.athena_study import extract_topics_from_lectures
+
+    await _own(db)
+    await _insert_transcription(db, episode_id="ep-001", module_id=42)
+    await _insert_segments(db, episode_id="ep-001", count=3)
+    await exec_sql(
+        db,
+        "INSERT INTO topic_mappings (topic, course_id, source, frequency) VALUES (?, ?, ?, ?)",
+        ("Mein Thema", 7, "manual", 1),
+    )
+
+    mock_extractor = AsyncMock()
+    mock_extractor.extract_topics = AsyncMock(return_value=["Sortieren"])
+
+    with patch(
+        "sophia.services.athena_study._create_topic_extractor",
+        return_value=mock_extractor,
+    ):
+        result = await extract_topics_from_lectures(app, db, course_id=7)
+
+    assert [topic.topic for topic in result] == ["Sortieren"]
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +377,7 @@ async def test_extract_topics_force_replaces_cached(app: MagicMock, db: AsyncSes
 async def test_link_topics_empty_topics(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import link_topics_to_lectures
 
-    result = await link_topics_to_lectures(app, db, course_id=42, module_id=42, topics=[])
+    result = await link_topics_to_lectures(app, db, course_id=7, topics=[])
     assert result == {}
 
 
@@ -302,6 +385,7 @@ async def test_link_topics_empty_topics(app: MagicMock, db: AsyncSession) -> Non
 async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession) -> None:
     from sophia.services.athena_study import link_topics_to_lectures
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     mock_chunk = KnowledgeChunk(
@@ -333,9 +417,7 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession)
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        result = await link_topics_to_lectures(
-            app, db, course_id=42, module_id=42, topics=["Sorting"]
-        )
+        result = await link_topics_to_lectures(app, db, course_id=7, topics=["Sorting"])
 
     assert "Sorting" in result
     assert len(result["Sorting"]) == 1
@@ -343,7 +425,7 @@ async def test_link_topics_to_lectures_success(app: MagicMock, db: AsyncSession)
 
     # Verify persisted to DB
     cursor = await exec_sql(
-        db, "SELECT topic, chunk_id, score FROM topic_lecture_links WHERE course_id = 42"
+        db, "SELECT topic, chunk_id, score FROM topic_lecture_links WHERE course_id = 7"
     )
     rows = list(cursor.fetchall())
     assert len(rows) == 1
@@ -358,6 +440,7 @@ async def test_lecture_context_grounds_on_caption_transcripts_without_a_download
     """A transcript read from captions scopes retrieval and names its lecture."""
     from sophia.services.athena_study import get_lecture_context
 
+    await _own(db)
     await exec_sql(
         db,
         "INSERT INTO transcriptions (episode_id, module_id, status, source, title) "
@@ -382,10 +465,39 @@ async def test_lecture_context_grounds_on_caption_transcripts_without_a_download
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        context = await get_lecture_context(app, db, 42, "Generics", with_provenance=True)
+        context = await get_lecture_context(app, db, 7, "Generics", with_provenance=True)
 
     assert mock_store.search.call_args[1]["episode_ids"] == ["ep-cc"]
     assert context == "[Vorlesung - VU vom 2026-0…, 02:05]\nDie ArrayList ist generisch."
+
+
+@pytest.mark.asyncio
+async def test_grounding_searches_every_module_the_course_owns(
+    app: MagicMock, db: AsyncSession
+) -> None:
+    """#127: EP1 2026W's questions are grounded in both of its modules, and no other course's."""
+    from sophia.services.athena_study import retrieve_lecture_chunks
+
+    await _own(db, module_id=3022060, course_id=82774)
+    await _own(db, module_id=3022498, course_id=82774)
+    await _own(db, module_id=2856855, course_id=78417)
+    await _insert_download(db, episode_id="ep-w1", module_id=3022060)
+    await _insert_transcription(db, episode_id="ep-w2", module_id=3022498)
+    await _insert_download(db, episode_id="ep-s1", module_id=2856855)
+    mock_store = MagicMock()
+    mock_store.search.return_value = []
+
+    with (
+        patch("sophia.services.athena_study._get_or_create_embedder", return_value=MagicMock()),
+        patch("sophia.services.athena_study._get_or_create_store", return_value=mock_store),
+        patch(
+            "sophia.services.athena_study.asyncio.to_thread",
+            side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
+        ),
+    ):
+        await retrieve_lecture_chunks(app, db, 82774, "Arrays")
+
+    assert sorted(mock_store.search.call_args.kwargs["episode_ids"]) == ["ep-w1", "ep-w2"]
 
 
 # ---------------------------------------------------------------------------
@@ -620,6 +732,7 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: AsyncSessio
     """LLM generates questions grounded in lecture context."""
     from sophia.services.athena_study import generate_study_questions
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     mock_chunk = KnowledgeChunk(
@@ -653,7 +766,7 @@ async def test_generate_study_questions_with_llm(app: MagicMock, db: AsyncSessio
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        questions = await generate_study_questions(app, db, module_id=42, topic="Sorting", count=3)
+        questions = await generate_study_questions(app, db, course_id=7, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert "Q about pivots?" in questions
@@ -670,7 +783,7 @@ async def test_generate_study_questions_fallback_no_lectures(
     from sophia.services.athena_study import generate_study_questions
 
     # No downloads inserted → no episode_ids → fallback
-    questions = await generate_study_questions(app, db, module_id=99, topic="Sorting", count=3)
+    questions = await generate_study_questions(app, db, course_id=99, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert all("Sorting" in q for q in questions)
@@ -683,6 +796,7 @@ async def test_generate_study_questions_llm_partial_failure(
     """Pads with fallback when LLM produces fewer questions than requested."""
     from sophia.services.athena_study import generate_study_questions
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     mock_chunk = KnowledgeChunk(
@@ -718,7 +832,7 @@ async def test_generate_study_questions_llm_partial_failure(
             side_effect=lambda fn, *a, **kw: fn(*a, **kw),  # pyright: ignore[reportUnknownLambdaType]
         ),
     ):
-        questions = await generate_study_questions(app, db, module_id=42, topic="Sorting", count=3)
+        questions = await generate_study_questions(app, db, course_id=7, topic="Sorting", count=3)
 
     assert len(questions) == 3
     assert questions[0] == "One question?"
@@ -1045,11 +1159,12 @@ class TestSelfExplanation:
 async def test_get_lecture_context_include_materials(app: MagicMock, db: AsyncSession) -> None:
     """With include_materials=True, both lecture and PDF chunks appear with provenance.
 
-    Uses distinct module_id (42) and course_id (999) to verify the correct ID
-    reaches _search_material_chunks (which expects course_id, not module_id).
+    Module 42 belongs to course 999: the lecture search reaches the module
+    through its course, and the material search runs under the course itself.
     """
     from sophia.services.athena_study import get_lecture_context
 
+    await _own(db, module_id=42, course_id=999)
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     # Insert a course material — note course_id=999 differs from module_id=42
@@ -1106,7 +1221,6 @@ async def test_get_lecture_context_include_materials(app: MagicMock, db: AsyncSe
         result = await get_lecture_context(
             app,
             db,
-            module_id=42,
             course_id=999,
             topic="Sorting",
             with_provenance=True,
@@ -1125,6 +1239,7 @@ async def test_get_lecture_context_without_materials_flag(app: MagicMock, db: As
     """Default call (include_materials=False) does NOT search PDF chunks."""
     from sophia.services.athena_study import get_lecture_context
 
+    await _own(db)
     await _insert_download(db, episode_id="ep-001", module_id=42)
 
     lecture_chunk = KnowledgeChunk(
@@ -1160,7 +1275,7 @@ async def test_get_lecture_context_without_materials_flag(app: MagicMock, db: As
         result = await get_lecture_context(
             app,
             db,
-            module_id=42,
+            course_id=7,
             topic="Trees",
         )
 
@@ -1244,7 +1359,7 @@ class TestExtractTopicsCached:
                 new_callable=AsyncMock,
             ) as mock_transcript,
         ):
-            result = await extract_topics_from_lectures(app, db, module_id=1, force=False)
+            result = await extract_topics_from_lectures(app, db, course_id=1, force=False)
 
         assert result == cached
         mock_transcript.assert_not_called()
@@ -1264,6 +1379,7 @@ class TestExtractTopicsForceRefresh:
         from sophia.services.athena_study import extract_topics_from_lectures
 
         # Seed lecture_download + transcription + segments so transcript text is found
+        await _own(db, module_id=1, course_id=1)
         await _insert_download(db, episode_id="ep-force", module_id=1)
         await _insert_transcription(db, episode_id="ep-force", module_id=1)
         await _insert_segments(db, episode_id="ep-force", count=3)
@@ -1289,7 +1405,7 @@ class TestExtractTopicsForceRefresh:
                 return_value=mock_extractor,
             ),
         ):
-            mappings = await extract_topics_from_lectures(app, db, module_id=1, force=True)
+            mappings = await extract_topics_from_lectures(app, db, course_id=1, force=True)
 
         assert len(mappings) == 2
         assert mappings[0].topic == "Linear Algebra"

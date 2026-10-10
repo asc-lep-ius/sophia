@@ -674,6 +674,11 @@ class TestInterleaveFlag:
                 return_value=42,
             ),
             patch(
+                "sophia.cli._resolver.resolve_course_id",
+                new_callable=AsyncMock,
+                return_value=7,
+            ),
+            patch(
                 "sophia.services.athena_study.get_course_topics",
                 new_callable=AsyncMock,
                 return_value=[_make_topic("Algebra")],

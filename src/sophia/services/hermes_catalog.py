@@ -89,6 +89,33 @@ async def get_lecture_module_course_id(session: AsyncSession, module_id: int) ->
     return str(course_id)
 
 
+async def lecture_module_course(session: AsyncSession, module_id: int) -> int | None:
+    """The owning course as the integer every study table is keyed by, or ``None``."""
+    course_id = await get_lecture_module_course_id(session, module_id)
+    if course_id is None or not course_id.isdigit():
+        return None
+    return int(course_id)
+
+
+async def discover_lecture_module_course(
+    container: AppContainer,
+    session: AsyncSession,
+    module_id: int,
+) -> int | None:
+    """The course that owns a module, running discovery first if none is recorded.
+
+    For the CLI, which reaches a module by id or name without ever passing the
+    browser's discovery: without this, a module processed there would have no
+    course to file its topics under. ``None`` means the module belongs to none
+    of the learner's enrolled courses.
+    """
+    course_id = await lecture_module_course(session, module_id)
+    if course_id is not None:
+        return course_id
+    await discover_lecture_modules(container, session)
+    return await lecture_module_course(session, module_id)
+
+
 async def discover_lecture_modules(
     container: AppContainer,
     session: AsyncSession,

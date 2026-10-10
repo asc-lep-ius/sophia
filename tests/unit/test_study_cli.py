@@ -17,6 +17,18 @@ from sophia.domain.models import (
 
 from .._fakes import fake_result, fake_row, with_session
 
+# The course module 42 belongs to. Distinct from 42 on purpose: study data is
+# the course's, and a command that passed the module id on would be filing it
+# where the browser never looks (#127).
+COURSE_ID = 7
+
+
+@pytest.fixture(autouse=True)
+def _module_42_belongs_to_course_7(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    resolve = AsyncMock(return_value=COURSE_ID)
+    monkeypatch.setattr("sophia.cli._resolver.resolve_course_id", resolve)
+    return resolve
+
 
 class TestStudyAppRegistration:
     """The study app must be registered on the root CLI."""
@@ -115,12 +127,11 @@ class TestStudyTopicsCommand:
 
             await study_topics(module_id="42")
 
-            mock_extract.assert_called_once_with(mock_container, mock_container.db, 42)
+            mock_extract.assert_called_once_with(mock_container, mock_container.db, COURSE_ID)
             mock_link.assert_called_once_with(
                 mock_container,
                 mock_container.db,
-                42,
-                42,
+                COURSE_ID,
                 ["Sorting", "Hashing"],
             )
 
@@ -285,7 +296,7 @@ class TestStudyConfidenceCommand:
 
             await study_confidence(module_id="42")
 
-            mock_rate.assert_called_once_with(mock_container.db, "Sorting", 42, 4)
+            mock_rate.assert_called_once_with(mock_container.db, "Sorting", COURSE_ID, 4)
 
 
 class TestStudyReviewCommand:
@@ -691,8 +702,10 @@ class TestStudyDueCommand:
 
             await study_due(module_id="42")
 
-            mock_due.assert_called_once_with(mock_container.db, course_id=42)
-            mock_upcoming.assert_called_once_with(mock_container.db, course_id=42, days_ahead=3)
+            mock_due.assert_called_once_with(mock_container.db, course_id=COURSE_ID)
+            mock_upcoming.assert_called_once_with(
+                mock_container.db, course_id=COURSE_ID, days_ahead=3
+            )
 
     @pytest.mark.asyncio
     async def test_review_check_command_registered(self) -> None:

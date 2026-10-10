@@ -13,7 +13,12 @@ from sophia.api.routers import study_questions as questions_router
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import ContentLanguage, LearningPathSettings, StoredContentOrigin
 from sophia.domain.models import KnowledgeChunk
-from sophia.infra.schema import content_provenance, content_source_spans, lecture_downloads
+from sophia.infra.schema import (
+    content_provenance,
+    content_source_spans,
+    lecture_downloads,
+    lecture_modules,
+)
 from sophia.services import study_questions as study_questions_service
 from sophia.services.athena_session import start_study_session
 from sophia.services.athena_study import GroundedQuestion
@@ -36,6 +41,7 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.postgres
 
 LEARNING_PATH_ID = 12
+LECTURE_MODULE_ID = 3022498
 SCHEMA_REF_PREFIX = "#/components/schemas/"
 MODEL_GENERATOR_REF = "test-provider:test-model"
 LECTURE_CHUNK = KnowledgeChunk(
@@ -191,10 +197,15 @@ async def test_a_grounded_question_records_the_lecture_chunks_it_came_from(
         [LECTURE_CHUNK],
         ["Why does a minimum cut bound maximum flow?", TopicExtractionError("model gave up")],
     )
+    # The lecture is the learning path's through the module that owns it: the
+    # two ids are different numbers, as every real course's are (#127).
+    await db.execute(
+        insert(lecture_modules).values(module_id=LECTURE_MODULE_ID, course_id=str(LEARNING_PATH_ID))
+    )
     await db.execute(
         insert(lecture_downloads).values(
             episode_id=LECTURE_CHUNK.episode_id,
-            module_id=LEARNING_PATH_ID,
+            module_id=LECTURE_MODULE_ID,
             title="Lecture 3: Flows",
             track_url="https://example.com/a.mp3",
             track_mimetype="audio/mpeg",

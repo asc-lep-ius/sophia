@@ -46,7 +46,7 @@ async def quickstart(
     from rich.prompt import Confirm
     from rich.status import Status
 
-    from sophia.cli._resolver import handle_resolve_error, resolve_module_id
+    from sophia.cli._resolver import handle_resolve_error, resolve_course_id, resolve_module_id
     from sophia.domain.errors import (
         AuthError,
         EmbeddingError,
@@ -61,6 +61,7 @@ async def quickstart(
         async with create_app() as container, container.session() as db:
             async with handle_resolve_error():
                 resolved_id = await resolve_module_id(module_id, container.moodle)
+                course_id = await resolve_course_id(resolved_id, container, db)
 
             console.print(
                 Panel(
@@ -81,11 +82,11 @@ async def quickstart(
                 console.print("[green]✓[/green] [1/5] Pipeline — already complete")
             else:
                 console.print("[cyan]→[/cyan] [1/5] Running pipeline…")
-                await _run_pipeline(container, db, resolved_id, console)
+                await _run_pipeline(container, db, resolved_id, course_id, console)
 
             # ── Step 2: Topics ────────────────────────────────────────────
             with console.status("[cyan][2/5] Checking topics…[/cyan]"):
-                topics_done = await _has_topics(db, resolved_id)
+                topics_done = await _has_topics(db, course_id)
 
             if topics_done:
                 console.print("[green]✓[/green] [2/5] Topics — already extracted")
@@ -98,7 +99,7 @@ async def quickstart(
                         topics_list = await extract_topics_from_lectures(
                             container,
                             db,
-                            resolved_id,
+                            course_id,
                         )
                     console.print(f"  [green]✓[/green] {len(topics_list)} topics extracted")
                 except TopicExtractionError as exc:
@@ -108,30 +109,30 @@ async def quickstart(
 
             # ── Step 3: Confidence ────────────────────────────────────────
             with console.status("[cyan][3/5] Checking confidence ratings…[/cyan]"):
-                confidence_done = await _has_confidence(db, resolved_id)
+                confidence_done = await _has_confidence(db, course_id)
 
             if confidence_done:
                 console.print("[green]✓[/green] [3/5] Confidence — already rated")
             else:
                 console.print("[cyan]→[/cyan] [3/5] Rate your confidence…")
-                await _run_confidence(container, db, resolved_id, console)
+                await _run_confidence(container, db, course_id, console)
 
             # ── Step 4: Study session ─────────────────────────────────────
             with console.status("[cyan][4/5] Checking study sessions…[/cyan]"):
-                session_done = await _has_completed_session(db, resolved_id)
+                session_done = await _has_completed_session(db, course_id)
 
             if session_done:
                 console.print("[green]✓[/green] [4/5] Session — already completed")
             else:
                 console.print("[cyan]→[/cyan] [4/5] Running study session…")
-                await _run_session(container, db, resolved_id, console)
+                await _run_session(container, db, course_id, console)
 
             # ── Step 5: Export ────────────────────────────────────────────
             console.print("[cyan]→[/cyan] [5/5] Exporting Anki deck…")
             out_path = Path(f"sophia-{resolved_id}.apkg")
             from sophia.services.athena_export import export_anki_deck
 
-            count = await export_anki_deck(db, resolved_id, out_path)
+            count = await export_anki_deck(db, course_id, out_path)
             if count:
                 console.print(
                     f"  [green]✓[/green] Exported {count} cards → [cyan]{out_path}[/cyan]"
@@ -194,31 +195,31 @@ async def _count_exists(db: AsyncSession, query: Select[tuple[int]]) -> bool:
     return bool(await db.scalar(query))
 
 
-async def _has_topics(db: AsyncSession, module_id: int) -> bool:
+async def _has_topics(db: AsyncSession, course_id: int) -> bool:
     return await _count_exists(
         db,
         select(func.count())
         .select_from(topic_mappings)
-        .where(topic_mappings.c.course_id == module_id),
+        .where(topic_mappings.c.course_id == course_id),
     )
 
 
-async def _has_confidence(db: AsyncSession, module_id: int) -> bool:
+async def _has_confidence(db: AsyncSession, course_id: int) -> bool:
     return await _count_exists(
         db,
         select(func.count())
         .select_from(confidence_ratings)
-        .where(confidence_ratings.c.course_id == module_id),
+        .where(confidence_ratings.c.course_id == course_id),
     )
 
 
-async def _has_completed_session(db: AsyncSession, module_id: int) -> bool:
+async def _has_completed_session(db: AsyncSession, course_id: int) -> bool:
     return await _count_exists(
         db,
         select(func.count())
         .select_from(study_sessions)
         .where(
-            study_sessions.c.course_id == module_id,
+            study_sessions.c.course_id == course_id,
             study_sessions.c.post_test_score.is_not(None),
         ),
     )
@@ -231,6 +232,7 @@ async def _run_pipeline(
     container: AppContainer,
     db: AsyncSession,
     resolved_id: int,
+    course_id: int,
     console: Console,
 ) -> None:
     """Run the Hermes pipeline with a simple status spinner."""
@@ -239,7 +241,7 @@ async def _run_pipeline(
     from sophia.services.hermes_pipeline import run_pipeline
 
     with Status("[cyan]Processing lectures…[/cyan]", console=console):
-        result = await run_pipeline(container, db, resolved_id)
+        result = await run_pipeline(container, db, resolved_id, course_id=course_id)
 
     dl = sum(1 for r in result.downloads if r.status == "completed")
     tr = sum(1 for r in result.transcriptions if r.status == "completed")
@@ -253,7 +255,7 @@ async def _run_pipeline(
 async def _run_confidence(
     container: AppContainer,
     db: AsyncSession,
-    resolved_id: int,
+    course_id: int,
     console: Console,
 ) -> None:
     """Prompt the user to rate confidence for all unrated topics."""
@@ -262,7 +264,7 @@ async def _run_confidence(
     from sophia.services.athena_confidence import rate_confidence
     from sophia.services.athena_study import get_course_topics
 
-    topics = await get_course_topics(db, resolved_id)
+    topics = await get_course_topics(db, course_id)
     if not topics:
         console.print("  [yellow]No topics found — run study topics first.[/yellow]")
         return
@@ -282,7 +284,7 @@ async def _run_confidence(
             default=3,
             console=console,
         )
-        await rate_confidence(db, tm.topic, resolved_id, rating)
+        await rate_confidence(db, tm.topic, course_id, rating)
 
     console.print(f"  [green]✓[/green] {len(topics)} topics rated")
 
@@ -290,7 +292,7 @@ async def _run_confidence(
 async def _run_session(
     container: AppContainer,
     db: AsyncSession,
-    resolved_id: int,
+    course_id: int,
     console: Console,
 ) -> None:
     """Run a single study session for the weakest topic."""
@@ -298,7 +300,7 @@ async def _run_session(
     from sophia.services.athena_session import run_interactive_session
     from sophia.services.athena_study import get_course_topics
 
-    topics = await get_course_topics(db, resolved_id)
+    topics = await get_course_topics(db, course_id)
     if not topics:
         console.print("  [yellow]No topics — skipping session.[/yellow]")
         return
@@ -308,7 +310,7 @@ async def _run_session(
     try:
         from sophia.services.athena_confidence import get_blind_spots
 
-        blind_spots = await get_blind_spots(db, resolved_id)
+        blind_spots = await get_blind_spots(db, course_id)
         if blind_spots:
             topic = blind_spots[0].topic
     except Exception:
@@ -317,6 +319,6 @@ async def _run_session(
     console.print(f"  Topic: [bold]{topic}[/bold]")
 
     try:
-        await run_interactive_session(container, db, resolved_id, topic, console)
+        await run_interactive_session(container, db, course_id, topic, console)
     except StudySessionError as exc:
         console.print(f"  [red]Session error:[/red] {exc}")

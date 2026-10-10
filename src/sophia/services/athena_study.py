@@ -26,7 +26,7 @@ from sophia.infra.engine import affected_rows
 from sophia.infra.schema import (
     card_review_attempts,
     course_materials,
-    lecture_downloads,
+    lecture_modules,
     self_explanations,
     student_flashcards,
     topic_lecture_links,
@@ -49,7 +49,11 @@ from sophia.services.athena_session import (
 from sophia.services.athena_session import (
     start_study_session as start_study_session,
 )
-from sophia.services.hermes_episodes import episode_titles_query, module_episode_ids_query
+from sophia.services.hermes_episodes import (
+    course_episode_ids_query,
+    course_module_ids_query,
+    episode_titles_query,
+)
 from sophia.services.hermes_setup import load_hermes_config
 from sophia.services.idempotency import insert_or_fetch_row
 
@@ -102,9 +106,9 @@ def _get_or_create_store(settings: Any) -> ChromaKnowledgeStore:
     return _store_cache
 
 
-async def _get_episode_ids(session: AsyncSession, module_id: int) -> list[str]:
-    """Fetch episode IDs for a module to scope ChromaDB searches."""
-    return list((await session.scalars(module_episode_ids_query(module_id))).all())
+async def _get_episode_ids(session: AsyncSession, course_id: int) -> list[str]:
+    """Episode IDs of every module the course owns, to scope ChromaDB searches."""
+    return list((await session.scalars(course_episode_ids_query(course_id))).all())
 
 
 async def _get_material_episode_ids(
@@ -147,45 +151,57 @@ async def _search_material_chunks(
     return results, name_map
 
 
-async def _get_series_title(session: AsyncSession, module_id: int) -> str:
-    """Get the series title for a module to provide LLM context."""
-    series_id = await session.scalar(
-        select(lecture_downloads.c.series_id)
-        .where(lecture_downloads.c.module_id == module_id)
+async def _get_course_name(session: AsyncSession, course_id: int) -> str:
+    """The course's name as discovery recorded it, to give the LLM context."""
+    name = await session.scalar(
+        select(lecture_modules.c.course_name)
+        .where(lecture_modules.c.course_id == str(course_id))
         .limit(1)
     )
-    return series_id or ""
+    return name or ""
 
 
-async def _get_transcript_text(session: AsyncSession, module_id: int) -> str:
-    """Get representative transcript text from a module's indexed lectures."""
-    rows = list(
-        (
-            await session.scalars(
-                select(transcript_segments.c.text)
-                .join(
-                    transcriptions,
-                    transcriptions.c.episode_id == transcript_segments.c.episode_id,
-                )
-                .where(
-                    transcriptions.c.module_id == module_id,
-                    transcriptions.c.status == "completed",
-                )
-                .order_by(transcriptions.c.episode_id, transcript_segments.c.segment_index)
+async def _get_transcript_text(session: AsyncSession, course_id: int) -> str:
+    """Representative transcript text from every module the course owns.
+
+    The character budget is split evenly between the modules that have
+    transcripts. Spent in segment order instead, it would go entirely to the
+    first module's first lecture, and a course's later modules would never be
+    read at all.
+    """
+    rows = (
+        await session.execute(
+            select(transcriptions.c.module_id, transcript_segments.c.text)
+            .join(
+                transcriptions,
+                transcriptions.c.episode_id == transcript_segments.c.episode_id,
             )
-        ).all()
-    )
-    if not rows:
+            .where(
+                transcriptions.c.module_id.in_(course_module_ids_query(course_id)),
+                transcriptions.c.status == "completed",
+            )
+            .order_by(
+                transcriptions.c.module_id,
+                transcriptions.c.episode_id,
+                transcript_segments.c.segment_index,
+            )
+        )
+    ).all()
+    texts_by_module: dict[int, list[str]] = {}
+    for row in rows:
+        texts_by_module.setdefault(row.module_id, []).append(row.text)
+    if not texts_by_module:
         return ""
 
-    # Concatenate segments until we hit the character budget
+    share = _MAX_TRANSCRIPT_CHARS // len(texts_by_module)
     parts: list[str] = []
-    total = 0
-    for text in rows:
-        if total + len(text) > _MAX_TRANSCRIPT_CHARS:
-            break
-        parts.append(text)
-        total += len(text)
+    for texts in texts_by_module.values():
+        total = 0
+        for text in texts:
+            if total + len(text) > share:
+                break
+            parts.append(text)
+            total += len(text)
 
     return " ".join(parts)
 
@@ -193,34 +209,42 @@ async def _get_transcript_text(session: AsyncSession, module_id: int) -> str:
 async def extract_topics_from_lectures(
     app: AppContainer,
     session: AsyncSession,
-    module_id: int,
+    course_id: int,
     *,
     on_progress: Callable[[str], None] | None = None,
     force: bool = False,
 ) -> list[TopicMapping]:
-    """Extract topics from indexed lecture transcripts for a module.
+    """Extract a course's topics from the transcripts of every module it owns.
 
-    When ``force=False`` (default) and topics already exist in the DB for this
-    module, the LLM call is skipped and the cached topics are returned.  This
-    prevents the pipeline and the ``study topics`` CLI command from produing
-    mixed-language duplicates when both are run against the same module.
+    Topics are stored under the course, the id the browser reads them by, never
+    under one of its Opencast modules (#127). Which modules a course owns is
+    what discovery recorded in ``lecture_modules``.
+
+    When ``force=False`` (default) and lecture topics already exist for this
+    course, the LLM call is skipped and the cached topics are returned.  This
+    prevents the pipeline and the ``study topics`` CLI command from producing
+    mixed-language duplicates when both are run against the same course.
+    Manual topics do not count: they share the course key, but no extraction
+    produced them.
 
     Pass ``force=True`` (used by the full pipeline after fresh transcription)
-    to delete existing topics and re-extract.
+    to delete existing lecture topics and re-extract.
 
     1. Return cached topics if present (unless force=True)
-    2. Load transcript segments from DB for the module
+    2. Load transcript segments from DB for the course's modules
     3. Concatenate representative text (budgeted to _MAX_TRANSCRIPT_CHARS)
     4. Call LLM TopicExtractor to get topic labels
     5. Persist to topic_mappings table
     6. Return the extracted topics
     """
-    course_id = module_id
-
     if not force:
-        existing = await get_course_topics(session, course_id)
+        existing = [
+            topic
+            for topic in await get_course_topics(session, course_id)
+            if topic.source == TopicSource.LECTURE
+        ]
         if existing:
-            log.info("topics_cached", module_id=module_id, count=len(existing))
+            log.info("topics_cached", course_id=course_id, count=len(existing))
             return existing
 
     if force:
@@ -231,9 +255,9 @@ async def extract_topics_from_lectures(
             )
         )
 
-    text = await _get_transcript_text(session, module_id)
+    text = await _get_transcript_text(session, course_id)
     if not text:
-        log.info("no_transcripts_for_topics", module_id=module_id)
+        log.info("no_transcripts_for_topics", course_id=course_id)
         return []
 
     if on_progress:
@@ -241,11 +265,11 @@ async def extract_topics_from_lectures(
 
     extractor = _create_topic_extractor(app)
 
-    series_title = await _get_series_title(session, module_id)
-    topic_labels = await extractor.extract_topics(text, course_context=series_title)
+    course_name = await _get_course_name(session, course_id)
+    topic_labels = await extractor.extract_topics(text, course_context=course_name)
 
     if not topic_labels:
-        log.info("no_topics_extracted", module_id=module_id)
+        log.info("no_topics_extracted", course_id=course_id)
         return []
 
     # Persist with upsert (idempotent)
@@ -276,13 +300,13 @@ async def extract_topics_from_lectures(
     if result.matched or result.unmatched_manual or result.new_moodle:
         log.info(
             "topics_reconciled",
-            module_id=module_id,
+            course_id=course_id,
             matched=len(result.matched),
             unmatched=len(result.unmatched_manual),
             new_moodle=len(result.new_moodle),
         )
 
-    log.info("topics_extracted", module_id=module_id, count=len(mappings))
+    log.info("topics_extracted", course_id=course_id, count=len(mappings))
     return mappings
 
 
@@ -290,7 +314,6 @@ async def link_topics_to_lectures(
     app: AppContainer,
     session: AsyncSession,
     course_id: int,
-    module_id: int,
     topics: list[str],
     *,
     on_progress: Callable[[str, int], None] | None = None,
@@ -299,16 +322,16 @@ async def link_topics_to_lectures(
 
     For each topic:
     1. Embed the topic text
-    2. Search the KnowledgeStore scoped to this module's episode_ids
+    2. Search the KnowledgeStore scoped to the episodes of every module the course owns
     3. Store links in topic_lecture_links table
     4. Return mapping of topic -> [(chunk, score), ...]
     """
     if not topics:
         return {}
 
-    episode_ids = await _get_episode_ids(session, module_id)
+    episode_ids = await _get_episode_ids(session, course_id)
     if not episode_ids:
-        log.info("no_episodes_for_linking", module_id=module_id)
+        log.info("no_episodes_for_linking", course_id=course_id)
         return {}
 
     config = load_hermes_config(app.settings.config_dir)
@@ -454,16 +477,17 @@ async def _embed_topic(app: AppContainer, topic: str) -> tuple[ChromaKnowledgeSt
 async def retrieve_lecture_chunks(
     app: AppContainer,
     session: AsyncSession,
-    module_id: int,
+    course_id: int,
     topic: str,
     *,
     n_results: int = 5,
 ) -> list[KnowledgeChunk]:
-    """The module's lecture transcript chunks most relevant to a topic, best first.
+    """The course's lecture transcript chunks most relevant to a topic, best first.
 
-    Empty when the module has no lecture data.
+    Searched across every module the course owns. Empty when none of them has
+    lecture data.
     """
-    episode_ids = await _get_episode_ids(session, module_id)
+    episode_ids = await _get_episode_ids(session, course_id)
     if not episode_ids:
         return []
 
@@ -477,18 +501,17 @@ async def retrieve_lecture_chunks(
 async def get_lecture_context(
     app: AppContainer,
     session: AsyncSession,
-    module_id: int,
+    course_id: int,
     topic: str,
     *,
     n_results: int = 5,
     with_provenance: bool = False,
     include_materials: bool = False,
-    course_id: int | None = None,
 ) -> str:
     """Retrieve concatenated lecture transcript chunks relevant to a topic.
 
-    Uses RAG: embed topic → search ChromaDB scoped to module's episodes.
-    Returns empty string if no lecture data is available.
+    Uses RAG: embed topic → search ChromaDB scoped to the episodes of every
+    module the course owns. Returns empty string if no lecture data is available.
 
     When ``with_provenance=True`` each chunk is prefixed with
     ``[Title, MM:SS]`` so the reader knows its source and timestamp.
@@ -496,7 +519,7 @@ async def get_lecture_context(
     When ``include_materials=True`` PDF material chunks are also searched
     and appended with ``[PDF: name, chunk N]`` provenance annotations.
     """
-    episode_ids = await _get_episode_ids(session, module_id)
+    episode_ids = await _get_episode_ids(session, course_id)
     if not episode_ids:
         return ""
 
@@ -508,7 +531,7 @@ async def get_lecture_context(
     # Optionally search PDF material chunks
     pdf_results: list[tuple[KnowledgeChunk, float]] = []
     mat_name_map: dict[str, str] = {}
-    if include_materials and course_id is not None:
+    if include_materials:
         pdf_results, mat_name_map = await _search_material_chunks(
             session, store, query_embedding, course_id, n_results=n_results
         )
@@ -547,7 +570,7 @@ async def get_lecture_context(
 async def generate_grounded_questions(
     app: AppContainer,
     session: AsyncSession,
-    module_id: int,
+    course_id: int,
     topic: str,
     count: int = 3,
     difficulty: str = "explain",
@@ -559,7 +582,7 @@ async def generate_grounded_questions(
     returned rather than dropped because they are what the study surface shows
     at reveal: without them the learner self-grades against nothing.
     """
-    chunks = tuple(await retrieve_lecture_chunks(app, session, module_id, topic))
+    chunks = tuple(await retrieve_lecture_chunks(app, session, course_id, topic))
     fallback = GroundedQuestion(prompt=_FALLBACK_QUESTION.format(topic=topic))
 
     if not chunks:
@@ -584,14 +607,14 @@ async def generate_grounded_questions(
 async def generate_study_questions(
     app: AppContainer,
     session: AsyncSession,
-    module_id: int,
+    course_id: int,
     topic: str,
     count: int = 3,
     difficulty: str = "explain",
 ) -> list[str]:
     """Generate practice question prompts for a topic, grounded in lecture content."""
     questions = await generate_grounded_questions(
-        app, session, module_id, topic, count=count, difficulty=difficulty
+        app, session, course_id, topic, count=count, difficulty=difficulty
     )
     return [question.prompt for question in questions]
 

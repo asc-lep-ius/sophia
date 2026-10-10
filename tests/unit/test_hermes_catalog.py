@@ -11,9 +11,11 @@ from sqlalchemy import insert, select
 from sophia.domain.models import Course, CourseSection, Lecture, ModuleInfo
 from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules, transcriptions
 from sophia.services.hermes_catalog import (
+    discover_lecture_module_course,
     discover_lecture_modules,
     get_lecture_module_course_id,
     get_lecture_modules,
+    lecture_module_course,
 )
 
 if TYPE_CHECKING:
@@ -84,6 +86,31 @@ async def test_pre_tenancy_module_has_no_owner(db: AsyncSession) -> None:
     await _insert_module(db, 456, course_id=DEFAULT_SCOPE)
 
     assert await get_lecture_module_course_id(db, 456) is None
+
+
+@pytest.mark.asyncio
+async def test_the_cli_finds_an_undiscovered_modules_course_by_discovering(
+    db: AsyncSession,
+) -> None:
+    """A module the browser never scanned still files its study data under its course."""
+    container = _container()
+
+    assert await discover_lecture_module_course(container, db, 456) == 12
+    assert await lecture_module_course(db, 456) == 12
+
+
+@pytest.mark.asyncio
+async def test_a_recorded_owner_is_used_without_scanning_again(db: AsyncSession) -> None:
+    await _insert_module(db, 456, course_id="12")
+    container = _container()
+
+    assert await discover_lecture_module_course(container, db, 456) == 12
+    container.moodle.get_enrolled_courses.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_a_module_in_no_enrolled_course_has_no_course(db: AsyncSession) -> None:
+    assert await discover_lecture_module_course(_container(), db, 789) is None
 
 
 @pytest.mark.asyncio

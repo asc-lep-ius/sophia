@@ -12,8 +12,11 @@ from sophia.adapters.tiss import extract_course_info
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from sophia.adapters.moodle import MoodleAdapter
     from sophia.domain.models import Course
+    from sophia.infra.di import AppContainer
 
 _COURSE_NUMBER_PATTERN = re.compile(r"^\d{3}\.\d{3}$")
 
@@ -51,6 +54,21 @@ async def resolve_module_id(identifier: str, moodle: MoodleAdapter) -> int:
         return await _resolve_by_course_number(identifier, courses, moodle)
 
     return await _resolve_by_name(identifier, courses, moodle)
+
+
+async def resolve_course_id(module_id: int, container: AppContainer, session: AsyncSession) -> int:
+    """The course that owns a module: the key topics, ratings and reviews are stored under.
+
+    A module is only how the CLI names a course. Study data is the course's, so
+    the browser and the CLI read and write the same rows (#127).
+    """
+    from sophia.services.hermes_catalog import discover_lecture_module_course
+
+    course_id = await discover_lecture_module_course(container, session, module_id)
+    if course_id is None:
+        msg = f"Module {module_id} belongs to none of your enrolled courses"
+        raise ValueError(msg)
+    return course_id
 
 
 async def _resolve_by_course_number(

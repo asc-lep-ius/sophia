@@ -1033,6 +1033,7 @@ async def lectures_process(
     from sophia.cli._resolver import handle_resolve_error, resolve_module_id
     from sophia.domain.errors import AuthError, EmbeddingError, TranscriptionError
     from sophia.infra.di import create_app
+    from sophia.services.hermes_catalog import discover_lecture_module_course
     from sophia.services.hermes_pipeline import PipelineResult, run_pipeline
 
     if TYPE_CHECKING:
@@ -1047,21 +1048,9 @@ async def lectures_process(
                 resolved_id = await resolve_module_id(module_id, container.moodle)
             console.print(f"\n[bold]Pipeline for module {resolved_id}[/bold]\n")
 
-            # Resolve course_id when --materials is requested
-            _course_id: int | None = None
-            if materials_flag:
-                courses = await container.moodle.get_enrolled_courses()
-                for course in courses:
-                    sections = await container.moodle.get_course_content(course.id)
-                    for section in sections:
-                        for mod in section.modules:
-                            if mod.id == resolved_id:
-                                _course_id = course.id
-                                break
-                        if _course_id is not None:
-                            break
-                    if _course_id is not None:
-                        break
+            # The owning course is where the topics are filed for the browser to
+            # read, and the course whose materials --materials indexes.
+            _course_id = await discover_lecture_module_course(container, db, resolved_id)
 
             state = SimpleNamespace(
                 cc_count=0,

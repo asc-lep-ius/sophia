@@ -34,7 +34,7 @@ from sophia.infra.schema import (
     transcriptions,
 )
 from sophia.services.content_language import get_learning_path_settings
-from sophia.services.hermes_catalog import get_lecture_module_course_id
+from sophia.services.hermes_catalog import lecture_module_course
 from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
 
 if TYPE_CHECKING:
@@ -77,10 +77,10 @@ async def resolve_caption_language(session: AsyncSession, module_id: int) -> str
     no settings yet. The per-course transcription language #128 plans belongs
     here once it exists.
     """
-    course_id = await get_lecture_module_course_id(session, module_id)
-    if course_id is None or not course_id.isdigit():
+    course_id = await lecture_module_course(session, module_id)
+    if course_id is None:
         return DEFAULT_CAPTION_LANGUAGE
-    settings = await get_learning_path_settings(session, int(course_id))
+    settings = await get_learning_path_settings(session, course_id)
     if settings is None:
         return DEFAULT_CAPTION_LANGUAGE
     return settings.exam_language.value
