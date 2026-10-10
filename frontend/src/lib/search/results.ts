@@ -67,6 +67,14 @@ export function scoreBand(score: number): ScoreBand {
   return score >= SCORE_MODERATE ? "moderate" : "weak";
 }
 
+/**
+ * One passage's identity on the page. A lecture's id is not one: a phrase
+ * the lecturer kept coming back to finds several passages in the same lecture.
+ */
+export function resultKey(result: SearchResult): string {
+  return `${result.content_item_id}@${result.start_time}`;
+}
+
 export function isIndexUnavailable(error: unknown): boolean {
   return (
     error instanceof SophiaApiError &&

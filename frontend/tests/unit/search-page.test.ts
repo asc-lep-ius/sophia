@@ -200,6 +200,25 @@ describe("search page", () => {
     );
   });
 
+  it("lists several passages from the same lecture", () => {
+    render(SearchPage, {
+      data: pageData({
+        query: "Bytecode",
+        results: {
+          data: [
+            { ...result("Vorlesung - VU vom 2026-10-06"), start_time: 2703.44 },
+            { ...result("Vorlesung - VU vom 2026-10-06"), start_time: 2751.44 },
+          ],
+          status: "ready",
+        },
+      }),
+    });
+
+    expect(screen.getAllByText("Vorlesung - VU vom 2026-10-06")).toHaveLength(2);
+    expect(screen.getByText("45:03 – 02:08")).toBeTruthy();
+    expect(screen.getByText("45:51 – 02:08")).toBeTruthy();
+  });
+
   it("says a search found nothing, naming the query it answered", () => {
     render(SearchPage, {
       data: pageData({

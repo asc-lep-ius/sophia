@@ -10,6 +10,7 @@
     SOURCE_FILTER_PARAM,
     SOURCE_PARAM,
     formatTimestamp,
+    resultKey,
     scoreBand,
     type SearchResult,
   } from "$lib/search/results";
@@ -104,7 +105,7 @@
     `${data.query}|${data.selectedSourceId}|${data.sourceFilter}`,
   );
   const selectedResult = $derived(
-    results.find((result) => result.content_item_id === selected) ?? null,
+    results.find((result) => resultKey(result) === selected) ?? null,
   );
   const searchable = $derived(
     data.selectedSourceId !== null && data.learningPathId !== null,
@@ -144,7 +145,7 @@
   }
 
   function toggleResult(result: SearchResult): void {
-    selected = selected === result.content_item_id ? null : result.content_item_id;
+    selected = selected === resultKey(result) ? null : resultKey(result);
     retrieval = "";
     retrievalMissing = false;
   }
@@ -262,9 +263,9 @@
     {/snippet}
 
     <ul class="results">
-      {#each results as result (result.content_item_id)}
+      {#each results as result (resultKey(result))}
         {@const band = scoreBand(result.score)}
-        <li class="result" class:selected={selected === result.content_item_id}>
+        <li class="result" class:selected={selected === resultKey(result)}>
           <div class="result-head">
             <h3>{result.title}</h3>
             <span class="band" data-band={band}>{bandLabels[band]()}</span>
@@ -284,10 +285,10 @@
           <p class="preview">{result.chunk_text}</p>
           <button
             type="button"
-            aria-expanded={selected === result.content_item_id}
+            aria-expanded={selected === resultKey(result)}
             onclick={() => toggleResult(result)}
           >
-            {selected === result.content_item_id
+            {selected === resultKey(result)
               ? m.search_close_result()
               : m.search_open_result()}
           </button>
