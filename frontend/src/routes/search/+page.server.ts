@@ -89,7 +89,7 @@ async function loadResults(
       headers: { "content-type": "application/json" },
       method: "POST",
     });
-    if (await isIndexUnavailable(response)) {
+    if (await answersIndexUnavailable(response)) {
       return { status: "unavailable", data: [] };
     }
     return await panelFromResponse(response, readSearchResults, []);
@@ -98,7 +98,7 @@ async function loadResults(
   }
 }
 
-async function isIndexUnavailable(response: Response): Promise<boolean> {
+async function answersIndexUnavailable(response: Response): Promise<boolean> {
   if (response.status !== 503) {
     return false;
   }
