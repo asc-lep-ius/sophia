@@ -214,7 +214,9 @@ describe("search page", () => {
       }),
     });
 
-    expect(screen.getAllByText("Vorlesung - VU vom 2026-10-06")).toHaveLength(2);
+    expect(screen.getAllByText("Vorlesung - VU vom 2026-10-06")).toHaveLength(
+      2,
+    );
     expect(screen.getByText("45:03 – 02:08")).toBeTruthy();
     expect(screen.getByText("45:51 – 02:08")).toBeTruthy();
   });
