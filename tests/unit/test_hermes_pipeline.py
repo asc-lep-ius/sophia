@@ -1036,14 +1036,14 @@ async def test_strict_knowledge_stages_fail_when_no_lecture_got_topics(db: Async
         _make_lecture_topics("ep-2", "completed"),
     ]
     with patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])):
-        with patch(
-            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
-            AsyncMock(return_value=all_failed),
+        with (
+            patch(
+                "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+                AsyncMock(return_value=all_failed),
+            ),
+            pytest.raises(TopicExtractionError, match="topic extraction failed for every.*503"),
         ):
-            with pytest.raises(
-                TopicExtractionError, match="topic extraction failed for every.*503"
-            ):
-                await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+            await run_knowledge_stages(MagicMock(), db, 42, strict=True)
         with patch(
             "sophia.services.hermes_pipeline.extract_topics_per_lecture",
             AsyncMock(return_value=one_failed),
