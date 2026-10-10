@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import type { RequestEvent } from "@sveltejs/kit";
 import { describe, expect, it, vi } from "vitest";
 
@@ -11,14 +11,19 @@ import {
   REVIEW_MAX_SENDS,
   ReviewQueueStore,
 } from "../../src/lib/review/queue.svelte";
+import type { ReviewItem } from "../../src/lib/dashboard/panels";
 import { load as reviewLoad } from "../../src/routes/review/+page.server";
+import ReviewPage from "../../src/routes/review/+page.svelte";
 import GradeBar from "../../src/lib/components/study/GradeBar.svelte";
 
 const PACING = { minPromptDwellMs: 0, minRecallChars: 5 };
+const EP1 = 82774;
+const GDS = 83629;
 
 type ReviewLoadData = {
+  courses: Record<number, string>;
   csrfToken: string | null;
-  learningPathId: number | null;
+  nextReview: ReviewItem | null;
   pacing: {
     elaboration_min_chars: number;
     prompt_min_dwell_ms: number;
@@ -34,11 +39,15 @@ function queue(
 ): ReviewQueueStore {
   let id = 0;
   return new ReviewQueueStore({
+    items: topics.map((topic) => ({
+      course: "EP1",
+      learningPathId: EP1,
+      topic,
+    })),
     newId: () => `request-${(id += 1)}`,
     pacing: PACING,
     retry: { holdMs: 0, wait: async () => {} },
     submit,
-    topics,
   });
 }
 
@@ -235,8 +244,12 @@ describe("review queue", () => {
       newId: () => "request-1",
       pacing: PACING,
       retry: { holdMs: 5000 },
+      items: ["Graphs", "Sorting"].map((topic) => ({
+        course: "EP1",
+        learningPathId: EP1,
+        topic,
+      })),
       submit: vi.fn(async () => {}),
-      topics: ["Graphs", "Sorting"],
     });
     store.setRecall("a real attempt");
     store.reveal();
@@ -344,7 +357,7 @@ describe("review grading stays on the server", () => {
 });
 
 describe("review server load", () => {
-  it("scopes the due list to the session tenant and reuses the study pacing floors", async () => {
+  it("asks for every course's reviews, not the selected one's, and reuses the study pacing floors", async () => {
     const fetch = vi.fn(async (url: string) =>
       url.startsWith("/api/study/pacing")
         ? jsonResponse({
@@ -352,7 +365,7 @@ describe("review server load", () => {
             prompt_min_dwell_ms: 2000,
             reflection_min_seconds: 20,
           })
-        : jsonResponse({ learning_path_id: 12, reviews: [] }),
+        : jsonResponse({ learning_path_id: null, reviews: [] }),
     );
     const event = createEvent({
       fetch,
@@ -361,12 +374,83 @@ describe("review server load", () => {
 
     const data = (await reviewLoad(event as never)) as ReviewLoadData;
 
-    const dueCall = apiCalls(fetch).find((call) =>
-      call[0].startsWith("/api/review/due"),
-    );
-    expect(dueCall?.[0]).toContain("learning_path_id=12");
-    expect(dueCall?.[0]).not.toContain("learning_path_id=99");
+    // The selection scopes study, topics and content only (#131): a review
+    // due in a course that is not selected must still be listed.
+    const reviewCalls = apiCalls(fetch)
+      .map((call) => call[0])
+      .filter((url) => url.startsWith("/api/review/"));
+    expect(reviewCalls).toHaveLength(2);
+    for (const url of reviewCalls) {
+      expect(url).not.toContain("learning_path_id");
+    }
     expect(data.pacing.elaboration_min_chars).toBe(40);
+  });
+
+  it("finds the next review that is not due yet, and labels courses by short title", async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (url.startsWith("/api/review/upcoming")) {
+        return jsonResponse({
+          days_ahead: 365,
+          learning_path_id: null,
+          reviews: [
+            reviewItem({ is_due: true, topic: "Already due" }),
+            reviewItem({
+              next_review_at: "2026-10-11T02:47:00Z",
+              topic: "Rekursion",
+            }),
+            reviewItem({
+              next_review_at: "2026-10-14T09:00:00Z",
+              topic: "Arrays",
+            }),
+          ],
+        });
+      }
+      if (url.startsWith("/api/learning-paths")) {
+        return jsonResponse({
+          learning_path_id: GDS,
+          learning_paths: [
+            {
+              id: EP1,
+              short_title: "EP1",
+              title: "Einführung in die Programmierung 1",
+              url: null,
+            },
+            {
+              id: GDS,
+              short_title: "GDS",
+              title: "Grundlagen digitaler Systeme",
+              url: null,
+            },
+          ],
+        });
+      }
+      return jsonResponse({ learning_path_id: null, reviews: [] });
+    });
+
+    const data = (await reviewLoad(
+      createEvent({ fetch }) as never,
+    )) as ReviewLoadData;
+
+    expect(data.nextReview?.topic).toBe("Rekursion");
+    expect(data.courses).toEqual({ [EP1]: "EP1", [GDS]: "GDS" });
+  });
+
+  it("still lists reviews when the course titles cannot be read", async () => {
+    const due = reviewItem({ is_due: true, topic: "Rekursion" });
+    const fetch = vi.fn(async (url: string) =>
+      url.startsWith("/api/learning-paths")
+        ? new Response(null, { status: 502 })
+        : jsonResponse({ learning_path_id: null, reviews: [due] }),
+    );
+
+    const data = (await reviewLoad(createEvent({ fetch }) as never)) as {
+      courses: Record<number, string>;
+      due: { status: string; data: ReviewItem[] };
+    };
+
+    expect(data.courses).toEqual({});
+    expect(data.due.status).toBe("ready");
+    expect(data.due.data).toHaveLength(1);
   });
 
   it("keeps the stricter floors when the pacing endpoint is unreachable", async () => {
@@ -395,6 +479,158 @@ describe("review server load", () => {
     });
   });
 });
+
+describe("review page", () => {
+  it("queues a review from a course that is not selected, labelled with that course", () => {
+    render(ReviewPage, {
+      data: pageData({
+        due: [
+          reviewItem({
+            is_due: true,
+            learning_path_id: EP1,
+            topic: "Rekursion",
+          }),
+        ],
+      }),
+    });
+
+    expect(screen.getByRole("heading", { name: "Rekursion" })).toBeTruthy();
+    expect(screen.getByText("EP1")).toBeTruthy();
+  });
+
+  it("grades a review against the course that holds it, not the selected one", async () => {
+    const fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ schedule: reviewItem({ topic: "Rekursion" }) }),
+          {
+            headers: { "content-type": "application/json" },
+            status: 200,
+          },
+        ),
+    );
+    vi.stubGlobal("fetch", fetch);
+    stubRelativeRequest();
+    render(ReviewPage, {
+      data: pageData({
+        due: [
+          reviewItem({
+            is_due: true,
+            learning_path_id: EP1,
+            topic: "Rekursion",
+          }),
+        ],
+        pacing: {
+          elaboration_min_chars: 1,
+          prompt_min_dwell_ms: 0,
+          reflection_min_seconds: 0,
+        },
+      }),
+    });
+
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: "Base case first." },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Check myself" }));
+    await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
+    // A grade is held for its undo window; leaving the page sends it now.
+    window.dispatchEvent(new Event("pagehide"));
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+    const request = (fetch.mock.calls as unknown as [Request][])[0]?.[0];
+    expect(JSON.parse(await (request as Request).text())).toMatchObject({
+      learning_path_id: EP1,
+      topic: "Rekursion",
+    });
+    vi.unstubAllGlobals();
+  });
+
+  it("says when the next review falls due when nothing is due yet", () => {
+    render(ReviewPage, {
+      data: pageData({
+        nextReview: reviewItem({
+          learning_path_id: EP1,
+          next_review_at: "2026-10-11T02:47:00Z",
+          topic: "Rekursion",
+        }),
+      }),
+    });
+
+    const empty = screen.getByRole("region", { name: "Caught up" });
+    expect(empty.textContent).toContain("Rekursion");
+    expect(empty.textContent).toContain("EP1");
+    expect(empty.textContent).toContain("Oct 11, 2026");
+    expect(empty.textContent).toContain("UTC");
+  });
+
+  it("says how reviews get here when nothing is scheduled at all", () => {
+    render(ReviewPage, { data: pageData({}) });
+
+    const empty = screen.getByRole("region", { name: "Caught up" });
+    expect(empty.textContent).toMatch(/Finish a study session/);
+    expect(screen.getByRole("link", { name: "Start a session" })).toBeTruthy();
+  });
+});
+
+function reviewItem(overrides: Partial<ReviewItem>): ReviewItem {
+  return {
+    difficulty: 0.3,
+    interval_days: 1,
+    interval_index: 0,
+    is_due: false,
+    last_reviewed_at: null,
+    learning_path_id: EP1,
+    next_review_at: "2026-10-11T02:47:00Z",
+    review_count: 0,
+    score_at_last_review: null,
+    stability: 1,
+    topic: "Rekursion",
+    ...overrides,
+  };
+}
+
+function pageData({
+  due = [],
+  nextReview = null,
+  pacing = {
+    elaboration_min_chars: 40,
+    prompt_min_dwell_ms: 2000,
+    reflection_min_seconds: 20,
+  },
+}: {
+  due?: ReviewItem[];
+  nextReview?: ReviewItem | null;
+  pacing?: ReviewLoadData["pacing"];
+}) {
+  return {
+    courses: { [EP1]: "EP1", [GDS]: "GDS" },
+    csrfToken: "csrf",
+    due: { data: due, status: "ready" as const },
+    nextReview,
+    pacing,
+    uiLocale: "en",
+  } as never;
+}
+
+/**
+ * The client posts a same-origin relative path, which a browser resolves and
+ * Node's Request does not.
+ */
+function stubRelativeRequest(): void {
+  vi.stubGlobal(
+    "Request",
+    class extends Request {
+      constructor(input: RequestInfo | URL, init?: RequestInit) {
+        super(
+          typeof input === "string"
+            ? new URL(input, "http://localhost")
+            : input,
+          init,
+        );
+      }
+    },
+  );
+}
 
 function jsonResponse(body: unknown): Response {
   return new Response(JSON.stringify(body), {
