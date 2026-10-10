@@ -73,7 +73,7 @@ describe("content sources page", () => {
     expect(screen.getByRole("alert")).toBeTruthy();
   });
 
-  it("says an accepted upload is queued rather than finished", () => {
+  it("says an accepted upload is stored, not yet processed", () => {
     render(SourcesPage, {
       data: pageData({}),
       form: {
@@ -90,7 +90,8 @@ describe("content sources page", () => {
     expect(screen.getByRole("status").textContent).toContain(
       "Graph algorithms",
     );
-    expect(screen.getByText(/queued for transcription/)).toBeTruthy();
+    expect(screen.getByText(/stored, but not yet processed/)).toBeTruthy();
+    expect(screen.queryByText(/queued/i)).toBeNull();
   });
 });
 

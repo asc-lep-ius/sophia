@@ -163,7 +163,7 @@
       {m.content_upload_accepted({ title: accepted.title })}
     </p>
     <p class="accepted-state">
-      {m.content_upload_state_queued()}
+      {m.content_upload_state_stored()}
     </p>
   {/if}
 </section>
