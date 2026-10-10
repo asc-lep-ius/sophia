@@ -1798,6 +1798,173 @@
         "title": "HealthResponse",
         "type": "object"
       },
+      "IngestionJobResponse": {
+        "properties": {
+          "content_source_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Source Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "requested_at": {
+            "title": "Requested At",
+            "type": "string"
+          },
+          "requested_by": {
+            "title": "Requested By",
+            "type": "string"
+          },
+          "stage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "state": {
+            "$ref": "#/components/schemas/IngestionState"
+          }
+        },
+        "required": [
+          "id",
+          "learning_path_id",
+          "state",
+          "requested_by",
+          "stage",
+          "content_source_id",
+          "error",
+          "requested_at",
+          "started_at",
+          "finished_at"
+        ],
+        "title": "IngestionJobResponse",
+        "type": "object"
+      },
+      "IngestionSettingsRequest": {
+        "description": "How a learning path is processed from now on.\n\n``transcription_language`` is an ISO 639-1 code, or null to let the\ntranscriber detect each recording's language itself.",
+        "properties": {
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "transcription_language": {
+            "anyOf": [
+              {
+                "pattern": "^[a-z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Language"
+          }
+        },
+        "required": [
+          "subscribed"
+        ],
+        "title": "IngestionSettingsRequest",
+        "type": "object"
+      },
+      "IngestionSettingsResponse": {
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "subscribed": {
+            "title": "Subscribed",
+            "type": "boolean"
+          },
+          "transcription_language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transcription Language"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "subscribed",
+          "transcription_language"
+        ],
+        "title": "IngestionSettingsResponse",
+        "type": "object"
+      },
+      "IngestionSourceResponse": {
+        "description": "A content source the learning path owns, whose items processing covers.",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ],
+        "title": "IngestionSourceResponse",
+        "type": "object"
+      },
       "IngestionState": {
         "description": "Where an accepted upload sits in the processing that follows it.\n\nKept apart from the service's own state enum in the same way the topic and\ncontent-language transports are: the wire contract is allowed to outlive\nwhatever the pipeline calls its stages internally.",
         "enum": [
@@ -1808,6 +1975,70 @@
         ],
         "title": "IngestionState",
         "type": "string"
+      },
+      "IngestionStatusResponse": {
+        "properties": {
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IngestionJobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/IngestionSettingsResponse"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/IngestionSourceResponse"
+            },
+            "title": "Sources",
+            "type": "array"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/IngestionWorkerResponse"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "settings",
+          "worker",
+          "job",
+          "sources"
+        ],
+        "title": "IngestionStatusResponse",
+        "type": "object"
+      },
+      "IngestionWorkerResponse": {
+        "description": "Whether processing can start here, and if not, the reason shown as the refusal.",
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "gpu_name": {
+            "title": "Gpu Name",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "available",
+          "reason",
+          "gpu_name"
+        ],
+        "title": "IngestionWorkerResponse",
+        "type": "object"
       },
       "JsonPrimitive": {
         "anyOf": [
@@ -7635,6 +7866,283 @@
         "summary": "Get Content Language",
         "tags": [
           "content-language"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/ingestion": {
+      "get": {
+        "operationId": "readIngestionStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Ingestion Status",
+        "tags": [
+          "ingestion"
+        ]
+      },
+      "post": {
+        "description": "Queue processing of every recording the learning path owns, and follow it.\n\n409 when a job is already queued or running for it; 503, with the reason,\nwhen no worker can process here. The first Process subscribes the path:\nfrom then on new recordings are processed without another press.",
+        "operationId": "startIngestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Ingestion",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/ingestion/settings": {
+      "put": {
+        "description": "Stop or resume following the learning path, and set its transcription language.",
+        "operationId": "saveIngestionSettings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestionSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionSettingsResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Ingestion Settings Route",
+        "tags": [
+          "ingestion"
         ]
       }
     },
