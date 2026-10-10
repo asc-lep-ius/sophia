@@ -24,6 +24,7 @@ from sophia.adapters.captions import (
     parse_vtt,
     select_caption_track,
 )
+from sophia.adapters.lecture_downloader import probe_duration
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
 from sophia.domain.errors import CaptionError, TranscriptionError
 from sophia.domain.models import HermesConfig, TranscriptSource
@@ -410,6 +411,19 @@ async def _set_transcription_state(
     )
 
 
+async def transcription_timeout(audio_path: Path) -> float:
+    """At least the floor, and as long as the recording itself.
+
+    Whisper int8 on the GTX 1070 runs about six times faster than real time,
+    so a three-and-a-half-hour lecture needs over thirty minutes; the floor on
+    its own timed out six of EP1 2026W's seventeen recordings, and a retry
+    could never do better (#128). A run that has not finished by the time it
+    could have played the whole lecture is hung, and that still ends.
+    """
+    duration = await probe_duration(audio_path)
+    return max(_TRANSCRIPTION_TIMEOUT_S, duration or 0.0)
+
+
 async def _transcribe_episode(
     session: AsyncSession,
     transcriber: WhisperTranscriber,
@@ -468,10 +482,11 @@ async def _transcribe_episode(
         )
     )
 
+    timeout = await transcription_timeout(audio_path)
     try:
         transcript = await asyncio.wait_for(
             asyncio.to_thread(transcriber.transcribe_lecture, audio_path, language),
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
+            timeout=timeout,
         )
         segments: list[TranscriptSegment] = transcript.segments
 
@@ -508,14 +523,10 @@ async def _transcribe_episode(
         )
 
     except TimeoutError:
-        msg = f"transcription timed out after {_TRANSCRIPTION_TIMEOUT_S}s"
+        msg = f"transcription timed out after {timeout:.0f}s"
         await _set_transcription_state(session, episode_id, {"status": "failed", "error": msg})
 
-        log.error(
-            "transcription_timed_out",
-            episode_id=episode_id,
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
-        )
+        log.error("transcription_timed_out", episode_id=episode_id, timeout=timeout)
         return TranscriptionResult(
             episode_id=episode_id,
             title=title,

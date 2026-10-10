@@ -428,3 +428,26 @@ async def test_transcription_timeout() -> None:
 
     assert result.status == "failed"
     assert result.error is not None and "timed out" in result.error
+
+
+@pytest.mark.asyncio
+async def test_transcription_timeout_is_as_long_as_the_lecture_and_never_under_the_floor() -> None:
+    """A 3.4 h lecture gets 3.4 h; a short or unreadable one the 30-minute floor (#128)."""
+    from pathlib import Path
+
+    from sophia.services import hermes_transcribe
+
+    audio = Path("/tmp/lecture.m4a")
+    with patch.object(hermes_transcribe, "probe_duration", AsyncMock(return_value=12313.0)):
+        assert await hermes_transcribe.transcription_timeout(audio) == 12313.0
+    with patch.object(hermes_transcribe, "probe_duration", AsyncMock(return_value=600.0)):
+        assert await hermes_transcribe.transcription_timeout(audio) == 1800.0
+    with patch.object(hermes_transcribe, "probe_duration", AsyncMock(return_value=None)):
+        assert await hermes_transcribe.transcription_timeout(audio) == 1800.0
+
+
+@pytest.mark.asyncio
+async def test_probe_duration_is_none_when_ffprobe_cannot_read_the_file(tmp_path: Path) -> None:
+    from sophia.adapters.lecture_downloader import probe_duration
+
+    assert await probe_duration(tmp_path / "missing.m4a") is None
