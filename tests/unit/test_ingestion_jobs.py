@@ -144,7 +144,11 @@ async def test_subscribed_courses_are_queued_and_unsubscribed_ones_are_not(
     assert await enqueue_subscribed(db, requested_by="nightly") == []
 
     await save_ingestion_settings(db, IngestionSettings(course_id=EP1, subscribed=False))
+    # Claimed and finished for real: a queued job that never ran stays queued,
+    # and would block re-queueing whatever the subscription said.
+    await claim_next_job(db, "hephaestus:1")
     await finish_job(db, queued.id)
+    assert await active_job(db, EP1) is None
     assert await enqueue_subscribed(db, requested_by="nightly") == []
 
 

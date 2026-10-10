@@ -212,8 +212,13 @@ async def _heartbeat_loop(
     interval = min(poll_interval_s, settings.ingestion_worker_stale_seconds / 3)
     while True:
         await asyncio.sleep(interval)
-        async with session_scope(factory) as session:
-            await _beat(session, worker_id, capability)
+        try:
+            async with session_scope(factory) as session:
+                await _beat(session, worker_id, capability)
+        except Exception as exc:  # noqa: BLE001 — one missed beat must not end them all
+            # A Postgres blip here would otherwise stop the heartbeats for the
+            # rest of the job, and the sweep would fail a job still running.
+            log.warning("worker_heartbeat_failed", error=type(exc).__name__, reason=str(exc))
 
 
 async def _poll(
