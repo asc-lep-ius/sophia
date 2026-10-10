@@ -171,3 +171,48 @@ async def test_the_media_stage_child_lists_the_series_before_reading_the_scope(
     assert knowledge == {"ep-jun"}
     assert no_job == {"ep-oct"}
     container.opencast.get_series_episodes.assert_awaited_once_with(OLD_SERIES)
+
+
+async def test_the_stage_child_hands_both_stage_groups_the_jobs_scope(
+    db: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A plain Process on a module whose series mixes semesters must never hand the
+    older recordings to the media or the knowledge stages: that is the GPU time the
+    semester rule exists to save."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sophia.services.hermes_pipeline import PipelineResult
+    from sophia.services.ingestion_jobs import heartbeat, request_ingestion
+    from sophia.worker import stage
+
+    await _course(db)
+    await heartbeat(db, "w", hostname="x", capable=True, reason="", gpu_name="GTX 1070")
+    job = await request_ingestion(db, EP1, scope=CURRENT_SEMESTER)
+    container = MagicMock()
+    container.opencast.get_series_episodes = AsyncMock(
+        return_value=[_lecture("ep-oct", "2026-10-09"), _lecture("ep-jun", "2026-06-15")]
+    )
+
+    @asynccontextmanager
+    async def _session():
+        yield db
+
+    @asynccontextmanager
+    async def _create_app(settings=None):
+        yield container
+
+    container.session = _session
+    monkeypatch.setattr(stage, "create_app", _create_app)
+    media = AsyncMock(return_value=PipelineResult())
+    knowledge = AsyncMock(return_value=PipelineResult())
+    monkeypatch.setattr(stage, "run_media_stages", media)
+    monkeypatch.setattr(stage, "run_knowledge_stages", knowledge)
+
+    await stage.run_stage_group(stage.MEDIA, MODULE, course_id=EP1, job_id=job.id)
+    await stage.run_stage_group(stage.KNOWLEDGE, MODULE, course_id=EP1, job_id=job.id)
+
+    assert media.await_args is not None and knowledge.await_args is not None
+    assert media.await_args.kwargs["only_episodes"] == {"ep-oct"}
+    assert knowledge.await_args.kwargs["only_episodes"] == {"ep-oct"}
+    assert knowledge.await_args.kwargs["strict"] is True

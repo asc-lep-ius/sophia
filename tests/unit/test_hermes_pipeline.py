@@ -949,3 +949,104 @@ async def test_a_module_with_no_known_owner_gets_no_topics_under_its_own_id(
     extract.assert_not_called()
     assert result.topics == []
     assert await _topic_rows(db) == []
+
+
+# ------------------------------------------------------------------
+# Strict knowledge stages: every lecture failing is a failure (#128)
+# ------------------------------------------------------------------
+
+
+def _make_lecture_topics(episode_id: str, status: str, *, error: str | None = None):
+    from sophia.services.athena_topics import LectureTopicResult
+
+    return LectureTopicResult(episode_id=episode_id, title=episode_id, status=status, error=error)
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_fail_when_no_lecture_could_be_indexed(
+    db: AsyncSession,
+) -> None:
+    """The operator's rule: an index stage in which every episode failed is a failure.
+
+    That is the GPU or the model being unusable, not one bad lecture, and the
+    worker must report it; skipped lectures do not count as attempts.
+    """
+    from unittest.mock import patch
+
+    from sophia.domain.errors import EmbeddingError
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    all_failed = [
+        _make_indexing("ep-1", status="failed", error="no kernel image is available"),
+        _make_indexing("ep-2", status="failed", error="no kernel image is available"),
+        _make_indexing("ep-3", status="skipped"),
+    ]
+    topics = AsyncMock(return_value=[])
+    with (
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=all_failed)),
+        patch("sophia.services.hermes_pipeline.extract_topics_per_lecture", topics),
+    ):
+        with pytest.raises(EmbeddingError, match="indexing failed for every lecture.*no kernel"):
+            await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+        topics.assert_not_awaited()
+
+        # The same outcomes are a completion when nobody asked for strictness.
+        lenient = await run_knowledge_stages(MagicMock(), db, 42)
+    assert [item.status for item in lenient.indexing] == ["failed", "failed", "skipped"]
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_go_on_while_one_lecture_indexed(db: AsyncSession) -> None:
+    """One failed lecture beside a completed one is that lecture's failure, not the stage's."""
+    from unittest.mock import patch
+
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    mixed = [_make_indexing("ep-1", status="failed", error="boom"), _make_indexing("ep-2")]
+    with (
+        patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=mixed)),
+        patch(
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=[_make_lecture_topics("ep-2", "completed")]),
+        ),
+    ):
+        result = await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+
+    assert [item.status for item in result.indexing] == ["failed", "completed"]
+    assert [item.status for item in result.lecture_topics] == ["completed"]
+
+
+@pytest.mark.asyncio
+async def test_strict_knowledge_stages_fail_when_no_lecture_got_topics(db: AsyncSession) -> None:
+    """The same rule for topic extraction: Gemini refusing every lecture is a failed job."""
+    from unittest.mock import patch
+
+    from sophia.domain.errors import TopicExtractionError
+    from sophia.services.hermes_pipeline import run_knowledge_stages
+
+    await _own(db)
+    all_failed = [
+        _make_lecture_topics("ep-1", "failed", error="503 UNAVAILABLE"),
+        _make_lecture_topics("ep-2", "failed", error="503 UNAVAILABLE"),
+    ]
+    one_failed = [
+        _make_lecture_topics("ep-1", "failed", error="503"),
+        _make_lecture_topics("ep-2", "completed"),
+    ]
+    with patch("sophia.services.hermes_pipeline.index_lectures", AsyncMock(return_value=[])):
+        with patch(
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=all_failed),
+        ):
+            with pytest.raises(
+                TopicExtractionError, match="topic extraction failed for every.*503"
+            ):
+                await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+        with patch(
+            "sophia.services.hermes_pipeline.extract_topics_per_lecture",
+            AsyncMock(return_value=one_failed),
+        ):
+            result = await run_knowledge_stages(MagicMock(), db, 42, strict=True)
+    assert [item.status for item in result.lecture_topics] == ["failed", "completed"]
