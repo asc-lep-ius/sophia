@@ -1,13 +1,15 @@
-import type { StudyQuestion } from "$lib/api/study";
+import type { StudyQuestion, StudyRequeuedQuestion } from "$lib/api/study";
+import type { RequeuedCard } from "$lib/study/session.svelte";
 
 /**
  * The cards a session still owes this learner.
  *
  * A resumed session must not re-present a card that already has an attempt:
  * grading it again mints a fresh request id, so the server stores a *second*
- * attempt and averages both into the phase means the reflect route reports.
- * The server is the one that knows what was answered — the ids come from
- * `listStudySessionQuestions`, not from anything the page remembered.
+ * attempt, and that one replaces the first in the phase means the reflect
+ * route reports. Cards graded Again come back through `requeuedCards`
+ * instead. The server is the one that knows what was answered — the ids come
+ * from `listStudySessionQuestions`, not from anything the page remembered.
  */
 export function remainingCards(
   questions: StudyQuestion[],
@@ -48,4 +50,26 @@ export function practiceCards(
   attemptedIds: string[],
 ): StudyQuestion[] {
   return remainingCards(questions.slice(1), attemptedIds);
+}
+
+/**
+ * The practice cards graded Again that the session still owes a re-ask.
+ *
+ * Read back from the server, so a tab closed between the Again and the re-ask
+ * presents the card again. `attempts` is which re-ask comes next, which keeps
+ * the cap counting across the reload. An id outside the practice deck is
+ * dropped rather than trusted: the anchor is the pre- and post-test, never a
+ * card to practise.
+ */
+export function requeuedCards(
+  questions: StudyQuestion[],
+  requeued: StudyRequeuedQuestion[],
+): RequeuedCard[] {
+  const practice = new Map(
+    questions.slice(1).map((question) => [question.id, question]),
+  );
+  return requeued.flatMap(({ question_id, attempts }) => {
+    const question = practice.get(question_id);
+    return question ? [{ question, retry: attempts }] : [];
+  });
 }

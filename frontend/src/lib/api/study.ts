@@ -12,6 +12,8 @@ export type StudySessionSummary =
   components["schemas"]["StudySessionSummaryResponse"];
 export type StudyPacing = components["schemas"]["StudyPacingResponse"];
 export type StudyAttemptPhase = components["schemas"]["StudyAttemptPhase"];
+export type StudyRequeuedQuestion =
+  components["schemas"]["StudyRequeuedQuestion"];
 export type CalibrationBand = components["schemas"]["CalibrationBand"];
 export type ElaborationPolicy = components["schemas"]["ElaborationPolicy"];
 export type LearningEventInput = components["schemas"]["LearningEventInput"];

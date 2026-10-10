@@ -1,7 +1,11 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { StudyPacing, StudyQuestion } from "../../src/lib/api/study";
+import type {
+  StudyPacing,
+  StudyQuestion,
+  StudyRequeuedQuestion,
+} from "../../src/lib/api/study";
 import { STUDY_PROGRESS } from "../../src/lib/study/progress";
 
 /**
@@ -84,7 +88,11 @@ function question(id: string): StudyQuestion {
   };
 }
 
-function pageData(attemptedQuestionIds: string[], cards = 2) {
+function pageData(
+  attemptedQuestionIds: string[],
+  cards = 2,
+  requeuedQuestions: StudyRequeuedQuestion[] = [],
+) {
   return {
     attemptedQuestionIds,
     csrfToken: "csrf",
@@ -93,6 +101,7 @@ function pageData(attemptedQuestionIds: string[], cards = 2) {
     questions: Array.from({ length: cards }, (_, index) =>
       question(index === 0 ? "anchor" : `card-${index}`),
     ),
+    requeuedQuestions,
     sessionId: SESSION_ID,
     summary: {
       session: { topic: "Graphs", completed_at: null },
@@ -101,9 +110,16 @@ function pageData(attemptedQuestionIds: string[], cards = 2) {
   } as never;
 }
 
-function openAct(attemptedQuestionIds: string[], cards = 2) {
+function openAct(
+  attemptedQuestionIds: string[],
+  cards = 2,
+  requeuedQuestions: StudyRequeuedQuestion[] = [],
+) {
   return render(ActPage, {
-    props: { data: pageData(attemptedQuestionIds, cards), form: null },
+    props: {
+      data: pageData(attemptedQuestionIds, cards, requeuedQuestions),
+      form: null,
+    },
   });
 }
 
@@ -128,6 +144,13 @@ function answerField(): HTMLTextAreaElement {
 
 async function write(text: string): Promise<void> {
   await fireEvent.input(answerField(), { target: { value: text } });
+}
+
+/** Answer the card on screen and grade it with the named button. */
+async function gradeCard(grade: RegExp): Promise<void> {
+  await write(ANSWER);
+  await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+  await fireEvent.click(screen.getByRole("button", { name: grade }));
 }
 
 describe("study cycle across step changes", () => {
@@ -242,5 +265,49 @@ describe("study cycle across step changes", () => {
     await vi.advanceTimersByTimeAsync(3000);
 
     expect(navigation.invalidate).toHaveBeenCalledWith(STUDY_PROGRESS);
+  });
+});
+
+describe("Work with a card graded Again", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.stubGlobal("EventSource", FakeEventSource);
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  // #170 scenario 1: four cards, card 2 graded Again.
+  it("presents card 2 again after card 4, empty, before Reflect opens", async () => {
+    openAct(["anchor"], 5);
+
+    await gradeCard(/Good/);
+    await gradeCard(/Again/);
+    await gradeCard(/Good/);
+    await gradeCard(/Good/);
+
+    expect(screen.getByText("Explain card-2.")).toBeTruthy();
+    expect(answerField().value).toBe("");
+    expect(screen.queryByText("No cards left in this session.")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Reflect" })).toBeNull();
+
+    await gradeCard(/Good/);
+
+    expect(screen.getByText("No cards left in this session.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Reflect" })).toBeTruthy();
+  });
+
+  it("presents the card again when the session is resumed before its re-ask", () => {
+    openAct(["anchor", "card-1", "card-2"], 3, [
+      { question_id: "card-1", attempts: 1 },
+    ]);
+
+    expect(screen.getByText("Explain card-1.")).toBeTruthy();
+    expect(answerField().value).toBe("");
+    expect(screen.queryByText("No cards left in this session.")).toBeNull();
   });
 });

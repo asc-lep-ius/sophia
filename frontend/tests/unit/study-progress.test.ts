@@ -53,6 +53,7 @@ function record(
   return {
     questions: DECK,
     attemptedQuestionIds,
+    requeuedQuestions: [],
     summary: { session: { topic: "Graphs", completed_at: completedAt } },
   };
 }
@@ -103,6 +104,17 @@ describe("cycleProgress", () => {
     );
 
     expect(progress.completed).toEqual(new Set(["predict", "act"]));
+  });
+
+  it("keeps Work open while a card graded Again is still owed its re-ask", () => {
+    const progress = cycleProgress({
+      ...record(["anchor", "card-1", "card-2"]),
+      requeuedQuestions: [{ question_id: "card-2", attempts: 1 }],
+    } as never);
+
+    expect(progress.completed).toEqual(new Set(["predict"]));
+    // Reflect stays open: the learner still decides when they have practised enough.
+    expect(progress.reachable.has("reflect")).toBe(true);
   });
 
   it("marks Reflect done when the session is closed, and keeps it reachable", () => {

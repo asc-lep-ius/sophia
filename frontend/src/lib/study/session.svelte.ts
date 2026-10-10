@@ -26,8 +26,22 @@ export type StudyCard = {
   question: StudyQuestion;
   answer: string;
   revealed: boolean;
-  againLater: boolean;
+  /** How many times the card has come back after an Again: 0 on first sight. */
+  retry: number;
 };
+
+/** A card graded Again that has yet to come back. */
+export type RequeuedCard = {
+  question: StudyQuestion;
+  retry: number;
+};
+
+/**
+ * Which grade queued a re-ask: undoing or losing that grade takes the re-ask
+ * back with it. `null` for one read back from the server on resume, whose
+ * grade is already durable.
+ */
+type QueuedBy = { queuedBy: string | null };
 
 export type GradeSubmission = {
   questionId: string;
@@ -36,15 +50,21 @@ export type GradeSubmission = {
   confidence: number | null;
   phase: StudyAttemptPhase;
   queuePosition: number;
+  retry: number;
 };
 
 export type StudySessionStoreOptions = {
   questions: StudyQuestion[];
   pacing: StudyPacing;
   phase?: StudyAttemptPhase;
+  /**
+   * Practice cards graded Again in an earlier visit and still owed a re-ask,
+   * as the server counts them; they come after every card in `questions`.
+   */
+  requeued?: RequeuedCard[];
   submit: (submission: GradeSubmission, requestId: string) => Promise<void>;
   learningEvents?: Pick<LearningEventBatcher, "record">;
-  /** Answers in progress, keyed by question id, kept beyond this store. */
+  /** Answers in progress, keyed by question and re-ask, kept beyond this store. */
   drafts?: DraftStore;
   /** Retry tuning for the grade outbox; the defaults are the shipping ones. */
   retry?: Pick<
@@ -58,6 +78,17 @@ export type StudySessionStoreOptions = {
 /** Again/Hard/Good/Easy, the same scale the server grades an attempt on. */
 export const GRADES = [1, 2, 3, 4] as const;
 export type Grade = (typeof GRADES)[number];
+const AGAIN: Grade = 1;
+
+/**
+ * How many times one practice card may come back after an Again in a session.
+ *
+ * Mirrors `AGAIN_REASK_LIMIT` in `services/study_questions.py`, which counts a
+ * resumed session's owed re-asks against the same number. A failed card is
+ * cycled until it is recalled once, but capped, or the hardest card eats the
+ * session.
+ */
+export const AGAIN_REASK_LIMIT = 2;
 
 /**
  * The study session's state machine and card queue.
@@ -70,13 +101,27 @@ export type Grade = (typeof GRADES)[number];
  * self-rating, sent as-is; what it is worth is the server's to say.
  */
 export class StudySessionStore {
-  #cards = $state<StudyCard[]>([]);
+  /** Every card in order, with each re-ask appended once it is called in. */
+  #cards = $state<(StudyCard & QueuedBy)[]>([]);
+  /**
+   * Re-asks waiting behind every card still to come, oldest first.
+   *
+   * Called into `#cards` only once the learner has reached the end of it, so
+   * whatever else remains always comes between a grade and its re-ask, and a
+   * grade taken back can take its re-ask back without moving any card that
+   * an outbox entry points at.
+   */
+  #owed = $state<(RequeuedCard & QueuedBy)[]>([]);
   #index = $state(0);
   #state = $state<StudyState>("idle");
   #stateBeforePause: StudyState = "prompt";
   #promptShownAt = $state(0);
   #clockMs = $state(0);
-  #lastGrade = $state<{ requestId: string; at: number } | null>(null);
+  #lastGrade = $state<{
+    requestId: string;
+    at: number;
+    position: number;
+  } | null>(null);
   #error = $state<string | null>(null);
   #focusMode = $state(false);
   #options: StudySessionStoreOptions;
@@ -88,12 +133,14 @@ export class StudySessionStore {
     this.#options = options;
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => crypto.randomUUID());
-    this.#cards = options.questions.map((question) => ({
-      question,
-      answer: options.drafts?.read(question.id) ?? "",
-      revealed: false,
-      againLater: false,
+    this.#cards = options.questions.map((question) =>
+      this.#card({ question, retry: 0, queuedBy: null }),
+    );
+    this.#owed = (options.requeued ?? []).map((card) => ({
+      ...card,
+      queuedBy: null,
     }));
+    this.#callInReask();
     this.#state = this.#cards.length > 0 ? "prompt" : "idle";
     this.#promptShownAt = this.#now();
     this.#clockMs = this.#promptShownAt;
@@ -103,7 +150,9 @@ export class StudySessionStore {
         await this.#options.submit(payload, requestId);
         // Only once the server has it: a grade that is refused or never
         // lands leaves the card to be answered again, text and all.
-        this.#options.drafts?.clear(payload.questionId);
+        this.#options.drafts?.clear(
+          draftKey(payload.questionId, payload.retry),
+        );
       },
       rollback: (entry) => this.#rollback(entry),
     });
@@ -126,15 +175,23 @@ export class StudySessionStore {
   }
 
   get total(): number {
-    return this.#cards.length;
+    return this.#cards.length + this.#owed.length;
   }
 
   get remaining(): number {
-    return Math.max(this.#cards.length - this.#index, 0);
+    return Math.max(this.total - this.#index, 0);
   }
 
+  /**
+   * Re-asks still to come: those waiting behind the queue, and any a rewind
+   * has left ahead of the learner. A card graded Again at the cap is not one —
+   * the indicator promises a re-ask, so it counts only the ones that will happen.
+   */
   get againLaterCount(): number {
-    return this.#cards.filter((card) => card.againLater).length;
+    const ahead = this.#cards
+      .slice(this.#index + 1)
+      .filter((card) => card.retry > 0).length;
+    return this.#owed.length + ahead;
   }
 
   get pendingCount(): number {
@@ -256,7 +313,7 @@ export class StudySessionStore {
       return;
     }
     card.answer = value;
-    this.#options.drafts?.write(card.question.id, value);
+    this.#options.drafts?.write(draftKey(card.question.id, card.retry), value);
     this.#options.learningEvents?.record({
       eventType: "elaboration_written",
       questionId: card.question.id,
@@ -296,28 +353,31 @@ export class StudySessionStore {
       return false;
     }
 
+    const position = this.#index;
     const submission: GradeSubmission = {
       questionId: card.question.id,
       answerText: card.answer,
       selfRating: rating,
       confidence,
-      phase: this.#options.phase ?? "practice",
-      queuePosition: this.#index,
+      phase: this.#phase,
+      queuePosition: position,
+      retry: card.retry,
     };
     const requestId = this.#newId();
 
     // This submission supersedes any rejected one for the same card: see
     // SubmissionOutbox.discardFailed for what leaving it behind would cost.
-    const position = this.#index;
     this.#outbox.discardFailed(
       (failed) => failed.payload.queuePosition === position,
     );
 
     // Optimistic: the learner sees the next card immediately, and the entry
     // holds everything needed to put this one back if the server refuses.
-    card.againLater = rating === 1;
+    if (rating === AGAIN) {
+      this.#requeue(card, requestId);
+    }
     this.#state = "committed";
-    this.#lastGrade = { requestId, at: this.#now() };
+    this.#lastGrade = { requestId, at: this.#now(), position };
     this.#advance();
 
     this.#outbox.enqueue(requestId, submission);
@@ -346,11 +406,11 @@ export class StudySessionStore {
       return false;
     }
     this.#lastGrade = null;
-    this.#index = Math.max(this.#index - 1, 0);
+    this.#withdrawReask(grade.requestId);
+    this.#index = grade.position;
     const card = this.current;
     if (card) {
       card.revealed = true;
-      card.againLater = false;
     }
     this.#state = "revealed";
     return true;
@@ -430,13 +490,90 @@ export class StudySessionStore {
     });
   }
 
+  get #phase(): StudyAttemptPhase {
+    return this.#options.phase ?? "practice";
+  }
+
+  #card(card: RequeuedCard & QueuedBy): StudyCard & QueuedBy {
+    // A re-ask starts empty — the learner retrieves again rather than reading
+    // their failed answer back — and keeps a draft of its own, so the first
+    // answer's draft cannot be offered back on the second presentation.
+    const draft = this.#options.drafts?.read(
+      draftKey(card.question.id, card.retry),
+    );
+    return { ...card, answer: draft ?? "", revealed: false };
+  }
+
+  /**
+   * Queue a card graded Again to come back after everything else.
+   *
+   * Only in practice: the pre-test and post-test are measurements, and an
+   * Again there is the result. The cap reads the furthest re-ask this store
+   * knows of for the question, not only the graded card's own count, so a
+   * card regraded after a rollback cannot win itself an extra one.
+   */
+  #requeue(card: StudyCard, requestId: string): void {
+    if (this.#phase !== "practice") {
+      return;
+    }
+    const { question } = card;
+    const retry =
+      Math.max(
+        card.retry,
+        ...[...this.#cards, ...this.#owed]
+          .filter((known) => known.question.id === question.id)
+          .map((known) => known.retry),
+      ) + 1;
+    if (retry > AGAIN_REASK_LIMIT) {
+      return;
+    }
+    this.#owed.push({ question, retry, queuedBy: requestId });
+  }
+
+  /** Bring the oldest owed re-ask in once the learner has reached the end. */
+  #callInReask(): void {
+    const next = this.#owed[0];
+    if (next === undefined || this.#index < this.#cards.length) {
+      return;
+    }
+    this.#owed.shift();
+    this.#cards.push(this.#card(next));
+  }
+
+  /**
+   * Take back the re-ask a grade queued, when that grade is taken back.
+   *
+   * One still owed simply goes. One already called in goes only while it is
+   * the last card and the learner has not got past it — removing anything
+   * else would shift the queue positions outbox entries point at. Past that
+   * point it stays, and the cap in `#requeue` still bounds the card.
+   */
+  #withdrawReask(requestId: string): void {
+    const owed = this.#owed.findIndex((card) => card.queuedBy === requestId);
+    if (owed >= 0) {
+      this.#owed.splice(owed, 1);
+      return;
+    }
+    const last = this.#cards.length - 1;
+    if (
+      this.#cards[last]?.queuedBy === requestId &&
+      this.#index <= last &&
+      !this.#outbox.entries.some(
+        (entry) => entry.payload.queuePosition === last,
+      )
+    ) {
+      this.#cards.pop();
+    }
+  }
+
   #advance(): void {
-    if (this.#index >= this.#cards.length - 1) {
+    this.#index += 1;
+    this.#callInReask();
+    if (this.#index >= this.#cards.length) {
       this.#index = this.#cards.length;
       this.#state = "idle";
       return;
     }
-    this.#index += 1;
     this.#promptShownAt = this.#now();
     this.#clockMs = this.#promptShownAt;
     this.#state = "prompt";
@@ -446,8 +583,8 @@ export class StudySessionStore {
     const card = this.#cards[entry.payload.queuePosition];
     if (card) {
       card.revealed = true;
-      card.againLater = false;
     }
+    this.#withdrawReask(entry.requestId);
 
     // Rewind to the earliest rejected card, never simply to this one: with
     // several grades in flight a later rollback would otherwise overwrite an
@@ -464,4 +601,15 @@ export class StudySessionStore {
     this.#state = "rollback";
     this.#error = "study.grade_rejected";
   }
+}
+
+/**
+ * Where a card's unsent answer is kept.
+ *
+ * A first presentation keeps the bare question id, as drafts always have; a
+ * re-ask gets its own key, so the first answer, still waiting for the server
+ * to take it, is never offered back as the second.
+ */
+function draftKey(questionId: string, retry: number): string {
+  return retry === 0 ? questionId : `${questionId}#retry-${retry}`;
 }

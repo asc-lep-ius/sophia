@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { StudyPacing, StudyQuestion } from "../../src/lib/api/study";
-import { StudySessionStore } from "../../src/lib/study/session.svelte";
+import { sessionDrafts } from "../../src/lib/study/drafts";
+import {
+  AGAIN_REASK_LIMIT,
+  StudySessionStore,
+  type Grade,
+} from "../../src/lib/study/session.svelte";
 
 const pacing: StudyPacing = {
   reflection_min_seconds: 30,
@@ -399,5 +404,263 @@ describe("study session store", () => {
     expect(store.remaining).toBe(0);
     expect(store.current).toBeNull();
     expect(store.state).toBe("idle");
+  });
+});
+
+/** Answer the card in front of the learner and grade it; returns its id. */
+function work(
+  { store, advanceMs }: Pick<StoreHarness, "store" | "advanceMs">,
+  rating: Grade,
+): string | undefined {
+  const id = store.current?.question.id;
+  advanceMs(6000);
+  elaborate(store);
+  store.reveal();
+  store.grade(rating);
+  return id;
+}
+
+/** The ids of every card presented, grading each with `rating`, to the end. */
+function workToTheEnd(h: StoreHarness, rating: Grade): string[] {
+  const seen: string[] = [];
+  // Bounded, so a queue that never drains fails the test instead of hanging it.
+  for (let step = 0; step < 20 && h.store.current; step += 1) {
+    seen.push(work(h, rating) ?? "");
+  }
+  return seen;
+}
+
+describe("a card graded Again", () => {
+  it("comes back after the other cards, empty, and holds the queue open until answered", async () => {
+    const h = harness(4);
+    work(h, 3);
+    work(h, 1);
+    work(h, 3);
+    work(h, 3);
+
+    expect(h.store.current?.question.id).toBe("q-1");
+    expect(h.store.answer).toBe("");
+    expect(h.store.state).toBe("prompt");
+    expect(h.store.remaining).toBe(1);
+
+    work(h, 3);
+    await settle();
+
+    expect(h.store.remaining).toBe(0);
+    expect(h.store.state).toBe("idle");
+    // The re-ask is a second attempt under its own request id.
+    expect(h.submitted.map((entry) => entry.questionId)).toEqual([
+      "q-0",
+      "q-1",
+      "q-2",
+      "q-3",
+      "q-1",
+    ]);
+    expect(new Set(h.submitted.map((entry) => entry.requestId)).size).toBe(5);
+  });
+
+  it("is re-presented at most twice in one session", () => {
+    const h = harness(2);
+
+    const seen = workToTheEnd(h, 1);
+
+    expect(AGAIN_REASK_LIMIT).toBe(2);
+    expect(seen).toEqual(["q-0", "q-1", "q-0", "q-1", "q-0", "q-1"]);
+    expect(h.store.remaining).toBe(0);
+  });
+
+  it("does not come straight back while another card remains", () => {
+    const h = harness(3);
+    work(h, 1);
+    work(h, 3);
+
+    // The last unanswered card: q-0's re-ask is still between it and its own.
+    work(h, 1);
+
+    expect(h.store.current?.question.id).toBe("q-0");
+    work(h, 3);
+    expect(h.store.current?.question.id).toBe("q-2");
+  });
+
+  it("comes straight back when nothing else remains", () => {
+    const h = harness(1);
+
+    work(h, 1);
+
+    expect(h.store.current?.question.id).toBe("q-0");
+    expect(h.store.answer).toBe("");
+  });
+
+  it("counts only re-asks still to come as again later", () => {
+    const h = harness(2);
+    work(h, 1);
+    expect(h.store.againLaterCount).toBe(1);
+
+    work(h, 3);
+    // On the re-ask itself: it is now, not later.
+    expect(h.store.current?.question.id).toBe("q-0");
+    expect(h.store.againLaterCount).toBe(0);
+  });
+
+  it("is not re-asked on the pre-test, which is a measurement", () => {
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("anchor")],
+      pacing,
+      phase: "pre_test",
+      submit: async () => undefined,
+      retry: { holdMs: 0, wait: async () => undefined },
+      now: () => now,
+    });
+    const advanceMs = (ms: number) => {
+      now += ms;
+      store.tick();
+    };
+
+    expect(work({ store, advanceMs }, 1)).toBe("anchor");
+
+    expect(store.remaining).toBe(0);
+    expect(store.againLaterCount).toBe(0);
+  });
+
+  it("is taken back with an undone grade", () => {
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0"), question("q-1")],
+      pacing,
+      submit: async () => undefined,
+      retry: { holdMs: 10_000 },
+      now: () => now,
+    });
+    const advanceMs = (ms: number) => {
+      now += ms;
+      store.tick();
+    };
+    work({ store, advanceMs }, 1);
+    expect(store.total).toBe(3);
+
+    expect(store.undo()).toBe(true);
+
+    expect(store.current?.question.id).toBe("q-0");
+    expect(store.total).toBe(2);
+    expect(store.againLaterCount).toBe(0);
+  });
+
+  it("is taken back with an undone grade that had already called it in", () => {
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0")],
+      pacing,
+      submit: async () => undefined,
+      retry: { holdMs: 10_000 },
+      now: () => now,
+    });
+    const advanceMs = (ms: number) => {
+      now += ms;
+      store.tick();
+    };
+    work({ store, advanceMs }, 1);
+    expect(store.total).toBe(2);
+
+    store.undo();
+    store.grade(3);
+
+    expect(store.total).toBe(1);
+    expect(store.remaining).toBe(0);
+  });
+
+  it("is taken back when the server refuses the grade", async () => {
+    const h = harness(2);
+    h.failEvery(new TypeError("network down"));
+
+    work(h, 1);
+    await settle();
+
+    expect(h.store.current?.question.id).toBe("q-0");
+    expect(h.store.total).toBe(2);
+  });
+
+  it("keeps the first answer's draft away from the re-ask", () => {
+    const storage = new Map<string, string>();
+    const drafts = sessionDrafts(7, "practice", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => void storage.set(key, value),
+      removeItem: (key: string) => void storage.delete(key),
+    } as Storage);
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0")],
+      pacing,
+      drafts,
+      submit: async () => undefined,
+      // Held: the first answer's draft is still waiting for the server.
+      retry: { holdMs: 10_000 },
+      now: () => now,
+    });
+
+    work(
+      {
+        store,
+        advanceMs: (ms) => {
+          now += ms;
+          store.tick();
+        },
+      },
+      1,
+    );
+
+    expect(drafts.read("q-0")).not.toBeNull();
+    expect(store.answer).toBe("");
+  });
+});
+
+describe("a session resumed with a card still owed a re-ask", () => {
+  function resumed(retry: number) {
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-2")],
+      requeued: [{ question: question("q-1"), retry }],
+      pacing,
+      submit: async () => undefined,
+      retry: { holdMs: 0, wait: async () => undefined },
+      now: () => now,
+    });
+    const advanceMs = (ms: number) => {
+      now += ms;
+      store.tick();
+    };
+    return { store, advanceMs };
+  }
+
+  it("presents it again after the cards still unanswered", () => {
+    const h = resumed(1);
+    expect(h.store.remaining).toBe(2);
+    expect(h.store.againLaterCount).toBe(1);
+
+    work(h, 3);
+
+    expect(h.store.current?.question.id).toBe("q-1");
+    expect(h.store.answer).toBe("");
+  });
+
+  it("opens on it when it is all that is left", () => {
+    const store = new StudySessionStore({
+      questions: [],
+      requeued: [{ question: question("q-1"), retry: 1 }],
+      pacing,
+      submit: async () => undefined,
+    });
+
+    expect(store.state).toBe("prompt");
+    expect(store.current?.question.id).toBe("q-1");
+  });
+
+  it("keeps counting towards the cap across the reload", () => {
+    const h = resumed(AGAIN_REASK_LIMIT);
+    work(h, 3);
+
+    work(h, 1);
+
+    expect(h.store.remaining).toBe(0);
   });
 });

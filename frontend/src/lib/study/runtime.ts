@@ -7,13 +7,18 @@ import {
 } from "$lib/api/study";
 import { sessionDrafts, type DraftStore } from "$lib/study/drafts";
 import { LearningEventBatcher } from "$lib/study/learningEvents";
-import { StudySessionStore } from "$lib/study/session.svelte";
+import {
+  StudySessionStore,
+  type RequeuedCard,
+} from "$lib/study/session.svelte";
 
 export type StudyRuntimeOptions = {
   csrfToken: string;
   learningPathId: number;
   sessionId: number;
   questions: StudyQuestion[];
+  /** Cards graded Again in an earlier visit; they come after `questions`. */
+  requeued?: RequeuedCard[];
   pacing: StudyPacing;
   phase: StudyAttemptPhase;
   /** Defaults to this tab's drafts for the session and phase. */
@@ -48,6 +53,7 @@ export function createStudyRuntime(options: StudyRuntimeOptions): StudyRuntime {
 
   const store = new StudySessionStore({
     questions: options.questions,
+    requeued: options.requeued,
     pacing: options.pacing,
     phase: options.phase,
     learningEvents: events,

@@ -7,7 +7,7 @@
   import StudyCard from "$lib/components/study/StudyCard.svelte";
   import { m } from "$lib/paraglide/messages.js";
   import { StudyEventStream, type StudyStreamStatus } from "$lib/study/events";
-  import { practiceCards } from "$lib/study/deck";
+  import { practiceCards, requeuedCards } from "$lib/study/deck";
   import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
@@ -34,6 +34,7 @@
         learningPathId: data.learningPathId,
         sessionId: data.sessionId,
         questions: practiceCards(data.questions, data.attemptedQuestionIds),
+        requeued: requeuedCards(data.questions, data.requeuedQuestions),
         pacing: data.pacing,
         phase: "practice",
       }),

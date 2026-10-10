@@ -38,6 +38,7 @@ export const load: LayoutServerLoad = async (event) => {
     learningPathId,
     pacing,
     questions: deck.questions,
+    requeuedQuestions: deck.requeued_questions,
     sessionId,
     summary,
   };

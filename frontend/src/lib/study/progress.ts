@@ -1,5 +1,9 @@
-import type { StudyQuestion, StudySessionSummary } from "$lib/api/study";
-import { practiceCards, preTestAnswered } from "$lib/study/deck";
+import type {
+  StudyQuestion,
+  StudyRequeuedQuestion,
+  StudySessionSummary,
+} from "$lib/api/study";
+import { practiceCards, preTestAnswered, requeuedCards } from "$lib/study/deck";
 
 export const CYCLE_STEPS = ["predict", "act", "reflect"] as const;
 export type CycleStep = (typeof CYCLE_STEPS)[number];
@@ -21,6 +25,7 @@ export type CycleProgress = {
 export type ProgressRecord = {
   questions: StudyQuestion[];
   attemptedQuestionIds: string[];
+  requeuedQuestions: StudyRequeuedQuestion[];
   summary: Pick<StudySessionSummary, "session">;
 };
 
@@ -35,17 +40,23 @@ export type ProgressRecord = {
  * Work opens with the pre-test, the same rule the act route's guard applies,
  * or a stepper link would bounce straight back. Reflect opens with Work: the
  * learner decides when they have practised enough, and the deck need not be
- * drained first. A completed step is always reachable.
+ * drained first. Work is only done once nothing graded Again is still owed a
+ * re-ask. A completed step is always reachable.
  */
 export function cycleProgress({
   questions,
   attemptedQuestionIds,
+  requeuedQuestions,
   summary,
 }: ProgressRecord): CycleProgress {
   const completed = new Set<CycleStep>();
   if (preTestAnswered(questions, attemptedQuestionIds)) {
     completed.add("predict");
-    if (practiceCards(questions, attemptedQuestionIds).length === 0) {
+    const owed = [
+      ...practiceCards(questions, attemptedQuestionIds),
+      ...requeuedCards(questions, requeuedQuestions),
+    ];
+    if (owed.length === 0) {
       completed.add("act");
     }
   }
