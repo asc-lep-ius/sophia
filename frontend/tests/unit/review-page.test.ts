@@ -262,6 +262,85 @@ describe("review queue", () => {
   });
 });
 
+describe("a review graded Again", () => {
+  function review(store: ReviewQueueStore, rating: 1 | 2 | 3 | 4): string {
+    const topic = store.current?.topic ?? "";
+    store.setRecall("a real attempt");
+    store.reveal();
+    store.grade(rating);
+    return topic;
+  }
+
+  it("comes back once at the end of the day's queue", async () => {
+    const submit = vi.fn(async () => {});
+    const store = queue(["Graphs", "Sorting", "Hashing"], submit);
+
+    const seen = [
+      review(store, 1),
+      review(store, 3),
+      review(store, 3),
+      review(store, 1),
+    ];
+
+    expect(seen).toEqual(["Graphs", "Sorting", "Hashing", "Graphs"]);
+    expect(store.finished).toBe(true);
+  });
+
+  it("does not move the schedule a second time", async () => {
+    const submit = vi.fn(async () => {});
+    const store = queue(["Graphs"], submit);
+
+    review(store, 1);
+    expect(store.current?.topic).toBe("Graphs");
+    expect(store.recall).toBe("");
+    review(store, 4);
+    await vi.waitFor(() => expect(store.pendingCount).toBe(0));
+
+    // One completion, the Again: the re-ask's Easy never reached the server.
+    const submissions = submit.mock.calls as unknown as [
+      { selfRating: number; topic: string },
+    ][];
+    expect(submissions.map(([submission]) => submission)).toEqual([
+      expect.objectContaining({ selfRating: 1, topic: "Graphs" }),
+    ]);
+    expect(store.gradedCount).toBe(1);
+    expect(store.finished).toBe(true);
+  });
+
+  it("is taken back with an undone grade", () => {
+    const store = new ReviewQueueStore({
+      newId: () => "request-1",
+      pacing: PACING,
+      retry: { holdMs: 5000 },
+      items: ["Graphs", "Sorting"].map((topic) => ({
+        course: "EP1",
+        learningPathId: EP1,
+        topic,
+      })),
+      submit: vi.fn(async () => {}),
+    });
+    review(store, 1);
+    expect(store.total).toBe(3);
+
+    store.undo();
+
+    expect(store.total).toBe(2);
+  });
+
+  it("is taken back when the server refuses the grade", async () => {
+    const submit = vi.fn(async () => {
+      throw new Error("refused");
+    });
+    const store = queue(["Graphs", "Sorting"], submit);
+
+    review(store, 1);
+    await vi.waitFor(() => expect(store.failedCount).toBe(1));
+
+    expect(store.current?.topic).toBe("Graphs");
+    expect(store.total).toBe(2);
+  });
+});
+
 describe("review card reuse", () => {
   it("grades through the same bar the study surface uses", () => {
     const store = queue(["Graphs"]);

@@ -5,6 +5,8 @@ import {
 } from "$lib/study/outbox.svelte";
 import type { Grade } from "$lib/study/session.svelte";
 
+const AGAIN: Grade = 1;
+
 /**
  * One due topic, and the course that holds it.
  *
@@ -21,7 +23,16 @@ export type ReviewQueueItem = {
 export type ReviewCard = ReviewQueueItem & {
   recall: string;
   revealed: boolean;
+  /**
+   * The topic's second look this sitting, after an Again. Graded like any
+   * other card and never sent: the schedule already has the Again, and a
+   * second completion would move it again.
+   */
+  reask: boolean;
 };
+
+/** The grade that queued a re-ask, so taking the grade back takes it too. */
+type QueuedBy = { queuedBy: string | null };
 
 export type ReviewSubmission = {
   topic: string;
@@ -81,14 +92,23 @@ export const REVIEW_MAX_SENDS = 3;
  * are shared across SSR requests in one process, which would show one
  * learner's queue to the next.
  *
- * Nothing here scores a review or decides when the topic comes back. The
+ * Nothing here scores a review or decides when the topic is next due. The
  * rating travels to the server as the button the learner pressed; the FSRS
- * parameters and the next date come back in the response. The grade scale
+ * parameters and the next date come back in the response. An Again does bring
+ * the topic back once at the end of this sitting, but that second look stays
+ * here and never reaches the schedule. The grade scale
  * itself is `Grade` from the study session store — the same Again/Hard/Good/
  * Easy the study surface uses, not a second copy of it.
  */
 export class ReviewQueueStore {
-  #cards = $state<ReviewCard[]>([]);
+  #cards = $state<(ReviewCard & QueuedBy)[]>([]);
+  /**
+   * Topics graded Again, waiting behind every review still due. Called into
+   * `#cards` only once the learner reaches the end, so the re-ask lands at
+   * the end of the day's queue and a withdrawn one never moves a card an
+   * outbox entry points at.
+   */
+  #owed = $state<(ReviewQueueItem & QueuedBy)[]>([]);
   #index = $state(0);
   /**
    * Queue positions the server has taken.
@@ -101,6 +121,8 @@ export class ReviewQueueStore {
    * be graded a second time.
    */
   #accepted = $state<number[]>([]);
+  /** Re-ask positions the learner has graded: done, though nothing was sent. */
+  #practised = $state<number[]>([]);
   #promptShownAt = $state(0);
   #clockMs = $state(0);
   #lastGrade = $state<{ requestId: string; position: number } | null>(null);
@@ -118,6 +140,8 @@ export class ReviewQueueStore {
       ...item,
       recall: "",
       revealed: false,
+      reask: false,
+      queuedBy: null,
     }));
     this.#promptShownAt = this.#now();
     this.#clockMs = this.#promptShownAt;
@@ -140,11 +164,11 @@ export class ReviewQueueStore {
   }
 
   get total(): number {
-    return this.#cards.length;
+    return this.#cards.length + this.#owed.length;
   }
 
   get remaining(): number {
-    return Math.max(this.#cards.length - this.#index, 0);
+    return Math.max(this.total - this.#index, 0);
   }
 
   /**
@@ -160,7 +184,11 @@ export class ReviewQueueStore {
   }
 
   get finished(): boolean {
-    return this.#cards.length > 0 && this.#index >= this.#cards.length;
+    return (
+      this.#cards.length > 0 &&
+      this.#index >= this.#cards.length &&
+      this.#owed.length === 0
+    );
   }
 
   get recall(): string {
@@ -273,10 +301,20 @@ export class ReviewQueueStore {
       return false;
     }
 
+    if (card.reask) {
+      this.#practised.push(position);
+      this.#lastGrade = null;
+      this.#advance();
+      return true;
+    }
+
     const requestId = this.#newId();
     this.#outbox.discardFailed(
       (failed) => failed.payload.queuePosition === position,
     );
+    if (rating === AGAIN) {
+      this.#requeue(card, requestId);
+    }
     this.#lastGrade = { position, requestId };
     this.#advance();
     this.#outbox.enqueue(requestId, {
@@ -295,6 +333,7 @@ export class ReviewQueueStore {
       return false;
     }
     this.#lastGrade = null;
+    this.#withdrawReask(grade.requestId);
     // Back to the card that grade belonged to, not one step back: a card the
     // server accepted while this one was held may have moved the cursor
     // further than a single position.
@@ -343,17 +382,70 @@ export class ReviewQueueStore {
     this.#seek();
   }
 
-  /** Step over any card the server already holds. */
+  /** Step over any card the server already holds, or a re-ask already done. */
   #seek(): void {
     const before = this.#index;
     while (
       this.#index < this.#cards.length &&
-      this.#accepted.includes(this.#index)
+      (this.#accepted.includes(this.#index) ||
+        this.#practised.includes(this.#index))
     ) {
       this.#index += 1;
     }
+    this.#callInReask();
     if (this.#index !== before) {
       this.#restartPrompt();
+    }
+  }
+
+  /** Queue a topic graded Again for one more look, once per sitting. */
+  #requeue(card: ReviewCard, requestId: string): void {
+    const sameTopic = (other: ReviewQueueItem) =>
+      other.learningPathId === card.learningPathId &&
+      other.topic === card.topic;
+    if (
+      this.#owed.some(sameTopic) ||
+      this.#cards.some((other) => other.reask && sameTopic(other))
+    ) {
+      return;
+    }
+    this.#owed.push({
+      course: card.course,
+      learningPathId: card.learningPathId,
+      topic: card.topic,
+      queuedBy: requestId,
+    });
+  }
+
+  /** Bring the oldest owed re-ask in once the learner has reached the end. */
+  #callInReask(): void {
+    const next = this.#owed[0];
+    if (next === undefined || this.#index < this.#cards.length) {
+      return;
+    }
+    this.#owed.shift();
+    this.#cards.push({ ...next, recall: "", revealed: false, reask: true });
+  }
+
+  /**
+   * Take back the re-ask a grade queued, when that grade is taken back.
+   *
+   * One still owed simply goes. One already called in goes only while it is
+   * the last card and not yet graded; anything else would shift positions
+   * the outbox and `#accepted` point at.
+   */
+  #withdrawReask(requestId: string): void {
+    const owed = this.#owed.findIndex((item) => item.queuedBy === requestId);
+    if (owed >= 0) {
+      this.#owed.splice(owed, 1);
+      return;
+    }
+    const last = this.#cards.length - 1;
+    if (
+      this.#cards[last]?.queuedBy === requestId &&
+      !this.#practised.includes(last)
+    ) {
+      this.#cards.pop();
     }
   }
 
@@ -367,6 +459,7 @@ export class ReviewQueueStore {
     if (card) {
       card.revealed = true;
     }
+    this.#withdrawReask(entry.requestId);
     // Rewind only backwards, and only to the earliest rejected card: with two
     // reviews in flight a later rollback must not undo an earlier one's
     // restoration, and neither may drag a learner forwards.
