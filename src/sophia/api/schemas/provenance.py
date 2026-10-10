@@ -34,10 +34,12 @@ class SourceSpan(ApiModel):
 
     Character offsets locate text material and millisecond offsets locate
     time-based material; both are optional because a span may be known only as
-    a whole content item.
+    a whole content item. ``content_item_title`` names the item — a lecture's
+    title — where the server knows one.
     """
 
     content_item_id: str
+    content_item_title: str | None = None
     start_char: int | None = None
     end_char: int | None = None
     start_ms: int | None = None

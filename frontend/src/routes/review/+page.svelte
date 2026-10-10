@@ -1,10 +1,10 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { resolve } from "$app/paths";
-  import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import ReviewCard from "$lib/components/review/ReviewCard.svelte";
   import { completeReview } from "$lib/api/review";
+  import { formatDueDate } from "$lib/chronos/deadlines";
   import { m } from "$lib/paraglide/messages.js";
   import { ReviewQueueStore } from "$lib/review/queue.svelte";
   import type { PageData } from "./$types";
@@ -13,14 +13,30 @@
 
   let { data }: Props = $props();
 
-  const dueTopics = $derived(
-    data.due.data.filter((review) => review.is_due).map((review) => review.topic),
+  function courseLabel(learningPathId: number): string {
+    return (
+      data.courses[learningPathId] ??
+      m.review_course_fallback({ id: String(learningPathId) })
+    );
+  }
+
+  const dueItems = $derived(
+    data.due.data
+      .filter((review) => review.is_due)
+      .map((review) => ({
+        course: courseLabel(review.learning_path_id),
+        learningPathId: review.learning_path_id,
+        topic: review.topic,
+      })),
   );
 
-  // A string, not the array it came from: `dueTopics` is a `$derived` that
+  // A string, not the array it came from: `dueItems` is a `$derived` that
   // returns a fresh array every time it runs, so depending on it directly
-  // would rebuild the queue on any invalidation at all.
-  const queueKey = $derived(dueTopics.join("|"));
+  // would rebuild the queue on any invalidation at all. The course is part of
+  // the key because two courses can share a topic name.
+  const queueKey = $derived(
+    dueItems.map((item) => `${item.learningPathId}:${item.topic}`).join("|"),
+  );
 
   // Rebuilt only when the queue itself changes, never when an unrelated
   // `invalidateAll` hands the page a fresh data object — that would throw away
@@ -34,16 +50,16 @@
             minPromptDwellMs: data.pacing.prompt_min_dwell_ms,
             minRecallChars: data.pacing.elaboration_min_chars,
           },
+          items: dueItems,
           submit: async (submission) => {
             await completeReview(
               {
                 csrfToken: data.csrfToken ?? "",
-                learningPathId: data.learningPathId ?? 0,
+                learningPathId: submission.learningPathId,
               },
               { selfRating: submission.selfRating, topic: submission.topic },
             );
           },
-          topics: dueTopics,
         }),
     );
   });
@@ -60,16 +76,24 @@
 
 <PageHeader heading={m.review_heading()} summary={m.review_summary()} />
 
-{#if data.learningPathId === null}
-  <NoLearningPathNotice />
-{:else if data.due.status === "unauthorized"}
+{#if data.due.status === "unauthorized"}
   <p class="notice" role="status">{m.dashboard_panel_unauthorized()}</p>
 {:else if data.due.status === "error"}
   <p class="notice error" role="status">{m.dashboard_panel_error()}</p>
-{:else if dueTopics.length === 0}
+{:else if dueItems.length === 0}
   <section class="empty" aria-labelledby="review-empty-heading">
     <h2 id="review-empty-heading">{m.review_empty_title()}</h2>
-    <p>{m.review_empty_body()}</p>
+    {#if data.nextReview}
+      <p>
+        {m.review_next_due({
+          course: courseLabel(data.nextReview.learning_path_id),
+          date: formatDueDate(data.nextReview.next_review_at, data.uiLocale),
+          topic: data.nextReview.topic,
+        })}
+      </p>
+    {:else}
+      <p>{m.review_none_scheduled()}</p>
+    {/if}
     <div class="actions">
       <a class="primary" href={resolve("/study", {})}>{m.dashboard_open_study()}</a>
       <a href={resolve("/dashboard", {})}>{m.quickstart_done_dashboard()}</a>

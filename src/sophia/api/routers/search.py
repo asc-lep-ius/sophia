@@ -38,7 +38,12 @@ _API_SOURCE_BY_INDEX_SOURCE = {"lecture": "transcript", "pdf": "document"}
     "/search",
     response_model=ContentSearchResponse,
     operation_id="searchContent",
-    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope}},
+    responses={
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
+        # lecture_index.unavailable: the index could not be read, which the
+        # page says in words rather than as a failed search.
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"model": ErrorEnvelope},
+    },
 )
 async def search_content(
     payload: ContentSearchRequest,

@@ -40,6 +40,10 @@ def stub_module_owners(monkeypatch: pytest.MonkeyPatch, owners: dict[int, str]) 
     monkeypatch.setattr(topics_router, "get_lecture_module_course_id", fake_owner)
 
 
+async def _no_origins(_db: object, _course_id: int) -> dict[str, list[object]]:
+    return {}
+
+
 def test_topic_routes_require_authentication() -> None:
     harness = build_harness(app_container=cast("AppContainer", FakeAppContainer(db=object())))
 
@@ -77,6 +81,7 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
         ]
 
     monkeypatch.setattr(topics_router, "get_course_topics", fake_get_course_topics)
+    monkeypatch.setattr(topics_router, "get_topic_origins", _no_origins)
 
     response = harness.client.get("/api/learning-paths/12/topics")
 
@@ -89,6 +94,7 @@ def test_list_topics_returns_response_shape(monkeypatch: pytest.MonkeyPatch) -> 
                 "learning_path_id": 12,
                 "source": "transcript",
                 "frequency": 3,
+                "content_items": [],
             },
         ],
     }
@@ -148,6 +154,7 @@ def test_extract_topics_returns_extracted_topics(monkeypatch: pytest.MonkeyPatch
                 "learning_path_id": 12,
                 "source": "transcript",
                 "frequency": 1,
+                "content_items": [],
             },
         ],
     }
@@ -199,6 +206,7 @@ def test_save_manual_topic_returns_saved_topic(monkeypatch: pytest.MonkeyPatch) 
             "learning_path_id": 12,
             "source": "manual",
             "frequency": 1,
+            "content_items": [],
         },
     }
 
@@ -490,7 +498,7 @@ async def test_topics_extracted_for_an_owned_module_are_listed_under_its_learnin
     extractor = MagicMock()
     extractor.extract_topics = AsyncMock(return_value=["Schleifen", "Arrays"])
     monkeypatch.setattr(
-        "sophia.services.athena_study._create_topic_extractor", lambda _app: extractor
+        "sophia.services.athena_topics.create_topic_extractor", lambda _app: extractor
     )
 
     async with db_harness(clean_engine) as harness:
@@ -505,9 +513,9 @@ async def test_topics_extracted_for_an_owned_module_are_listed_under_its_learnin
         listed = await harness.client.get("/api/learning-paths/12/topics")
 
     assert extracted.status_code == 200
-    text_sent = extractor.extract_topics.call_args.args[0]
-    assert "Schleifen und Verzweigungen" in text_sent
-    assert "Arrays und Referenzen" in text_sent
+    texts_sent = [call.args[0] for call in extractor.extract_topics.call_args_list]
+    assert any("Schleifen und Verzweigungen" in text for text in texts_sent)
+    assert any("Arrays und Referenzen" in text for text in texts_sent)
     assert listed.status_code == 200
     assert {(topic["topic"], topic["learning_path_id"]) for topic in listed.json()["topics"]} == {
         ("Schleifen", 12),

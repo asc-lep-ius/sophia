@@ -23,6 +23,7 @@ from sophia.api.routers import (
     deadline_history,
     deadlines,
     health,
+    ingestion,
     integrations_tiss,
     learning_events,
     learning_paths,
@@ -45,6 +46,7 @@ from sophia.infra.logging import (
     is_sensitive_observability_key,
     setup_logging,
 )
+from sophia.services.ingestion_schedule import NightlyIngestion
 from sophia.services.session_keepalive import SessionKeepalive
 
 if TYPE_CHECKING:
@@ -119,6 +121,7 @@ def create_api_app(
     api_app.include_router(integrations_tiss.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(learning_events.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(content_language.router, prefix=_normalize_route_prefix(route_prefix))
+    api_app.include_router(ingestion.router, prefix=_normalize_route_prefix(route_prefix))
     api_app.include_router(reserved.router, prefix=_normalize_route_prefix(route_prefix))
     _instrument_prometheus(api_app)
     return api_app
@@ -156,14 +159,19 @@ async def _standalone_api_lifespan(api_app: FastAPI) -> AsyncIterator[None]:
             SessionKeepalive(app_container).run(settings.session_keepalive_interval),
             name="session-keepalive",
         )
+        nightly = asyncio.create_task(
+            NightlyIngestion(app_container, hour_utc=settings.ingestion_nightly_hour_utc).run(),
+            name="nightly-ingestion",
+        )
         _set_runtime_readiness(api_app, ready=True)
         try:
             yield
         finally:
             _set_runtime_readiness(api_app, ready=False)
-            keepalive.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await keepalive
+            for task in (keepalive, nightly):
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             api_app.state.app_container = None
 
 

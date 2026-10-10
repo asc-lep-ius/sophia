@@ -5,14 +5,27 @@ import {
 } from "$lib/study/outbox.svelte";
 import type { Grade } from "$lib/study/session.svelte";
 
-export type ReviewCard = {
+/**
+ * One due topic, and the course that holds it.
+ *
+ * The queue spans every course, not just the selected one (#131), so a topic
+ * name alone no longer says which schedule a grade moves. `course` is only a
+ * label for the learner; `learningPathId` is what the grade is sent with.
+ */
+export type ReviewQueueItem = {
   topic: string;
+  learningPathId: number;
+  course: string;
+};
+
+export type ReviewCard = ReviewQueueItem & {
   recall: string;
   revealed: boolean;
 };
 
 export type ReviewSubmission = {
   topic: string;
+  learningPathId: number;
   recallText: string;
   selfRating: Grade;
   queuePosition: number;
@@ -24,7 +37,7 @@ export type ReviewPacing = {
 };
 
 export type ReviewQueueOptions = {
-  topics: string[];
+  items: ReviewQueueItem[];
   pacing: ReviewPacing;
   submit: (submission: ReviewSubmission, requestId: string) => Promise<void>;
   /**
@@ -62,7 +75,7 @@ export const REVIEW_MAX_SEND_ATTEMPTS = 1;
 export const REVIEW_MAX_SENDS = 3;
 
 /**
- * The queue of topics due for review.
+ * The queue of topics due for review, across every course.
  *
  * A class the route instantiates, never module-level `$state`: module runes
  * are shared across SSR requests in one process, which would show one
@@ -101,10 +114,10 @@ export class ReviewQueueStore {
     this.#options = options;
     this.#now = options.now ?? (() => Date.now());
     this.#newId = options.newId ?? (() => crypto.randomUUID());
-    this.#cards = options.topics.map((topic) => ({
+    this.#cards = options.items.map((item) => ({
+      ...item,
       recall: "",
       revealed: false,
-      topic,
     }));
     this.#promptShownAt = this.#now();
     this.#clockMs = this.#promptShownAt;
@@ -267,6 +280,7 @@ export class ReviewQueueStore {
     this.#lastGrade = { position, requestId };
     this.#advance();
     this.#outbox.enqueue(requestId, {
+      learningPathId: card.learningPathId,
       queuePosition: position,
       recallText: card.recall,
       selfRating: rating,

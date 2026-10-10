@@ -118,18 +118,15 @@ async def extract_audio(video_path: Path) -> Path | None:
     return audio_path
 
 
-async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool:
-    """Return True if *audio_path* is mostly silent (empty-room recording).
+async def probe_duration(audio_path: Path) -> float | None:
+    """The recording's length in seconds, by ffprobe; ``None`` when it cannot be read.
 
-    Uses ffprobe for duration and ffmpeg silencedetect for silence spans.
-    Fails open: returns False if tools are missing or fail, so downloads
-    are never blocked by detection errors.
+    Fails open like :func:`detect_silence`: a missing tool or an unreadable
+    file is logged, and the caller falls back to not knowing.
     """
-    if not shutil.which("ffprobe") or not shutil.which("ffmpeg"):
-        log.warning("ffprobe/ffmpeg not found, skipping silence detection")
-        return False
-
-    # Get total duration via ffprobe
+    if not shutil.which("ffprobe"):
+        log.warning("ffprobe not found, duration unknown", path=str(audio_path))
+        return None
     probe = await asyncio.create_subprocess_exec(
         "ffprobe",
         "-v",
@@ -148,18 +145,30 @@ async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool
         probe.kill()
         await probe.wait()
         log.warning("ffprobe timed out", path=str(audio_path), timeout=_FFPROBE_TIMEOUT_S)
-        return False
+        return None
     if probe.returncode != 0:
         log.warning("ffprobe failed", path=str(audio_path))
-        return False
-
+        return None
     try:
-        total_duration = float(stdout.strip())
+        return float(stdout.strip())
     except (ValueError, TypeError):
         log.warning("could not parse duration", raw=stdout)
+        return None
+
+
+async def detect_silence(audio_path: Path, threshold_ratio: float = 0.8) -> bool:
+    """Return True if *audio_path* is mostly silent (empty-room recording).
+
+    Uses ffprobe for duration and ffmpeg silencedetect for silence spans.
+    Fails open: returns False if tools are missing or fail, so downloads
+    are never blocked by detection errors.
+    """
+    if not shutil.which("ffprobe") or not shutil.which("ffmpeg"):
+        log.warning("ffprobe/ffmpeg not found, skipping silence detection")
         return False
 
-    if total_duration <= 0:
+    total_duration = await probe_duration(audio_path)
+    if total_duration is None or total_duration <= 0:
         return False
 
     # Run silencedetect

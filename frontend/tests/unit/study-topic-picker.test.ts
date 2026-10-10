@@ -27,7 +27,13 @@ function topic(
   name: string,
   source: TopicMapping["source"] = "transcript",
 ): TopicMapping {
-  return { topic: name, learning_path_id: 12, source, frequency: 1 };
+  return {
+    topic: name,
+    learning_path_id: 12,
+    source,
+    frequency: 1,
+    content_items: [],
+  };
 }
 
 /** A rating whose prediction overshot the score by `gap` (negative: undershot). */

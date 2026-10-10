@@ -72,6 +72,7 @@ describe("frontend scaffold smoke", () => {
                 learning_path_id: 12,
                 source: "transcript",
                 frequency: 1,
+                content_items: [],
               },
             },
           ],

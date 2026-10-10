@@ -12,6 +12,7 @@ FastAPI + SQLModel backend and a SvelteKit frontend, fronted by Caddy.
         infra/          di.py is the composition root; http, db, org_context
         services/       application logic
         cli/            cyclopts CLI — `sophia auth|db|lectures|plan|…`
+        worker/         processing worker — claims ingestion jobs, runs the hermes stages in the CUDA image
     frontend/           SvelteKit; src/routes is the page surface, src/lib/components the shared UI
         tests/unit/     vitest — the Stop gate
         tests/e2e/      playwright — runs against a fixture, see gotchas
@@ -30,6 +31,7 @@ the source of truth and explains why each one is scoped the way it is.
     pnpm -C frontend run test:unit                    # 349 tests, ~11s — the Stop gate
     make test                                         # full python suite, ~143s, needs Postgres
     make db.up                                        # local Postgres only
+    make docker-build-worker                          # sophia-worker:latest, needed before Process works
 
 The full Python suite is deliberately *not* a Stop gate: at 143s a headless
 `/ship` turn backgrounds it and then ends the turn waiting for a notification

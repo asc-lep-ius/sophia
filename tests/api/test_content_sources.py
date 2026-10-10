@@ -104,6 +104,8 @@ def test_list_content_items_returns_status_rows(monkeypatch: pytest.MonkeyPatch)
                 "index_status": "completed",
                 "sequence_number": 1,
                 "missed_at": None,
+                "topic_status": None,
+                "failure_reason": None,
             },
         ],
     }
@@ -172,8 +174,21 @@ def test_discover_content_sources_returns_discovered_sources(
         "discover_lecture_modules",
         fake_discover_lecture_modules,
     )
+    queued_for: list[str] = []
+
+    async def fake_enqueue_subscribed(
+        db: object, *, requested_by: str, stale_after_s: int
+    ) -> list[int]:
+        assert db is fake_app.db
+        queued_for.append(requested_by)
+        return []
+
+    monkeypatch.setattr(content_sources_router, "enqueue_subscribed", fake_enqueue_subscribed)
 
     response = harness.client.post("/api/content-sources/discover", headers=csrf_headers(harness))
+
+    # A scan is what processes a subscribed course's new recordings (#128).
+    assert queued_for == ["scan"]
 
     assert response.status_code == 200
     assert response.json() == {

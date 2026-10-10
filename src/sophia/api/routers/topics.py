@@ -19,6 +19,7 @@ from sophia.api.schemas.topics import (
     TopicConfidenceRatingResponse,
     TopicConfidenceRequest,
     TopicConfidenceResponse,
+    TopicContentItemResponse,
     TopicExtractionRequest,
     TopicExtractionResponse,
     TopicListResponse,
@@ -34,6 +35,8 @@ from sophia.services.athena_study import (
     get_course_topics,
     save_manual_topic,
 )
+from sophia.services.athena_topics import TopicOrigin as LectureOrigin
+from sophia.services.athena_topics import get_topic_origins
 from sophia.services.hermes_catalog import get_lecture_module_course_id
 
 if TYPE_CHECKING:
@@ -61,10 +64,18 @@ async def list_topics(
     request: Request,
 ) -> TopicListResponse:
     await require_learning_path_scope(request, learning_path_id)
-    topics = await get_course_topics(await request_session(request), learning_path_id)
+    db = await request_session(request)
+    topics = await get_course_topics(db, learning_path_id)
+    origins = await get_topic_origins(db, learning_path_id)
     return TopicListResponse(
         learning_path_id=learning_path_id,
-        topics=[_topic_response(topic) for topic in topics],
+        topics=[
+            _topic_response(
+                topic,
+                origins.get(topic.topic, []) if topic.source == TopicSource.LECTURE else [],
+            )
+            for topic in topics
+        ],
     )
 
 
@@ -170,12 +181,23 @@ async def save_topic_confidence_rating(
     return TopicConfidenceResponse(rating=_confidence_response(rating))
 
 
-def _topic_response(topic: TopicMapping) -> TopicMappingResponse:
+def _topic_response(
+    topic: TopicMapping,
+    origins: list[LectureOrigin] | None = None,
+) -> TopicMappingResponse:
     return TopicMappingResponse(
         topic=topic.topic,
         learning_path_id=topic.course_id,
         source=_TOPIC_ORIGIN_BY_SOURCE[topic.source],
         frequency=topic.frequency,
+        content_items=[
+            TopicContentItemResponse(
+                id=origin.episode_id,
+                title=origin.title,
+                sequence_number=origin.lecture_number,
+            )
+            for origin in origins or []
+        ],
     )
 
 

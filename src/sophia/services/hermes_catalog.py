@@ -11,6 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from sophia.infra.schema import DEFAULT_SCOPE, lecture_downloads, lecture_modules
 from sophia.services.hermes_episodes import episode_module_id, episodes_from
+from sophia.services.ingestion_scope import register_recordings
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -165,6 +166,12 @@ async def discover_lecture_modules(
             for _, module_id, _ in opencast_modules
         ),
     )
+    # The scan is what registers recordings with their dates, so the page can
+    # say how many older ones are waiting before any job has run (#128).
+    for (course, module_id, _module_name), episodes in zip(
+        opencast_modules, episode_lists, strict=True
+    ):
+        await register_recordings(session, module_id, episodes, course_id=str(course.id))
 
     return [
         DiscoveredLectureModule(

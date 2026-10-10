@@ -39,6 +39,20 @@ SERIES_PAGE_HTML = (
     "</body></html>"
 )
 
+# The series list as TU Wien renders it (sampled 2026-10-10): a table with a
+# Date column in the user's locale, dd/mm/yy in English and dd.mm.yy in German.
+SERIES_TABLE_HTML = (
+    "<html><body><h2>EP1 VU 2026W</h2>"
+    '<table class="flexible table"><thead><tr><th>Title</th><th>Duration</th>'
+    "<th>Date</th></tr></thead><tbody>"
+    f'<tr><td><a href="https://tuwel.tuwien.ac.at/mod/opencast/view.php?id={MODULE_ID}&amp;e={EPISODE_UUID}">'
+    "Vorlesung - VU vom 2026-10-09</a></td><td>2:00:00</td><td>09/10/26</td></tr>"
+    f'<tr><td><a href="https://tuwel.tuwien.ac.at/mod/opencast/view.php?id={MODULE_ID}&amp;e={EPISODE_UUID_2}">'
+    "Vorlesung - VU vom 2026-06-15</a></td><td>1:30:00</td><td>15.06.2026</td></tr>"
+    '<tr class="emptyrow"><td></td><td></td><td></td></tr>'
+    "</tbody></table></body></html>"
+)
+
 SERIES_PAGE_EMPTY_HTML = (
     '<html><body><div class="course-content"><h2>Empty Course</h2></div></body></html>'
 )
@@ -148,6 +162,34 @@ class TestGetSeriesEpisodes:
         assert episodes[0].series_title == "Algorithms VU 2026S"
         assert episodes[1].episode_id == EPISODE_UUID_2
         assert episodes[1].title == "Lecture 2: Sorting"
+
+    @respx.mock
+    async def test_reads_each_recordings_date_from_the_series_table(
+        self, adapter: OpencastAdapter
+    ) -> None:
+        """The date is what decides whether a recording is the semester's own (#128)."""
+        respx.get(f"{HOST}/mod/opencast/view.php").mock(
+            return_value=httpx.Response(200, html=SERIES_TABLE_HTML),
+        )
+
+        episodes = await adapter.get_series_episodes(MODULE_ID)
+
+        assert [(e.episode_id, e.created) for e in episodes] == [
+            (EPISODE_UUID, "2026-10-09"),
+            (EPISODE_UUID_2, "2026-06-15"),
+        ]
+
+    @respx.mock
+    async def test_a_series_page_without_a_date_column_leaves_created_empty(
+        self, adapter: OpencastAdapter
+    ) -> None:
+        respx.get(f"{HOST}/mod/opencast/view.php").mock(
+            return_value=httpx.Response(200, html=SERIES_PAGE_HTML),
+        )
+
+        episodes = await adapter.get_series_episodes(MODULE_ID)
+
+        assert [e.created for e in episodes] == ["", ""]
 
     @respx.mock
     async def test_empty_no_episode_links(self, adapter: OpencastAdapter) -> None:

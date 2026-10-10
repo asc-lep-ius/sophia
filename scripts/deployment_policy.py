@@ -16,15 +16,21 @@ PROD_COMPOSE_FILE = Path("docker-compose.prod.yml")
 PROXY_DOCKERFILE = Path("proxy/Dockerfile")
 GITLAB_CI_FILE = Path(".gitlab-ci.yml")
 DEPLOYMENT_DOC_FILE = Path("DEPLOYMENT.md")
-APPLICATION_SERVICES = frozenset({"api", "frontend"})
+APPLICATION_SERVICES = frozenset({"api", "frontend", "worker"})
 # The services that open a database session. "frontend" is excluded: it is a
 # Node app that reaches the data only through the API.
-DATABASE_CLIENT_SERVICES = frozenset({"api"})
+DATABASE_CLIENT_SERVICES = frozenset({"api", "worker"})
 DATABASE_URL_ENV_VAR = "SOPHIA_DATABASE_URL"
+# The worker's model and download caches have to live on the data volume: a
+# cache under a home directory the container forgets, or on a path nobody can
+# write, is what #86 and #88 lost hours to (#128).
+WORKER_CACHE_ENV_VARS = ("SOPHIA_CACHE_DIR", "HF_HOME")
+WORKER_DATA_VOLUME = "sophia-data"
 DEPLOYABLE_IMAGE_SERVICES = APPLICATION_SERVICES | frozenset({"proxy"})
 REQUIRED_DEPENDENCIES = {
     "proxy": frozenset({"api", "frontend"}),
     "api": frozenset({"redis", "postgres"}),
+    "worker": frozenset({"postgres"}),
     "postgres-backup": frozenset({"postgres"}),
 }
 # Postgres is pinned by digest rather than by tag: 18.4 can be re-pushed, and a
@@ -422,7 +428,45 @@ def _scan_service(
     violations.extend(_scan_volumes(path, service_name, service, volumes))
     violations.extend(_scan_dependencies(path, service_name, service, services))
     violations.extend(_scan_database_url(path, service_name, service))
+    violations.extend(_scan_worker_caches(path, service_name, service))
     return violations
+
+
+def _scan_worker_caches(
+    path: Path,
+    service_name: str,
+    service: Mapping[str, Any],
+) -> list[DeploymentPolicyViolation]:
+    """The worker's caches must resolve under the mount of the shared data volume."""
+    if service_name != "worker":
+        return []
+    mount = _volume_mount_point(service, WORKER_DATA_VOLUME)
+    if mount is None:
+        return [_violation(path, service_name, "caches", f"worker must mount {WORKER_DATA_VOLUME}")]
+    environment = _environment_mapping(service.get("environment"))
+    violations: list[DeploymentPolicyViolation] = []
+    for name in WORKER_CACHE_ENV_VARS:
+        value = environment.get(name, "")
+        if not value or not value.startswith(mount.rstrip("/") + "/"):
+            violations.append(
+                _violation(
+                    path,
+                    service_name,
+                    "caches",
+                    f"{name} must be set under the {WORKER_DATA_VOLUME} mount ({mount})",
+                )
+            )
+    return violations
+
+
+def _volume_mount_point(service: Mapping[str, Any], volume: str) -> str | None:
+    for entry in _list_or_none(service.get("volumes")) or []:
+        if not isinstance(entry, str):
+            continue
+        source, _, rest = entry.partition(":")
+        if source == volume and rest:
+            return rest.split(":", 1)[0]
+    return None
 
 
 def _scan_database_url(

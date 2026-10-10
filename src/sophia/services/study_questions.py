@@ -32,6 +32,7 @@ from sophia.domain.learning import (
     LearningEventType,
     ProvenanceAgent,
     QuestionAttempt,
+    QuestionFallbackReason,
     QuestionKind,
     QuestionOption,
     SourceSpan,
@@ -43,10 +44,13 @@ from sophia.services.athena_confidence import (
     get_topic_difficulty_level,
 )
 from sophia.services.athena_study import GroundedQuestion, generate_grounded_questions
+from sophia.services.hermes_episodes import episode_titles_query
 from sophia.services.hermes_setup import load_hermes_config
 from sophia.services.provenance import record_provenance
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from sqlalchemy import Row
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +61,11 @@ log = structlog.get_logger()
 
 FALLBACK_QUESTION = "Explain the concept of {topic} in your own words."
 FALLBACK_GENERATOR_REF = "fallback-template"
+# The provenance record is where a question's origin is kept, so the reason a
+# template stood in is kept there too: a reload reads the card back from it.
+FALLBACK_GENERATOR_REFS: dict[QuestionFallbackReason, str] = {
+    QuestionFallbackReason.INDEX_UNAVAILABLE: f"{FALLBACK_GENERATOR_REF}:index-unavailable",
+}
 MS_PER_SECOND = 1000
 
 # PREDICTION_MADE is met once per study session, not per question — see
@@ -155,8 +164,7 @@ async def generate_and_store_questions(
                 course_id=course_id,
                 origin=StoredContentOrigin.TUWEL,
                 generated_by=ProvenanceAgent.MODEL,
-                # A template padding out a short model batch is not the model's.
-                generator_ref=generator_ref if item.sources else FALLBACK_GENERATOR_REF,
+                generator_ref=_item_generator_ref(item, generator_ref),
                 generated_at=generated_at,
                 source_spans=tuple(_source_span(chunk) for chunk in item.sources),
             ),
@@ -381,6 +389,45 @@ async def _generate_prompts(
         fallback = GroundedQuestion(prompt=FALLBACK_QUESTION.format(topic=topic))
         return [fallback] * count, FALLBACK_GENERATOR_REF
     return questions, _generator_ref(app)
+
+
+def fallback_reason(provenance: ContentProvenance) -> QuestionFallbackReason | None:
+    """Why a stored question is the template, if the learner is to be told."""
+    return next(
+        (
+            reason
+            for reason, ref in FALLBACK_GENERATOR_REFS.items()
+            if ref == provenance.generator_ref
+        ),
+        None,
+    )
+
+
+async def source_titles(
+    session: AsyncSession,
+    records: Iterable[ContentProvenance],
+) -> dict[str, str]:
+    """The titles of the lectures the records' spans come from, by episode id.
+
+    Read when served rather than stored with the span: a span names its
+    episode, and the episode's title is the catalogue's to keep.
+    """
+    episode_ids = sorted(
+        {span.content_item_id for record in records for span in record.source_spans}
+    )
+    if not episode_ids:
+        return {}
+    rows = (await session.execute(episode_titles_query(episode_ids))).all()
+    return {row.episode_id: row.title for row in rows if row.title}
+
+
+def _item_generator_ref(item: GroundedQuestion, model_ref: str) -> str:
+    if item.sources:
+        return model_ref
+    # A template padding out a short model batch is not the model's.
+    if item.fallback_reason is None:
+        return FALLBACK_GENERATOR_REF
+    return FALLBACK_GENERATOR_REFS[item.fallback_reason]
 
 
 def _source_span(chunk: KnowledgeChunk) -> SourceSpan:

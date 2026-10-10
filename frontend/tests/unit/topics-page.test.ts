@@ -305,7 +305,13 @@ function pageData(overrides: Partial<TopicsData>) {
 }
 
 function topic(name: string, source: TopicMapping["source"]): TopicMapping {
-  return { frequency: 2, learning_path_id: 12, source, topic: name };
+  return {
+    content_items: [],
+    frequency: 2,
+    learning_path_id: 12,
+    source,
+    topic: name,
+  };
 }
 
 function confidence(name: string, predicted: number): TopicConfidence {

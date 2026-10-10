@@ -101,3 +101,33 @@ class TestSentenceTransformerEmbedder:
 
         with pytest.raises(EmbeddingError, match="GPU OOM"):
             embedder.embed(["test"])
+
+    def test_the_model_loads_on_the_device_it_was_given(self) -> None:
+        from sophia.adapters.embedder import SentenceTransformerEmbedder
+
+        fake_module = MagicMock()
+        fake_module.SentenceTransformer.return_value.encode.return_value = _FakeNdArray(
+            [[0.5, 0.6]]
+        )
+
+        embedder = SentenceTransformerEmbedder(_make_config(), device="cpu")
+        with patch.dict("sys.modules", {"sentence_transformers": fake_module}):
+            embedder.embed_query("Primitive Datentypen")
+
+        fake_module.SentenceTransformer.assert_called_once_with(
+            "intfloat/multilingual-e5-large", device="cpu"
+        )
+
+    def test_a_model_that_will_not_load_is_an_embedding_error(self) -> None:
+        """What a query on a GPU with no kernels for PyTorch looked like (#129)."""
+        from sophia.adapters.embedder import SentenceTransformerEmbedder
+
+        fake_module = MagicMock()
+        fake_module.SentenceTransformer.side_effect = OSError("model not in the cache")
+
+        embedder = SentenceTransformerEmbedder(_make_config())
+        with (
+            patch.dict("sys.modules", {"sentence_transformers": fake_module}),
+            pytest.raises(EmbeddingError, match="could not be loaded: model not in the cache"),
+        ):
+            embedder.embed_query("Primitive Datentypen")

@@ -144,9 +144,25 @@
     <ul class="topics">
       {#each data.rows.data as row (`${row.topic.topic}:${row.topic.source}`)}
         <li>
-          <span class="topic" lang={data.contentLanguage.language}
-            >{row.topic.topic}</span
-          >
+          <span class="topic-cell">
+            <span class="topic" lang={data.contentLanguage.language}
+              >{row.topic.topic}</span
+            >
+            {#if row.topic.content_items.length > 0}
+              <ul class="origins">
+                {#each row.topic.content_items as item (item.id)}
+                  <li>
+                    {item.sequence_number === null
+                      ? m.topics_from_lecture_unnumbered({ title: item.title })
+                      : m.topics_from_lecture({
+                          number: item.sequence_number,
+                          title: item.title,
+                        })}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </span>
           <span class="meta">
             <span class="origin">{originLabels[row.topic.source]()}</span>
             <span class="confidence" class:unrated={row.confidence === null}>
@@ -215,9 +231,26 @@
     padding-top: 0.45rem;
   }
 
+  .topic-cell {
+    display: grid;
+    min-width: 0;
+    gap: 0.15rem;
+  }
+
   .topic {
     min-width: 0;
     font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .origins {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: 0.8rem;
     overflow-wrap: anywhere;
   }
 

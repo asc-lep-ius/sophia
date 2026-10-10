@@ -27,6 +27,7 @@ from sophia.cli.register import app as register_app  # noqa: E402
 from sophia.cli.run_job import register_run_job  # noqa: E402
 from sophia.cli.status import register_status  # noqa: E402
 from sophia.cli.study import app as study_app  # noqa: E402
+from sophia.cli.worker import app as worker_app  # noqa: E402
 
 app.command(books_app)
 app.command(auth_app)
@@ -38,6 +39,7 @@ app.command(jobs_app)
 app.command(study_app)
 app.command(plan_app)
 app.command(quickstart_app)
+app.command(worker_app)
 register_run_job(app)
 register_status(app)
 
