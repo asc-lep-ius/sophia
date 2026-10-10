@@ -6,13 +6,14 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from sophia.domain.models import Lecture
 from sophia.infra.schema import (
     lecture_downloads,
     lecture_modules,
     lecture_recordings,
+    topic_extractions,
     transcriptions,
 )
 from sophia.services.ingestion_scope import (
@@ -108,13 +109,28 @@ async def test_registering_again_keeps_a_date_the_page_no_longer_shows(db: Async
     assert recorded_on == date(2026, 10, 9)
 
 
-async def test_older_recordings_are_pending_until_transcribed_or_settled(db: AsyncSession) -> None:
+async def test_older_recordings_are_pending_until_their_topics_exist_or_settled(
+    db: AsyncSession,
+) -> None:
+    """A transcript alone leaves an older lecture pending: its topics may still have failed."""
     await _course(db)
     await _register(db)
     assert await older_recordings_pending(db, EP1) == 1
 
     await db.execute(
         insert(transcriptions).values(episode_id="ep-jun", module_id=OLD_SERIES, status="completed")
+    )
+    assert await older_recordings_pending(db, EP1) == 1
+    await db.execute(
+        insert(topic_extractions).values(
+            episode_id="ep-jun", course_id=EP1, status="failed", error="503 UNAVAILABLE"
+        )
+    )
+    assert await older_recordings_pending(db, EP1) == 1
+    await db.execute(
+        update(topic_extractions)
+        .where(topic_extractions.c.episode_id == "ep-jun")
+        .values(status="completed", topic_count=3, error=None)
     )
     assert await older_recordings_pending(db, EP1) == 0
 

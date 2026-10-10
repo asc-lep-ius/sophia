@@ -29,7 +29,7 @@ from sophia.infra.schema import (
     lecture_downloads,
     lecture_modules,
     lecture_recordings,
-    transcriptions,
+    topic_extractions,
 )
 
 if TYPE_CHECKING:
@@ -156,7 +156,13 @@ async def scoped_episode_ids(
 
 
 async def older_recordings_pending(session: AsyncSession, course_id: int) -> int:
-    """How many of the course's recordings from other semesters are still unprocessed."""
+    """How many of the course's recordings from other semesters have no topics yet.
+
+    Counted until the lecture's topics are extracted, not until it is
+    transcribed: the older job covers every stage, and a lecture whose
+    indexing or topic extraction failed has to stay one press away, or it
+    could never be retried — Process and the nightly never touch it.
+    """
     semester = await course_semester(session, course_id)
     window = semester_window(semester) if semester else None
     if window is None:
@@ -172,16 +178,16 @@ async def older_recordings_pending(session: AsyncSession, course_id: int) -> int
             lecture_recordings.c.module_id.in_(course_modules),
             lecture_recordings.c.recorded_on.is_not(None),
             (lecture_recordings.c.recorded_on < first) | (lecture_recordings.c.recorded_on > last),
-            ~_transcribed(lecture_recordings.c.episode_id),
+            ~_topics_extracted(lecture_recordings.c.episode_id),
             ~_settled(lecture_recordings.c.episode_id),
         )
     )
     return int(count or 0)
 
 
-def _transcribed(episode_id: ColumnElement[str]) -> ColumnElement[bool]:
+def _topics_extracted(episode_id: ColumnElement[str]) -> ColumnElement[bool]:
     return exists().where(
-        transcriptions.c.episode_id == episode_id, transcriptions.c.status == "completed"
+        topic_extractions.c.episode_id == episode_id, topic_extractions.c.status == "completed"
     )
 
 

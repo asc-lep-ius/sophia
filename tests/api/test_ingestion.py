@@ -20,6 +20,7 @@ from sophia.infra.schema import (
     learning_path_settings,
     lecture_modules,
     lecture_recordings,
+    topic_extractions,
     transcriptions,
 )
 from sophia.services.ingestion_jobs import (
@@ -414,9 +415,17 @@ async def test_process_older_recordings_too_is_a_one_off_job_under_the_same_rule
             claimed = await claim_next_job(session, "hephaestus:1")
             assert claimed is not None
             await finish_job(session, claimed.id)
+            # Transcribed is not done: the count drops only once its topics exist.
             await session.execute(
                 insert(transcriptions).values(
                     episode_id="ep-jun", module_id=LAST_SEMESTER, status="completed"
+                )
+            )
+        still_pending = await _status(harness)
+        async with harness.seed() as session:
+            await session.execute(
+                insert(topic_extractions).values(
+                    episode_id="ep-jun", course_id=EP1, status="completed", topic_count=2
                 )
             )
         nothing_left = await _status(harness)
@@ -435,6 +444,7 @@ async def test_process_older_recordings_too_is_a_one_off_job_under_the_same_rule
     # A one-off: the course is not followed because of it.
     assert shown["settings"]["subscribed"] is False
     assert shown["job"]["scope"] == "older"
+    assert still_pending["older_recordings_pending"] == 1
     assert nothing_left["older_recordings_pending"] == 0
     assert nothing_older.status_code == 409
     assert nothing_older.json() == {
