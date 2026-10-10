@@ -2,1236 +2,607 @@
 
 *"I am the love of wisdom, the spirit that kindles the flame of truth in those who seek it."*
 
-A student toolkit for TU Wien that automates the tedious parts of academic life (getting a spot in the desired group, finding + aquiring textbooks, forcing yourself to confront unfamiliar fields of knowledge, tracking deadlines, analyzing exams) so you can focus on what matters: understanding.
+A student toolkit for TU Wien. It takes over the tedious parts of academic
+life: getting a spot in the group you want, turning lecture recordings into
+something you can search and study from, keeping track of deadlines and how
+long things actually take. What it does not take over is the thinking. Every
+feature is built so that the prediction, the retrieval and the reflection stay
+yours.
 
-**Status:** Early development (v0.1.0). Bücherwurm (book discovery), Kairos (group registration with scheduler), Hermes (lecture knowledge base with course material PDF indexing, missed-lecture tracking and catch-up), Athena (topic extraction, adaptive difficulty, FSRS spaced repetition, interleaved sessions with missed-lecture prioritization, delayed feedback, confidence calibration, guided sessions, exam-aware review compression, Anki export), Chronos (deadline discovery from TUWEL, effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export), and a SvelteKit web interface served at `/app/` (dashboard, study sessions, review, search, deadlines, calibration analytics — WCAG 2.1 AA accessible) are functional with 1782 tests passing. The unified planner (`sophia plan`) merges Chronos deadlines, Athena reviews, confidence gaps, and missed-lecture topics into one prioritized view. Security hardening, CLI refactor (cyclopts), reliability/resilience improvements, UX polish (progress bars, status dashboard, quickstart), Docker support, and GitLab CI/CD are all in place. Bücherwurm download/library features are in progress.
+**Status:** early development. Kairos (TISS registration with a scheduler),
+Hermes (lecture knowledge base), Athena (study sessions, spaced review,
+calibration), Chronos (deadline coach) and the web interface at `/app/` work.
+Bücherwurm discovers textbook references; its download and library features
+are not built. The project is proprietary; see [LICENSE](LICENSE).
 
-| Abschnitt | Inhalt |
-|-----------|--------|
-| [Schnellstart: Kairos — Lehrveranstaltungsanmeldung](#schnellstart-kairos--lehrveranstaltungsanmeldung) | Kairos einrichten und automatische LV-Anmeldung planen |
-| [Schnellstart: Hermes + Athena — Anki-Deck aus Vorlesungen](#schnellstart-hermes--athena--anki-deck-aus-vorlesungen) | Vorlesung verarbeiten und Lernkarten exportieren |
-| [Getting Started: Kairos — Course Registration](#getting-started-kairos--course-registration) | Set up Kairos and schedule automatic course registration |
-| [Getting Started: Hermes + Athena — Anki Deck from Lectures](#getting-started-hermes--athena--anki-deck-from-lectures) | Process a lecture and export flashcards |
-| [What Sophia Does](#what-sophia-does) | The modules and what each one handles |
-| [Chronos in Action](#chronos-in-action) | Deadline coach: discovery, estimation, tracking, reflection, calibration |
-| [Unified Plan (`sophia plan`)](#unified-plan-sophia-plan) | Combined recommendations: deadlines, reviews, gaps, missed topics |
-| [Philosophy](#philosophy-why-sophia-doesnt-just-do-everything-for-you) | Why Sophia makes you think instead of thinking for you |
-| [Architecture](#architecture) | Hexagonal design, protocols, async |
-| [Technology Stack](#technology-stack) | Languages, frameworks, tooling |
-| [External Dependencies](#external-dependencies) | LLM providers, transcription, Anki, ffmpeg, and more |
-| [Data Access](#data-access) | How Sophia talks to TUWEL and TISS |
-| [Development](#development) | Running tests, linting, type checking |
-| [Roadmap](#roadmap) | What's done, what's next |
-| [Quick Reference](#quick-reference) | Common commands at a glance |
-| [Contributing](#contributing) | How to help out |
+| Section | What it covers |
+|---|---|
+| [Schnellstart (Deutsch)](#schnellstart-deutsch) | Einrichten, LV-Anmeldung planen, Vorlesung zu Anki-Deck |
+| [Getting started (English)](#getting-started-english) | Set up, schedule a registration, lecture to Anki deck |
+| [What Sophia does](#what-sophia-does) | The modules, the web interface, the CLI |
+| [How studying works](#how-studying-works) | Sessions, review, calibration, deadlines |
+| [Philosophy](#philosophy) | Why Sophia asks instead of telling, and the evidence it rests on |
+| [Architecture and stack](#architecture-and-stack) | Ports and adapters, API, worker, frontend |
+| [Setup details](#setup-details) | Extras, LLM providers, system tools, privacy |
+| [Development](#development) | Gates, tests, Docker, CI |
+| [Roadmap](#roadmap) | What is next |
+| [Quick reference](#quick-reference) | Commands at a glance |
 
 ---
 
-## Schnellstart: Kairos — Lehrveranstaltungsanmeldung
+## Schnellstart (Deutsch)
 
-Das ist Sophias stärkstes Feature. Anstatt um Mitternacht den Browser offen zu halten und F5 zu hämmern, installierst du einen System-Timer — und Sophia meldet dich auf TISS an, sobald das Fenster aufgeht. Du musst nicht mal wach sein.
+### Voraussetzungen
 
-> 💡 Schon Terminal, Python und uv installiert? Direkt zu [Schritt 4](#deutsch-schritt-4-sophia-installieren) springen.
+Du brauchst ein Terminal, Python 3.12 oder neuer, Git und den Paketmanager
+`uv`.
 
-### Schritt 1: Terminal öffnen
-
-Ein Terminal ist eine textbasierte Oberfläche für deinen Computer — du tippst kurze Befehle statt Buttons zu klicken.
-
-- **Windows 10/11:** `Win + R`, dann `wt` eingeben und Enter drücken. Falls das nicht klappt, nach „PowerShell" im Startmenü suchen.
-- **macOS:** `Cmd + Space`, „Terminal" tippen, Enter.
-- **Linux:** `Strg + Alt + T`, oder „Terminal" im App-Menü suchen.
-
-✅ Ein Fenster mit einem blinkenden Cursor erscheint.
-
-### Schritt 2: Python 3.12+ installieren
-
-```bash
-python3 --version
-```
-
-Wenn `Python 3.12.x` oder höher angezeigt wird — gut, weiter zu Schritt 3. Sonst Python von [python.org/downloads](https://www.python.org/downloads/) installieren.
-
-> 💡 **Windows:** Beim Installieren das Häkchen bei **„Add Python to PATH"** setzen.
-
-### Schritt 3: uv (Paketmanager) installieren
-
-**macOS / Linux:**
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-Nach der Installation: Terminal schließen und neu öffnen.
-
-✅ `uv --version` zeigt eine Versionsnummer.
-
-### Schritt 4: Sophia installieren
+- **Terminal öffnen.** Windows: `Win + R`, `wt`, Enter. macOS: `Cmd + Space`,
+  „Terminal“. Linux: `Strg + Alt + T`.
+- **Python prüfen:** `python3 --version`. Zeigt es 3.12 oder höher, weiter.
+  Sonst von [python.org](https://www.python.org/downloads/) installieren
+  (Windows: Häkchen bei „Add Python to PATH“).
+- **uv installieren.** macOS/Linux:
+  `curl -LsSf https://astral.sh/uv/install.sh | sh`. Windows (PowerShell):
+  `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`.
+  Danach Terminal schließen und neu öffnen.
+- **Sophia installieren und einloggen:**
 
 ```bash
 git clone https://gitlab.com/mipkovich/sophia.git && cd sophia
 uv sync
-```
-
-✅ Die Ausgabe endet mit etwas wie „Resolved ... packages".
-
-### Schritt 5: Einloggen
-
-```bash
 uv run sophia auth login
 ```
 
-Du wirst nach deinen TU Wien-Zugangsdaten gefragt (dieselben wie für TUWEL und TISS). Sophia speichert ein Session-Cookie lokal. Nichts wird weitergeleitet außer an TU Wiens eigene Server.
+Du wirst nach deinen TU-Wien-Zugangsdaten gefragt, dieselben wie für TUWEL und
+TISS. MFA ist Pflicht; mit `--save-credentials` speichert Sophia Passwort und
+TOTP-Geheimnis im Schlüsselbund deines Betriebssystems und erneuert eine
+abgelaufene Sitzung selbst. Die Zugangsdaten gehen nur an TU Wiens eigene
+Server.
 
-✅ Erfolgsmeldung mit deinem Namen erscheint.
+| Problem | Lösung |
+|---|---|
+| `command not found` nach der uv-Installation | Terminal schließen und neu öffnen. |
+| Login schlägt fehl | Zugangsdaten prüfen; Details mit `uv run sophia --debug auth login`. |
+| `git` nicht gefunden | [git-scm.com](https://git-scm.com/downloads) installieren, Terminal neu starten. |
 
-### Schritt 6: Verfügbare Gruppen ansehen
+### Kairos: LV-Anmeldung planen
+
+Statt um Mitternacht F5 zu hämmern, installierst du einen System-Timer. Sophia
+meldet dich an, sobald das Fenster aufgeht.
 
 ```bash
 uv run sophia register groups 186.813
-```
-
-Ersetze `186.813` durch deine LVA-Nummer. Sophia zeigt dir alle Gruppen mit Wochentag, Uhrzeit, Raum und aktuellem Belegungsstand.
-
-### Schritt 7: Anmeldung planen — kein offenes Terminal nötig
-
-Das ist der entscheidende Schritt. Dieser Befehl installiert einen systemweiten Timer (systemd unter Linux, launchd unter macOS, Aufgabenplanung unter Windows), der genau dann feuert, wenn das Anmeldefenster aufgeht:
-
-```bash
 uv run sophia register go 186.813 --preferences "1,3" --schedule
 ```
 
-- `--preferences "1,3"` — deine Wunschreihenfolge (Indizes aus der Gruppen-Tabelle). Ist Gruppe 1 voll, versucht Sophia automatisch Gruppe 3.
-- `--schedule` — kein offenes Terminal nötig. Sophia meldet sich selbst an.
+`186.813` ist deine LVA-Nummer. Der erste Befehl zeigt alle Gruppen mit
+Wochentag, Zeit, Raum und Belegung. `--preferences "1,3"` ist deine
+Wunschreihenfolge (Indizes aus der Tabelle); ist Gruppe 1 voll, versucht Sophia
+Gruppe 3. `--schedule` installiert einen Timer (systemd, launchd oder
+Aufgabenplanung), ein offenes Terminal ist nicht nötig. `sophia jobs list` zeigt
+geplante Jobs, `sophia jobs cancel <job-id>` storniert einen. Ohne
+`--schedule` wartet `--watch` stattdessen im Vordergrund.
 
-```bash
-uv run sophia jobs list              # geplante Jobs anzeigen
-uv run sophia jobs cancel <job-id>   # Job stornieren
-```
-
-✅ Du bist fertig. Sophia kümmert sich um die Anmeldung.
-
-### Problemlösungen
-
-| Problem | Lösung |
-|---------|--------|
-| `command not found` nach uv-Installation | Terminal schließen und neu öffnen. |
-| Python-Version zu alt | Python 3.12+ von [python.org](https://www.python.org/downloads/) installieren. Unter Linux: `sudo apt install python3.12`. |
-| Login schlägt fehl | Zugangsdaten prüfen. Bei weiteren Fehlern: `uv run sophia auth login --debug`. |
-| `git` nicht gefunden | Git von [git-scm.com/downloads](https://git-scm.com/downloads) installieren, dann Terminal neu starten. |
-
----
-
-## Schnellstart: Hermes + Athena — Anki-Deck aus Vorlesungen
-
-Dieser Leitfaden führt dich vom Einrichten bis zum fertigen Anki-Deck: Vorlesung herunterladen → transkribieren → Themen extrahieren → Lernkarten erstellen → als `.apkg` exportieren und in Anki importieren.
-
-> 💡 Noch nicht eingerichtet? Erst [Schritte 1–4 oben](#deutsch-schritt-1-terminal-öffnen) durchführen und einloggen, dann hierher zurückkehren.
-
-### Schritt A: Hermes/Athena-Abhängigkeiten installieren und konfigurieren
+### Hermes + Athena: von der Vorlesung zum Anki-Deck
 
 ```bash
 uv sync --extra hermes --extra llm --extra athena
-uv run sophia lectures setup
-```
-
-Der Setup-Wizard erkennt deine GPU automatisch, empfiehlt ein passendes Whisper-Modell und fragt nach einem LLM-Anbieter für die Themenextraktion. Einmalig nötig.
-
-**LLM-Anbieter wählen (einer reicht):**
-
-| Anbieter | Kosten | Setup |
-|----------|--------|-------|
-| Gemini | Kostenloses Kontingent | API-Key von [aistudio.google.com](https://aistudio.google.com/apikey), in `.env` als `SOPHIA_GEMINI_API_KEY=...` eintragen |
-| Groq | Kostenloses Kontingent | API-Key von [console.groq.com](https://console.groq.com/keys), als `SOPHIA_GROQ_API_KEY=...` |
-| Ollama | Kostenlos, lokal | [Ollama](https://ollama.com/) installieren, `ollama pull llama3` ausführen — kein API-Key nötig |
-
-### Schritt B: Vorlesungen entdecken
-
-```bash
-uv run sophia lectures list
-```
-
-Sophia zeigt alle Opencast-Aufzeichnungen deiner angemeldeten TUWEL-Kurse. Notiere dir die **Modul-ID** (erste Spalte).
-
-### Schritt C: Vorlesung verarbeiten (eine Zeile)
-
-```bash
+uv run sophia lectures setup            # GPU erkennen, Whisper-Modell, LLM-Anbieter; einmalig
+uv run sophia lectures list             # Opencast-Aufzeichnungen deiner Kurse, mit Modul-ID
 uv run sophia lectures process <modul-id>
 ```
 
-Führt die gesamte Pipeline aus: herunterladen → Stille erkennen → mit Whisper transkribieren → Vektoren einbetten und indizieren → Themen extrahieren. Je nach GPU und Länge der Aufzeichnungen dauert das 5–30 Minuten.
+`process` nimmt die Untertitel des TUWEL-Players, wo es welche gibt, lädt sonst
+die Aufzeichnung und transkribiert sie mit Whisper, indiziert alles für die
+semantische Suche und extrahiert Themen. Auf einer CUDA-GPU dauert eine
+Vorlesung Minuten, auf der CPU deutlich länger. `--materials` indiziert
+zusätzlich die Kurs-PDFs.
+
+Danach läuft das Lernen im Browser (siehe unten) oder im Terminal:
 
 ```bash
-# Optional: Kurs-PDFs ebenfalls indizieren
-uv run sophia lectures process <modul-id> --materials
+uv run sophia study confidence <modul-id>   # Selbsteinschätzung je Thema, vor dem Lernen
+uv run sophia study session <modul-id>      # Pre-Test → Vorlesungsausschnitte → Post-Test → Karten
+uv run sophia study export <modul-id>       # sophia-<modul-id>.apkg für Anki
 ```
 
-> 💡 **Kurzform:** `uv run sophia quickstart <modul-id>` führt die gesamte Lernpipeline aus (verarbeiten → Themen → Selbsteinschätzung → Session → Export) und überspringt bereits abgeschlossene Schritte.
-
-### Schritt D: Themen prüfen
-
-```bash
-uv run sophia study topics <modul-id>
-```
-
-Zeigt die extrahierten Themen an. Falls schon durch `lectures process` extrahiert, werden die vorhandenen Themen angezeigt. Ansonsten ruft Athena das LLM auf und extrahiert 5–15 akademische Themenbezeichnungen, verknüpft mit Vorlesungsabschnitten per semantischer Suche.
-
-### Schritt E: Selbsteinschätzung
-
-```bash
-uv run sophia study confidence <modul-id>
-```
-
-Sophia fragt dich für jedes Thema: „Wie sicher bist du? (1–5)" — bevor du studiert hast. Diese Vorhersage ist der Startpunkt der Kalibrierung.
-
-### Schritt F: Geführte Lernsession
-
-```bash
-uv run sophia study session <modul-id>
-```
-
-Sophia wählt automatisch das Thema mit dem größten blinden Fleck. Die Session läuft in drei Phasen: Pre-Test → Studieren der relevanten Vorlesungsabschnitte → Post-Test + Lernkartenerstellung. Du formulierst die Karten selbst.
-
-### Schritt G: Anki-Deck exportieren
-
-```bash
-uv run sophia study export <modul-id>
-```
-
-Erzeugt `sophia-<modul-id>.apkg` im aktuellen Verzeichnis — bereit zum Import in Anki.
-
-```bash
-# Optionale Flags:
-uv run sophia study export <modul-id> --output meine-karten.apkg
-uv run sophia study export <modul-id> --deck-name "Algorithmen 2026S"
-```
-
-Anki von [apps.ankiweb.net](https://apps.ankiweb.net/) installieren, `.apkg` per Doppelklick importieren — fertig.
-
-### Problemlösungen Hermes/Athena
+Einen LLM-Anbieter brauchst du für die Themenextraktion und die Fragen:
+Gemini oder Groq (kostenloses Kontingent, API-Key in `.env`), GitHub Models
+(`GITHUB_TOKEN`) oder Ollama (lokal, kein Key). Der Setup-Wizard fragt danach.
+Transkripte gehen an den gewählten Anbieter; mit Ollama bleiben sie lokal.
 
 | Problem | Lösung |
-|---------|--------|
-| `sophia lectures setup` läuft lange | Normal — beim ersten Mal werden Whisper und sentence-transformers heruntergeladen (1–5 GB). |
-| GPU wird nicht erkannt | `nvidia-smi` prüfen. Unter WSL: WSL2 mit GPU-Passthrough aktivieren. Sophia fällt auf CPU zurück. |
-| Keine Themen extrahiert | Sicherstellen, dass `sophia lectures process` abgeschlossen ist. LLM-Konfiguration mit `sophia lectures status` prüfen. |
-| Anki-Export schlägt fehl | `uv sync --extra athena` ausführen — das `genanki`-Paket fehlt. |
+|---|---|
+| Der erste `lectures process` dauert lange | Normal: Whisper und das Embedding-Modell werden einmalig von Hugging Face geladen, mehrere Gigabyte. |
+| GPU nicht erkannt | `nvidia-smi` prüfen; unter WSL braucht es WSL2 mit GPU-Passthrough. Ohne GPU läuft alles auf der CPU. |
+| Keine Themen | `sophia lectures status <modul-id>` zeigt, welche Stufe fehlt. |
+| Anki-Export schlägt fehl | `uv sync --extra hermes --extra llm --extra athena` nachholen; `uv sync` ohne Extras entfernt sie wieder. |
 
 ---
 
-## Getting Started: Kairos — Course Registration
+## Getting started (English)
 
-This is Sophia's strongest feature. Instead of having your browser open at midnight mashing F5, you install a system timer — and Sophia submits your registration the instant the window opens. You don't even need to be awake.
+### Prerequisites
 
-> 💡 Already have a terminal, Python, and uv installed? Skip to [Step 4](#step-4-install-sophia).
+A terminal, Python 3.12 or newer, Git and the `uv` package manager.
 
-### Step 1: Open a Terminal
-
-A terminal (also called a command line, console, or shell) is a text-based interface to your computer. Instead of clicking buttons in a graphical window, you type short commands and press Enter.
-
-- **Windows 10/11:** Press `Win + R`, type `wt`, and press Enter to open Windows Terminal. If that doesn't work, search for "PowerShell" in the Start menu.
-- **macOS:** Press `Cmd + Space` to open Spotlight, type "Terminal", and press Enter.
-- **Linux:** Press `Ctrl + Alt + T`, or find "Terminal" in your application menu.
-
-✅ A window with a blinking cursor appears.
-
-### Step 2: Install Python 3.12+
-
-```bash
-python3 --version
-```
-
-If you see `Python 3.12.x` or higher — great, move to Step 3. Otherwise install Python from [python.org/downloads](https://www.python.org/downloads/).
-
-> 💡 **Windows:** During installation, check **"Add Python to PATH"** at the bottom of the first screen.
-
-### Step 3: Install uv (the Package Manager)
-
-**macOS / Linux:**
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-**Windows (PowerShell):**
-```powershell
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-```
-
-After installing, close and reopen your terminal.
-
-✅ `uv --version` prints a version number.
-
-### Step 4: Install Sophia
+- **Open a terminal.** Windows: `Win + R`, `wt`, Enter. macOS: `Cmd + Space`,
+  "Terminal". Linux: `Ctrl + Alt + T`.
+- **Check Python:** `python3 --version`. 3.12 or higher is fine; otherwise
+  install from [python.org](https://www.python.org/downloads/) (Windows: tick
+  "Add Python to PATH").
+- **Install uv.** macOS/Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
+  Windows (PowerShell):
+  `powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"`.
+  Close and reopen the terminal afterwards.
+- **Install Sophia and log in:**
 
 ```bash
 git clone https://gitlab.com/mipkovich/sophia.git && cd sophia
 uv sync
-```
-
-✅ Output ends with something like "Resolved ... packages".
-
-### Step 5: Log in
-
-```bash
 uv run sophia auth login
 ```
 
-You'll be prompted for your TU Wien credentials — the same ones you use for TUWEL and TISS. Sophia saves a session cookie locally. Nothing is sent anywhere except to TU Wien's own servers.
+You are asked for your TU Wien credentials, the same ones TUWEL and TISS use.
+MFA is mandatory; with `--save-credentials` Sophia keeps the password and the
+TOTP secret in your OS keyring and renews a dead session on its own. The
+credentials go to TU Wien's own servers and nowhere else.
 
-✅ A success message with your name appears.
+| Problem | Solution |
+|---|---|
+| `command not found` after installing uv | Close the terminal and open a new one. |
+| Login fails | Check the credentials; details with `uv run sophia --debug auth login`. |
+| `git` not found | Install from [git-scm.com](https://git-scm.com/downloads) and restart the terminal. |
 
-### Step 6: Browse available groups
+### Kairos: schedule a registration
+
+Instead of refreshing TISS at midnight, install a system timer. Sophia submits
+the instant the window opens.
 
 ```bash
 uv run sophia register groups 186.813
-```
-
-Replace `186.813` with your course number. Sophia shows all groups with their day, time, location, and current enrollment.
-
-### Step 7: Schedule registration — no open terminal needed
-
-This is the key step. This command installs a system timer (systemd on Linux, launchd on macOS, Task Scheduler on Windows) that fires exactly when the registration window opens:
-
-```bash
 uv run sophia register go 186.813 --preferences "1,3" --schedule
 ```
 
-- `--preferences "1,3"` — your priority order (indices from the groups table). If group 1 is full, Sophia automatically tries group 3.
-- `--schedule` — no terminal needs to stay open. Sophia registers itself.
+`186.813` is the course number. The first command lists every group with day,
+time, room and enrolment. `--preferences "1,3"` is your order of preference
+(indices from the table); if group 1 is full Sophia tries group 3. `--schedule`
+installs a timer (systemd, launchd or Task Scheduler), so no terminal has to
+stay open. `sophia jobs list` shows scheduled jobs, `sophia jobs cancel <job-id>`
+removes one. Without `--schedule`, `--watch` waits in the foreground instead.
 
-```bash
-uv run sophia jobs list              # show scheduled jobs
-uv run sophia jobs cancel <job-id>   # cancel a job
-```
-
-✅ Done. Sophia handles the registration.
-
-### Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| `command not found` after installing uv | Close your terminal and open a new one. |
-| Python version is too old | Install Python 3.12+ from [python.org](https://www.python.org/downloads/). On Linux: `sudo apt install python3.12`. |
-| Login fails | Double-check your credentials. For more details: `uv run sophia auth login --debug`. |
-| `git` not found | Install Git from [git-scm.com/downloads](https://git-scm.com/downloads), then restart your terminal. |
-
----
-
-## Getting Started: Hermes + Athena — Anki Deck from Lectures
-
-This guide takes you from setup to a finished Anki deck: download a lecture → transcribe → extract topics → build flashcards → export as `.apkg` and import into Anki.
-
-> 💡 Not set up yet? Run [Steps 1–4 above](#step-1-open-a-terminal) and log in first, then come back here.
-
-### Step A: Install Hermes/Athena dependencies and configure
+### Hermes + Athena: from a lecture to an Anki deck
 
 ```bash
 uv sync --extra hermes --extra llm --extra athena
-uv run sophia lectures setup
-```
-
-The setup wizard auto-detects your GPU, recommends a Whisper model, and asks you to pick an LLM provider for topic extraction. Run once.
-
-**Pick one LLM provider:**
-
-| Provider | Cost | Setup |
-|----------|------|-------|
-| Gemini | Free tier | Get key at [aistudio.google.com](https://aistudio.google.com/apikey), add `SOPHIA_GEMINI_API_KEY=...` to `.env` |
-| Groq | Free tier | Get key at [console.groq.com](https://console.groq.com/keys), add `SOPHIA_GROQ_API_KEY=...` |
-| Ollama | Free, local | Install [Ollama](https://ollama.com/), run `ollama pull llama3` — no API key needed |
-
-### Step B: Discover lecture recordings
-
-```bash
-uv run sophia lectures list
-```
-
-Sophia shows all Opencast recordings from your enrolled TUWEL courses. Note the **module ID** (first column).
-
-### Step C: Process the lecture (one command)
-
-```bash
+uv run sophia lectures setup            # detect GPU, pick a Whisper model and an LLM provider; once
+uv run sophia lectures list             # Opencast recordings of your courses, with module ids
 uv run sophia lectures process <module-id>
 ```
 
-Runs the full pipeline: download → silence detection → transcribe with Whisper → embed and index → extract topics. Depending on your GPU and recording length, expect 5–30 minutes.
+`process` takes the TUWEL player's captions where a lecture has them, otherwise
+downloads the recording and transcribes it with Whisper, indexes everything for
+semantic search and extracts topics. On a CUDA GPU a lecture takes minutes, on
+the CPU much longer. `--materials` also indexes the course's PDFs.
+
+From there, study in the browser (below) or in the terminal:
 
 ```bash
-# Optional: also index course material PDFs
-uv run sophia lectures process <module-id> --materials
+uv run sophia study confidence <module-id>  # rate each topic before studying it
+uv run sophia study session <module-id>     # pre-test → lecture excerpts → post-test → cards
+uv run sophia study export <module-id>      # sophia-<module-id>.apkg for Anki
 ```
 
-> 💡 **Shortcut:** `uv run sophia quickstart <module-id>` runs the entire study pipeline (process → topics → confidence → session → export) and skips any steps already completed.
-
-### Step D: Check topics
-
-```bash
-uv run sophia study topics <module-id>
-```
-
-Shows extracted topics. If already extracted by `lectures process`, displays the existing topics. Otherwise, Athena calls the LLM to extract 5–15 academic topic labels and cross-references them with lecture segments via semantic search.
-
-### Step E: Rate your confidence
-
-```bash
-uv run sophia study confidence <module-id>
-```
-
-Sophia asks you to rate each topic 1–5 *before* you've studied it. This prediction is the baseline for calibration.
-
-### Step F: Guided study session
-
-```bash
-uv run sophia study session <module-id>
-```
-
-Sophia auto-selects the topic where your gap is largest. The session runs: pre-test → study the relevant lecture segments → post-test + flashcard creation. You write the cards in your own words.
-
-### Step G: Export to Anki
-
-```bash
-uv run sophia study export <module-id>
-```
-
-Generates `sophia-<module-id>.apkg` in the current directory, ready to import into Anki.
-
-```bash
-# Optional flags:
-uv run sophia study export <module-id> --output my-cards.apkg
-uv run sophia study export <module-id> --deck-name "Algorithms 2026S"
-```
-
-Install Anki from [apps.ankiweb.net](https://apps.ankiweb.net/), double-click the `.apkg` to import — done.
-
-### Troubleshooting
+An LLM provider is needed for topic extraction and question generation: Gemini
+or Groq (free tiers, API key in `.env`), GitHub Models (`GITHUB_TOKEN`) or
+Ollama (local, no key). The setup wizard asks for one. Transcripts go to the
+provider you chose; with Ollama they stay on your machine.
 
 | Problem | Solution |
-|---------|----------|
-| `sophia lectures setup` is slow | Normal — Whisper and sentence-transformers download on first run (1–5 GB). |
-| GPU not detected | Run `nvidia-smi`. On WSL, you need WSL2 with GPU passthrough. Sophia falls back to CPU. |
-| No topics extracted | Make sure `sophia lectures process` completed. Check LLM config with `sophia lectures status`. |
-| Anki export fails | Run `uv sync --extra athena` — the `genanki` package is missing. |
+|---|---|
+| The first `lectures process` is slow | Normal: Whisper and the embedding model download once from Hugging Face, several gigabytes. |
+| GPU not detected | Check `nvidia-smi`; WSL needs WSL2 with GPU passthrough. Without a GPU everything runs on the CPU. |
+| No topics | `sophia lectures status <module-id>` shows which stage is missing. |
+| Anki export fails | Run `uv sync --extra hermes --extra llm --extra athena`; a bare `uv sync` removes the extras again. |
 
 ---
 
-## What Sophia Does
+## What Sophia does
 
-Sophia is organized into modules, each named for a concept that matches its purpose:
+| Module | Command | What it does |
+|---|---|---|
+| **Kairos** ⚡ | `sophia register` | TISS course and group registration with a preference list, watch mode and a system timer |
+| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: captions or Whisper transcripts, semantic search, course PDFs, missed-lecture tracking |
+| **Athena** 🎓 | `sophia study` | Topic extraction, confidence prediction, guided sessions, spaced review, self-explanation, Anki export |
+| **Chronos** ⏰ | `sophia deadlines` | Deadline discovery from TUWEL, effort estimation, time tracking, reflection, per-course calibration, ICS export |
+| **Plan** 🗺️ | `sophia plan` | One prioritised list across Chronos and Athena: deadlines, due reviews, confidence gaps, missed-lecture topics |
+| **Bücherwurm** 📚 | `sophia books` | Textbook references from enrolled courses, with ISBN and metadata |
+| **Status** 📊 | `sophia status` | Lectures, topics, cards and due reviews across all courses |
+| **Quickstart** 🚀 | `sophia quickstart` | process → topics → confidence → session → export in one go, skipping finished steps |
+| **Worker** ⚙️ | `sophia worker` | The processing worker behind the browser's "Process": claims a course's lectures and runs the Hermes stages |
 
-| Module | Command | What It Does | Status |
-|--------|---------|--------------|--------|
-| **Bücherwurm** 📚 | `sophia books` | Discovers textbook references from enrolled TUWEL courses (ISBN extraction, metadata enrichment) | ✅ Discovery |
-| **Kairos** ⚡ | `sophia register` | Automates TISS course and group registration with preference lists — seize the right moment | ✅ Functional |
-| **Hermes** 🎙️ | `sophia lectures` | Lecture knowledge base: download recordings, silence detection, transcribe with Whisper, semantic search, course material PDF scraping and indexing, discard/restore/purge management, missed-lecture tracking (mark/unmark/catch-up), `--missed` search filter, `--all` purge | ✅ Functional |
-| **Chronos** ⏰ | `sophia deadlines` | Deadline coach: discovery from TUWEL calendar API, effort estimation with adaptive scaffolding, timer-based time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export, exam integration | ✅ Functional |
-| **Athena** 🎓 | `sophia study` | Study layer over Hermes: LLM topic extraction, confidence calibration, adaptive difficulty (cued/explain/transfer questions), guided pre/post-test sessions, FSRS-inspired adaptive spaced repetition, interleaved multi-topic sessions with missed-lecture prioritization, delayed feedback with reflection countdown, no-skip pre-test for generation effect, self-explanation, exam-aware review compression, Anki `.apkg` export | ✅ Functional |
-| **Plan** 🗺️ | `sophia plan` | Unified academic recommendation engine merging Chronos deadlines, Athena review schedule, confidence gaps, and missed-lecture topics into one prioritized view | ✅ Functional |
-| **Web** 🖥️ | `docker compose up` | SvelteKit interface at `/app/`, talking to the FastAPI backend: dashboard, study sessions, spaced repetition review, lecture search, deadline management, calibration analytics. WCAG 2.1 AA accessible. | ✅ Functional |
-| **Quickstart** 🚀 | `sophia quickstart` | Chains the full study pipeline (process → topics → confidence → session → export), skipping already-completed steps | ✅ Functional |
-| **Status** 📊 | `sophia status` | Cross-course dashboard showing lectures, topics, flashcards, and reviews due across all courses | ✅ Functional |
+### The web interface
 
-### Bücherwurm in Action
+`docker compose up -d proxy frontend api redis postgres` starts Caddy, the
+SvelteKit frontend, the FastAPI backend, Postgres and Redis; the interface is
+at `http://localhost/app/`. The API cannot start without a stored TU Wien
+session, so run `sophia auth login --save-credentials` first. The processing
+worker is a separate service that needs the NVIDIA container runtime:
+`make docker-build-worker && docker compose up -d worker`.
+[DEPLOYMENT.md](DEPLOYMENT.md) covers a real deployment.
 
-Bücherwurm (German for "bookworm") scans your enrolled TUWEL courses and extracts every textbook reference it can find — from course descriptions, uploaded syllabi, and resource sections. Today it:
+| Route | What you do there |
+|---|---|
+| `/app/dashboard` | Due reviews, the week ahead, calibration, recent sessions |
+| `/app/study` | Pick a course and a topic, then predict → work → reflect |
+| `/app/review` | Everything due today, across all your courses |
+| `/app/topics` | A course's topics, where each came from, and your prediction for it |
+| `/app/content` | Lectures and uploads; scan for new recordings and start processing |
+| `/app/search` | Semantic search over a course's lectures, with lecture and timestamp |
+| `/app/chronos` | Deadlines and their history |
+| `/app/register` | TISS favourites, a course's groups and the registration countdown; register from the browser |
+| `/app/calibration` | Predicted against measured, per topic, never averaged |
+| `/app/quickstart` | First run: name the topics you expect a course to cover and rate each before you have seen its lectures |
+| `/app/settings` | Language and theme |
 
-1. Scans enrolled TUWEL courses via the Moodle AJAX API
-2. Extracts textbook references from course descriptions, syllabi, and resources
-3. Resolves ISBNs and enriches metadata (title, authors, edition) via TISS
-4. Presents a table with title, authors, ISBN, source, and course
-
-**What's coming (M1 — in progress):** Open Access and Anna's Archive search, download pipeline with local library organized by semester, and a usefulness prediction loop where Sophia asks you to predict whether each book will be useful before downloading — then revisits that prediction after a few weeks.
-
-### Kairos in Action
-
-Kairos (Καιρός — the decisive, opportune moment) automates course registration on TISS. Instead of frantically refreshing the page when a registration window opens, Kairos watches the clock and submits the instant the window opens — with a preference-ordered list of groups so you get your best available slot.
-
-**Step 1: Log in to TISS**
-
-```bash
-uv run sophia auth login
-```
-
-This authenticates with both TUWEL and TISS using your TU Wien credentials. Your sessions are stored locally.
-
-**Step 2: Browse available groups**
-
-```bash
-uv run sophia register groups 186.813
-```
-
-Sophia shows you a table of all groups with their schedule at a glance:
-
-```
-                        Groups for 186.813 (2026S)
-┏━━━┳━━━━━━━━━━━━━━┳━━━━━━━━━━━┳━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━┓
-┃ # ┃ Name         ┃ Day       ┃ Time        ┃ Location ┃ Enrolled ┃ Capacity ┃ Status   ┃
-┡━━━╇━━━━━━━━━━━━━━╇━━━━━━━━━━━╇━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━┩
-│ 1 │ Group 1 - Mo │ Monday    │ 09:00–11:00 │ Room A   │       15 │       30 │ open     │
-│ 2 │ Group 2 - Di │ Tuesday   │ 14:00–16:00 │ HS1      │       30 │       30 │ full     │
-│ 3 │ Group 3 - Mi │ Wednesday │ 10:00–12:00 │ Lab      │       20 │       25 │ open     │
-└───┴──────────────┴───────────┴─────────────┴──────────┴──────────┴──────────┴──────────┘
-```
-
-Use this to decide which groups fit your schedule, then set your preference order.
-
-**Step 3: Register with preferences**
-
-```bash
-# Register for LVA (course itself)
-uv run sophia register go 186.813
-
-# Register with group preferences (indices from the table above)
-uv run sophia register go 186.813 --preferences "1,3"
-```
-
-If group 1 is full, Kairos automatically tries group 3. You get the best available slot from your preference list.
-
-**Step 4: Watch mode — wait for the window to open**
-
-```bash
-uv run sophia register go 186.813 --preferences "1,3" --watch
-```
-
-Kairos checks the registration status, calculates when the window opens, sleeps until the right moment, and submits the instant it opens. Run this in a terminal tab (or `tmux`/`screen` session) before the registration window opens and walk away.
-
-**Step 5: Schedule it — no terminal needed**
-
-```bash
-uv run sophia register go 186.813 --preferences "1,3" --schedule
-```
-
-This installs a system timer (systemd on Linux, launchd on macOS, Task Scheduler on Windows) that fires at the registration window. No terminal needs to stay open.
-
-```bash
-uv run sophia jobs list              # show scheduled jobs
-uv run sophia jobs cancel <job-id>   # cancel a job
-```
-
-### Hermes in Action
-
-Hermes (Ἑρμῆς — the messenger who carries knowledge between realms) turns lecture recordings into a searchable knowledge base. It downloads recordings from TUWEL's Opencast integration, transcribes them using Whisper (with GPU acceleration and hallucination filtering), and builds a semantic search index so you can find exactly where a topic was discussed.
-
-**The pipeline:**
-
-1. **`sophia lectures setup`** — detect hardware (GPU/CPU), choose Whisper model, configure LLM and embedding providers
-2. **`sophia lectures list`** — discover lecture recordings from enrolled courses
-3. **`sophia lectures process <module-id>`** — run the full pipeline in one command: download → silence detection → transcribe → index → extract topics
-4. **`sophia lectures search "topic" <module-id>`** — semantic search within a lecture's transcripts
-5. **`sophia lectures materials <course-id>`** — scrape and list course material PDFs from TUWEL; with `--index` to embed and index them in ChromaDB
-
-Or run each stage individually:
-
-- **`sophia lectures download <module-id>`** — download recordings (prefers audio for efficiency); silently skips empty recordings detected by ffmpeg silence analysis
-- **`sophia lectures transcribe <module-id>`** — transcribe with Whisper, VAD filtering, hallucination detection
-- **`sophia lectures index <module-id>`** — chunk transcripts and build embedding index
-
-Step 1 only needs to happen once. The setup wizard detects your GPU, recommends a Whisper model based on VRAM, lets you choose an LLM provider (GitHub Models, Gemini, Groq, or Ollama), and automatically installs the heavy dependencies (`faster-whisper`, `chromadb`, `sentence-transformers`) when needed.
-
-**Lecture management:**
-
-- **`sophia lectures status <module-id>`** — per-episode table showing download, transcription, index status, and the skip reason for any silently-detected empty recordings
-- **`sophia lectures discard <module-id> <episode-id>`** — manually mark an episode as discarded so it won't be processed again
-- **`sophia lectures restore <module-id> <episode-id>`** — undo a discard and re-queue the episode for processing
-- **`sophia lectures purge <module-id> <episode-id>`** — remove all indexed content for an episode from the knowledge base (ChromaDB chunks, transcript segments, index records)
-
-**Missed-lecture management:**
-
-- **`sophia lectures mark-missed <module-id> <episode-id>`** — mark a lecture as missed so Sophia knows you weren't there
-- **`sophia lectures unmark-missed <module-id> <episode-id>`** — remove the missed mark
-- **`sophia lectures catch-up <module-id>`** — show topics from missed lectures, split into zero-exposure (only covered in missed lectures) and partial-exposure (covered in both missed and attended lectures)
-- **`sophia lectures search "topic" <module-id> --missed`** — restrict semantic search to missed lectures only
-- **`sophia lectures purge <module-id> --all`** — purge all episodes in a module
-
-### Athena in Action
-
-Athena (Ἀθηνᾶ — goddess of wisdom and strategy) turns Hermes's indexed lecture transcripts into an active study workflow. Hermes is responsible for getting the knowledge in; Athena is responsible for getting it into your head.
-
-**Division of labour between Hermes and Athena:**
-
-| Responsibility | Module |
-|---------------|--------|
-| Download and transcribe recordings | Hermes |
-| Build the semantic search index (ChromaDB) | Hermes |
-| Detect silence, skip empty lectures | Hermes |
-| Scrape and index course material PDFs | Hermes (`lectures materials`) |
-| Call the LLM to extract topic labels from transcripts | Athena (`study topics`) |
-| Cross-reference topics with lecture chunks via embedding search | Athena (`study topics`) |
-| Track confidence predictions per topic | Athena (`study confidence`) |
-| Run guided pre-test → study → post-test sessions | Athena (`study session`) |
-| Adaptive difficulty based on confidence | Athena (`study session`) |
-| Interleaved multi-topic sessions | Athena (`study session --interleave`) |
-| Delayed feedback with reflection countdown | Athena (`study session`) |
-| FSRS-inspired adaptive spaced repetition | Athena (`study review`) |
-| Generate and schedule flashcard spaced review | Athena (`study review`) |
-| Self-explanation exercises for wrong answers | Athena (`study explain`) |
-| Export flashcard deck as Anki `.apkg` | Athena (`study export`) |
-| Boost missed-lecture topics in interleaved sessions | Athena (`study session --interleave`) |
-| Compress review schedule near exams | Athena-Chronos (automatic on sync) |
-| Unified study+deadline recommendations | Athena-Chronos (`sophia plan`) |
-
-Athena does not re-download or re-transcribe anything. It reads directly from what Hermes has already indexed. Running `sophia lectures process <module-id>` is the only prerequisite.
-
-**Anki export detail:** `sophia study export <module-id>` generates a `.apkg` deck file using `genanki`. Cards are tagged by topic and source (lecture/session), and the deck is shuffled by default so topics are interleaved (better for long-term retention than blocked review). Use `--output` and `--deck-name` to customise. Use `--blocked` to group cards by topic instead of interleaving.
-
-**Pedagogical features:**
-
-- **Adaptive difficulty:** Sessions adapt question difficulty based on your confidence — low confidence gets cued/recognition questions, mid-range gets explanation questions, high confidence gets transfer/application questions. This keeps sessions in Vygotsky's zone of proximal development.
-- **FSRS scheduling:** Spaced repetition uses an FSRS-inspired algorithm that adjusts difficulty and stability parameters per topic, producing adaptive intervals instead of fixed ones. Replaces the basic scheduler from earlier versions.
-- **Interleaved sessions:** The `--interleave` flag mixes 2–3 topics in one session, prioritizing blind spots (lowest confidence topics), for better discrimination and transfer. Evidence from cognitive science shows interleaving produces stronger long-term retention than blocked practice.
-- **Delayed feedback:** After the post-test, a configurable countdown (default 30 seconds, set with `--feedback-delay`) with reflection prompts before showing results — forces metacognitive processing instead of pattern-matching.
-- **No-skip pre-test:** Pre-test questions require an answer (even a guess) to leverage the generation effect — wrong attempts strengthen subsequent encoding of the correct answer.
-- **Course materials:** `sophia lectures process --materials` scrapes TUWEL course PDFs, chunks them, and indexes them in ChromaDB alongside lecture transcripts for richer RAG context during study sessions.
-- **Missed-lecture prioritization:** Interleaved sessions automatically detect topics covered only in lectures the student missed (zero-exposure gaps) and prioritize them over topics the student has already encountered. This ensures catch-up material doesn't get buried under familiar review.
-- **Exam-aware review compression:** When an exam approaches, Athena pulls forward spaced reviews that would otherwise fall after the exam date, compressing the schedule so nothing is left unstudied.
-
-### Chronos in Action
-
-Chronos (Χρόνος — time, the dimension students chronically misjudge) is Sophia's deadline coach. TUWEL already has a calendar, and students still miss deadlines. The problem isn't information — it's planning. Chronos closes the loop: discover deadlines → estimate effort → track time → reflect on accuracy → calibrate your intuition. Over a semester, you develop better planning skills, a meta-competency that transfers far beyond university.
-
-**The pipeline: sync → list → estimate → track → done/reflect → calibrate**
-
-1. **`sophia deadlines sync`** — refresh the deadline cache from TUWEL's calendar API. Discovers assignments, quizzes, checkmarks (`DeadlineType.CHECKMARK`), exams, and exam registrations automatically.
-2. **`sophia deadlines list`** — show upcoming deadlines. Use `--horizon 30` to look further ahead, `--course` to filter by course, `--sort {due|urgency|weight|effort}` to change ordering.
-3. **`sophia deadlines estimate <deadline-id>`** — interactively estimate how long a task will take. Adaptive scaffolding adjusts how much structure the prompt provides based on your track record: `FULL` (step-by-step breakdown) → `MINIMAL` (just key dimensions) → `OPEN` (freeform estimate). As your calibration improves, Sophia fades the scaffold.
-4. **`sophia deadlines track <deadline-id> --hours 2`** — log time manually. Or use the built-in timer:
-   - **`sophia deadlines timer start <deadline-id>`** — start a timer
-   - **`sophia deadlines timer stop <deadline-id>`** — stop and record elapsed time
-5. **`sophia deadlines done <deadline-id>`** — mark complete. Triggers a reflection prompt: how did your estimate compare to reality? What would you do differently?
-6. **`sophia deadlines reflect <deadline-id>`** — record a post-deadline reflection at any time.
-7. **`sophia deadlines calibration`** — per-domain estimation accuracy dashboard. Shows mean error, mean absolute error, and trend for each course. This is Piaget's horizontal décalage in action: you might be well-calibrated for programming assignments but wildly off for proofs.
-
-**Additional commands:**
-
-- **`sophia deadlines next`** — show the single highest-priority deadline with its full score breakdown (urgency, weight, effort, due date).
-- **`sophia deadlines stress`** — workload forecast for the next 7 days (configurable with `--horizon`). Shows total estimated hours and flags overloaded days.
-- **`sophia deadlines export-ics`** — export deadlines as an `.ics` calendar file for import into Google Calendar, Apple Calendar, etc. Uses `--horizon 30` by default.
-- **`sophia deadlines graveyard`** — past-due deadlines. A record of what slipped through, useful for reflection. Filter with `--course` and `--limit`.
-
-### Unified Plan (`sophia plan`)
-
-The unified planner merges data from Chronos and Athena into a single prioritized recommendation list:
-
-```bash
-uv run sophia plan                          # combined view: deadlines, reviews, gaps, missed topics
-uv run sophia plan --horizon 30 --limit 20  # wider horizon, more items
-```
-
-Each `PlanItem` has a type (`DEADLINE`, `REVIEW`, `CONFIDENCE_GAP`, `MISSED_TOPIC`), a priority score, and contextual detail. The planner implements several cross-module optimizations:
-
-- **Review compression near exams:** When an exam approaches, Athena pulls forward spaced reviews that would otherwise fall after the exam date, compressing the schedule so nothing is left unstudied.
-- **Cross-module confidence hints:** Compares Athena's study scaffolding with Chronos's estimation scaffolding to surface contradictions (e.g., "You're confident studying this topic but underestimate deadline effort in the same domain").
-- **Missed-topic boosting:** Topics covered only in lectures the student missed (zero-exposure gaps) receive a base weight boost (`MISSED_TOPIC_BASE_WEIGHT = 0.4`) so they surface prominently in the plan.
-
-Chronos implements the predict → act → reflect cycle described in the [Philosophy section](#philosophy-why-sophia-doesnt-just-do-everything-for-you): every deadline becomes an opportunity to practice estimation, execute, and calibrate your mental model of how long things take.
+Flashcards, interleaved sessions, self-explanation and the Chronos
+estimate → timer → reflection loop are in the CLI today and on their way to the
+browser (see [Roadmap](#roadmap)).
 
 ---
 
-## Philosophy: Why Sophia Doesn't Just Do Everything for You
+## How studying works
 
-It would be easy to build a tool that auto-generates study plans, pre-makes flashcards, and tells students exactly what to do. Many edtech products do precisely this, optimizing for the feeling of productivity rather than actual learning. Sophia deliberately does none of these things. The reason has to do with how learning actually works, and decades of cognitive science research point in the same direction.
+### A session
 
-### Maieutics (The Socratic Midwife)
-Sophia is named for wisdom, but her methodology is Socratic. In the Meno, Socrates famously compares himself to a midwife: he cannot give birth to the truth for the student, but he can help the student deliver it themselves.
+A session is one topic, three steps.
 
-"The boy now knows what it is to be in doubt... and while he does not know, he at least does not think he knows." — Meno 84a
+1. **Predict.** You rate how well you know the topic, then answer one question
+   from memory. The question is generated from the course's own lecture
+   passages, and you cannot skip it: a guess, even a wrong one, is what makes
+   the later comparison worth something.
+2. **Work.** The rest of the deck. For each card you write a real answer (there is a
+   minimum length), stay with the prompt for a few seconds, reveal the
+   lecture passages the question came from, and grade yourself Again, Hard,
+   Good or Easy. There is no answer key: the material is the reference.
+3. **Reflect.** The first question again, from memory. Then a written
+   reflection and a short pause before the numbers open: what you predicted,
+   what you scored, and whether the two agree.
 
-Sophia uses Piaget’s equilibration theory to modernise this ancient practice. We provide the "scaffold" (the data, the prompts, the timing), but the construction of the knowledge remains entirely yours.
+The floors (answer length, dwell time, the pause) are served by the API and
+enforced by it, so a client that skips them cannot finish a session.
 
-### The Constructivist Foundation
+Questions come in three bands keyed to your own rating of the topic: cued
+questions when you say you know little, explanation questions in the middle,
+transfer questions when you say you know it well. All three ask for a written
+answer.
 
-Sophia is built on Jean Piaget's constructivist epistemology: the idea that knowledge is not passively received but actively constructed through experience. A student who reads a summary is not doing the same cognitive work as a student who wrestles with the material and builds their own understanding. The summary might transmit information, but information is not knowledge. Knowledge requires the learner to integrate new ideas with existing schemas, to assimilate where possible and accommodate where necessary.
+### Review
 
-This has real design consequences. Every feature passes through a filter: *does this help the student construct understanding, or does it bypass thinking?* If a feature does the thinking for you, it doesn't ship.
+Finishing a session schedules the topic's first review for the next day.
+`/app/review` lists what is due across every course, asks you to write what
+you remember before anything is revealed, and reschedules from your grade:
+Again and Hard shrink the interval, Good and Easy stretch it, through a
+difficulty-and-stability model (FSRS proper is on the roadmap). When an exam is
+near, reviews that would fall after it are pulled forward.
 
-> *"The principal goal of education in the schools should be creating men and women who are capable of doing new things, not simply repeating what other generations have done."*
-> — Piaget, in Bringuier, J.-C. (1980). *Conversations with Jean Piaget* (B. M. Gulati, Trans.). University of Chicago Press, p. 132.
+### Calibration
 
-### The Predict → Act → Reflect Cycle
+Every prediction is kept with the score it was followed by, per topic and per
+course, never blended into one number: being well calibrated for programming
+says little about proofs. The calibration page shows the pairs; the study
+picker offers the topic where your prediction most overshot your score first.
 
-All three modules share a common metacognitive pattern inspired by Piaget's equilibration theory. The cycle works like this:
+### Deadlines
 
-1. **Predict.** Before an action, Sophia asks you to commit to a prediction. Before downloading a book, it asks: *will this actually be useful for your course?* Before a deadline, it asks: *how many hours do you think this will take?*
-2. **Act.** You do the work: read the book, complete the assignment, study for the exam.
-3. **Reflect.** Afterward, Sophia asks you to compare your prediction with reality. Was the book useful? How long did the assignment actually take? Which exam topics surprised you?
+Chronos runs the same loop on time instead of knowledge: discover deadlines
+from TUWEL, estimate the effort, track the time, mark done, reflect on the
+gap. Estimation prompts fade from a step-by-step breakdown to a bare number as
+you log estimates and as your estimation error drops. `sophia deadlines calibration` shows the
+error per course, and `sophia plan` merges deadlines, due reviews, confidence
+gaps and missed-lecture topics into one ordered list.
 
-The delta between prediction and reality creates *disequilibrium*, the cognitive conflict that Piaget identified as the engine of intellectual development. When your mental model fails to predict reality, you're forced into *accommodation*: restructuring your schemas to better fit the world. This is uncomfortable, and it is exactly where learning happens.
+### In the terminal
 
-There are no points, no streaks, no leaderboards. The reward is watching your predictions get more accurate over time and seeing the gap between expectation and reality narrow. That narrowing gap is proof you're building better mental models of how you learn.
-
-> *"Every time we teach a child something, we keep him from inventing it himself. On the other hand, that which we allow him to discover for himself will remain with him visible for the rest of his life."*
-> — Piaget
-
-### What Sophia Deliberately Won't Do
-
-Sophia will never auto-generate a study plan, because planning *is* the skill. The act of looking at your deadlines, estimating effort, and deciding what to prioritize is a form of metacognitive practice that you can't outsource without losing the benefit.
-
-It won't pre-make flashcards, because writing them requires elaborative encoding. The act of transforming material into your own words forces you to decide what matters, how to phrase it, and what connections to draw. A pre-made flashcard skips all of that cognitive work.
-
-It won't eliminate difficulty, because difficulty is where learning happens. Bjork and Bjork (1992) call these "desirable difficulties": conditions that slow initial performance but enhance long-term retention and transfer. Spacing, interleaving, retrieval practice, and generation effects all share this property. They feel harder in the moment but produce more durable learning.
-
-Planning, predicting, and reflecting is not overhead. It IS the learning.
-
-Sophia's UI is intentionally minimal for the same reason. A polished dashboard full of charts can create the illusion of productivity. Sophia shows you data, asks you questions, and gets out of the way.
-
-### Per-Domain Calibration (Horizontal Décalage)
-
-When Sophia tracks your prediction accuracy, it does so per domain, never globally. A student might be excellently calibrated for programming assignments while being wildly miscalibrated for mathematical proofs. Averaging these into a single score would hide what matters.
-
-This mirrors Piaget's concept of *horizontal décalage*: the observation that cognitive abilities don't develop uniformly across all domains. You can be formal-operational in one area and concrete-operational in another. Sophia respects this by maintaining separate calibration profiles for each course and task type.
-
-In practice, this means your Sophia dashboard might show something like: "Your effort estimates for programming assignments are within 15% of actual time, but your exam confidence for proofs is miscalibrated by 40%." That specificity is what makes it useful. A blended average tells you nothing.
-
-### Evidence Base
-
-Sophia's design draws on well-established research in cognitive and learning science. Each of these directly shaped a feature or a design constraint:
-
-- **Piaget:** Constructivism and equilibration — knowledge is built through prediction, conflict, and accommodation. This gives Sophia its core loop: predict → act → reflect. *(Piaget, J. (1950). The Psychology of Intelligence. Routledge & Kegan Paul.)*
-- **Vygotsky:** Zone of proximal development — effective tools scaffold what's currently too hard and fade support as competence grows. Sophia's prompts become less frequent as your calibration improves. *(Vygotsky, L. S. (1978). Mind in Society: The Development of Higher Psychological Processes. Harvard University Press.)*
-- **Bjork & Bjork (1992):** Desirable difficulties — conditions that make learning harder in the short term (spacing, interleaving, retrieval practice) enhance long-term retention and transfer. Sophia never optimizes for short-term ease. *(Bjork, R. A. (1994). Memory and metamemory considerations in the training of human beings. In J. Metcalfe & A. Shimamura (Eds.), Metacognition: Knowing about Knowing (pp. 185–205). MIT Press.)*
-- **Kapur (2008):** Productive failure — students who struggle with a problem before receiving instruction develop deeper conceptual understanding than those given instruction first. Sophia lets you struggle with predictions before showing data. *(Kapur, M. (2008). Productive failure. Cognition and Instruction, 26(3), 379–424. https://doi.org/10.1080/07370000802212669)*
-- **Dunlosky et al. (2013):** Comprehensive review of learning strategies — self-explanation and practice testing ranked as the highest-utility strategies. Sophia emphasizes both. *(Dunlosky, J., Rawson, K. A., Marsh, E. J., Nathan, M. J., & Willingham, D. T. (2013). Improving students' learning with effective learning techniques. Psychological Science in the Public Interest, 14(1), 4–58. https://doi.org/10.1177/1529100612453266)*
-- **Roediger & Karpicke (2006):** The testing effect — retrieving information from memory strengthens retention more than re-reading it. Athena's flashcard system is built entirely on retrieval practice. *(Roediger, H. L., III, & Karpicke, J. D. (2006). Test-enhanced learning: Taking memory tests improves long-term retention. Psychological Science, 17(3), 249–255. https://doi.org/10.1111/j.1467-9280.2006.01693.x)*
+The CLI has a few things the browser does not yet: `study session --interleave`
+mixes two or three topics, blind spots first, then topics from lectures you
+marked missed; `study review` and `study export` handle flashcards; `study explain`
+asks for a self-explanation of a wrong answer with prompts that fade as you
+write more of them; `lectures mark-missed` and `lectures catch-up` track the
+lectures you were not at.
 
 ---
 
-## Architecture
+## Philosophy
 
-Sophia follows a hexagonal (ports and adapters) architecture. The domain core has zero external dependencies. It defines protocols (Python's structural typing) that adapters implement. This means the business logic never knows whether it's talking to a real TUWEL server, a mock in a test, or a completely different LMS. Any adapter can be swapped without touching a single line of business logic.
+It would be easy to build a tool that decides what a course is about, writes
+the cards and grades the answers. That feels productive. Sophia does not,
+because the research on how learning happens points the other way.
 
-```
-src/sophia/
-├── __init__.py
-├── __main__.py
-├── py.typed
-├── config.py
-├── cli/              # Command-line interface (cyclopts)
-│   ├── __init__.py
-│   ├── _output.py    # Shared output formatting (JSON, table, quiet mode)
-│   ├── _resolver.py  # Module ID → course ID resolution
-│   ├── auth.py       # sophia auth login/status/logout
-│   ├── books.py      # sophia books discover
-│   ├── deadlines.py  # sophia deadlines sync/list/estimate/track/timer/done/reflect/stress/next/calibration/export-ics/graveyard
-│   ├── jobs.py       # sophia jobs list/cancel
-│   ├── lectures.py   # sophia lectures setup/list/process/download/transcribe/index/search/status/discard/restore/purge/materials/mark-missed/unmark-missed/catch-up
-│   ├── plan.py       # sophia plan (unified academic recommendations)
-│   ├── quickstart.py # sophia quickstart <module-id>
-│   ├── register.py   # sophia register favorites/status/groups/go
-│   ├── run_job.py    # Internal: sophia _run-job
-│   ├── status.py     # sophia status (cross-course dashboard)
-│   └── study.py      # sophia study topics/confidence/session/review/explain/export/due
-├── domain/           # Pure models, protocols, domain events
-│   ├── models.py     # Book, Course, TopicMapping, KnowledgeChunk, StudySession, StudentFlashcard, ReviewSchedule, ConfidenceRating, CourseMaterial, DifficultyLevel, MaterialSource, Deadline, DeadlineType, EffortEstimate, EstimationScaffold, CalibrationMetrics, PlanItem, PlanItemType, etc.
-│   ├── ports.py      # Protocol definitions (CourseProvider, BookSearcher, ...)
-│   ├── events.py     # Domain events (BookFound, TopicsExtracted, StudySessionCompleted, ...)
-│   └── errors.py     # Domain-specific error hierarchy
-├── services/         # Orchestration and business logic
-│   ├── pipeline.py   # Book discovery pipeline
-│   ├── reference_extractor.py
-│   ├── resource_classifier.py
-│   ├── registration.py        # Kairos preference-based registration
-│   ├── job_runner.py          # Cross-platform job scheduler (systemd/launchd/Task Scheduler)
-│   ├── hermes_setup.py        # Hardware detection, config wizard
-│   ├── hermes_download.py     # Lecture download with audio extraction and silence detection
-│   ├── hermes_transcribe.py   # Whisper transcription with VAD and hallucination filtering
-│   ├── hermes_index.py        # Chunking, embeddings, semantic search orchestration
-│   ├── hermes_manage.py       # Discard/restore/purge and pipeline status
-│   ├── hermes_pipeline.py     # E2E pipeline orchestration (download → silence detection → transcribe → index → extract topics)
-│   ├── material_index.py      # Course material (PDF) scraping and ChromaDB indexing
-│   ├── athena_study.py        # Topic extraction, lecture-material cross-linking, question generation
-│   ├── athena_session.py      # Guided study sessions: adaptive difficulty, interleaved review, delayed feedback
-│   ├── athena_confidence.py   # Confidence rating, calibration tracking, difficulty mapping
-│   ├── athena_review.py       # FSRS-inspired adaptive spaced repetition scheduling
-│   ├── athena_chronos.py      # Athena-Chronos integration: unified planner, review compression, cross-module hints
-│   ├── athena_export.py       # Anki .apkg deck generation (genanki)
-│   └── chronos.py             # Deadline discovery, effort estimation, time tracking, priority scoring, calibration
-├── adapters/         # External world implementations
-│   ├── moodle.py     # TUWEL/Moodle AJAX adapter
-│   ├── tiss.py       # TISS public API adapter
-│   ├── tiss_registration.py   # TISS registration (JSF scraping)
-│   ├── auth.py                # SSO authentication flow
-│   ├── lecturetube.py         # TUWEL Opencast lecture discovery
-│   ├── lecture_downloader.py  # Recording download adapter
-│   ├── transcriber.py         # Whisper adapter (faster-whisper)
-│   ├── embedder.py            # Embedding adapter (sentence-transformers)
-│   ├── knowledge_store.py     # Vector store adapter (ChromaDB)
-│   └── topic_extractor.py     # LLM topic extraction (Gemini/Groq/GitHub Models/Ollama)
-├── api/              # FastAPI backend the web interface talks to
-│   ├── app.py        # App factory, middleware, error envelopes
-│   ├── routers/      # Study, review, search, deadlines, calibration, topics, settings
-│   ├── schemas/      # Request/response models per domain family
-│   └── sessions.py   # Redis-backed session store
-├── infra/            # Cross-cutting concerns
-│   ├── http.py       # Shared HTTP client with retry logic
-│   ├── persistence.py # SQLite via aiosqlite (with 19 migrations)
-│   ├── di.py         # Dependency injection container
-│   ├── logging.py    # Structured logging (structlog)
-│   ├── scheduler.py  # OS-native job scheduler (systemd/launchd/Task Scheduler)
-│   └── migrations/   # Schema migrations (001–019)
-```
+**Maieutics.** Sophia is named for wisdom; her method is Socratic. In the
+*Theaetetus*, Socrates calls himself a midwife: he cannot deliver the truth
+for the student, only help the student deliver it. Sophia provides the
+material, the questions and the timing. The construction stays yours.
 
-Key design decisions:
+**Predict, act, reflect.** Athena and Chronos ask you to commit to a
+prediction before you act (how well do you know this topic, how long will this
+take), then show you what happened next to it. The comparison is not the
+lesson; what you make of it is. A study session asks for a written reflection
+before the numbers open, Chronos asks you to explain the gap once it is shown,
+and every pair is kept so a pattern can show over a semester. There are no
+points, streaks or leaderboards. The reward is watching the gap narrow.
 
-- **Protocol-based dependency injection.** Services depend on protocols (`typing.Protocol`), not concrete implementations. The DI container wires adapters to protocols at startup. This makes the system both testable (swap in mocks) and extensible (add new adapters without touching services).
-- **Domain events.** State changes emit events (`BookFound`, `TopicsExtracted`, `StudySessionCompleted`, etc.) that other components can react to, keeping modules decoupled and enabling future features like activity logging.
-- **Async throughout.** All I/O is async via `httpx` and `aiosqlite`, so multiple courses are scanned concurrently.
-- **Strict type checking.** Pyright in strict mode catches errors at development time. Combined with Pydantic models for runtime validation, the system is robust at both layers.
+**Desirable difficulty.** Retrieving from memory before looking, spacing
+reviews out, answering before being told: all of these slow you down now and
+pay off later. Sophia never optimises for how easy a session feels.
+
+**What Sophia will not do.** It orders what is due and points at the topics
+where your prediction overshot, but it will not decide what a course is about,
+because deciding what matters is the skill. It will not grade your answers
+against a key, because the material is the reference and the judgement is
+yours. It will not drop a topic because one session went well, because one
+good session says little about next month. And it will not pre-make your
+flashcards: writing a card in your own words is itself generative, and
+retrieving it later is what keeps it.
+
+**Per domain, never globally.** Calibration is tracked per course and per
+kind of task. A single accuracy score would hide exactly the thing worth
+knowing.
+
+### Evidence base
+
+Each of these shaped a feature or a constraint.
+
+- **Roediger & Karpicke (2006); Karpicke & Roediger (2008).** Retrieval
+  beats rereading over a week, and items dropped after a single correct recall
+  are mostly forgotten. Study and review are retrieval first; nothing is
+  retired after one success. *(Psychological Science 17(3); Science 319.)*
+- **Richland, Kornell & Kao (2009); Kornell, Hays & Bjork (2009).** Attempting
+  an answer before studying improves later recall even when the attempt is
+  wrong, as long as the material follows. The un-skippable pre-test. *(JEP:
+  Applied 15(3); JEP: LMC 35(4).)*
+- **Dunlosky, Rawson, Marsh, Nathan & Willingham (2013).** Practice testing
+  and distributed practice are the two high-utility techniques; self-explanation
+  and interleaving are moderate; rereading and highlighting are low. Sessions
+  are tests, reviews are spaced, self-explanation is offered and not
+  required. *(Psychological Science in the Public Interest 14(1).)*
+- **Rawson & Dunlosky (2011); Cepeda, Vul, Rohrer, Wixted & Pashler (2008).**
+  Relearning on later days, with a first gap of about a day for a one-week
+  horizon, is what durable retention costs. Review starts the next day and
+  stretches from there. *(JEP: General 140(3); Psychological Science 19(11).)*
+- **Bjork (1994).** Desirable difficulties: conditions that slow acquisition
+  and improve retention, and the warning that judging learning by how a
+  session felt is the illusion to avoid. *(In Metcalfe & Shimamura, eds.,
+  Metacognition. MIT Press.)*
+- **Koriat & Bjork (2005); Butterfield & Metcalfe (2001).** A judgement made
+  with the answer in view is inflated, and confident errors are the most
+  correctable ones. Predictions are committed before anything is revealed.
+  *(JEP: LMC 31(2); JEP: LMC 27(6).)*
+- **Rohrer & Taylor (2007); Brunmair & Richter (2019).** Mixing problem types
+  lowered practice accuracy and more than tripled test scores a week later, and
+  the meta-analysis shows the gain depends on the mixed material being
+  confusable. Interleaving is a flag, not the default. *(Instructional Science
+  35; Psychological Bulletin 145(11).)*
+- **Piaget.** Knowledge is constructed, not received; a prediction that fails
+  is an invitation to restructure. The loop's shape. *(The Psychology of
+  Intelligence, 1950.)*
+- **Wood, Bruner & Ross (1976); Pea (2004).** The first named what a tutor's
+  support does; the second argued that support which never fades is not
+  scaffolding. Chronos's estimation prompts fade as your record grows and your
+  error drops. *(J. Child Psychol. Psychiat. 17; J. Learning Sciences 13(3).)*
 
 ---
 
-## Technology Stack
+## Architecture and stack
+
+Ports and adapters: `domain/ports.py` defines the protocols the outbound
+adapters implement, so the services that depend on them can be tested against
+doubles and pointed at another LMS.
+
+    src/sophia/
+        api/            FastAPI app; routers/ is the HTTP surface, sessions.py the Redis session store
+        adapters/       moodle (TUWEL), tiss, opencast/lecturetube, auth, whisper, embedder, chromadb, LLM
+        domain/         models, ports, events, errors
+        infra/          di.py composition root; engine, alembic, org_context, http, scheduler
+        services/       athena_*, hermes_*, chronos, ingestion, study_questions, learning_events
+        cli/            cyclopts: sophia auth|books|db|deadlines|jobs|lectures|plan|quickstart|register|status|study|worker
+        worker/         claims ingestion jobs and runs the Hermes stages in the CUDA image
+    frontend/           SvelteKit; src/routes is the page surface, src/lib/components the shared UI
+    proxy/              Caddyfile: / → /app/, /app/* → frontend, /api/* → api
+    docs/               accepted decision records
 
 | Concern | Technology |
-|---------|------------|
-| Language | Python 3.12+ with strict type annotations |
-| HTTP | httpx (async) with tenacity retry logic |
-| Data models | Pydantic v2 for validation, serialization |
-| Persistence | SQLite via aiosqlite |
-| CLI | cyclopts with Rich formatting |
-| Logging | structlog (structured, JSON-capable) |
-| Testing | pytest, pytest-asyncio, respx, hypothesis |
-| Linting | ruff |
-| Type checking | Pyright (strict mode) |
-| Packaging | uv + hatchling |
-| Web frontend | SvelteKit 2 + Svelte 5 + adapter-node under `/app` |
-| Frontend i18n | Paraglide JS v2 generated middleware via `@inlang/paraglide-js`; see [docs/frontend-paraglide-decision.md](docs/frontend-paraglide-decision.md) |
-| E2E Testing | Playwright + axe-core (WCAG 2.1 AA), driven from `frontend/` |
-| CI | GitLab CI |
+|---|---|
+| Language | Python 3.12+, Pyright strict, ruff |
+| API | FastAPI, Pydantic v2, structlog |
+| Persistence | Postgres via asyncpg and SQLAlchemy with Alembic migrations; it also holds the processing queue and the study event log, streamed over SSE through LISTEN/NOTIFY. Redis for web sessions and the per-user stream cap |
+| Lecture index | ChromaDB with sentence-transformers embeddings |
+| Transcription | TUWEL captions where published, faster-whisper otherwise |
+| CLI | cyclopts with Rich |
+| Frontend | SvelteKit 2, Svelte 5, Paraglide JS i18n (see [docs/frontend-paraglide-decision.md](docs/frontend-paraglide-decision.md)) |
+| Tests | pytest, respx, hypothesis; Vitest and Playwright with axe (WCAG 2.1 AA) |
+| Packaging and CI | uv, hatchling, Docker Compose, GitLab CI |
+
+Key decisions: protocol-based dependency injection; async I/O throughout;
+every figure on the dashboard is inline SVG over a real table
+([docs/frontend-dashboard-charts.md](docs/frontend-dashboard-charts.md));
+the study surface's floors and scores are the server's, never the client's
+([STUDY_SURFACE_SPEC.md](STUDY_SURFACE_SPEC.md)). Decision records in `docs/`
+bind.
 
 ---
 
-## External Dependencies
+## Setup details
 
-Sophia pulls in several external tools and services beyond the core Python stack. Some are Python packages installed automatically with `uv sync`, others are optional extras you opt into, and a few are system-level tools you install separately. This section tells you what each one does, whether you need it, and how to get it running on your platform.
+### Extras
 
-### At a Glance
+| Extra | Installs | Needed for |
+|---|---|---|
+| `llm` | google-genai, groq | Gemini or Groq as the LLM provider |
+| `hermes` | faster-whisper, chromadb, sentence-transformers, openai | Transcription, the lecture index, GitHub Models or Ollama |
+| `index` | chromadb, sentence-transformers | Reading the index without transcribing (what the API image installs) |
+| `athena` | genanki | Anki export |
+| `pdf` | pymupdf | Course material PDFs |
 
-| Dependency | What It Does for Sophia | Required? | How to Install |
-|-----------|------------------------|-----------|----------------|
-| keyring | Stores your TUWEL/TISS credentials securely in your OS keychain | Core (auto-installed) | `uv sync` |
-| icalendar | Exports deadlines as ICS calendar files for import into Google Calendar, Apple Calendar, etc. | Core (auto-installed) | `uv sync` |
-| google-genai | Calls Google Gemini for topic extraction from lectures | Optional | `uv sync --extra llm` |
-| groq | Calls Groq for fast topic extraction (alternative to Gemini) | Optional | `uv sync --extra llm` |
-| faster-whisper | Transcribes lecture recordings (speech-to-text) | Optional | `uv sync --extra hermes` |
-| sentence-transformers | Encodes text into vectors for semantic search over lectures | Optional | `uv sync --extra hermes` |
-| chromadb | Stores and searches lecture embeddings (vector database) | Optional | `uv sync --extra hermes` |
-| openai | Connects to GitHub Models or local Ollama for topic extraction | Optional | `uv sync --extra hermes` |
-| genanki | Generates Anki flashcard decks (`.apkg` files) | Optional | `uv sync --extra athena` |
-| ffmpeg | Extracts audio from lecture videos (system tool) | Optional (system) | See [System Tools](#5-system-tools) |
-| NVIDIA drivers | GPU acceleration for Whisper transcription | Optional (system) | See [System Tools](#5-system-tools) |
+`uv sync --all-extras --group dev` installs everything for development.
 
-### 1. Core (Always Installed)
+### LLM providers
 
-These are installed automatically when you run `uv sync`.
+One is enough. The setup wizard (`sophia lectures setup`) asks; environment
+variables work too.
 
-**keyring** (≥ 25.0) — OS-level credential storage. Used by Sophia's auth adapter to store your TUWEL and TISS session credentials securely instead of in a plain-text file.
+| Provider | Key | Notes |
+|---|---|---|
+| Gemini | `SOPHIA_GEMINI_API_KEY` from [AI Studio](https://aistudio.google.com/apikey) | Free tier, good default |
+| Groq | `SOPHIA_GROQ_API_KEY` from [Groq Console](https://console.groq.com/keys) | Free tier, fast |
+| GitHub Models | `GITHUB_TOKEN` | Through the `openai` package |
+| Ollama | none | Local, transcripts never leave the machine; `ollama pull llama3.2`, served on `localhost:11434` |
 
-| Platform | Backend | Setup Needed? |
-|----------|---------|---------------|
-| macOS | Keychain | None — built-in |
-| Windows | Credential Manager | None — built-in |
-| Linux | SecretStorage (via libsecret / gnome-keyring) | You may need to install the backend |
+### System tools
 
-**Linux users:** If Sophia warns about missing keyring backends, install the system libraries:
+- **ffmpeg** strips the video after a download so only the audio is kept;
+  without it the video file stays on disk. `apt install ffmpeg`,
+  `brew install ffmpeg`, `winget install ffmpeg`.
+- **NVIDIA drivers** make Whisper fast. Without a GPU everything runs on the
+  CPU. The GPU is not available from the API container; the worker image has it
+  ([DEPLOYMENT.md](DEPLOYMENT.md)).
+- **A keyring backend** stores credentials. macOS and Windows have one; on
+  Linux install `gnome-keyring` and `libsecret`. A headless box needs
+  `PYTHON_KEYRING_BACKEND` pinned; see
+  [docs/run-contract-setup.md](docs/run-contract-setup.md).
+- **The OS scheduler** (systemd, launchd, Task Scheduler) runs
+  `register --schedule`; nothing to install.
 
-```bash
-# Debian / Ubuntu
-sudo apt install gnome-keyring libsecret-1-0
+### Data access and privacy
 
-# Fedora / RHEL
-sudo dnf install gnome-keyring libsecret
-
-# Arch
-sudo pacman -S gnome-keyring libsecret
-```
-
-If no keyring backend is available, Sophia falls back gracefully — you'll just be prompted for credentials more often.
-
-### 2. LLM Providers (Optional)
-
-Install with:
-
-```bash
-uv sync --extra llm
-```
-
-These packages let Sophia use large language models to extract study topics from lecture transcripts. You only need **one** provider — pick whichever you prefer.
-
-| Package | Provider | API Key Env Var | Get a Key |
-|---------|----------|----------------|-----------|
-| google-genai (≥ 1.0) | Google Gemini | `SOPHIA_GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) |
-| groq (≥ 0.4) | Groq (fast inference) | `SOPHIA_GROQ_API_KEY` | [Groq Console](https://console.groq.com/keys) |
-
-> **GitHub Models / Ollama:** The `openai` package (used for GitHub Models and Ollama providers) is bundled in the `hermes` extra (`uv sync --extra hermes`), not in `llm`. If you only need Gemini or Groq, `--extra llm` is sufficient.
-
-**Which one should I pick?**
-
-- **Gemini** — generous free tier, good quality. Best default choice.
-- **Groq** — extremely fast inference, free tier available. Good if you value speed.
-- **Ollama** (via the openai package, included in `hermes` extra) — runs entirely on your machine, no API key needed, no data leaves your computer. Requires [Ollama](https://ollama.com/) installed separately. Best for privacy-conscious users or offline use.
-
-All three produce comparable results for Sophia's use case (topic extraction). You can switch providers at any time.
-
-### 3. Hermes — Lecture Knowledge Base (Optional)
-
-Install with:
-
-```bash
-uv sync --extra hermes
-```
-
-These power Sophia's lecture transcription and semantic search features.
-
-**faster-whisper** (≥ 1.1) — Optimized Whisper speech-to-text engine. Transcribes your lecture recordings into searchable text. Downloads a model on first use (1–3 GB depending on the model size Sophia picks for your hardware).
-
-- Works on all platforms with no special setup.
-- **GPU acceleration:** If you have an NVIDIA GPU with CUDA, Whisper runs dramatically faster. Sophia auto-detects your GPU and picks the right model size. Without a GPU, it still works — just slower.
-
-**sentence-transformers** (≥ 3.0) — Encodes lecture text into vector embeddings so Sophia can search lectures by *meaning*, not just keywords. Pulls in PyTorch as a dependency (large download, ~2 GB on first install). No platform-specific setup required.
-
-**chromadb** (≥ 1.0) — A SQLite-backed vector database that stores and searches the lecture embeddings locally. No platform-specific setup required.
-
-**openai** (≥ 1.50) — Included in the `hermes` extra for GitHub Models and Ollama provider support. If you use Gemini or Groq exclusively, you don't need this — but it's installed automatically with `--extra hermes`.
-
-### 4. Athena — Study & Export (Optional)
-
-Install with:
-
-```bash
-uv sync --extra athena
-```
-
-**genanki** (≥ 0.13) — Generates `.apkg` Anki flashcard deck files from Sophia's study materials. Used by `sophia study export` to create ready-to-import flashcard decks.
-
-To actually *use* the generated decks, you need **Anki** installed separately:
-
-| Platform | Install Anki |
-|----------|--------------|
-| All platforms | Download from [apps.ankiweb.net](https://apps.ankiweb.net/) |
-| Linux | Also available via `sudo apt install anki` or Flatpak |
-| Android | [AnkiDroid](https://play.google.com/store/apps/details?id=com.ichi2.anki) (free) on Google Play |
-| iOS | [AnkiMobile](https://apps.apple.com/app/ankimobile-flashcards/id373493387) on the App Store |
-
-### 5. System Tools
-
-These are **not** Python packages — you install them through your operating system's package manager. All are optional; Sophia works without them but with reduced functionality.
-
-#### ffmpeg
-
-Extracts audio tracks from lecture video recordings so Sophia downloads only the audio (much smaller) instead of full video files. Sophia detects ffmpeg automatically; if it's missing, it simply downloads the complete video instead.
-
-| Platform | Install Command |
-|----------|----------------|
-| Debian / Ubuntu | `sudo apt install ffmpeg` |
-| Fedora / RHEL | `sudo dnf install ffmpeg` |
-| Arch | `sudo pacman -S ffmpeg` |
-| macOS | `brew install ffmpeg` |
-| Windows | `winget install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html) and add to PATH |
-
-#### NVIDIA Drivers + CUDA (for GPU-accelerated transcription)
-
-Sophia's Hermes module detects your GPU via `nvidia-smi` to choose the optimal Whisper model. Without a GPU, everything still works — Sophia just uses CPU mode.
-
-| Platform | Install |
-|----------|---------|
-| Debian / Ubuntu | `sudo apt install nvidia-driver-XXX` (replace XXX with your version, e.g. 550) |
-| Fedora / RHEL | `sudo dnf install akmod-nvidia` |
-| Windows | Download from [nvidia.com/drivers](https://www.nvidia.com/drivers) |
-| macOS | Not applicable (no CUDA support on macOS) |
-
-#### System Scheduler (for `sophia register --schedule`)
-
-Sophia's Kairos module can schedule automatic registration attempts. It uses your OS's built-in scheduler:
-
-| Platform | Scheduler | Setup Needed? |
-|----------|-----------|---------------|
-| Linux | systemd timers | None — systemd is pre-installed on most distros |
-| macOS | launchd | None — built-in |
-| Windows | Task Scheduler | None — built-in |
-
-### 6. Configuration
-
-After installing dependencies, configure your LLM provider:
-
-**Option A: Interactive wizard** (recommended)
-
-```bash
-sophia lectures setup
-```
-
-This walks you through choosing a provider, entering API keys, and picking model sizes for your hardware. All settings are saved locally.
-
-**Option B: Environment variables**
-
-Create a `.env` file in the project root or set these in your shell:
-
-```bash
-# Pick one (or more) — Sophia uses whichever is configured
-SOPHIA_GEMINI_API_KEY=your-gemini-key-here
-SOPHIA_GROQ_API_KEY=your-groq-key-here
-```
-
-**Option C: Local Ollama (no API key needed)**
-
-Install [Ollama](https://ollama.com/), pull a model (`ollama pull llama3`), and Sophia connects automatically on `localhost:11434`. No API key, no cloud, everything stays on your machine.
-
----
-
-## Data Access
-
-Sophia accesses TU Wien data through three tiers, each chosen for the data it can reliably reach:
-
-1. **TUWEL AJAX API.** Session-cookie authenticated. TUWEL (TU Wien's Moodle instance) exposes a comprehensive AJAX API that powers its own web interface. Sophia uses this structured API for core data: enrolled courses, resources, activities, and forum posts. This is the most reliable data source.
-2. **TISS Public API.** No authentication needed. TISS provides a public REST API for course metadata, exam dates, room information, and curricula. Sophia uses this to cross-reference course numbers and get official descriptions, ECTS credits, and exam schedules.
-3. **HTML Scraping.** Session-cookie authenticated. Some data (grades, detailed assignment descriptions, embedded resource links) is only available in rendered HTML pages. Sophia parses these with BeautifulSoup as a last resort, with robust error handling for when page structures change.
-
-**Privacy:** All data stays on your machine. Sophia communicates only with TU Wien servers you already use: TUWEL (`tuwel.tuwien.ac.at`) and TISS (`tiss.tuwien.ac.at`). No telemetry, no analytics, no third-party services. Your session cookie is stored locally in your platform's standard config directory and is never transmitted anywhere except back to TU Wien.
+Sophia reads TUWEL through its own AJAX API with your session cookie, TISS
+through its public REST API, and falls back to parsing rendered HTML only where
+no API exists. Your credentials go to TU Wien's SSO (`iu.zid.tuwien.ac.at`) and
+nowhere else. Beyond `tuwel.tuwien.ac.at` and `tiss.tuwien.ac.at` it talks to
+the lecture video hosts (`lecturetube.tuwien.ac.at`, `cdn.video.tuwien.ac.at`),
+to Hugging Face once for the Whisper and embedding models, and to the LLM
+provider you chose, which receives transcript passages for topic extraction
+and questions; Ollama keeps those local. No telemetry, no analytics.
 
 ---
 
 ## Development
 
 ```bash
-# Set up the development environment
-uv sync --all-extras --group dev   # install all optional features + test/lint tools
-uv run sophia lectures setup       # configure Hermes for your hardware (GPU, models, LLM provider)
-
-# Web interface development — see frontend/ for the SvelteKit app
+uv sync --all-extras --group dev
 pnpm -C frontend install
-pnpm -C frontend run dev           # SvelteKit dev server; needs the API running
 
-# Or use the Makefile shortcuts:
-# make dev                         # install deps
-# make setup-hermes                # configure Hermes
-
-# For users (no dev tools needed):
-# uv sync                          # base install (core deps only)
-# The lectures setup wizard auto-installs hermes deps when needed
-
-# Run the test suite
-uv run pytest                      # 1530 tests currently passing
-uv run pytest --cov=sophia     # with coverage report
-uv run pytest -x               # stop on first failure (useful when debugging)
-
-# Code quality
-uv run ruff check .            # lint (style, complexity, imports)
-uv run ruff format --check .   # check formatting
-uv run pyright                 # strict type checking
-
-# Frontend pivot checks
-pnpm -C frontend run paraglide:check  # regenerate Paraglide JS v2 output and validate messages
-pnpm -C frontend run test:unit        # Vitest unit contracts, smoke, locale, web-vitals
+uv run ruff check . && uv run ruff format --check . && pnpm -C frontend run lint
+uv run pyright && pnpm -C frontend run check
+pnpm -C frontend run test:unit          # fast, no services
+make db.up && make test                 # the Python suite needs Postgres; 85 % coverage floor
+make frontend.test                      # Vitest and Playwright
+make frontend.a11y                      # axe against /app/*
 ```
 
-The test suite uses `pytest` with `pytest-asyncio` for async tests, `respx` for HTTP mocking (no real network calls in tests), and `hypothesis` for property-based testing of domain models.
+`make docker-build` builds every default image, the CUDA worker included;
+`make docker-build-api`, `make docker-build-frontend` and
+`make docker-build-worker` build one. The CLI container sits behind a Compose
+profile. CI runs lint, types, the Python suite against a Postgres service, the
+OpenAPI contract check and the frontend checks (unit, size budget, a11y, e2e)
+on merge requests and master; the API, frontend and proxy images build on
+master and on demand in a merge request, and the worker image is built by
+hand. Gate commands and their timings live in `.claude/gates.sh`.
 
-### Makefile Targets
-
-| Target | Description |
-|--------|-------------|
-| `make dev` | Install all extras + dev group |
-| `make setup-hermes` | Configure Hermes hardware and providers |
-| `make test` | Run tests with coverage (85% minimum) |
-| `make lint` | Lint and format check |
-| `make typecheck` | Type check with pyright |
-| `make run` | Run sophia CLI |
-| `make format` | Format code with ruff |
-| `make clean` | Remove build artifacts (preserves .venv) |
-| `make clean-all` | Remove everything including .venv |
-| `make docker-build` | Build Docker image |
-| `make docker-up` | Start services (detached) |
-| `make docker-down` | Stop services |
-| `make docker-logs` | Tail service logs |
-| `make docker-backup` | One-off local SQLite copy from Docker volume; production uses Litestream drills in [DEPLOYMENT.md](DEPLOYMENT.md) |
-| `make frontend.test` | Run the SvelteKit unit and E2E suites |
-| `make frontend.a11y` | Run the axe WCAG 2.1 AA audit against `/app/*` |
-| `make test-all` | Run the backend suite and the frontend suite |
-
-### Docker
-
-```bash
-docker compose build               # build image
-docker compose up -d               # start (detached)
-docker compose down                # stop
-docker compose logs -f             # tail logs
-
-# One-off local backup from container; use DEPLOYMENT.md for production Litestream drills
-make docker-backup                 # saves sophia-backup-YYYYMMDD.db
-```
-
-`docker compose up -d` brings up the proxy, the SvelteKit frontend, the API,
-Postgres and Redis. The web interface is at `http://localhost/app/`; the bare
-origin redirects there. GPU transcription is no longer available from a
-container — run `sophia lectures transcribe` on a CUDA host; see
-[DEPLOYMENT.md](DEPLOYMENT.md).
-
-### CI/CD
-
-GitLab CI runs on every push:
-
-1. **Lint** — `ruff check` + `ruff format --check`
-2. **Typecheck** — `pyright`
-3. **Test** — `pytest` with coverage on Python 3.12 + 3.14 matrix (75% minimum coverage)
-4. **Security** — `pip-audit` (allowed to fail)
-5. **Frontend** — `svelte-check`, ESLint, Vitest, the client bundle size gate, and the Playwright and axe suites against `/app/*`
-6. **Compose and deployment policy** — both Compose files are syntax-checked and the production topology is validated
-7. **Docker build** — builds the api, frontend and proxy images; pushes to GitLab Container Registry on `master` merges (tagged with commit SHA)
-
-CI runs automatically via GitLab CI on every push.
+The e2e suite runs against a fixture API, not the real server; a green
+study-surface e2e test is evidence about the fixture until a parity suite
+exists.
 
 ---
 
 ## Roadmap
 
-| Status | Milestone | Description |
-|--------|-----------|-------------|
-| ✅ Done | **M0: MVP Foundation** | Authentication, TUWEL adapter, course listing, `sophia books discover` works against real TUWEL |
-| ✅ Done | **Kairos: Registration** | TISS course & group registration with preference lists, watch mode for auto-submit |
-| ✅ Done | **Kairos: Scheduler** | Cross-platform job scheduler (systemd/launchd/Task Scheduler) — `--schedule` and `sophia jobs` |
-| ✅ Done | **Hermes: Lectures** | Lecture download, Whisper transcription (GPU/CPU), semantic search via embeddings |
-| ✅ Done | **Hermes: Silence detection & management** | Auto-detect empty recordings via ffmpeg, `lectures process` E2E pipeline, discard/restore/purge management, knowledge base purge |
-| ✅ Done | **Course Materials** | PDF scraping from TUWEL, ChromaDB indexing, lecture-material cross-linking |
-| ✅ Done | **Athena: Study** | Topic extraction, confidence calibration, guided study sessions, flashcard review, self-explanation, Anki export |
-| ✅ Done | **Athena: Pedagogical Depth** | Adaptive difficulty (cued/explain/transfer), FSRS-inspired spaced repetition, interleaved sessions, delayed feedback, no-skip pre-test |
-| ✅ Done | **Security Hardening** | Command injection protection, SSRF whitelist, download size limits, non-root Docker, secret markers |
-| ✅ Done | **CLI Refactor** | Modular CLI architecture with cyclopts, shared output formatting (JSON/table/quiet), module ID resolver |
-| ✅ Done | **Reliability & Resilience** | Whisper timeout, SSO auth retry, embedder/knowledge store caching, subprocess timeouts |
-| ✅ Done | **UX Polish** | Progress bars, status dashboard, quickstart command, Likert anchors |
-| ✅ Done | **Docker & CI/CD** | Multi-stage Dockerfile, docker-compose, GitLab CI with lint/typecheck/test/security/docker-build |
-| 🔨 In Progress | **M1: Bücherwurm Core** | ISBN resolution, Open Access + Anna's Archive search, download pipeline, usefulness prediction loop |
-| 🔨 In Progress | **M2: Intelligence Layer** | PDF parsing with PyMuPDF, LLM-powered reference extraction (Gemini/Groq — LLM adapter already built in `topic_extractor.py`), Typst-rendered reading reports |
-| ✅ Done | **M3: Chronos** | Deadline discovery from TUWEL calendar API (assignments, quizzes, checkmarks, exams), effort estimation with adaptive scaffolding, time tracking, priority scoring, workload forecasting, post-deadline reflection, calibration dashboard, ICS export |
-| ✅ Done | **Athena-Chronos Integration** | Unified recommendation engine (`sophia plan`), review compression near exams, cross-module confidence hints, missed-lecture prioritization |
-| ✅ Done | **Missed Lectures** | Mark/unmark missed lectures, catch-up command, missed-only search, Athena interleave prioritization, unified planner boosting |
-| 🔨 In Progress | **M5: Polish & Ship** | SvelteKit web interface at `/app/` (WCAG 2.1 AA accessible, Docker deployment), comprehensive documentation, stable public release |
+Open work is tracked as issues under milestones on the project's GitLab.
+
+- **Mid-Semester Essentials:** interleaved sessions, flashcards and the
+  one-lecture session in the browser; the unified plan on the dashboard;
+  deadlines that keep themselves current.
+- **Pedagogy Fidelity:** the review reveals lecture passages to grade against;
+  a reconciliation step after the numbers; calibration measured from delayed
+  reviews, not in-session grades; confidence collected before every reveal;
+  cards graded Again come back in the session; FSRS proper.
+- **Browser Parity Backlog:** the Chronos estimate → timer → reflection loop,
+  self-explanation, Anki export from the browser, maths rendering, pipeline
+  settings, the quickstart gap moment.
+- **Bücherwurm (unscheduled):** Open Access search, the download pipeline and
+  a local library, and a usefulness prediction loop.
 
 ---
 
-## Quick Reference
-
-Once you're set up, these are the commands you'll use most:
+## Quick reference
 
 ```bash
-# Cross-Course Overview
-uv run sophia status                       # dashboard: lectures, topics, cards, reviews due
-uv run sophia quickstart <module-id>       # full pipeline in one command (skips completed steps)
-
 # Authentication
-uv run sophia auth login          # log in to TUWEL + TISS
-uv run sophia auth status         # check if your session is valid
-uv run sophia auth logout         # clear saved credentials
-
-# Books (Bücherwurm)
-uv run sophia books discover      # scan courses for textbook references
+uv run sophia auth login [--save-credentials]   # TUWEL + TISS; the secret makes re-login automatic
+uv run sophia auth status
+uv run sophia auth logout
 
 # Registration (Kairos)
-uv run sophia register favorites           # list TISS favorites with registration info
-uv run sophia register status 186.813      # check registration status
-uv run sophia register groups 186.813      # show groups with schedule
-uv run sophia register go 186.813          # register for LVA
-uv run sophia register go 186.813 --preferences "1,3"   # with group preferences
-uv run sophia register go 186.813 --watch  # wait for window, then register
-uv run sophia register go 186.813 --preferences "1,3" --schedule  # install system timer
+uv run sophia register favorites
+uv run sophia register status 186.813
+uv run sophia register groups 186.813
+uv run sophia register go 186.813 --preferences "1,3" [--watch | --schedule]
+uv run sophia jobs list | cancel <job-id>
 
 # Lectures (Hermes)
-uv run sophia lectures setup               # configure hardware, models, providers
-uv run sophia lectures list                # discover lecture recordings
-uv run sophia lectures process <module-id>   # full pipeline: download → silence detection → transcribe → index → extract topics
-uv run sophia lectures process <module-id> --materials  # include PDF indexing
-uv run sophia lectures materials <course-id>   # scrape and list course materials (PDFs)
-uv run sophia lectures status <module-id>    # per-episode status table (with skip reasons)
-uv run sophia lectures download <module-id>  # download recordings (with silence detection)
-uv run sophia lectures transcribe <module-id> # transcribe with Whisper
-uv run sophia lectures index <module-id>   # build embedding index
-uv run sophia lectures search "topic" <module-id>  # semantic search within a lecture
-uv run sophia lectures discard <module-id> <episode-id>  # mark episode as discarded
-uv run sophia lectures restore <module-id> <episode-id>  # undo discard
-uv run sophia lectures purge <module-id> <episode-id>    # remove episode from knowledge base
-uv run sophia lectures mark-missed <module-id> <episode-id>  # mark lecture as missed
-uv run sophia lectures unmark-missed <module-id> <episode-id> # remove missed mark
-uv run sophia lectures catch-up <module-id>                   # show missed-lecture topics to catch up on
-uv run sophia lectures search "topic" <module-id> --missed    # search within missed lectures only
-uv run sophia lectures purge <module-id> --all                # purge all episodes in module
+uv run sophia lectures setup
+uv run sophia lectures list
+uv run sophia lectures process <module-id> [--materials]
+uv run sophia lectures status <module-id>
+uv run sophia lectures search "topic" <module-id> [--missed]
+uv run sophia lectures download | transcribe | index <module-id>
+uv run sophia lectures discard | restore | purge <module-id> <episode-id>
+uv run sophia lectures mark-missed | unmark-missed <module-id> <episode-id>
+uv run sophia lectures catch-up <module-id>
+uv run sophia lectures materials <course-id>
 
 # Study (Athena)
-uv run sophia study topics <module-id>              # extract topics from transcripts
-uv run sophia study confidence <module-id>          # rate confidence per topic
-uv run sophia study session <module-id> [topic]     # guided study with pre/post test
-uv run sophia study session <module-id> --interleave    # mix multiple topics
-uv run sophia study session <module-id> --feedback-delay 45  # custom reflection time (seconds)
-uv run sophia study review <module-id> [topic]      # review flashcards
-uv run sophia study review <module-id> --interleave     # shuffle all topic cards
-uv run sophia study review <module-id> --count 20       # review up to 20 cards
-uv run sophia study explain <module-id> [topic]     # self-explain wrong answers
-uv run sophia study explain <module-id> --count 10      # explain up to 10 cards
-uv run sophia study export <module-id>              # export flashcards to Anki
-uv run sophia study export <module-id> --blocked        # group by topic instead of interleaving
-uv run sophia study due [module-id]                 # show topics due for review (all if omitted)
+uv run sophia study topics <module-id>
+uv run sophia study confidence <module-id>
+uv run sophia study session <module-id> [topic] [--interleave] [--feedback-delay 30]
+uv run sophia study review <module-id> [topic] [--interleave] [--count 20]
+uv run sophia study explain <module-id> [topic]
+uv run sophia study export <module-id> [--output f.apkg] [--deck-name N] [--blocked]
+uv run sophia study due [module-id]
 
 # Deadlines (Chronos)
-uv run sophia deadlines sync                        # refresh deadline cache from TUWEL
-uv run sophia deadlines list                        # upcoming deadlines
-uv run sophia deadlines list --horizon 30           # look 30 days ahead
-uv run sophia deadlines list --sort urgency         # sort by urgency score
-uv run sophia deadlines estimate <deadline-id>      # estimate effort (with scaffolding)
-uv run sophia deadlines track <deadline-id> --hours 2   # log time manually
-uv run sophia deadlines timer start <deadline-id>   # start a timer
-uv run sophia deadlines timer stop <deadline-id>    # stop timer, record time
-uv run sophia deadlines done <deadline-id>          # mark complete + reflection
-uv run sophia deadlines reflect <deadline-id>       # post-deadline reflection
-uv run sophia deadlines next                        # highest-priority deadline
-uv run sophia deadlines stress                      # workload forecast (7 days)
-uv run sophia deadlines calibration                 # estimation accuracy dashboard
-uv run sophia deadlines export-ics                  # export as .ics calendar file
-uv run sophia deadlines graveyard                   # past-due deadlines
+uv run sophia deadlines sync | list [--horizon 30] [--sort urgency] | next | stress | graveyard
+uv run sophia deadlines estimate <deadline-id>
+uv run sophia deadlines track <deadline-id> --hours 2
+uv run sophia deadlines timer start | stop <deadline-id>
+uv run sophia deadlines done | reflect <deadline-id>
+uv run sophia deadlines calibration
+uv run sophia deadlines export-ics
 
-# Unified Plan (Athena + Chronos)
-uv run sophia plan                                  # combined recommendations: deadlines, reviews, gaps, missed topics
-uv run sophia plan --horizon 30 --limit 20          # wider horizon, more items
+# Everything at once
+uv run sophia plan [--horizon 30] [--limit 20]
+uv run sophia status
+uv run sophia quickstart __call__ <module-id>   # the bare form does not parse yet
+uv run sophia db status | upgrade
 
-# Scheduled Jobs
-uv run sophia jobs list            # show scheduled jobs
-uv run sophia jobs cancel <job-id> # cancel a scheduled job
-
-# Global Flags (available on all commands)
-uv run sophia --json <command>     # output as JSON
-uv run sophia --quiet <command>    # suppress output
-uv run sophia --no-color <command> # disable colors
-uv run sophia --debug <command>    # enable debug logging
-
-# Web Interface
-docker compose up -d                               # proxy + frontend + API + Postgres + Redis
-# then open http://localhost/app/
-
-# Help
-uv run sophia --help               # show all commands
-uv run sophia books --help         # show book subcommands
-uv run sophia lectures --help      # show lecture subcommands
+# Global flags
+uv run sophia --json | --quiet | --no-color | --debug <command>
 ```
 
 ---
 
 ## Contributing
 
-Sophia is a personal project, but contributions are welcome. If you're a TU Wien student and want to help:
-
-1. Open an issue describing what you'd like to work on
-2. Fork the repository and create a branch
-3. Write tests for your changes
-4. Submit a merge request
-
-Please follow the existing code style (enforced by `ruff` and `pyright`). The codebase uses strict type checking, so if Pyright complains, that's a real issue, not noise.
-
----
+Sophia is a personal project; contributions from TU Wien students are
+welcome. Open an issue describing what you want to work on, branch, write the
+tests, and open a merge request. `ruff` and `pyright` in strict mode are the
+style guide: if Pyright complains, that is a real issue.
 
 ## Acknowledgments
 
-Sophia is named after the Greek word for wisdom (σοφία). The name reflects the project's aspiration: not to make students more efficient, but to help them become wiser. Better at knowing what they know, what they don't, and what to do about the gap.
+Sophia is named after the Greek word for wisdom (σοφία). The aim is not to
+make students more efficient but wiser: better at knowing what they know, what
+they do not, and what to do about the gap.
 
----
-
-> *"The only true wisdom is in knowing you know nothing." — Socrates*
->
-> *Sophia doesn't just find the books. She helps you discover what you don't yet know.*
+> *"I do not think I know what I do not know."* — Socrates, in Plato's *Apology* 21d
