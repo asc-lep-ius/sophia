@@ -14,6 +14,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # Measured on hephaestus, 2026-10-08, warm caches:
 #   lint 8.9s · types 20.0s · tests 11.4s (445 tests) · total ~40s
+# Re-measured 2026-10-10 on master: lint 7.6s · types 19.8s · tests 10.9s (447 tests) · total ~38s
 # It was ~38s on 2026-09-25 and ~34s on 2026-09-12; the unit suite is what grew.
 #
 # secret_policy.py is the half of `make lint` that ruff is not. It was missing

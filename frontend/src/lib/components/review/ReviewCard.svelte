@@ -95,6 +95,8 @@
       {/if}
     </div>
 
+    <!-- The queue spans every course; the topic alone may not say which. -->
+    <p class="course">{current.course}</p>
     <h2 id="review-card-topic">{current.topic}</h2>
     <p class="prompt">{m.review_prompt()}</p>
 
@@ -230,9 +232,17 @@
   }
 
   .queue span,
+  .course,
   .prompt,
   .own-answer {
     overflow-wrap: anywhere;
+  }
+
+  .course {
+    margin: 0 0 -0.6rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-weight: 700;
   }
 
   .prompt,

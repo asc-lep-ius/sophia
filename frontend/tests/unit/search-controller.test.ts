@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SophiaApiError } from "../../src/lib/api/client";
 import { SearchController } from "../../src/lib/search/controller.svelte";
 import type { SearchResult } from "../../src/lib/search/results";
 
@@ -132,6 +133,24 @@ describe("search controller", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(controller.status).toBe("error");
+    expect(controller.results).toEqual([]);
+  });
+
+  it("tells an unreadable lecture index apart from a failed search", async () => {
+    const { calls, run } = deferredRun();
+    const controller = new SearchController({ debounceMs: DEBOUNCE_MS, run });
+
+    controller.setQuery("graph");
+    await vi.advanceTimersByTimeAsync(DEBOUNCE_MS);
+    calls[0]?.reject(
+      new SophiaApiError({
+        detail: { code: "lecture_index.unavailable", params: {} },
+        status: 503,
+      }),
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(controller.status).toBe("unavailable");
     expect(controller.results).toEqual([]);
   });
 

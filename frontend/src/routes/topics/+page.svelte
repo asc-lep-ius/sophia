@@ -22,6 +22,8 @@
 
   const listPath = resolve("/topics", {});
   const quickstartPath = resolve("/quickstart", {});
+  /** Posted straight to the study page's action: no JS, no second click. */
+  const startPath = `${resolve("/study", {})}?/start`;
 
   const params = $derived(
     topicParams(data.filters, data.contentLanguage.override),
@@ -140,16 +142,44 @@
     {/snippet}
 
     <ul class="topics">
-      {#each data.rows.data as row (row.topic.topic)}
+      {#each data.rows.data as row (`${row.topic.topic}:${row.topic.source}`)}
         <li>
-          <span class="topic" lang={data.contentLanguage.language}
-            >{row.topic.topic}</span
-          >
+          <span class="topic-cell">
+            <span class="topic" lang={data.contentLanguage.language}
+              >{row.topic.topic}</span
+            >
+            {#if row.topic.content_items.length > 0}
+              <ul class="origins">
+                {#each row.topic.content_items as item (item.id)}
+                  <li>
+                    {item.sequence_number === null
+                      ? m.topics_from_lecture_unnumbered({ title: item.title })
+                      : m.topics_from_lecture({
+                          number: item.sequence_number,
+                          title: item.title,
+                        })}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </span>
           <span class="meta">
             <span class="origin">{originLabels[row.topic.source]()}</span>
             <span class="confidence" class:unrated={row.confidence === null}>
               {confidenceLabel(row)}
             </span>
+            <form method="POST" action={startPath}>
+              <button
+                type="submit"
+                name="topic"
+                value={row.topic.topic}
+                aria-label={m.study_topic_start_named({
+                  topic: row.topic.topic,
+                })}
+              >
+                {m.study_topic_start()}
+              </button>
+            </form>
           </span>
         </li>
       {/each}
@@ -201,9 +231,26 @@
     padding-top: 0.45rem;
   }
 
+  .topic-cell {
+    display: grid;
+    min-width: 0;
+    gap: 0.15rem;
+  }
+
   .topic {
     min-width: 0;
     font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  .origins {
+    display: grid;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    color: var(--muted);
+    font-size: 0.8rem;
     overflow-wrap: anywhere;
   }
 
@@ -234,7 +281,17 @@
     color: var(--muted);
   }
 
-  .notice,
+  .meta button {
+    min-height: 2.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-raised);
+    color: var(--text);
+    padding: 0.35rem 0.8rem;
+    font: inherit;
+    overflow-wrap: anywhere;
+  }
+
   .empty-title,
   .empty-body {
     margin: 0;

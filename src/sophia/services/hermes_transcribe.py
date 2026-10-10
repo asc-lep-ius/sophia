@@ -24,6 +24,7 @@ from sophia.adapters.captions import (
     parse_vtt,
     select_caption_track,
 )
+from sophia.adapters.lecture_downloader import probe_duration
 from sophia.adapters.transcriber import WhisperTranscriber, segments_to_srt
 from sophia.domain.errors import CaptionError, TranscriptionError
 from sophia.domain.models import HermesConfig, TranscriptSource
@@ -36,9 +37,10 @@ from sophia.infra.schema import (
 from sophia.services.content_language import get_learning_path_settings
 from sophia.services.hermes_catalog import lecture_module_course
 from sophia.services.hermes_setup import load_hermes_config, verify_compute_type
+from sophia.services.ingestion_settings import get_ingestion_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -72,18 +74,33 @@ class TranscriptionResult:
 async def resolve_caption_language(session: AsyncSession, module_id: int) -> str:
     """The language whose caption track becomes the transcript.
 
-    The course's configured language, read from the learning path the module
-    was discovered under; German when the module's course is unknown or has
-    no settings yet. The per-course transcription language #128 plans belongs
-    here once it exists.
+    The course's transcription language where one is set (#128), otherwise
+    its exam language as discovery recorded it; German when the module's
+    course is unknown or has no settings yet.
     """
     course_id = await lecture_module_course(session, module_id)
     if course_id is None:
         return DEFAULT_CAPTION_LANGUAGE
+    chosen = await resolve_transcription_language(session, module_id)
+    if chosen is not None:
+        return chosen
     settings = await get_learning_path_settings(session, course_id)
     if settings is None:
         return DEFAULT_CAPTION_LANGUAGE
     return settings.exam_language.value
+
+
+async def resolve_transcription_language(session: AsyncSession, module_id: int) -> str | None:
+    """The language Whisper is told to transcribe the module's lectures in.
+
+    ``None``, the default, means Whisper detects each lecture's language
+    itself. Set per course, never per installation: a course taught in
+    another language is transcribed correctly with nothing to set up (#128).
+    """
+    course_id = await lecture_module_course(session, module_id)
+    if course_id is None:
+        return None
+    return (await get_ingestion_settings(session, course_id)).transcription_language
 
 
 async def transcribe_from_captions(
@@ -94,6 +111,7 @@ async def transcribe_from_captions(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[TranscriptionResult]:
     """Read the player's captions as the transcript of every episode that has them.
 
@@ -101,9 +119,12 @@ async def transcribe_from_captions(
     downloaded. An episode with no usable track, or whose caption file cannot
     be fetched or parsed, is left for Whisper: the reason is logged and
     nothing is written for it. Each transcript is committed as it is stored.
-    Returns one result per episode handled here.
+    Returns one result per episode handled here, within ``only_episodes``
+    when given.
     """
     episodes = await app.opencast.get_series_episodes(module_id)
+    if only_episodes is not None:
+        episodes = [episode for episode in episodes if episode.episode_id in only_episodes]
     if not episodes:
         return []
 
@@ -273,18 +294,23 @@ async def transcribe_lectures(
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    only_episodes: Collection[str] | None = None,
 ) -> list[TranscriptionResult]:
     """Orchestrate Whisper transcription for downloaded lectures in a module.
 
     Each episode's outcome is committed as soon as it is known, so an hour of
     GPU time is not lost to a failure or an interrupt on the episode after it.
-    Returns one result per episode (completed / skipped / failed).
+    Returns one result per episode (completed / skipped / failed), within
+    ``only_episodes`` when given.
     """
     downloads = await _get_downloads(session, module_id)
+    if only_episodes is not None:
+        downloads = [row for row in downloads if row[0] in only_episodes]
     if not downloads:
         return []
 
     completed_ids = await _get_transcribed_ids(session, module_id)
+    language = await resolve_transcription_language(session, module_id)
     results: list[TranscriptionResult] = []
     transcriber: WhisperTranscriber | None = None
 
@@ -315,6 +341,7 @@ async def transcribe_lectures(
             module_id,
             title,
             Path(file_path),
+            language=language,
             on_start=on_start,
             on_complete=on_complete,
         )
@@ -392,6 +419,19 @@ async def _set_transcription_state(
     )
 
 
+async def transcription_timeout(audio_path: Path) -> float:
+    """At least the floor, and as long as the recording itself.
+
+    Whisper int8 on the GTX 1070 runs about six times faster than real time,
+    so a three-and-a-half-hour lecture needs over thirty minutes; the floor on
+    its own timed out six of EP1 2026W's seventeen recordings, and a retry
+    could never do better (#128). A run that has not finished by the time it
+    could have played the whole lecture is hung, and that still ends.
+    """
+    duration = await probe_duration(audio_path)
+    return max(_TRANSCRIPTION_TIMEOUT_S, duration or 0.0)
+
+
 async def _transcribe_episode(
     session: AsyncSession,
     transcriber: WhisperTranscriber,
@@ -400,10 +440,15 @@ async def _transcribe_episode(
     title: str,
     audio_path: Path,
     *,
+    language: str | None = None,
     on_start: Callable[[str, str], None] | None = None,
     on_complete: Callable[[str, int], None] | None = None,
 ) -> TranscriptionResult:
-    """Transcribe a single episode: run Whisper → save SRT → persist to DB."""
+    """Transcribe a single episode: run Whisper → save SRT → persist to DB.
+
+    ``language=None`` has Whisper detect it, and the language it detected is
+    what the row records.
+    """
     if on_start:
         on_start(episode_id, title)
 
@@ -417,7 +462,7 @@ async def _transcribe_episode(
     statement = pg_insert(transcriptions).values(
         episode_id=episode_id,
         module_id=module_id,
-        language="de",
+        language=language or "auto",
         status="processing",
         source=TranscriptSource.WHISPER.value,
         title=title,
@@ -445,11 +490,13 @@ async def _transcribe_episode(
         )
     )
 
+    timeout = await transcription_timeout(audio_path)
     try:
-        segments: list[TranscriptSegment] = await asyncio.wait_for(
-            asyncio.to_thread(transcriber.transcribe, audio_path),
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
+        transcript = await asyncio.wait_for(
+            asyncio.to_thread(transcriber.transcribe_lecture, audio_path, language),
+            timeout=timeout,
         )
+        segments: list[TranscriptSegment] = transcript.segments
 
         srt_content = segments_to_srt(segments)
         srt_path = audio_path.with_suffix(audio_path.suffix + ".srt")
@@ -463,6 +510,7 @@ async def _transcribe_episode(
             episode_id,
             {
                 "status": "completed",
+                "language": transcript.language or language or "auto",
                 "segment_count": len(segments),
                 "duration_s": duration_s,
                 "srt_path": str(srt_path),
@@ -483,14 +531,10 @@ async def _transcribe_episode(
         )
 
     except TimeoutError:
-        msg = f"transcription timed out after {_TRANSCRIPTION_TIMEOUT_S}s"
+        msg = f"transcription timed out after {timeout:.0f}s"
         await _set_transcription_state(session, episode_id, {"status": "failed", "error": msg})
 
-        log.error(
-            "transcription_timed_out",
-            episode_id=episode_id,
-            timeout=_TRANSCRIPTION_TIMEOUT_S,
-        )
+        log.error("transcription_timed_out", episode_id=episode_id, timeout=timeout)
         return TranscriptionResult(
             episode_id=episode_id,
             title=title,

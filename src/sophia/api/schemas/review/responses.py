@@ -20,12 +20,14 @@ class ReviewScheduleItemResponse(ApiModel):
 
 
 class DueReviewListResponse(ApiModel):
-    learning_path_id: int
+    # None when the list covers every course rather than one; each review
+    # carries its own learning_path_id either way.
+    learning_path_id: int | None
     reviews: list[ReviewScheduleItemResponse]
 
 
 class UpcomingReviewListResponse(ApiModel):
-    learning_path_id: int
+    learning_path_id: int | None
     days_ahead: int
     reviews: list[ReviewScheduleItemResponse]
 

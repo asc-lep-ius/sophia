@@ -71,8 +71,44 @@ class CaptionError(HermesError):
     """A published caption track could not be fetched or parsed."""
 
 
+class IngestionUnavailable(HermesError):
+    """Processing was asked for on a box that cannot process.
+
+    ``params`` carries the reason the worker reported, or that no worker is
+    running, so the refusal is shown rather than a job left queued (#128).
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.params: dict[str, str | int] = {"reason": reason}
+
+
+class IngestionAlreadyRunning(HermesError):
+    """A course already has a queued or running processing job."""
+
+    def __init__(self, job_id: int) -> None:
+        super().__init__(f"processing job {job_id} is already running")
+        self.params: dict[str, str | int] = {"job_id": job_id}
+
+
+class IngestionNothingOlder(HermesError):
+    """ "Process older recordings too" was asked for a course with none left to process."""
+
+    def __init__(self, course_id: int) -> None:
+        super().__init__(f"course {course_id} has no unprocessed recordings from other semesters")
+        self.params: dict[str, str | int] = {"learning_path_id": course_id}
+
+
 class EmbeddingError(HermesError):
     """Embedding or knowledge base indexing failed."""
+
+
+class LectureIndexUnavailable(HermesError):
+    """The lecture index could not be read to answer a query.
+
+    Raised to the API's caller rather than as an ``EmbeddingError``: the
+    learner is told search is unavailable, never handed a server error.
+    """
 
 
 class AthenaError(SophiaError):

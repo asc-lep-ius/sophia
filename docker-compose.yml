@@ -1,5 +1,6 @@
 # Default:  docker compose up
 # CLI:      docker compose --profile cli up
+# Worker:   docker compose build worker && docker compose up -d worker (needs the NVIDIA runtime)
 
 x-sophia-env: &sophia-env
   env_file:
@@ -163,6 +164,54 @@ services:
         max-size: "10m"
         max-file: "3"
     stop_grace_period: 10s
+
+  # Processes recordings for the API: Whisper on the GPU, then embedding and
+  # topics with the GPU hidden. It shares sophia-data with the api, because
+  # the knowledge index under /data/knowledge is what the api searches (#128).
+  worker:
+    <<: *sophia-env
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: sophia-worker:latest
+    restart: unless-stopped
+    environment:
+      - SOPHIA_DATA_DIR=/data
+      - SOPHIA_CONFIG_DIR=/config
+      - SOPHIA_CACHE_DIR=/data/cache
+      - HF_HOME=/data/cache/huggingface
+      - SOPHIA_LOG_FORMAT=json
+      - SOPHIA_DOCKER=1
+      - SOPHIA_DATABASE_URL=postgresql+asyncpg://${SOPHIA_POSTGRES_USER:-sophia}:${SOPHIA_POSTGRES_PASSWORD:-sophia}@postgres:5432/${SOPHIA_POSTGRES_DB:-sophia}
+      - SOPHIA_GEMINI_API_KEY=${SOPHIA_GEMINI_API_KEY:-}
+    volumes:
+      - sophia-data:/data
+      - ${SOPHIA_CONFIG_DIR:-~/.config/sophia}:/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import faster_whisper, chromadb, sentence_transformers"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # A lecture mid-transcription is lost on a kill; each finished one is committed.
+    stop_grace_period: 30s
 
   sophia:
     <<: *sophia-env

@@ -76,6 +76,10 @@ async def schedule_review(
 
     Sets next_review_at to now + first interval (1 day).
     Initializes FSRS columns with defaults.
+
+    Finishing a study session calls this, so studying a topic again starts its
+    spacing over. Exam compression is not applied here: ``cap_review_for_exam``
+    never schedules sooner than a day, which is the first interval already.
     """
     now = datetime.now(UTC)
     next_at = now + timedelta(days=REVIEW_INTERVALS[0])
@@ -237,6 +241,23 @@ def _row_to_schedule(row: Row[tuple[object, ...]]) -> ReviewSchedule:
         stability=row.stability if row.stability is not None else FSRS_DEFAULT_STABILITY,
         review_count=row.review_count if row.review_count is not None else 0,
     )
+
+
+async def get_review_schedule(
+    session: AsyncSession,
+    topic: str,
+    course_id: int,
+) -> ReviewSchedule | None:
+    """One topic's schedule in one course, or None if it was never scheduled."""
+    row = (
+        await session.execute(
+            select(review_schedule).where(
+                review_schedule.c.topic == topic,
+                review_schedule.c.course_id == course_id,
+            )
+        )
+    ).one_or_none()
+    return None if row is None else _row_to_schedule(row)
 
 
 def _schedule_query(course_id: int | None) -> Select[tuple[object, ...]]:

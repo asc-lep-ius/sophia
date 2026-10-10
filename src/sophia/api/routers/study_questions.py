@@ -48,6 +48,7 @@ from sophia.services.study_questions import (
     generate_and_store_questions,
     get_question,
     save_attempt,
+    source_titles,
 )
 
 if TYPE_CHECKING:
@@ -106,12 +107,13 @@ async def generate_questions(
         ContentKind.QUESTION,
         [question.id for question in questions],
     )
+    titles = await source_titles(db, provenance.values())
     return StudyQuestionListResponse(
         learning_path_id=payload.learning_path_id,
         topic=payload.topic,
         content_language=ContentLanguage(resolved.language.value),
         questions=[
-            question_response(question, require_provenance(provenance, question))
+            question_response(question, require_provenance(provenance, question), titles)
             for question in questions
         ],
     )

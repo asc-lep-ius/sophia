@@ -9,15 +9,16 @@ import structlog
 from sqlalchemy import insert, select, update
 
 from sophia.adapters.embedder import SentenceTransformerEmbedder
-from sophia.adapters.knowledge_store import ChromaKnowledgeStore
 from sophia.adapters.moodle import extract_full_pdf_text
 from sophia.domain.models import CourseMaterial, HermesConfig, KnowledgeChunk
 from sophia.infra.schema import course_materials
+from sophia.services.hermes_index import knowledge_store
 from sophia.services.hermes_setup import load_hermes_config
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
+    from sophia.adapters.knowledge_store import ChromaKnowledgeStore
     from sophia.infra.di import AppContainer
 
 log = structlog.get_logger()
@@ -36,7 +37,7 @@ def _create_embedder(app: AppContainer) -> SentenceTransformerEmbedder:
 
 
 def _create_store(app: AppContainer) -> ChromaKnowledgeStore:
-    return ChromaKnowledgeStore(app.settings.data_dir / "knowledge")
+    return knowledge_store(app.settings)
 
 
 def _is_pdf_resource(module: Any) -> tuple[bool, str | None, str | None, int | None]:

@@ -31,6 +31,7 @@ from sophia.api.transactions import TransactionalRoute
 from sophia.services.content_uploads import stage_upload
 from sophia.services.hermes_catalog import discover_lecture_modules, get_lecture_modules
 from sophia.services.hermes_manage import EpisodeStatus, get_pipeline_status
+from sophia.services.ingestion_jobs import enqueue_subscribed
 
 router = APIRouter(tags=["content-sources"], route_class=TransactionalRoute)
 
@@ -65,9 +66,15 @@ async def list_content_sources(request: Request) -> ContentSourceListResponse:
 )
 async def discover_content_sources(request: Request) -> ContentSourceDiscoveryResponse:
     await require_csrf(request)
-    modules = await discover_lecture_modules(
-        get_app_container(request),
-        await request_session(request),
+    db = await request_session(request)
+    modules = await discover_lecture_modules(get_app_container(request), db)
+    # A subscribed course's new recordings are processed on scan without
+    # another press of Process (#128). With no worker, nothing is queued and
+    # the scan itself still succeeds.
+    await enqueue_subscribed(
+        db,
+        requested_by="scan",
+        stale_after_s=get_settings(request).ingestion_worker_stale_seconds,
     )
     return ContentSourceDiscoveryResponse(
         sources=[
@@ -179,4 +186,6 @@ def _content_item_response(episode: EpisodeStatus) -> ContentItemResponse:
         index_status=episode.index_status,
         sequence_number=episode.lecture_number,
         missed_at=episode.missed_at,
+        topic_status=episode.topic_status,
+        failure_reason=episode.failure_reason,
     )
