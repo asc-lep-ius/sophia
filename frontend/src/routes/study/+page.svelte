@@ -4,6 +4,7 @@
   import PageHeader from "$lib/components/PageHeader.svelte";
   import CarriedLink from "$lib/components/content/CarriedLink.svelte";
   import { m } from "$lib/paraglide/messages.js";
+  import { confidenceGap } from "$lib/study/topicChoice";
   import type { ActionData, PageData } from "./$types";
 
   type Props = {
@@ -18,6 +19,10 @@
   const contentPath = resolve("/content", {});
 
   const errorMessage = $derived(errorText(form?.error));
+  /** The order only says something once a topic has a known gap to rank by. */
+  const rankedByGap = $derived(
+    data.topics.data.some((row) => confidenceGap(row) > 0),
+  );
 
   function errorText(code: string | undefined): string | null {
     switch (code) {
@@ -95,7 +100,9 @@
         />
       </div>
     {:else}
-      <p class="notice">{m.study_topics_summary()}</p>
+      {#if rankedByGap}
+        <p class="notice">{m.study_topics_summary()}</p>
+      {/if}
       <!-- One form, one submit button per topic: the button that was pressed
            is the topic, so a single click starts it with or without JS. -->
       <form method="POST" action="?/start" use:enhance>

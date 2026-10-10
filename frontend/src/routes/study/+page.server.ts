@@ -16,7 +16,7 @@ import {
 import type { TopicRow } from "$lib/content/filters";
 import { generateSessionDeck } from "$lib/server/studyDeck";
 import { loadTopicRows } from "$lib/server/topics";
-import { rankTopicsByGap } from "$lib/study/topicChoice";
+import { distinctTopics, rankTopicsByGap } from "$lib/study/topicChoice";
 import type { Actions, PageServerLoad } from "./$types";
 
 type SessionList = components["schemas"]["StudySessionListResponse"];
@@ -47,7 +47,10 @@ export const load: PageServerLoad = async (event) => {
     learningPathId,
     learningPaths: null,
     sessions,
-    topics: { data: rankTopicsByGap(topics.data), status: topics.status },
+    topics: {
+      data: rankTopicsByGap(distinctTopics(topics.data)),
+      status: topics.status,
+    },
   };
 };
 

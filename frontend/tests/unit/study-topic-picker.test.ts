@@ -8,7 +8,10 @@ import type {
   TopicMapping,
   TopicRow,
 } from "../../src/lib/content/filters";
-import { rankTopicsByGap } from "../../src/lib/study/topicChoice";
+import {
+  distinctTopics,
+  rankTopicsByGap,
+} from "../../src/lib/study/topicChoice";
 import {
   createActionEvent,
   createLoadEvent,
@@ -20,13 +23,11 @@ const STUDY_URL = "http://localhost/app/study";
 
 type StudyData = Exclude<Awaited<ReturnType<typeof load>>, void>;
 
-function topic(name: string): TopicMapping {
-  return {
-    topic: name,
-    learning_path_id: 12,
-    source: "transcript",
-    frequency: 1,
-  };
+function topic(
+  name: string,
+  source: TopicMapping["source"] = "transcript",
+): TopicMapping {
+  return { topic: name, learning_path_id: 12, source, frequency: 1 };
 }
 
 /** A rating whose prediction overshot the score by `gap` (negative: undershot). */
@@ -47,6 +48,19 @@ function row(name: string, gap: number | null = null): TopicRow {
     topic: topic(name),
     confidence: gap === null ? null : rating(name, gap),
   };
+}
+
+function renderStudy(topics: StudyData["topics"]) {
+  return render(StudyPage, {
+    data: {
+      ...layoutData,
+      learningPathId: 12,
+      learningPaths: null,
+      sessions: [],
+      topics,
+    } as never,
+    form: null,
+  });
 }
 
 describe("rankTopicsByGap", () => {
@@ -75,6 +89,21 @@ describe("rankTopicsByGap", () => {
       "Sorting",
       "Graphs",
       "Hashing",
+    ]);
+  });
+});
+
+describe("distinctTopics", () => {
+  it("keeps the first row of a name listed under two sources", () => {
+    const rows = distinctTopics([
+      { confidence: null, topic: topic("Schleifen", "transcript") },
+      row("Arrays"),
+      { confidence: null, topic: topic("Schleifen", "manual") },
+    ]);
+
+    expect(rows.map((r) => [r.topic.topic, r.topic.source])).toEqual([
+      ["Schleifen", "transcript"],
+      ["Arrays", "transcript"],
     ]);
   });
 });
@@ -110,6 +139,39 @@ describe("study load offers the course's topics", () => {
     ]);
   });
 
+  it("offers a topic stored under two sources once, so the picker can render it", async () => {
+    const fetch = vi.fn(async (url: string | URL) => {
+      const path = new URL(String(url), STUDY_URL).pathname;
+      if (path === "/api/learning-paths/12/topics") {
+        return jsonResponse({
+          learning_path_id: 12,
+          topics: [
+            topic("Schleifen", "transcript"),
+            topic("Arrays"),
+            topic("Schleifen", "manual"),
+          ],
+        });
+      }
+      if (path === "/api/learning-paths/12/topics/confidence") {
+        return jsonResponse({ learning_path_id: 12, ratings: [] });
+      }
+      return jsonResponse({ learning_path_id: 12, sessions: [] });
+    });
+
+    const data = (await load(
+      createLoadEvent({ fetch, url: STUDY_URL }) as never,
+    )) as StudyData;
+    renderStudy(data.topics);
+
+    expect(data.topics.data.map((r: TopicRow) => r.topic.topic)).toEqual([
+      "Schleifen",
+      "Arrays",
+    ]);
+    expect(
+      screen.getAllByRole("button", { name: "Study this: Schleifen" }),
+    ).toHaveLength(1);
+  });
+
   it("reports an unreachable topic list as unavailable rather than empty", async () => {
     const fetch = vi.fn(async (url: string | URL) =>
       String(url).includes("/topics")
@@ -126,19 +188,6 @@ describe("study load offers the course's topics", () => {
 });
 
 describe("study page topic picker", () => {
-  function renderStudy(topics: StudyData["topics"]) {
-    return render(StudyPage, {
-      data: {
-        ...layoutData,
-        learningPathId: 12,
-        learningPaths: null,
-        sessions: [],
-        topics,
-      } as never,
-      form: null,
-    });
-  }
-
   it("offers the suggested topic first, each one a button that starts it", () => {
     renderStudy({
       data: [row("Hashing", 0.4), row("Graphs", 0.1), row("Sorting")],
@@ -158,6 +207,21 @@ describe("study page topic picker", () => {
         .getAllByRole("button")
         .map((button) => (button as HTMLButtonElement).value),
     ).toEqual(["Hashing", "Graphs", "Sorting"]);
+  });
+
+  it("says the order follows the gap only once a topic has one", () => {
+    const summary = /most overshot your score come first/;
+
+    const ranked = renderStudy({
+      data: [row("Hashing", 0.4), row("Sorting")],
+      status: "ready",
+    });
+    expect(screen.getByText(summary)).toBeTruthy();
+    ranked.unmount();
+
+    renderStudy({ data: [row("Sorting"), row("Graphs")], status: "ready" });
+    expect(screen.queryByText(summary)).toBeNull();
+    expect(screen.getByText("Suggested")).toBeTruthy();
   });
 
   it("starts a session as a form action, so it works without JavaScript", () => {

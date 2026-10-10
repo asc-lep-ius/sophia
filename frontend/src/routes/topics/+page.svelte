@@ -142,7 +142,7 @@
     {/snippet}
 
     <ul class="topics">
-      {#each data.rows.data as row (row.topic.topic)}
+      {#each data.rows.data as row (`${row.topic.topic}:${row.topic.source}`)}
         <li>
           <span class="topic" lang={data.contentLanguage.language}
             >{row.topic.topic}</span

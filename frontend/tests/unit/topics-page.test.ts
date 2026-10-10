@@ -204,6 +204,24 @@ describe("topics page", () => {
     ).toHaveLength(2);
   });
 
+  it("lists a topic once per source rather than failing on the repeated name", () => {
+    render(TopicsPage, {
+      data: pageData({
+        rows: {
+          data: [
+            topicRow("Schleifen", null),
+            { confidence: null, topic: topic("Schleifen", "manual") },
+          ],
+          status: "ready",
+        },
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "Topics" });
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(panel).getByText("Added by hand")).toBeTruthy();
+  });
+
   it("says a topic is unpredicted rather than showing it as zero", () => {
     render(TopicsPage, {
       data: pageData({
