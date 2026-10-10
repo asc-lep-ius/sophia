@@ -49,12 +49,15 @@ Useful endpoints:
 | `http://localhost/` | `308` redirect to `/app/` |
 | `http://localhost/legacy/` | `404` — retired, and checked by `tests/api/test_proxy_config.py` |
 
-GPU transcription is no longer available from a container. The image that
-provided it was a NiceGUI image, and issue #102 removed it along with the CUDA
-base layer it sat on. Run `sophia lectures transcribe` on a host with CUDA,
-ffmpeg and `uv sync --extra hermes` instead — those are the three things the
-retired image supplied. Rebuilding a GPU image around the CLI is separate work,
-not part of the retirement; see
+GPU transcription runs in the `worker` service (`Dockerfile.worker`): the API
+image plus Whisper, the embedder, ChromaDB, the Gemini client and ffmpeg. It
+shares the `sophia-data` volume with the API, because the knowledge index the
+API searches lives there, and it needs the NVIDIA container runtime: the
+compose files request every GPU on the host. A worker that finds no usable GPU
+or no `hermes.toml` keeps running and reports why, and the API refuses Process
+with that reason rather than queueing a job nobody can run (#128). CI does not
+build or push this image yet; build it locally with `make docker-build-worker`.
+The NiceGUI image that used to do this was removed by #102; see
 [docs/nicegui-retirement.md](docs/nicegui-retirement.md) for which image did
 what.
 

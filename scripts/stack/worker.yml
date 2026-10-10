@@ -1,0 +1,39 @@
+# The processing worker for the run contract (scripts/run_stack.sh).
+#
+# In that contract the API runs on the host, not in compose, so the worker
+# binds the host's own data, config and cache directories at the same absolute
+# paths — lecture_downloads.file_path and transcriptions.srt_path are absolute,
+# and a worker that mounted them anywhere else could not find what the host
+# wrote — and reaches Postgres and TUWEL over the host network.
+#
+# Its own compose project (sophia-stack), on purpose: nothing here can take
+# the repo's `sophia` project, and sophia-postgres-1 with it, down.
+services:
+  worker:
+    image: sophia-worker:latest
+    pull_policy: never
+    network_mode: host
+    environment:
+      SOPHIA_DATA_DIR: ${SOPHIA_STACK_DATA_DIR:?}
+      SOPHIA_CONFIG_DIR: ${SOPHIA_STACK_CONFIG_DIR:?}
+      SOPHIA_CACHE_DIR: ${SOPHIA_STACK_CACHE_DIR:?}
+      HF_HOME: ${SOPHIA_STACK_HF_HOME:?}
+      SOPHIA_DATABASE_URL: ${SOPHIA_DATABASE_URL:?}
+      SOPHIA_LOG_FORMAT: json
+      SOPHIA_GEMINI_API_KEY: ${SOPHIA_GEMINI_API_KEY:-}
+      # `all` with the host's default nvidia runtime; run_stack.sh sets `void`
+      # when the host itself cannot use the GPU, so the worker still starts
+      # and Process is refused with the reason instead of nothing happening.
+      NVIDIA_VISIBLE_DEVICES: ${SOPHIA_STACK_GPU:-all}
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+    volumes:
+      - ${SOPHIA_STACK_DATA_DIR:?}:${SOPHIA_STACK_DATA_DIR:?}
+      - ${SOPHIA_STACK_CONFIG_DIR:?}:${SOPHIA_STACK_CONFIG_DIR:?}:ro
+      - ${SOPHIA_STACK_CACHE_DIR:?}:${SOPHIA_STACK_CACHE_DIR:?}
+      - ${SOPHIA_STACK_HF_HOME:?}:${SOPHIA_STACK_HF_HOME:?}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 30s

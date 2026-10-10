@@ -392,6 +392,12 @@ def _valid_compose() -> dict[str, Any]:
             },
             environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
         ),
+        "worker": _service(
+            f"registry.example/sophia/worker:{COMMIT_SHA}",
+            volumes=["sophia-data:/data", "sophia-config:/config"],
+            depends_on={"postgres": {"condition": "service_healthy"}},
+            environment={"SOPHIA_DATABASE_URL": DATABASE_URL},
+        ),
         "redis": _service(
             "redis:8.6.3-alpine",
             expose=["6379"],
