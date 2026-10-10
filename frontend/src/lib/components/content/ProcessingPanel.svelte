@@ -96,11 +96,19 @@
     switch (result.outcome) {
       case "started":
         return m.content_processing_started();
+      case "started_older":
+        return m.content_processing_older_started();
       case "already_running":
         return m.content_processing_already_running();
+      case "nothing_older":
+        return m.content_processing_nothing_older();
       default:
         return m.content_processing_unavailable({ reason: result.reason });
     }
+  }
+
+  function isStart(outcome: ProcessOutcome): boolean {
+    return outcome === "started" || outcome === "started_older";
   }
 </script>
 
@@ -135,11 +143,29 @@
       </button>
     </form>
 
+    {#if current.older_recordings_pending > 0}
+      <!-- Last semester's series linked into this course's page: its
+           recordings cost GPU hours only when asked for, and this is the
+           one-off way to ask. It obeys the same refusals as Process. -->
+      <form class="actions older" method="POST" action="?/processOlder" use:enhance>
+        <p class="hint">
+          {m.content_processing_older_hint({
+            count: current.older_recordings_pending,
+          })}
+        </p>
+        <button type="submit" class="secondary" disabled={jobActive || workerBlocked}>
+          {m.content_processing_older_start({
+            count: current.older_recordings_pending,
+          })}
+        </button>
+      </form>
+    {/if}
+
     {#if processResult}
       <p
-        class:error={processResult.outcome !== "started"}
+        class:error={!isStart(processResult.outcome)}
         class="outcome"
-        role={processResult.outcome === "started" ? "status" : "alert"}
+        role={isStart(processResult.outcome) ? "status" : "alert"}
       >
         {processMessage(processResult)}
       </p>
@@ -273,6 +299,12 @@
     align-items: center;
     gap: 0.6rem;
     margin-top: 0.75rem;
+  }
+
+  .actions.older {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
   }
 
   button {

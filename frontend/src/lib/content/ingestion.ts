@@ -17,12 +17,19 @@ export type IngestionSourceStatus = {
 };
 
 /**
- * The outcomes Process can have, as the action reports them.
+ * The outcomes Process and "Process older recordings too" can have, as the
+ * actions report them.
  *
- * `already_running` and `unavailable` are refusals the API makes on purpose
- * and the page has to say; `failed` is everything else.
+ * `already_running`, `nothing_older` and `unavailable` are refusals the API
+ * makes on purpose and the page has to say; `failed` is everything else.
+ * `started_older` is the second button's success, worded as a one-off.
  */
-export type ProcessOutcome = "started" | "already_running" | "unavailable";
+export type ProcessOutcome =
+  | "started"
+  | "started_older"
+  | "already_running"
+  | "nothing_older"
+  | "unavailable";
 
 /** The status body, or `null` when it is not the contract. */
 export function readIngestionStatus(body: unknown): IngestionStatus | null {
@@ -39,11 +46,20 @@ export function readIngestionStatus(body: unknown): IngestionStatus | null {
     typeof worker.available !== "boolean" ||
     typeof worker.reason !== "string" ||
     !Array.isArray(body.sources) ||
+    typeof body.older_recordings_pending !== "number" ||
     (body.job !== null && !isJob(body.job))
   ) {
     return null;
   }
   return body as IngestionStatus;
+}
+
+/** The error code a refusal carried, read from the API's error envelope. */
+export function readRefusalCode(body: unknown): string {
+  if (!isRecord(body) || !isRecord(body.detail)) {
+    return "";
+  }
+  return typeof body.detail.code === "string" ? body.detail.code : "";
 }
 
 /** The reason a refusal carried, read from the API's error envelope. */

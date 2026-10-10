@@ -13,13 +13,14 @@ import {
   type IngestionJob,
   type IngestionSourceStatus,
   type IngestionStatus,
+  type ProcessOutcome,
 } from "../../src/lib/content/ingestion";
 import type { ContentItem, TopicRow } from "../../src/lib/content/filters";
 import type { Panel } from "../../src/lib/dashboard/panels";
 
 const LEARNING_PATH = 82774;
 
-function requireAction(name: "process" | "settings") {
+function requireAction(name: "process" | "processOlder" | "settings") {
   const action = (actions as Actions)[name];
   if (!action) {
     throw new Error(`the sources page has no ${name} action`);
@@ -27,6 +28,7 @@ function requireAction(name: "process" | "settings") {
   return action;
 }
 const process = requireAction("process");
+const processOlder = requireAction("processOlder");
 const settings = requireAction("settings");
 
 describe("processing panel", () => {
@@ -78,6 +80,47 @@ describe("processing panel", () => {
       name: "Process",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
+  });
+
+  it("offers to process older recordings too only while some are waiting, saying how many", () => {
+    const waiting = render(
+      ProcessingPanel,
+      panelProps({ status: readyStatus({ older_recordings_pending: 17 }) }),
+    );
+    const older = screen.getByRole("button", {
+      name: "Process older recordings too (17)",
+    }) as HTMLButtonElement;
+    expect(older.closest("form")?.getAttribute("action")).toBe(
+      "?/processOlder",
+    );
+    expect(older.disabled).toBe(false);
+    expect(waiting.container.textContent).toContain(
+      "Recordings from other semesters not yet processed: 17.",
+    );
+    waiting.unmount();
+
+    const running = render(
+      ProcessingPanel,
+      panelProps({
+        status: readyStatus({
+          older_recordings_pending: 17,
+          job: job({ state: "processing", stage: "transcribe" }),
+        }),
+      }),
+    );
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Process older recordings too (17)",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    running.unmount();
+
+    render(ProcessingPanel, panelProps({}));
+    expect(
+      screen.queryByRole("button", { name: /Process older recordings too/ }),
+    ).toBeNull();
   });
 
   it("says when processing is already running", () => {
@@ -186,6 +229,53 @@ describe("process action", () => {
       process: { outcome: "already_running", reason: "" },
     });
     expect(started).toEqual({ process: { outcome: "started", reason: "" } });
+  });
+
+  it("queues the older recordings as a one-off through its own route", async () => {
+    const fetch = vi.fn(async () => new Response("{}", { status: 202 }));
+
+    const started = await processOlder(event(fetch) as never);
+    const nothingOlder = await processOlder(
+      event(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: "ingestion.nothing_older",
+              params: { learning_path_id: LEARNING_PATH },
+            },
+          }),
+          { status: 409 },
+        ),
+      ) as never,
+    );
+    const running = await processOlder(
+      event(
+        new Response(
+          JSON.stringify({
+            detail: {
+              code: "ingestion.already_running",
+              params: { job_id: 3 },
+            },
+          }),
+          { status: 409 },
+        ),
+      ) as never,
+    );
+
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(String(url)).toContain(
+      `/learning-paths/${LEARNING_PATH}/ingestion/older`,
+    );
+    expect(init.method).toBe("POST");
+    expect(started).toEqual({
+      process: { outcome: "started_older", reason: "" },
+    });
+    expect(nothingOlder).toEqual({
+      process: { outcome: "nothing_older", reason: "" },
+    });
+    expect(running).toEqual({
+      process: { outcome: "already_running", reason: "" },
+    });
   });
 
   it("posts the settings form as the API's JSON body", async () => {
@@ -314,6 +404,7 @@ function readyStatus(overrides: Partial<IngestionStatus>): IngestionStatus {
     },
     job: null,
     sources: [{ id: 3022060, title: "EP1" }],
+    older_recordings_pending: 0,
     ...overrides,
   };
 }
@@ -324,6 +415,7 @@ function job(overrides: Partial<IngestionJob>): IngestionJob {
     learning_path_id: LEARNING_PATH,
     state: "queued",
     requested_by: "student",
+    scope: "semester",
     stage: null,
     content_source_id: null,
     error: null,
@@ -354,7 +446,7 @@ function panelProps(overrides: {
   status?: IngestionStatus;
   sources?: IngestionSourceStatus[];
   processResult?: {
-    outcome: "started" | "already_running" | "unavailable";
+    outcome: ProcessOutcome;
     reason: string;
   };
 }) {

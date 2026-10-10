@@ -678,6 +678,7 @@ function ingestionStatus(match) {
     worker: { available: true, reason: "", gpu_name: "fixture" },
     job: null,
     sources: CONTENT_SOURCES.map(({ id, title }) => ({ id, title })),
+    older_recordings_pending: 0,
   };
 }
 

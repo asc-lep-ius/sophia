@@ -21,6 +21,7 @@ import {
 } from "$lib/content/upload";
 import {
   readIngestionStatus,
+  readRefusalCode,
   readRefusalReason,
   TRANSCRIPTION_LANGUAGES,
   type IngestionSourceStatus,
@@ -99,38 +100,24 @@ export const actions: Actions = {
    * worker that can process here — come back as outcomes the page says,
    * with the reason the API attached. Everything else is a failure.
    */
-  process: async (event) => {
-    requireAuthenticated(event);
-    const learningPathId = selectedLearningPathId(event.locals.tenant);
-    if (learningPathId === null) {
-      return fail(403, { processFailed: true });
-    }
+  process: async (event) =>
+    startProcessing(
+      event,
+      "/api/learning-paths/{learning_path_id}/ingestion",
+      "started",
+    ),
 
-    let response: Response;
-    try {
-      response = await apiFetch(
-        event,
-        "/api/learning-paths/{learning_path_id}/ingestion",
-        { method: "POST", params: { learning_path_id: learningPathId } },
-      );
-    } catch {
-      return fail(502, { processFailed: true });
-    }
-    if (response.status === 401) {
-      redirect(303, "/app/login");
-    }
-    if (response.status === 409) {
-      return { process: processOutcome("already_running", "") };
-    }
-    if (response.status === 503) {
-      const reason = readRefusalReason(await safeJson(response));
-      return { process: processOutcome("unavailable", reason) };
-    }
-    if (!response.ok) {
-      return fail(safeFailureStatus(response.status), { processFailed: true });
-    }
-    return { process: processOutcome("started", "") };
-  },
+  /**
+   * Press "Process older recordings too": a one-off job over the course's
+   * recordings from other semesters, refused the same ways Process is, plus
+   * when nothing older is left — a page that outlived the last such run.
+   */
+  processOlder: async (event) =>
+    startProcessing(
+      event,
+      "/api/learning-paths/{learning_path_id}/ingestion/older",
+      "started_older",
+    ),
 
   /** Stop or resume following the course, and set its transcription language. */
   settings: async (event) => {
@@ -241,6 +228,52 @@ function uploadFailure(
   // file input, and keeping the bytes server-side to replay them would be a
   // cache nobody asked for.
   return fail(status, { rejection, title });
+}
+
+async function startProcessing(
+  event: RequestEvent,
+  path:
+    | "/api/learning-paths/{learning_path_id}/ingestion"
+    | "/api/learning-paths/{learning_path_id}/ingestion/older",
+  started: ProcessOutcome,
+) {
+  requireAuthenticated(event);
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
+    return fail(403, { processFailed: true });
+  }
+
+  let response: Response;
+  try {
+    response = await apiFetch(event, path, {
+      method: "POST",
+      params: { learning_path_id: learningPathId },
+    });
+  } catch {
+    return fail(502, { processFailed: true });
+  }
+  if (response.status === 401) {
+    redirect(303, "/app/login");
+  }
+  if (response.status === 409) {
+    const code = readRefusalCode(await safeJson(response));
+    return {
+      process: processOutcome(
+        code === "ingestion.nothing_older"
+          ? "nothing_older"
+          : "already_running",
+        "",
+      ),
+    };
+  }
+  if (response.status === 503) {
+    const reason = readRefusalReason(await safeJson(response));
+    return { process: processOutcome("unavailable", reason) };
+  }
+  if (!response.ok) {
+    return fail(safeFailureStatus(response.status), { processFailed: true });
+  }
+  return { process: processOutcome(started, "") };
 }
 
 function processOutcome(outcome: ProcessOutcome, reason: string) {

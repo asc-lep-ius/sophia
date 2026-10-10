@@ -1849,6 +1849,10 @@
             "title": "Requested By",
             "type": "string"
           },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
           "stage": {
             "anyOf": [
               {
@@ -1880,6 +1884,7 @@
           "learning_path_id",
           "state",
           "requested_by",
+          "scope",
           "stage",
           "content_source_id",
           "error",
@@ -1992,6 +1997,10 @@
             "title": "Learning Path Id",
             "type": "integer"
           },
+          "older_recordings_pending": {
+            "title": "Older Recordings Pending",
+            "type": "integer"
+          },
           "settings": {
             "$ref": "#/components/schemas/IngestionSettingsResponse"
           },
@@ -2011,7 +2020,8 @@
           "settings",
           "worker",
           "job",
-          "sources"
+          "sources",
+          "older_recordings_pending"
         ],
         "title": "IngestionStatusResponse",
         "type": "object"
@@ -8053,6 +8063,120 @@
           }
         },
         "summary": "Start Ingestion",
+        "tags": [
+          "ingestion"
+        ]
+      }
+    },
+    "/api/learning-paths/{learning_path_id}/ingestion/older": {
+      "post": {
+        "description": "Queue a one-off job over the recordings from other semesters.\n\nThe same rules as Process \u2014 409 while a job runs, 503 with the reason\nwhen no worker can process \u2014 plus 409 when nothing older is left. It\nneither subscribes the learning path nor changes what later presses of\nProcess and the nightly run cover.",
+        "operationId": "startOlderIngestion",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestionJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start Older Ingestion",
         "tags": [
           "ingestion"
         ]

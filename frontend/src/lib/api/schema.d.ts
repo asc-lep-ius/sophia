@@ -705,6 +705,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/learning-paths/{learning_path_id}/ingestion/older": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Older Ingestion
+         * @description Queue a one-off job over the recordings from other semesters.
+         *
+         *     The same rules as Process — 409 while a job runs, 503 with the reason
+         *     when no worker can process — plus 409 when nothing older is left. It
+         *     neither subscribes the learning path nor changes what later presses of
+         *     Process and the nightly run cover.
+         */
+        post: operations["startOlderIngestion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/learning-paths/{learning_path_id}/ingestion/settings": {
         parameters: {
             query?: never;
@@ -1949,6 +1974,8 @@ export interface components {
             requested_at: string;
             /** Requested By */
             requested_by: string;
+            /** Scope */
+            scope: string;
             /** Stage */
             stage: string | null;
             /** Started At */
@@ -2002,6 +2029,8 @@ export interface components {
             job: components["schemas"]["IngestionJobResponse"] | null;
             /** Learning Path Id */
             learning_path_id: number;
+            /** Older Recordings Pending */
+            older_recordings_pending: number;
             settings: components["schemas"]["IngestionSettingsResponse"];
             /** Sources */
             sources: components["schemas"]["IngestionSourceResponse"][];
@@ -4696,6 +4725,69 @@ export interface operations {
         };
     };
     startIngestion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                learning_path_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["IngestionJobResponse"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    startOlderIngestion: {
         parameters: {
             query?: never;
             header?: never;
