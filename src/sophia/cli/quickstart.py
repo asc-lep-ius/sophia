@@ -8,6 +8,7 @@ import cyclopts
 import structlog
 from sqlalchemy import case, func, select
 
+from sophia.domain.models import TopicSource
 from sophia.infra.schema import (
     confidence_ratings,
     knowledge_index,
@@ -196,11 +197,15 @@ async def _count_exists(db: AsyncSession, query: Select[tuple[int]]) -> bool:
 
 
 async def _has_topics(db: AsyncSession, course_id: int) -> bool:
+    """Lecture topics only: manual topics share the course key but were never extracted."""
     return await _count_exists(
         db,
         select(func.count())
         .select_from(topic_mappings)
-        .where(topic_mappings.c.course_id == course_id),
+        .where(
+            topic_mappings.c.course_id == course_id,
+            topic_mappings.c.source == TopicSource.LECTURE.value,
+        ),
     )
 
 
