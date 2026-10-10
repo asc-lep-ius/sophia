@@ -1378,8 +1378,15 @@
       "DueReviewListResponse": {
         "properties": {
           "learning_path_id": {
-            "title": "Learning Path Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
           },
           "reviews": {
             "items": {
@@ -4636,8 +4643,15 @@
             "type": "integer"
           },
           "learning_path_id": {
-            "title": "Learning Path Id",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Learning Path Id"
           },
           "reviews": {
             "items": {
@@ -8337,6 +8351,7 @@
     },
     "/api/review/complete": {
       "post": {
+        "description": "Grade a review in whichever course holds it, selected or not.\n\nWhat bounds this is the review itself rather than the selection: only a\ntopic already scheduled can be graded, so the endpoint can move a date the\nlearner was shown but never create a schedule of its own.",
         "operationId": "completeReview",
         "requestBody": {
           "content": {
@@ -8358,6 +8373,24 @@
               }
             },
             "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
             "headers": {
               "X-Request-ID": {
                 "description": "Request correlation identifier.",
@@ -8399,11 +8432,18 @@
           {
             "in": "query",
             "name": "learning_path_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Learning Path Id",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
             }
           }
         ],
@@ -8607,11 +8647,18 @@
           {
             "in": "query",
             "name": "learning_path_id",
-            "required": true,
+            "required": false,
             "schema": {
-              "exclusiveMinimum": 0,
-              "title": "Learning Path Id",
-              "type": "integer"
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Learning Path Id"
             }
           },
           {

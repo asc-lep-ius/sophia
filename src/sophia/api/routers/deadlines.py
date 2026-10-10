@@ -44,6 +44,7 @@ from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.transactions import TransactionalRoute
 from sophia.domain.models import Deadline, DeadlineType, EffortEstimate
 from sophia.infra.schema import deadline_cache
+from sophia.services.athena_chronos import compress_all_courses
 from sophia.services.chronos import (
     complete_deadline,
     get_deadlines,
@@ -111,10 +112,11 @@ async def list_deadlines(
 async def sync_deadline_cache(request: Request) -> DeadlineSyncResponse:
     await require_csrf(request)
     effective_learning_path_id = await require_effective_learning_path_id(request, None)
-    deadlines = await sync_deadlines(
-        get_app_container(request),
-        await request_session(request),
-    )
+    db = await request_session(request)
+    deadlines = await sync_deadlines(get_app_container(request), db)
+    # As `sophia deadlines sync` does: an exam the sync just learned about
+    # pulls every course's reviews that would land after it forward (#131).
+    await compress_all_courses(db)
     scoped_deadlines = [
         deadline for deadline in deadlines if deadline.course_id == effective_learning_path_id
     ]

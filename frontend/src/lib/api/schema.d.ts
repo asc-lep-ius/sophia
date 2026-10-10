@@ -868,7 +868,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Complete Review Schedule */
+        /**
+         * Complete Review Schedule
+         * @description Grade a review in whichever course holds it, selected or not.
+         *
+         *     What bounds this is the review itself rather than the selection: only a
+         *     topic already scheduled can be graded, so the endpoint can move a date the
+         *     learner was shown but never create a schedule of its own.
+         */
         post: operations["completeReview"];
         delete?: never;
         options?: never;
@@ -1723,7 +1730,7 @@ export interface components {
         /** DueReviewListResponse */
         DueReviewListResponse: {
             /** Learning Path Id */
-            learning_path_id: number;
+            learning_path_id: number | null;
             /** Reviews */
             reviews: components["schemas"]["ReviewScheduleItemResponse"][];
         };
@@ -2932,7 +2939,7 @@ export interface components {
             /** Days Ahead */
             days_ahead: number;
             /** Learning Path Id */
-            learning_path_id: number;
+            learning_path_id: number | null;
             /** Reviews */
             reviews: components["schemas"]["ReviewScheduleItemResponse"][];
         };
@@ -4958,6 +4965,16 @@ export interface operations {
                     "application/json": components["schemas"]["ReviewScheduleResponse"];
                 };
             };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -4972,8 +4989,8 @@ export interface operations {
     };
     listDueReviews: {
         parameters: {
-            query: {
-                learning_path_id: number;
+            query?: {
+                learning_path_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -5084,8 +5101,8 @@ export interface operations {
     };
     listUpcomingReviews: {
         parameters: {
-            query: {
-                learning_path_id: number;
+            query?: {
+                learning_path_id?: number | null;
                 days_ahead?: number;
             };
             header?: never;
