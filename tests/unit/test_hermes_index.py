@@ -316,14 +316,8 @@ async def test_search_lectures(app: MagicMock, db: AsyncSession) -> None:
             "sophia.services.hermes_index.load_hermes_config",
             return_value=HermesConfig(),
         ),
-        patch(
-            "sophia.services.hermes_index.SentenceTransformerEmbedder",
-            return_value=mock_embedder,
-        ),
-        patch(
-            "sophia.services.hermes_index.ChromaKnowledgeStore",
-            return_value=mock_store,
-        ),
+        patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+        patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         patch(
             "sophia.services.hermes_index.asyncio.to_thread",
             side_effect=_run_sync,
@@ -372,10 +366,8 @@ async def test_search_lectures_scopes_to_caption_transcripts_too(
 
     with (
         patch("sophia.services.hermes_index.load_hermes_config", return_value=HermesConfig()),
-        patch(
-            "sophia.services.hermes_index.SentenceTransformerEmbedder", return_value=mock_embedder
-        ),
-        patch("sophia.services.hermes_index.ChromaKnowledgeStore", return_value=mock_store),
+        patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+        patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
     ):
         results = await search_lectures(app, db, 42, "Datenstrukturen")
@@ -407,14 +399,8 @@ async def test_search_lectures_pdf_filter_includes_material_ids(
 
     with (
         patch("sophia.services.hermes_index.load_hermes_config", return_value=HermesConfig()),
-        patch(
-            "sophia.services.hermes_index.SentenceTransformerEmbedder",
-            return_value=mock_embedder,
-        ),
-        patch(
-            "sophia.services.hermes_index.ChromaKnowledgeStore",
-            return_value=mock_store,
-        ),
+        patch("sophia.services.hermes_index.query_embedder", return_value=mock_embedder),
+        patch("sophia.services.hermes_index.knowledge_store", return_value=mock_store),
         patch("sophia.services.hermes_index.asyncio.to_thread", side_effect=_run_sync),
     ):
         await search_lectures(app, db, 42, "test query", source_filter="pdf", course_id=999)

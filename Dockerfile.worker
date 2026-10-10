@@ -1,0 +1,38 @@
+# The processing worker: the API image plus Whisper, the embedder, ChromaDB,
+# the Gemini client and ffmpeg (#128). No CUDA base image: the CUDA libraries
+# come with the torch and ctranslate2 wheels the hermes extra installs, and
+# the driver is injected by the NVIDIA container runtime on the host.
+FROM python:3.12-slim AS base
+ENV TERM=xterm-256color LANG=C.UTF-8 LC_ALL=C.UTF-8
+RUN pip install uv
+
+FROM base AS builder
+WORKDIR /app
+COPY pyproject.toml uv.lock README.md ./
+# Dependencies before the source, so a change to src/ does not fetch the
+# gigabytes of CUDA wheels again: only the project itself is reinstalled.
+RUN uv sync --no-dev --frozen --no-install-project --extra hermes --extra llm
+COPY src/ src/
+RUN uv sync --no-dev --frozen --extra hermes --extra llm
+
+FROM base AS runtime
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /app
+COPY --from=builder /app /app
+# Every cache on the data volume, never under a home directory the container
+# forgets: the Whisper weights, the embedding model and the downloads were
+# what #86 and #88 lost to an unwritable path.
+ENV SOPHIA_DATA_DIR=/data \
+    SOPHIA_CONFIG_DIR=/config \
+    SOPHIA_CACHE_DIR=/data/cache \
+    HF_HOME=/data/cache/huggingface \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+RUN useradd --create-home --uid 1000 sophia \
+    && mkdir -p /data /config \
+    && chown sophia:sophia /data /config
+USER sophia
+ENTRYPOINT ["/app/.venv/bin/python", "-m", "sophia"]
+CMD ["worker", "run"]

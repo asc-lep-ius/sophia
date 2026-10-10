@@ -13,7 +13,10 @@ import {
   selectedLearningPathId,
   type LearningPath,
 } from "$lib/learningPath";
+import type { TopicRow } from "$lib/content/filters";
 import { generateSessionDeck } from "$lib/server/studyDeck";
+import { loadTopicRows } from "$lib/server/topics";
+import { distinctTopics, rankTopicsByGap } from "$lib/study/topicChoice";
 import type { Actions, PageServerLoad } from "./$types";
 
 type SessionList = components["schemas"]["StudySessionListResponse"];
@@ -32,13 +35,22 @@ export const load: PageServerLoad = async (event) => {
       learningPathId,
       learningPaths: await loadLearningPaths(event),
       sessions: [] as StudySession[],
+      topics: unavailablePanel<TopicRow[]>([]),
     };
   }
 
+  const [sessions, topics] = await Promise.all([
+    loadSessions(event, learningPathId),
+    loadTopicRows(event, learningPathId),
+  ]);
   return {
     learningPathId,
     learningPaths: null,
-    sessions: await loadSessions(event, learningPathId),
+    sessions,
+    topics: {
+      data: rankTopicsByGap(distinctTopics(topics.data)),
+      status: topics.status,
+    },
   };
 };
 

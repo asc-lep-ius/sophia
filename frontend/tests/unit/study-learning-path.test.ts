@@ -72,7 +72,11 @@ describe("study load", () => {
       createLoadEvent({ fetch, url: STUDY_URL }) as never,
     )) as StudyData;
 
-    expect(calledPaths(fetch)).toEqual(["/api/study/sessions"]);
+    expect(calledPaths(fetch)).toEqual([
+      "/api/study/sessions",
+      "/api/learning-paths/12/topics",
+      "/api/learning-paths/12/topics/confidence",
+    ]);
     expect(data.learningPathId).toBe(12);
     expect(data.learningPaths).toBeNull();
   });
@@ -173,6 +177,7 @@ describe("study page picker", () => {
         learningPathId: null,
         learningPaths: null,
         sessions: [],
+        topics: { data: [], status: "ready" },
         ...data,
       } as never,
       form: null,
@@ -194,7 +199,7 @@ describe("study page picker", () => {
     expect(
       screen.getByRole("button", { name: "Study this course" }),
     ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Start session" })).toBeNull();
+    expect(screen.queryByText("No topics to study yet")).toBeNull();
   });
 
   it("checks the current selection when the picker is reopened", () => {
@@ -239,6 +244,6 @@ describe("study page picker", () => {
     const form = change.closest("form");
     expect(form?.getAttribute("action")).toBe("/app/study");
     expect(form?.querySelector('input[name="choose"]')).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Start session" })).toBeTruthy();
+    expect(screen.getByText("No topics to study yet")).toBeTruthy();
   });
 });

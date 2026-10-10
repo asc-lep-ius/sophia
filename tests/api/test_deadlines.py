@@ -106,6 +106,10 @@ def test_deadline_current_state_routes_return_response_shapes(
         calls.append("sync")
         return [sample_deadline()]
 
+    async def fake_compress_all_courses(db: object) -> dict[int, int]:
+        assert db is fake_app.db
+        return {}
+
     async def fake_start_timer(db: object, deadline_id: str) -> None:
         assert db is fake_app.db
         calls.append(f"start:{deadline_id}")
@@ -201,6 +205,7 @@ def test_deadline_current_state_routes_return_response_shapes(
 
     monkeypatch.setattr(deadlines_router, "get_deadlines", fake_get_deadlines)
     monkeypatch.setattr(deadlines_router, "sync_deadlines", fake_sync_deadlines)
+    monkeypatch.setattr(deadlines_router, "compress_all_courses", fake_compress_all_courses)
     monkeypatch.setattr(deadlines_router, "start_timer", fake_start_timer)
     monkeypatch.setattr(deadlines_router, "stop_timer", fake_stop_timer)
     monkeypatch.setattr(deadlines_router, "get_tracked_time", fake_get_tracked_time)
@@ -419,14 +424,21 @@ def test_deadline_sync_filters_response_to_session_learning_path(
             sample_deadline("assign:2", course_id=99),
         ]
 
+    async def fake_compress_all_courses(db: object) -> dict[int, int]:
+        assert db is fake_app.db
+        calls.append("compress")
+        return {}
+
     monkeypatch.setattr(deadlines_router, "sync_deadlines", fake_sync_deadlines)
+    monkeypatch.setattr(deadlines_router, "compress_all_courses", fake_compress_all_courses)
 
     response = harness.client.post("/api/deadlines/sync", headers=csrf_headers(harness))
 
     assert response.status_code == 200
     assert response.json()["synced_count"] == 1
     assert [deadline["learning_path_id"] for deadline in response.json()["deadlines"]] == [12]
-    assert calls == ["sync"]
+    # Compression runs after the sync, on every course, as the CLI's does.
+    assert calls == ["sync", "compress"]
 
 
 def test_record_estimate_returns_saved_estimate(monkeypatch: pytest.MonkeyPatch) -> None:

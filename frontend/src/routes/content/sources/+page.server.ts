@@ -19,6 +19,16 @@ import {
   validateUpload,
   type UploadRejection,
 } from "$lib/content/upload";
+import {
+  readIngestionStatus,
+  readRefusalCode,
+  readRefusalReason,
+  TRANSCRIPTION_LANGUAGES,
+  type IngestionSourceStatus,
+  type IngestionStatus,
+  type ProcessOutcome,
+} from "$lib/content/ingestion";
+import type { ContentItem } from "$lib/content/filters";
 import type { PageServerLoad } from "./$types";
 
 type ApiEvent = Parameters<typeof apiFetch>[0];
@@ -28,12 +38,21 @@ export const load: PageServerLoad = async (event) => {
 
   const override = readLanguageOverride(event.url);
   const learningPathId = selectedLearningPathId(event.locals.tenant);
-  const [sources, contentLanguage] = await Promise.all([
+  const [sources, contentLanguage, ingestion] = await Promise.all([
     loadSources(event),
     loadContentLanguage(event, learningPathId, override),
+    loadIngestion(event, learningPathId),
   ]);
+  const ingestionSources = await loadIngestionSources(event, ingestion.data);
 
-  return { contentLanguage, sources, uiLocale: event.locals.locale };
+  return {
+    contentLanguage,
+    ingestion,
+    ingestionSources,
+    learningPathId,
+    sources,
+    uiLocale: event.locals.locale,
+  };
 };
 
 export const actions: Actions = {
@@ -65,6 +84,73 @@ export const actions: Actions = {
     }
 
     return forwardUpload(event, submission.file as File, title);
+  },
+
+  /**
+   * Press Process: queue the selected course for the worker.
+   *
+   * The two refusals the API makes on purpose — already running, and no
+   * worker that can process here — come back as outcomes the page says,
+   * with the reason the API attached. Everything else is a failure.
+   */
+  process: async (event) =>
+    startProcessing(
+      event,
+      "/api/learning-paths/{learning_path_id}/ingestion",
+      "started",
+    ),
+
+  /**
+   * Press "Process older recordings too": a one-off job over the course's
+   * recordings from other semesters, refused the same ways Process is, plus
+   * when nothing older is left — a page that outlived the last such run.
+   */
+  processOlder: async (event) =>
+    startProcessing(
+      event,
+      "/api/learning-paths/{learning_path_id}/ingestion/older",
+      "started_older",
+    ),
+
+  /** Stop or resume following the course, and set its transcription language. */
+  settings: async (event) => {
+    requireAuthenticated(event);
+    const learningPathId = selectedLearningPathId(event.locals.tenant);
+    if (learningPathId === null) {
+      return fail(403, { settingsFailed: true });
+    }
+    const formData = await event.request.formData();
+    const language = readFormString(formData, "transcription_language");
+    if (!TRANSCRIPTION_LANGUAGES.includes(language as never)) {
+      return fail(422, { settingsFailed: true });
+    }
+    const body = {
+      subscribed: readFormString(formData, "subscribed") === "true",
+      transcription_language: language === "" ? null : language,
+    };
+
+    let response: Response;
+    try {
+      response = await apiFetch(
+        event,
+        "/api/learning-paths/{learning_path_id}/ingestion/settings",
+        {
+          method: "PUT",
+          params: { learning_path_id: learningPathId },
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+    } catch {
+      return fail(502, { settingsFailed: true });
+    }
+    if (response.status === 401) {
+      redirect(303, "/app/login");
+    }
+    if (!response.ok) {
+      return fail(safeFailureStatus(response.status), { settingsFailed: true });
+    }
+    return { settingsSaved: true };
   },
 
   /**
@@ -142,6 +228,127 @@ function uploadFailure(
   // file input, and keeping the bytes server-side to replay them would be a
   // cache nobody asked for.
   return fail(status, { rejection, title });
+}
+
+async function startProcessing(
+  event: RequestEvent,
+  path:
+    | "/api/learning-paths/{learning_path_id}/ingestion"
+    | "/api/learning-paths/{learning_path_id}/ingestion/older",
+  started: ProcessOutcome,
+) {
+  requireAuthenticated(event);
+  const learningPathId = selectedLearningPathId(event.locals.tenant);
+  if (learningPathId === null) {
+    return fail(403, { processFailed: true });
+  }
+
+  let response: Response;
+  try {
+    response = await apiFetch(event, path, {
+      method: "POST",
+      params: { learning_path_id: learningPathId },
+    });
+  } catch {
+    return fail(502, { processFailed: true });
+  }
+  if (response.status === 401) {
+    redirect(303, "/app/login");
+  }
+  if (response.status === 409) {
+    const code = readRefusalCode(await safeJson(response));
+    return {
+      process: processOutcome(
+        code === "ingestion.nothing_older"
+          ? "nothing_older"
+          : "already_running",
+        "",
+      ),
+    };
+  }
+  if (response.status === 503) {
+    const reason = readRefusalReason(await safeJson(response));
+    return { process: processOutcome("unavailable", reason) };
+  }
+  if (!response.ok) {
+    return fail(safeFailureStatus(response.status), { processFailed: true });
+  }
+  return { process: processOutcome(started, "") };
+}
+
+function processOutcome(outcome: ProcessOutcome, reason: string) {
+  return { outcome, reason };
+}
+
+async function loadIngestion(
+  event: ApiEvent,
+  learningPathId: number | null,
+): Promise<Panel<IngestionStatus | null>> {
+  if (learningPathId === null) {
+    return { status: "ready", data: null };
+  }
+  try {
+    const response = await apiFetch(
+      event,
+      "/api/learning-paths/{learning_path_id}/ingestion",
+      { params: { learning_path_id: learningPathId } },
+    );
+    return await panelFromResponse(response, readIngestionStatus, null);
+  } catch {
+    return unavailablePanel(null);
+  }
+}
+
+/**
+ * The state of every recording the course owns, one request per source.
+ *
+ * Read from the ingestion-status route rather than kept client-side, so a
+ * reload or a tab opened later shows what the worker has actually done.
+ */
+async function loadIngestionSources(
+  event: ApiEvent,
+  status: IngestionStatus | null,
+): Promise<IngestionSourceStatus[]> {
+  if (status === null) {
+    return [];
+  }
+  return Promise.all(
+    status.sources.map(async (source) => {
+      try {
+        const response = await apiFetch(
+          event,
+          "/api/content-sources/{content_source_id}/ingestion-status",
+          { params: { content_source_id: source.id } },
+        );
+        // 404 is a source with no registered recordings yet, not a failure.
+        const items = response.ok
+          ? (readItemList(await safeJson(response)) ?? [])
+          : [];
+        return { id: source.id, title: source.title, items };
+      } catch {
+        return { id: source.id, title: source.title, items: [] };
+      }
+    }),
+  );
+}
+
+function readItemList(body: unknown): ContentItem[] | null {
+  if (body === null || typeof body !== "object") {
+    return null;
+  }
+  const items = (body as Record<string, unknown>).items;
+  if (!Array.isArray(items)) {
+    return null;
+  }
+  return items.every(
+    (item) =>
+      item !== null &&
+      typeof item === "object" &&
+      typeof (item as ContentItem).id === "string" &&
+      typeof (item as ContentItem).title === "string",
+  )
+    ? (items as ContentItem[])
+    : null;
 }
 
 async function loadSources(event: ApiEvent): Promise<Panel<ContentSource[]>> {

@@ -321,7 +321,7 @@ class TestCreateStore:
         app = MagicMock()
         app.settings.data_dir.__truediv__ = MagicMock(return_value="/data/knowledge")
 
-        with patch("sophia.services.material_index.ChromaKnowledgeStore") as mock_cls:
+        with patch("sophia.services.hermes_index.ChromaKnowledgeStore") as mock_cls:
             _create_store(app)
 
         mock_cls.assert_called_once_with("/data/knowledge")

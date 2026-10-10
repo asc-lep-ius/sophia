@@ -13,6 +13,7 @@ import { authenticateShell } from "./shell-auth";
 
 const PHONE = { width: 375, height: 667 };
 const NARROW = { width: 320, height: 667 };
+const REVIEW_PHONE = { width: 360, height: 740 };
 
 const RECALL_ATTEMPT =
   "A recall attempt long enough to clear the elaboration floor the study " +
@@ -126,9 +127,19 @@ test("a reloaded quickstart step stays on that step", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Predict" })).toBeVisible();
 });
 
-test("a review can be worked by tap alone", async ({ page }) => {
+/**
+ * A layout measurement over the fixture's frozen review queue, at the 360 px
+ * width #131 names. What the queue holds on the real stack — a finished
+ * session's topic, listed and graded while another course is selected — is
+ * tested against the real API in tests/api/test_review_across_courses.py.
+ */
+test("a review can be read, answered and graded by tap alone at 360px", async ({
+  page,
+}) => {
   await authenticateShell(page);
+  await page.setViewportSize(REVIEW_PHONE);
   await page.goto("/app/review");
+  await expectNoHorizontalOverflow(page);
 
   await page.getByLabel("Your answer").fill(RECALL_ATTEMPT);
   const reveal = page.getByRole("button", { name: "Check myself" });

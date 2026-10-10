@@ -13,8 +13,14 @@ from typing import TYPE_CHECKING
 from sophia.api.provenance import api_provenance
 from sophia.api.schemas.content import ContentLanguage
 from sophia.api.schemas.engagement import ElaborationPolicy, LearningEventType
-from sophia.api.schemas.questions import OpenResponseQuestion, Question, QuestionDifficulty
+from sophia.api.schemas.questions import (
+    OpenResponseQuestion,
+    Question,
+    QuestionDifficulty,
+    QuestionFallbackReason,
+)
 from sophia.domain.errors import AthenaError
+from sophia.services.study_questions import fallback_reason
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -26,16 +32,22 @@ if TYPE_CHECKING:
 def question_response(
     question: GeneratedQuestion,
     provenance: ContentProvenance,
+    titles: Mapping[str, str] | None = None,
 ) -> Question:
-    """Project a persisted question onto the published contract."""
+    """Project a persisted question onto the published contract.
+
+    ``titles`` names the lectures its source spans come from, by episode id.
+    """
+    reason = fallback_reason(provenance)
     return OpenResponseQuestion(
         id=question.id,
         topic=question.topic,
         difficulty=QuestionDifficulty(question.difficulty),
         content_language=ContentLanguage(question.content_language.value),
-        provenance=api_provenance(provenance),
+        provenance=api_provenance(provenance, titles),
         prompt=question.prompt,
         engagement_policy=policy_response(question.elaboration_policy),
+        fallback_reason=None if reason is None else QuestionFallbackReason(reason.value),
     )
 
 

@@ -1,4 +1,10 @@
-"""Authenticated Athena review routes."""
+"""Authenticated Athena review routes.
+
+Review is not scoped by the course selection, which scopes only study, topics
+and content: with several courses, anything due in an unselected one was
+invisible (#131). The due and upcoming lists cover every course unless one is
+named, and a review may be graded in any course that holds it.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,9 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from sophia.api.deps import (
+    current_session_record,
     request_session,
+    require_csrf,
     require_csrf_learning_path_scope,
     require_learning_path_scope,
 )
@@ -26,6 +34,7 @@ from sophia.services.athena_review import (
     complete_review,
     get_all_schedules,
     get_due_reviews,
+    get_review_schedule,
     get_upcoming_reviews,
     schedule_review,
     score_for_self_rating,
@@ -37,6 +46,7 @@ if TYPE_CHECKING:
 router = APIRouter(tags=["review"], route_class=TransactionalRoute)
 
 LearningPathIdQuery = Annotated[int, Query(gt=0)]
+OptionalLearningPathIdQuery = Annotated[int | None, Query(gt=0)]
 DaysAheadQuery = Annotated[int, Query(ge=1, le=365)]
 TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
 
@@ -47,10 +57,10 @@ TopicFilterQuery = Annotated[str | None, Query(min_length=1)]
     operation_id="listDueReviews",
 )
 async def list_due_reviews(
-    learning_path_id: LearningPathIdQuery,
     request: Request,
+    learning_path_id: OptionalLearningPathIdQuery = None,
 ) -> DueReviewListResponse:
-    await require_learning_path_scope(request, learning_path_id)
+    await _require_review_list_scope(request, learning_path_id)
     reviews = await get_due_reviews(await request_session(request), learning_path_id)
     return DueReviewListResponse(
         learning_path_id=learning_path_id,
@@ -64,11 +74,11 @@ async def list_due_reviews(
     operation_id="listUpcomingReviews",
 )
 async def list_upcoming_reviews(
-    learning_path_id: LearningPathIdQuery,
     request: Request,
+    learning_path_id: OptionalLearningPathIdQuery = None,
     days_ahead: DaysAheadQuery = 3,
 ) -> UpcomingReviewListResponse:
-    await require_learning_path_scope(request, learning_path_id)
+    await _require_review_list_scope(request, learning_path_id)
     reviews = await get_upcoming_reviews(
         await request_session(request),
         learning_path_id,
@@ -127,20 +137,40 @@ async def create_review_schedule(
     "/review/complete",
     response_model=ReviewScheduleResponse,
     operation_id="completeReview",
-    responses={status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope}},
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
+    },
 )
 async def complete_review_schedule(
     payload: ReviewCompletionRequest,
     request: Request,
 ) -> ReviewScheduleResponse:
-    await require_csrf_learning_path_scope(request, payload.learning_path_id)
+    """Grade a review in whichever course holds it, selected or not.
+
+    What bounds this is the review itself rather than the selection: only a
+    topic already scheduled can be graded, so the endpoint can move a date the
+    learner was shown but never create a schedule of its own.
+    """
+    await require_csrf(request)
+    db = await request_session(request)
+    if await get_review_schedule(db, payload.topic, payload.learning_path_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
     schedule = await complete_review(
-        await request_session(request),
+        db,
         payload.topic,
         payload.learning_path_id,
         _completion_score(payload),
     )
     return ReviewScheduleResponse(schedule=_review_schedule_response(schedule))
+
+
+async def _require_review_list_scope(request: Request, learning_path_id: int | None) -> None:
+    """Every course needs only a signed-in learner; naming one still needs it selected."""
+    if learning_path_id is None:
+        await current_session_record(request)
+        return
+    await require_learning_path_scope(request, learning_path_id)
 
 
 def _completion_score(payload: ReviewCompletionRequest) -> float:

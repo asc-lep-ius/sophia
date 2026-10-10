@@ -66,6 +66,21 @@ def _extract_course_number_from_fullname_prefix(fullname: str) -> str | None:
     return match.group(1)
 
 
+def extract_semester(shortname: str, fullname: str) -> str | None:
+    """The semester a TUWEL course belongs to, ``"2026W"`` say, or ``None``.
+
+    Read the way :func:`resolve_course_info` reads it, minus the course number:
+    a course whose number does not parse still has a semester to scope its
+    recordings by (#128).
+    """
+    direct = extract_course_info(shortname)
+    if direct is not None:
+        return direct[1]
+    return _extract_semester_from_shortname_suffix(
+        shortname
+    ) or _extract_semester_from_fullname_suffix(fullname)
+
+
 def resolve_course_info(shortname: str, fullname: str) -> tuple[str, str] | None:
     """Resolve (course_number, semester) from TUWEL shortname/fullname metadata.
 

@@ -8,13 +8,32 @@ repo_root() {
 # A stable identifier for "the current state of the working tree".
 # Two invocations match if and only if nothing that would end up in a
 # commit has changed.
+#
+# Porcelain names an untracked file and `git diff HEAD` leaves it out, so what is
+# inside one is hashed separately, path beside content: porcelain also collapses
+# an untracked directory to one line, which no new sibling file moves. Appended
+# only when there is something to append, so a tree with nothing untracked keeps
+# the fingerprint every marker on disk is already named by.
+#
+# `sha256sum` over `git hash-object`, which dies at the first path it cannot
+# read and drops every file after it. `.claude/state/` is excluded outright, not
+# left to the ignore file: the markers and proofs written there are named after
+# this fingerprint, and a project that has not yet ignored the directory would
+# otherwise stale each one as it is written.
 fingerprint() {
-    local head porcelain diff
+    local head porcelain diff top untracked=""
     head=$(git rev-parse HEAD 2>/dev/null || echo "no-head")
     porcelain=$(git status --porcelain=v1 2>/dev/null || true)
     diff=$(git diff HEAD 2>/dev/null || true)
-    printf '%s\n%s\n%s' "$head" "$porcelain" "$diff" \
-        | sha256sum | cut -d' ' -f1
+    if top=$(git rev-parse --show-toplevel 2>/dev/null); then
+        untracked=$(cd "$top" \
+            && git ls-files --others --exclude-standard -z -- ':(exclude).claude/state' \
+            | xargs -0 -r sha256sum -- 2>/dev/null || true)
+    fi
+    {
+        printf '%s\n%s\n%s' "$head" "$porcelain" "$diff"
+        [[ -z "$untracked" ]] || printf '\n%s' "$untracked"
+    } | sha256sum | cut -d' ' -f1
 }
 
 # --- the SessionStart baseline ------------------------------------------------
@@ -202,6 +221,82 @@ issue_branch_iid() {
     branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || return 0
     [[ "$branch" =~ ^([0-9]+)- ]] && printf '%s' "${BASH_REMATCH[1]}"
     return 0
+}
+
+# --- what is already at work on this tree --------------------------------------
+# Two things move a tree without it being finished work for this session to ship:
+# a /ship already running here, and a milestone run working in the same checkout.
+# Asking for /ship in either case was right once in six asks, and each wrong one
+# cost a turn (#57).
+
+# `/ship` writes this as its first command, and skill-guard.sh whenever it lets
+# /ship through; every place /ship hands the turn back removes it. It holds the
+# epoch it was written at. The TTL is the backstop for a /ship somebody
+# interrupted, not a guess at how long one takes: the observed runs took 44–69
+# minutes.
+SHIP_RUNNING_TTL_DEFAULT_S=7200
+
+ship_running_marker() {  # ship_running_marker <state> <session>
+    printf '%s/ship-running-%s' "$1" "$2"
+}
+
+mark_ship_running() {  # mark_ship_running <state> <session>
+    [[ -n "${2:-}" ]] || return 0
+    mkdir -p "$1" && date +%s > "$(ship_running_marker "$1" "$2")"
+}
+
+clear_ship_running() {  # clear_ship_running <state> <session>
+    [[ -n "${2:-}" ]] || return 0
+    rm -f "$(ship_running_marker "$1" "$2")"
+}
+
+# The epoch /ship started at, while one is running in this session inside the
+# TTL. A marker past it, unreadable or dated ahead of the clock is removed, so
+# the next stop is the ordinary gate rather than this check again.
+ship_running_since() {  # ship_running_since <state> <session>
+    local marker at ttl age
+    marker=$(ship_running_marker "$1" "$2")
+    [[ -f "$marker" ]] || return 1
+    ttl="${SHIP_RUNNING_TTL:-$SHIP_RUNNING_TTL_DEFAULT_S}"
+    [[ "$ttl" =~ ^[0-9]+$ ]] || ttl=$SHIP_RUNNING_TTL_DEFAULT_S
+    at=$(head -n 1 "$marker" 2>/dev/null)
+    if [[ "$at" =~ ^[0-9]+$ ]]; then
+        age=$(( $(date +%s) - at ))
+        (( age >= 0 && age < ttl )) && { printf '%s' "$at"; return 0; }
+    fi
+    rm -f "$marker"
+    return 1
+}
+
+proc_start() { awk '{print $22}' "/proc/$1/stat" 2>/dev/null; }
+
+# The pid a pid file names, while that process is still the one that wrote it.
+# Answering `kill -0` is not enough — pids are reused — so the start time written
+# beside it has to match as well. A file with no start time predates that field
+# and is trusted on `kill -0` alone, as it always was. The milestone runner's
+# `runner_pid` is this check; skills/milestone/control.sh sources it from here.
+live_pid_file() {  # live_pid_file <pid file>
+    [[ -f "$1" ]] || return 1
+    local pid started
+    IFS=$'\t' read -r pid _ started < "$1"
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    [[ -n "$started" && "$(proc_start "$pid")" != "$started" ]] && return 1
+    printf '%s' "$pid"
+}
+
+# The milestone run working in this checkout, as `<slug> <pid>`. A runner edits
+# the checkout it was started in for hours, so every other session there sees a
+# tree that moved with nothing of its own in it.
+live_run_in() {  # live_run_in <root>
+    local f pid slug
+    for f in "$(state_dir "$1")"/milestone-*.pid; do
+        pid=$(live_pid_file "$f") || continue
+        slug=${f##*/milestone-}
+        printf '%s %s' "${slug%.pid}" "$pid"
+        return 0
+    done
+    return 1
 }
 
 # --- what a tree change is allowed to skip -------------------------------------

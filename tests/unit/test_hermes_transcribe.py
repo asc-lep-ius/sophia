@@ -11,6 +11,7 @@ import httpx
 import pytest
 from structlog.testing import capture_logs
 
+from sophia.adapters.transcriber import Transcript
 from sophia.domain.errors import CaptionError, TranscriptionError
 from sophia.domain.models import HermesConfig, Lecture, LectureCaption, TranscriptSegment
 from sophia.infra.engine import create_session_factory, session_scope
@@ -149,7 +150,7 @@ async def test_transcribe_lectures_happy_path(
 
     fake_segs = _fake_segments()
     mock_transcriber = MagicMock()
-    mock_transcriber.transcribe.return_value = fake_segs
+    mock_transcriber.transcribe_lecture.return_value = Transcript(fake_segs, "de")
 
     on_start = MagicMock()
     on_complete = MagicMock()
@@ -232,7 +233,7 @@ async def test_transcribe_lectures_handles_error(
     await _insert_download(db, file_path=str(audio_path))
 
     mock_transcriber = MagicMock()
-    mock_transcriber.transcribe.side_effect = TranscriptionError("model failed")
+    mock_transcriber.transcribe_lecture.side_effect = TranscriptionError("model failed")
 
     with (
         patch(
@@ -615,17 +616,17 @@ async def test_another_session_sees_each_transcript_as_it_finishes(
     second_started = threading.Event()
     release = threading.Event()
 
-    def _transcribe(audio_path: Path) -> list[TranscriptSegment]:
+    def _transcribe(audio_path: Path, _language: str | None = None) -> Transcript:
         called.append(audio_path.stem)
         if len(called) == 1:
-            return _fake_segments()
+            return Transcript(_fake_segments(), "de")
         second_started.set()
         release.wait(timeout=10)
         msg = "Requested float16 compute type, but the target device does not support it"
         raise ValueError(msg)
 
     transcriber = MagicMock()
-    transcriber.transcribe.side_effect = _transcribe
+    transcriber.transcribe_lecture.side_effect = _transcribe
     monkeypatch.setattr(
         "sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber
     )
@@ -664,3 +665,41 @@ async def test_a_caption_transcript_read_before_a_failure_stays_read(
             await transcribe_from_captions(app, session, 42)
 
     assert await _stage_states(factory) == {"ep-001": ("completed", None)}
+
+
+@pytest.mark.asyncio
+async def test_whisper_detects_the_language_unless_the_course_sets_one(
+    app: MagicMock, db: AsyncSession, tmp_path: Path
+) -> None:
+    """Scenario: no language on the course means detection; a set one is used next time."""
+    from sophia.services.hermes_transcribe import transcribe_lectures
+    from sophia.services.ingestion_settings import IngestionSettings, save_ingestion_settings
+
+    audio_path = tmp_path / "audio.mp3"
+    audio_path.write_bytes(b"fake audio")
+    await exec_sql(
+        db,
+        "INSERT INTO lecture_modules (module_id, course_id) VALUES (42, '7')",
+    )
+    await _insert_download(db, episode_id="ep-first", file_path=str(audio_path))
+    transcriber = MagicMock()
+    transcriber.transcribe_lecture.return_value = Transcript(_fake_segments(), "en")
+
+    with (
+        patch("sophia.services.hermes_transcribe._create_transcriber", lambda _app: transcriber),
+        patch("sophia.services.hermes_transcribe.asyncio.to_thread", side_effect=_run_sync),
+    ):
+        await transcribe_lectures(app, db, 42)
+        assert transcriber.transcribe_lecture.call_args.args[1] is None
+
+        await save_ingestion_settings(
+            db, IngestionSettings(course_id=7, transcription_language="de")
+        )
+        await _insert_download(db, episode_id="ep-second", file_path=str(audio_path))
+        await transcribe_lectures(app, db, 42)
+        assert transcriber.transcribe_lecture.call_args.args[1] == "de"
+
+    stored = (
+        await exec_sql(db, "SELECT episode_id, language FROM transcriptions ORDER BY episode_id")
+    ).fetchall()
+    assert [tuple(row) for row in stored] == [("ep-first", "en"), ("ep-second", "en")]

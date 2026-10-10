@@ -183,6 +183,45 @@ describe("topics page", () => {
     expect(screen.getByText("Graphen").getAttribute("lang")).toBe("de");
   });
 
+  it("starts a session on a topic from its row, as a plain form post", () => {
+    render(TopicsPage, {
+      data: pageData({
+        rows: {
+          data: [topicRow("Sorting", null), topicRow("Graphs", 0.9)],
+          status: "ready",
+        },
+      }),
+    });
+
+    const study = screen.getByRole("button", { name: "Study this: Graphs" });
+    const form = study.closest("form");
+    expect(form?.getAttribute("method")).toBe("POST");
+    expect(form?.getAttribute("action")).toBe("/app/study?/start");
+    expect(study.getAttribute("name")).toBe("topic");
+    expect(study.getAttribute("value")).toBe("Graphs");
+    expect(
+      screen.getAllByRole("button", { name: /^Study this: / }),
+    ).toHaveLength(2);
+  });
+
+  it("lists a topic once per source rather than failing on the repeated name", () => {
+    render(TopicsPage, {
+      data: pageData({
+        rows: {
+          data: [
+            topicRow("Schleifen", null),
+            { confidence: null, topic: topic("Schleifen", "manual") },
+          ],
+          status: "ready",
+        },
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "Topics" });
+    expect(within(panel).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(panel).getByText("Added by hand")).toBeTruthy();
+  });
+
   it("says a topic is unpredicted rather than showing it as zero", () => {
     render(TopicsPage, {
       data: pageData({
@@ -266,7 +305,13 @@ function pageData(overrides: Partial<TopicsData>) {
 }
 
 function topic(name: string, source: TopicMapping["source"]): TopicMapping {
-  return { frequency: 2, learning_path_id: 12, source, topic: name };
+  return {
+    content_items: [],
+    frequency: 2,
+    learning_path_id: 12,
+    source,
+    topic: name,
+  };
 }
 
 function confidence(name: string, predicted: number): TopicConfidence {

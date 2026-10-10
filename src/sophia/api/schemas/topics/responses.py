@@ -15,11 +15,22 @@ class TopicOrigin(StrEnum):
     MANUAL = "manual"
 
 
+class TopicContentItemResponse(ApiModel):
+    """A content item a topic was extracted from, as the topic list names it."""
+
+    id: str
+    title: str
+    sequence_number: int | None
+
+
 class TopicMappingResponse(ApiModel):
     topic: str
     learning_path_id: int
     source: TopicOrigin
     frequency: int
+    # Empty for a manual topic, and for one extracted before extraction was
+    # recorded per content item (#128).
+    content_items: list[TopicContentItemResponse] = []
 
 
 class TopicListResponse(ApiModel):
