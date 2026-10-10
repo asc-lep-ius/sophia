@@ -32,6 +32,7 @@ from sophia.api.schemas.study import (
     StudyReflectionItemResponse,
     StudyReflectionRequest,
     StudyReflectionResponse,
+    StudyRequeuedQuestion,
     StudySelfExplanationItemResponse,
     StudySelfExplanationRequest,
     StudySelfExplanationResponse,
@@ -67,6 +68,7 @@ from sophia.services.study_events import append_event
 from sophia.services.study_questions import (
     attempted_question_ids,
     get_session_questions,
+    requeued_questions,
     source_titles,
 )
 
@@ -291,6 +293,10 @@ async def list_study_session_questions(
             for question in questions
         ],
         attempted_question_ids=await attempted_question_ids(db, session_id, auth_session.user.id),
+        requeued_questions=[
+            StudyRequeuedQuestion(question_id=owed.question_id, attempts=owed.attempts)
+            for owed in await requeued_questions(db, session_id, auth_session.user.id)
+        ],
     )
 
 

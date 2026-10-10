@@ -2733,6 +2733,16 @@ export interface components {
         StudyReflectionResponse: {
             reflection: components["schemas"]["StudyReflectionItemResponse"];
         };
+        /**
+         * StudyRequeuedQuestion
+         * @description A practice card graded Again that the session still owes a re-ask.
+         */
+        StudyRequeuedQuestion: {
+            /** Attempts */
+            attempts: number;
+            /** Question Id */
+            question_id: string;
+        };
         /** StudySelfExplanationItemResponse */
         StudySelfExplanationItemResponse: {
             /** Created At */
@@ -2774,7 +2784,7 @@ export interface components {
          *
          *     The scores are returned rather than echoed back from the request because
          *     the client never had them: they are the mean of the session's own graded
-         *     attempts.
+         *     attempts, each question counted once, as its last answer in the phase.
          */
         StudySessionCompletionResponse: {
             /** Completed */
@@ -2815,6 +2825,8 @@ export interface components {
          *
          *     ``attempted_question_ids`` is what lets a resumed session pick up where the
          *     learner left off instead of re-presenting cards they have already graded.
+         *     ``requeued_questions`` are the exception: cards graded Again that come back
+         *     after the rest, in the order they were graded, until the cap.
          */
         StudySessionQuestionListResponse: {
             /** Attempted Question Ids */
@@ -2823,6 +2835,8 @@ export interface components {
             learning_path_id: number;
             /** Questions */
             questions: components["schemas"]["Question"][];
+            /** Requeued Questions */
+            requeued_questions: components["schemas"]["StudyRequeuedQuestion"][];
             /** Session Id */
             session_id: number;
         };

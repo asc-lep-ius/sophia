@@ -302,15 +302,35 @@ async def _phase_score_means(
     session: AsyncSession,
     session_id: int,
 ) -> dict[AttemptPhase, float]:
-    """Mean graded score per phase, skipping attempts that never got a score."""
+    """Mean graded score per phase, over each question's last graded attempt.
+
+    A card graded Again comes back later in the session, and the retry is
+    stored as its own attempt. Averaging every attempt would let the miss pull
+    the phase down after the learner had recalled it; the last answer is what
+    the learner can do now. Attempts that never got a score are skipped.
+    """
+    latest = (
+        select(
+            question_attempts.c.phase,
+            question_attempts.c.score,
+            func.row_number()
+            .over(
+                partition_by=(question_attempts.c.phase, question_attempts.c.question_id),
+                order_by=question_attempts.c.id.desc(),
+            )
+            .label("recency"),
+        )
+        .where(
+            question_attempts.c.session_id == session_id,
+            question_attempts.c.score.is_not(None),
+        )
+        .subquery()
+    )
     rows = (
         await session.execute(
-            select(question_attempts.c.phase, func.avg(question_attempts.c.score))
-            .where(
-                question_attempts.c.session_id == session_id,
-                question_attempts.c.score.is_not(None),
-            )
-            .group_by(question_attempts.c.phase)
+            select(latest.c.phase, func.avg(latest.c.score))
+            .where(latest.c.recency == 1)
+            .group_by(latest.c.phase)
         )
     ).all()
     return {AttemptPhase(phase): float(mean) for phase, mean in rows if mean is not None}

@@ -48,7 +48,7 @@ class StudySessionCompletionResponse(ApiModel):
 
     The scores are returned rather than echoed back from the request because
     the client never had them: they are the mean of the session's own graded
-    attempts.
+    attempts, each question counted once, as its last answer in the phase.
     """
 
     session_id: int
@@ -154,17 +154,27 @@ class StudyQuestionListResponse(ApiModel):
     questions: list[Question]
 
 
+class StudyRequeuedQuestion(ApiModel):
+    """A practice card graded Again that the session still owes a re-ask."""
+
+    question_id: str
+    attempts: int
+
+
 class StudySessionQuestionListResponse(ApiModel):
     """A session's persisted question set, in generation order.
 
     ``attempted_question_ids`` is what lets a resumed session pick up where the
     learner left off instead of re-presenting cards they have already graded.
+    ``requeued_questions`` are the exception: cards graded Again that come back
+    after the rest, in the order they were graded, until the cap.
     """
 
     session_id: int
     learning_path_id: int
     questions: list[Question]
     attempted_question_ids: list[str]
+    requeued_questions: list[StudyRequeuedQuestion]
 
 
 class StudyAttemptItemResponse(ApiModel):

@@ -3867,6 +3867,25 @@
         "title": "StudyReflectionResponse",
         "type": "object"
       },
+      "StudyRequeuedQuestion": {
+        "description": "A practice card graded Again that the session still owes a re-ask.",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "question_id": {
+            "title": "Question Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question_id",
+          "attempts"
+        ],
+        "title": "StudyRequeuedQuestion",
+        "type": "object"
+      },
       "StudySelfExplanationItemResponse": {
         "properties": {
           "created_at": {
@@ -3959,7 +3978,7 @@
         "type": "object"
       },
       "StudySessionCompletionResponse": {
-        "description": "The completed session, carrying the scores the server just computed.\n\nThe scores are returned rather than echoed back from the request because\nthe client never had them: they are the mean of the session's own graded\nattempts.",
+        "description": "The completed session, carrying the scores the server just computed.\n\nThe scores are returned rather than echoed back from the request because\nthe client never had them: they are the mean of the session's own graded\nattempts, each question counted once, as its last answer in the phase.",
         "properties": {
           "completed": {
             "title": "Completed",
@@ -4079,7 +4098,7 @@
         "type": "object"
       },
       "StudySessionQuestionListResponse": {
-        "description": "A session's persisted question set, in generation order.\n\n``attempted_question_ids`` is what lets a resumed session pick up where the\nlearner left off instead of re-presenting cards they have already graded.",
+        "description": "A session's persisted question set, in generation order.\n\n``attempted_question_ids`` is what lets a resumed session pick up where the\nlearner left off instead of re-presenting cards they have already graded.\n``requeued_questions`` are the exception: cards graded Again that come back\nafter the rest, in the order they were graded, until the cap.",
         "properties": {
           "attempted_question_ids": {
             "items": {
@@ -4099,6 +4118,13 @@
             "title": "Questions",
             "type": "array"
           },
+          "requeued_questions": {
+            "items": {
+              "$ref": "#/components/schemas/StudyRequeuedQuestion"
+            },
+            "title": "Requeued Questions",
+            "type": "array"
+          },
           "session_id": {
             "title": "Session Id",
             "type": "integer"
@@ -4108,7 +4134,8 @@
           "session_id",
           "learning_path_id",
           "questions",
-          "attempted_question_ids"
+          "attempted_question_ids",
+          "requeued_questions"
         ],
         "title": "StudySessionQuestionListResponse",
         "type": "object"

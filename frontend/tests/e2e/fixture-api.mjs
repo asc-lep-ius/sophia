@@ -42,6 +42,9 @@ const UNGATED_POLICY = {
 };
 
 const SELF_RATING_SCORES = { 1: 0, 2: 0.3, 3: 0.7, 4: 1 };
+// services/study_questions.py: AGAIN_RATING and AGAIN_REASK_LIMIT.
+const AGAIN_RATING = 1;
+const AGAIN_REASK_LIMIT = 2;
 
 const PACED_SESSION_LIMIT = 100;
 const DEFAULT_DECK_SIZE = 51;
@@ -922,7 +925,25 @@ function sessionQuestions(match) {
     attempted_question_ids: sessionAttemptsFor(sessionId).map(
       (attempt) => attempt.question_id,
     ),
+    requeued_questions: requeuedQuestions(sessionId),
   };
+}
+
+/** Mirrors the server: practice cards last graded Again, under the cap. */
+function requeuedQuestions(sessionId) {
+  const answered = new Map();
+  for (const attempt of sessionAttempts(sessionId, "practice")) {
+    const attempts = (answered.get(attempt.question_id)?.attempts ?? 0) + 1;
+    answered.delete(attempt.question_id);
+    answered.set(attempt.question_id, {
+      question_id: attempt.question_id,
+      attempts,
+      again: attempt.self_rating === AGAIN_RATING,
+    });
+  }
+  return [...answered.values()]
+    .filter((entry) => entry.again && entry.attempts <= AGAIN_REASK_LIMIT)
+    .map(({ question_id, attempts }) => ({ question_id, attempts }));
 }
 
 function generateQuestions(_match, body) {
@@ -1011,7 +1032,10 @@ function ingestEvents(_match, body) {
   };
 }
 
-/** Mirrors the server: pre and post are the means of the phased attempts. */
+/**
+ * Mirrors the server: pre and post are the means of the phased attempts, each
+ * question counted once, as its last answer in the phase.
+ */
 function completeSession(match) {
   const sessionId = Number(match[1]);
   ensureSession(sessionId);
@@ -1078,9 +1102,13 @@ function phaseCount(sessionId, phase) {
 }
 
 function phaseMean(sessionId, phase) {
-  const scores = sessionAttempts(sessionId, phase).map(
-    (attempt) => attempt.score,
+  const latest = new Map(
+    sessionAttempts(sessionId, phase).map((attempt) => [
+      attempt.question_id,
+      attempt.score,
+    ]),
   );
+  const scores = [...latest.values()];
   if (scores.length === 0) {
     return null;
   }

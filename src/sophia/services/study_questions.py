@@ -84,6 +84,29 @@ scale already used for flashcard review) but is not imported from there:
 (grading an open-response question attempt, not scheduling a flashcard review).
 """
 
+AGAIN_RATING = 1
+AGAIN_REASK_LIMIT = 2
+"""How many times one practice card may come back after an Again, per session.
+
+A failed card is cycled until it is recalled once (successive relearning), but
+capped, or the hardest card eats the session. The study surface holds the same
+number as ``AGAIN_REASK_LIMIT`` in ``lib/study/session.svelte.ts``; this copy is
+what a resumed session's owed re-asks are counted against.
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class RequeuedQuestion:
+    """A practice card graded Again that the session still owes a re-ask.
+
+    ``attempts`` is how many times it has been answered so far, which is also
+    which re-ask the next presentation is: the surface needs it to keep
+    counting towards the cap across a reload.
+    """
+
+    question_id: str
+    attempts: int
+
 
 @dataclass(frozen=True, slots=True)
 class AttemptResult:
@@ -217,8 +240,9 @@ async def attempted_question_ids(
 
     The study surface resumes after these rather than restarting at card one:
     re-presenting an answered card does not just waste the learner's time, it
-    writes a second attempt (a fresh request id makes it a new row) that is
-    averaged into the session's phase means.
+    writes a second attempt (a fresh request id makes it a new row) that
+    replaces the first in the session's phase means. Cards graded Again come
+    back through :func:`requeued_questions` instead, on purpose.
     """
     rows = (
         await session.execute(
@@ -231,6 +255,42 @@ async def attempted_question_ids(
         )
     ).all()
     return [row.question_id for row in rows]
+
+
+async def requeued_questions(
+    session: AsyncSession,
+    session_id: int,
+    user_id: str,
+) -> list[RequeuedQuestion]:
+    """Practice cards whose last answer was Again and that may still come back.
+
+    Read from the attempts rather than remembered by the page, so a session
+    resumed between the Again and the re-ask presents the card again. Ordered
+    by that last answer, which is the order the surface queued them in.
+    """
+    rows = (
+        await session.execute(
+            select(question_attempts.c.question_id, question_attempts.c.self_rating)
+            .where(
+                question_attempts.c.session_id == session_id,
+                question_attempts.c.user_id == user_id,
+                question_attempts.c.phase == AttemptPhase.PRACTICE.value,
+            )
+            .order_by(question_attempts.c.id)
+        )
+    ).all()
+
+    attempts: dict[str, int] = {}
+    last_rating: dict[str, int | None] = {}
+    for row in rows:
+        # Popped and re-inserted, so the dict ends up ordered by last answer.
+        attempts[row.question_id] = attempts.pop(row.question_id, 0) + 1
+        last_rating[row.question_id] = row.self_rating
+    return [
+        RequeuedQuestion(question_id=question_id, attempts=answered)
+        for question_id, answered in attempts.items()
+        if last_rating[question_id] == AGAIN_RATING and answered <= AGAIN_REASK_LIMIT
+    ]
 
 
 async def save_attempt(
