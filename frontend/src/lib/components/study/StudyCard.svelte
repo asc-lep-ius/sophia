@@ -56,6 +56,14 @@
     document.querySelector<HTMLButtonElement>('[data-grade="1"]')?.focus();
   });
 
+  // Flagging a card swaps the grades for Continue; focus follows, as above.
+  $effect(() => {
+    if (!browser || !store.flagged || store.paused) {
+      return;
+    }
+    document.querySelector<HTMLButtonElement>("[data-move-on]")?.focus();
+  });
+
   // Nothing else on the page changes while the dwell floor runs down, so the
   // store needs a clock of its own for the reveal to become available.
   $effect(() => {
@@ -77,7 +85,13 @@
     event.preventDefault();
     switch (shortcut.action) {
       case "reveal":
-        store.askConfidence();
+        // The card's one way forward: a flagged card is past its reveal, and
+        // Space on the focused Continue would press it anyway.
+        if (store.flagged) {
+          store.moveOn();
+        } else {
+          store.askConfidence();
+        }
         return;
       case "confidence":
         store.reveal(shortcut.level);
@@ -185,11 +199,31 @@
         {canReveal ? m.study_reveal_available() : ""}
       </p>
     {:else}
+      {#if store.flagged}
+        <p class="sure-miss" role="status">
+          <strong>{m.study_sure_miss()}</strong>
+          {m.study_sure_miss_body()}
+        </p>
+      {/if}
       <RevealedSources spans={current.question.provenance.source_spans} />
-      <GradeBar
-        disabled={store.paused}
-        onGrade={(grade) => store.grade(grade)}
-      />
+      {#if store.flagged}
+        <!-- #142's self-explanation prompt belongs here, ahead of Continue. -->
+        <button
+          type="button"
+          class="move-on"
+          data-move-on
+          disabled={store.paused}
+          aria-keyshortcuts="Space"
+          onclick={() => store.moveOn()}
+        >
+          {m.study_sure_miss_continue()}
+        </button>
+      {:else}
+        <GradeBar
+          disabled={store.paused}
+          onGrade={(grade) => store.grade(grade)}
+        />
+      {/if}
     {/if}
 
     <div class="controls">
@@ -331,8 +365,18 @@
     opacity: 0.55;
   }
 
-  .reveal {
+  .reveal,
+  .move-on {
     justify-self: start;
+  }
+
+  .sure-miss {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0;
+    border-left: 3px solid var(--warning);
+    padding: 0.35rem 0 0.35rem 0.75rem;
+    overflow-wrap: anywhere;
   }
 
   /*

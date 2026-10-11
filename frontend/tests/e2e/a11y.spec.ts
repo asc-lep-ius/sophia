@@ -101,6 +101,24 @@ test("a study card asking how sure has no axe violations", async ({ page }) => {
   expect(results.violations).toEqual([]);
 });
 
+test("a study card flagged sure and wrong has no axe violations", async ({
+  page,
+}) => {
+  await authenticateShell(page);
+  await openHydratedAct(page, 404);
+  await page.getByLabel("Your answer").fill("An answer long enough to reveal.");
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Certain/ }).click();
+  await page.getByRole("button", { name: /Again/ }).click();
+  await expect(page.getByText("You were sure of this one.")).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+
+  expect(results.violations).toEqual([]);
+});
+
 test("a revealed review card has no axe violations", async ({ page }) => {
   await authenticateShell(page);
   await page.goto("/app/review");

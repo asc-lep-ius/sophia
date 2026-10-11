@@ -211,6 +211,59 @@ describe("study card", () => {
     expect(store.askingConfidence).toBe(false);
   });
 
+  it("flags a card the learner was sure of and graded Again, until they move on", async () => {
+    const store = new StudySessionStore({
+      questions: [groundedQuestion, { ...question, id: "q-2" }],
+      pacing,
+      submit: async () => undefined,
+      retry: { holdMs: 0 },
+      now: () => 100_000,
+    });
+    render(StudyCard, { store });
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await reveal(/^Certain/);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Again/ }));
+
+    expect(screen.getByText("You were sure of this one.")).toBeTruthy();
+    expect(screen.getByText(EXCERPT)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Good/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(store.current?.question.id).toBe("q-2");
+    expect(screen.queryByText("You were sure of this one.")).toBeNull();
+  });
+
+  it("moves on from a flagged card with the space key", async () => {
+    const store = renderCard();
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await reveal(/^Sure/);
+    await fireEvent.click(screen.getByRole("button", { name: /Hard/ }));
+    expect(store.flagged).toBe(true);
+
+    await fireEvent.keyDown(window, { key: " " });
+
+    expect(store.flagged).toBe(false);
+    expect(store.remaining).toBe(0);
+  });
+
+  it("does not flag a card the learner was unsure of", async () => {
+    renderCard();
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await reveal(/^Unsure/);
+
+    await fireEvent.click(screen.getByRole("button", { name: /Again/ }));
+
+    expect(screen.queryByText("You were sure of this one.")).toBeNull();
+  });
+
   it("lists the confidence keys among the shortcuts", async () => {
     renderCard();
 

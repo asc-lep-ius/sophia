@@ -486,7 +486,7 @@ describe("confidence before the reveal", () => {
 
   it("asks again on every card, a re-ask included", async () => {
     const { store, sent, ready } = recordingStore();
-    for (const confidence of [5, 2] as const) {
+    for (const confidence of [3, 2] as const) {
       ready();
       reveal(store, confidence);
       store.grade(1);
@@ -502,7 +502,7 @@ describe("confidence before the reveal", () => {
     store.grade(3);
     await settle();
 
-    expect(sent.map((submission) => submission.confidence)).toEqual([5, 2, 3]);
+    expect(sent.map((submission) => submission.confidence)).toEqual([3, 2, 3]);
   });
 
   it("keeps the confidence through an undo, since the answer has been seen", async () => {
@@ -549,6 +549,119 @@ describe("confidence before the reveal", () => {
 
     advanceMs(6000);
     expect(store.reveal(3)).toBe(true);
+  });
+});
+
+describe("a card the learner was sure of and graded Again or Hard", () => {
+  it.each([
+    [5, 1],
+    [4, 2],
+  ] as const)(
+    "is flagged and held at confidence %i, grade %i, while the grade goes out",
+    async (confidence, rating) => {
+      const { store, submitted, advanceMs } = harness(2);
+      advanceMs(6000);
+      elaborate(store);
+      reveal(store, confidence);
+
+      expect(store.grade(rating)).toBe(true);
+      await settle();
+
+      expect(store.state).toBe("flagged");
+      expect(store.flagged).toBe(true);
+      expect(store.position).toBe(1);
+      expect(store.current?.revealed).toBe(true);
+      expect(store.canGrade).toBe(false);
+      expect(submitted.map((entry) => entry.questionId)).toEqual(["q-0"]);
+
+      expect(store.moveOn()).toBe(true);
+      expect(store.flagged).toBe(false);
+      expect(store.position).toBe(2);
+      expect(store.state).toBe("prompt");
+    },
+  );
+
+  it.each([
+    { confidence: 3, rating: 1, why: "not sure enough" },
+    { confidence: 5, rating: 3, why: "graded Good" },
+  ] as const)("moves straight on when $why", ({ confidence, rating }) => {
+    const { store, advanceMs } = harness(2);
+    advanceMs(6000);
+    elaborate(store);
+    reveal(store, confidence);
+
+    store.grade(rating);
+
+    expect(store.flagged).toBe(false);
+    expect(store.position).toBe(2);
+    expect(store.moveOn()).toBe(false);
+  });
+
+  it("holds the last card too, so the queue does not end under the flag", () => {
+    const { store, advanceMs } = harness(1);
+    advanceMs(6000);
+    elaborate(store);
+    reveal(store, 5);
+
+    store.grade(2);
+
+    expect(store.remaining).toBe(1);
+    store.moveOn();
+    expect(store.remaining).toBe(0);
+    expect(store.state).toBe("idle");
+  });
+
+  it("drops the flag with the grade when it is undone", () => {
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0"), question("q-1")],
+      pacing,
+      submit: async () => undefined,
+      retry: { maxAttempts: 1, holdMs: 5000, wait: async () => undefined },
+      now: () => now,
+    });
+    now = 6000;
+    store.tick();
+    elaborate(store);
+    reveal(store, 4);
+    store.grade(1);
+
+    expect(store.undo()).toBe(true);
+
+    expect(store.flagged).toBe(false);
+    expect(store.state).toBe("revealed");
+    expect(store.againLaterCount).toBe(0);
+    store.grade(3);
+    expect(store.position).toBe(2);
+    store.flushGrades();
+  });
+
+  it("stays flagged through a pause", () => {
+    const { store, advanceMs } = harness(2);
+    advanceMs(6000);
+    elaborate(store);
+    reveal(store, 5);
+    store.grade(1);
+
+    store.pause();
+    expect(store.flagged).toBe(true);
+    expect(store.moveOn()).toBe(false);
+
+    store.resume();
+    expect(store.moveOn()).toBe(true);
+  });
+
+  it("calls in the re-ask an Again owes once the learner moves on", () => {
+    const { store, advanceMs } = harness(1);
+    advanceMs(6000);
+    elaborate(store);
+    reveal(store, 5);
+    store.grade(1);
+
+    store.moveOn();
+
+    expect(store.current?.question.id).toBe("q-0");
+    expect(store.current?.retry).toBe(1);
   });
 });
 

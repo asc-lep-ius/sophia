@@ -20,6 +20,7 @@ export type StudyState =
   | "revealed"
   | "grading"
   | "committed"
+  | "flagged"
   | "rollback"
   | "paused";
 
@@ -82,6 +83,7 @@ export type StudySessionStoreOptions = {
 export const GRADES = [1, 2, 3, 4] as const;
 export type Grade = (typeof GRADES)[number];
 const AGAIN: Grade = 1;
+const HARD: Grade = 2;
 
 /**
  * Guessing … Certain, the 1–5 scale an attempt's confidence is stored on.
@@ -93,6 +95,9 @@ const AGAIN: Grade = 1;
  */
 export const CONFIDENCES = [1, 2, 3, 4, 5] as const;
 export type Confidence = (typeof CONFIDENCES)[number];
+
+/** Sure or Certain: a card answered this sure and graded Again or Hard is flagged. */
+export const SURE_CONFIDENCE: Confidence = 4;
 
 /**
  * How many times one practice card may come back after an Again in a session.
@@ -313,6 +318,16 @@ export class StudySessionStore {
     return enforcedPolicy(card.question, this.#options.pacing);
   }
 
+  /**
+   * Whether the card just graded was one the learner was sure of and graded
+   * Again or Hard, and is held on screen until they move on.
+   */
+  get flagged(): boolean {
+    const state =
+      this.#state === "paused" ? this.#stateBeforePause : this.#state;
+    return state === "flagged";
+  }
+
   get canGrade(): boolean {
     // "rollback" is here because a restored card is a revealed card waiting for
     // another grade: leaving it out meant a rejected grade could never be
@@ -420,11 +435,27 @@ export class StudySessionStore {
     if (rating === AGAIN) {
       this.#requeue(card, requestId);
     }
-    this.#state = "committed";
     this.#lastGrade = { requestId, at: this.#now(), position };
-    this.#advance();
+    if (isSureMiss(card, rating)) {
+      // Held, not advanced: a confident error is the one most worth looking
+      // at while the correction is still on screen (Butterfield & Metcalfe
+      // 2001). The grade goes out as any other; only the next card waits.
+      this.#state = "flagged";
+    } else {
+      this.#state = "committed";
+      this.#advance();
+    }
 
     this.#outbox.enqueue(requestId, submission);
+    return true;
+  }
+
+  /** Leave a flagged card for the next one. */
+  moveOn(): boolean {
+    if (this.#state !== "flagged") {
+      return false;
+    }
+    this.#advance();
     return true;
   }
 
@@ -645,6 +676,14 @@ export class StudySessionStore {
     this.#state = "rollback";
     this.#error = "study.grade_rejected";
   }
+}
+
+function isSureMiss(card: StudyCard, rating: Grade): boolean {
+  return (
+    rating <= HARD &&
+    card.confidence !== null &&
+    card.confidence >= SURE_CONFIDENCE
+  );
 }
 
 /**
