@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { StudyPacing, StudyQuestion } from "../../src/lib/api/study";
 
-type Call = { kind: "events" | "attempt"; keepalive: boolean | undefined };
+type Call = {
+  kind: "events" | "attempt";
+  keepalive: boolean | undefined;
+  confidence?: unknown;
+};
 
 const calls: Call[] = [];
 
@@ -16,10 +20,14 @@ vi.mock("../../src/lib/api/study", () => ({
   },
   submitAttempt: async (
     _context: unknown,
-    _input: unknown,
+    input: { confidence: unknown },
     options: { keepalive?: boolean } = {},
   ) => {
-    calls.push({ kind: "attempt", keepalive: options.keepalive });
+    calls.push({
+      kind: "attempt",
+      keepalive: options.keepalive,
+      confidence: input.confidence,
+    });
     return {};
   },
   isRetryableFailure: () => false,
@@ -86,7 +94,8 @@ describe("study runtime unload path", () => {
     const runtime = runtimeFor();
     runtime.store.recordPromptShown();
     runtime.store.setAnswer("An answer long enough to reveal with.");
-    runtime.store.reveal();
+    runtime.store.askConfidence();
+    runtime.store.reveal(3);
     runtime.store.grade(3);
 
     runtime.flushOnUnload();
@@ -104,7 +113,8 @@ describe("study runtime unload path", () => {
 
     runtime.store.recordPromptShown();
     runtime.store.setAnswer("An answer long enough to reveal with.");
-    runtime.store.reveal();
+    runtime.store.askConfidence();
+    runtime.store.reveal(3);
     runtime.store.grade(3);
     await runtime.events.flushNow();
 
@@ -112,6 +122,20 @@ describe("study runtime unload path", () => {
     // The grade above is still held; without this its timer outlives the test.
     runtime.destroy();
     await settle();
+  });
+
+  it("sends the confidence chosen before the reveal as the attempt's", async () => {
+    const runtime = runtimeFor();
+    runtime.store.recordPromptShown();
+    runtime.store.setAnswer("An answer long enough to reveal with.");
+    runtime.store.askConfidence();
+    runtime.store.reveal(5);
+    runtime.store.grade(2);
+
+    runtime.destroy();
+    await settle();
+
+    expect(calls.find((call) => call.kind === "attempt")?.confidence).toBe(5);
   });
 
   it("does not post an empty batch on teardown", async () => {

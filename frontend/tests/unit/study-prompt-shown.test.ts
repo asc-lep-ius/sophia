@@ -180,6 +180,9 @@ describe("idle dwell clock vs prompt_shown", () => {
     });
     await vi.advanceTimersByTimeAsync(pacing.prompt_min_dwell_ms);
     await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /^Somewhat sure/ }),
+    );
     await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
 
     // Past the outbox's cancel window, so the grade — and the event batch

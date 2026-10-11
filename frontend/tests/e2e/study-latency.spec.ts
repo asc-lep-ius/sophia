@@ -54,6 +54,8 @@ test("keyboard-only study stays inside the interaction budget", async ({
     // so this is the flow a keyboard-only learner actually has.
     await page.keyboard.press("Tab");
     await page.keyboard.press(" ");
+    // How sure, before the reveal: its own key, so 3 still means Good.
+    await page.keyboard.press("e");
     await page.keyboard.press("3");
   }
 
@@ -79,6 +81,10 @@ test("the whole session is reachable without a pointer", async ({ page }) => {
   await page.getByLabel("Your answer").fill("An answer for this card.");
   await page.keyboard.press("Tab");
   await page.keyboard.press(" ");
+  await expect(
+    page.getByRole("group", { name: "How sure are you of your answer?" }),
+  ).toBeVisible();
+  await page.keyboard.press("e");
   await expect(
     page.getByRole("region", { name: "What this question was generated from" }),
   ).toBeVisible();
@@ -136,6 +142,7 @@ test("a drained queue can be extended without leaving the session", async ({
 
   await page.getByLabel("Your answer").fill("The one card in this deck.");
   await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).click();
   await page.getByRole("button", { name: /Good/ }).click();
   await expect(page.getByText("No cards left in this session.")).toBeVisible();
 

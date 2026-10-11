@@ -150,6 +150,7 @@ async function write(text: string): Promise<void> {
 async function gradeCard(grade: RegExp): Promise<void> {
   await write(ANSWER);
   await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+  await fireEvent.click(screen.getByRole("button", { name: /^Somewhat sure/ }));
   await fireEvent.click(screen.getByRole("button", { name: grade }));
 }
 
@@ -233,6 +234,9 @@ describe("study cycle across step changes", () => {
     openAct(["anchor"]);
     await write(ANSWER);
     await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /^Somewhat sure/ }),
+    );
     await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
 
     expect(screen.getByText("No cards left in this session.")).toBeTruthy();
@@ -258,6 +262,9 @@ describe("study cycle across step changes", () => {
     await fireEvent.click(screen.getByRole("radio", { name: "Somewhat" }));
     await write(ANSWER);
     await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await fireEvent.click(
+      screen.getByRole("button", { name: /^Somewhat sure/ }),
+    );
     await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
 
     expect(navigation.invalidate).not.toHaveBeenCalled();

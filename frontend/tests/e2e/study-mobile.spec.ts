@@ -17,6 +17,7 @@ const GRID_SESSION = 301;
 const TAP_SESSION = 302;
 const VIEWPORT_SESSION = 303;
 const FOCUS_SESSION = 304;
+const CONFIDENCE_SESSION = 305;
 const MIN_TARGET_PX = 48;
 
 test.use({ viewport: { width: 375, height: 667 }, hasTouch: true });
@@ -28,6 +29,7 @@ test("grades sit in a thumb-zone 2x2 grid with large enough targets", async ({
   await openHydratedAct(page, GRID_SESSION);
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).tap();
 
   const grades = page.locator("[data-grade]");
   await expect(grades).toHaveCount(4);
@@ -49,12 +51,31 @@ test("grades sit in a thumb-zone 2x2 grid with large enough targets", async ({
   expect(boxes[2]!.y).toBeGreaterThan(boxes[0]!.y);
 });
 
+test("every confidence level is a large enough tap target", async ({
+  page,
+}) => {
+  await authenticateShell(page);
+  await openHydratedAct(page, CONFIDENCE_SESSION);
+  await page.getByLabel("Your answer").fill("An answer written on a phone.");
+  await page.getByRole("button", { name: "Reveal" }).tap();
+
+  const levels = page.locator("[data-confidence]");
+  await expect(levels).toHaveCount(5);
+  for (let index = 0; index < 5; index += 1) {
+    const box = await levels.nth(index).boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+    expect(box!.height).toBeGreaterThanOrEqual(MIN_TARGET_PX);
+  }
+});
+
 test("tap alone can work a card end to end", async ({ page }) => {
   await authenticateShell(page);
   await openHydratedAct(page, TAP_SESSION);
 
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).tap();
   await expect(
     page.getByRole("region", { name: "What this question was generated from" }),
   ).toBeVisible();
@@ -70,6 +91,7 @@ test("the card and its controls fit the viewport without sideways scrolling", as
   await openHydratedAct(page, VIEWPORT_SESSION);
   await page.getByLabel("Your answer").fill("An answer written on a phone.");
   await page.getByRole("button", { name: "Reveal" }).tap();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).tap();
 
   const overflow = await page.evaluate(() => ({
     pageWidth: document.documentElement.scrollWidth,

@@ -4,22 +4,27 @@
 
   type Props = {
     open: boolean;
+    /** The study card asks how sure before each reveal; review does not. */
+    asksConfidence?: boolean;
     onClose: () => void;
   };
 
-  let { open, onClose }: Props = $props();
+  let { open, asksConfidence = false, onClose }: Props = $props();
 
   let dialog = $state<HTMLDialogElement | null>(null);
   let closeButton = $state<HTMLButtonElement | null>(null);
 
-  const shortcuts = [
+  const shortcuts = $derived([
     { keys: "Space", describe: () => m.study_keyboard_reveal() },
+    ...(asksConfidence
+      ? [{ keys: "Q – T", describe: () => m.study_keyboard_confidence() }]
+      : []),
     { keys: "1 – 4", describe: () => m.study_keyboard_grade() },
     { keys: "U", describe: () => m.study_keyboard_undo() },
     { keys: "P", describe: () => m.study_keyboard_pause() },
     { keys: "F", describe: () => m.study_keyboard_focus() },
     { keys: "?", describe: () => m.study_keyboard_help_key() },
-  ];
+  ]);
 
   $effect(() => {
     if (!open) {

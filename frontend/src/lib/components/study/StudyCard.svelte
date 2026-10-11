@@ -2,6 +2,7 @@
   import AnswerField from "./card/AnswerField.svelte";
   import CardPrompt from "./card/CardPrompt.svelte";
   import RevealedSources from "./card/RevealedSources.svelte";
+  import ConfidenceBar from "./ConfidenceBar.svelte";
   import GradeBar from "./GradeBar.svelte";
   import KeyboardHelp from "./KeyboardHelp.svelte";
   import { m } from "$lib/paraglide/messages.js";
@@ -36,6 +37,15 @@
     document.getElementById(ANSWER_FIELD_ID)?.focus();
   });
 
+  // Asking how sure removes the Reveal button that was focused, as the reveal
+  // itself does below; the first level is where the keyboard learner lands.
+  $effect(() => {
+    if (!browser || !store.askingConfidence || store.paused) {
+      return;
+    }
+    document.querySelector<HTMLButtonElement>("[data-confidence]")?.focus();
+  });
+
   // Revealing removes the button that was focused. Without this the keyboard
   // learner is dropped on the document body at the exact moment the grades
   // appear — WCAG 2.4.3, and the difference between a fast flow and a hunt.
@@ -67,7 +77,10 @@
     event.preventDefault();
     switch (shortcut.action) {
       case "reveal":
-        store.reveal();
+        store.askConfidence();
+        return;
+      case "confidence":
+        store.reveal(shortcut.level);
         return;
       case "grade":
         store.grade(shortcut.rating as Grade);
@@ -142,13 +155,22 @@
       <p class="paused" role="status">{m.study_paused_notice()}</p>
     {/if}
 
-    {#if !current.revealed}
+    {#if store.askingConfidence}
+      <ConfidenceBar
+        disabled={!store.canChooseConfidence}
+        onChoose={(confidence) => store.reveal(confidence)}
+      />
+      <!-- A resume restarts the dwell clock while the learner is being asked. -->
+      {#if !store.canChooseConfidence && !store.paused && store.elaborationChars >= store.minElaborationChars}
+        <p class="dwell" role="status">{m.study_dwell_blocked()}</p>
+      {/if}
+    {:else if !current.revealed}
       <button
         type="button"
         class="reveal"
         disabled={!canReveal || store.paused}
         aria-keyshortcuts="Space"
-        onclick={() => store.reveal()}
+        onclick={() => store.askConfidence()}
       >
         {m.study_reveal()}
       </button>
@@ -238,7 +260,11 @@
   </div>
 {/if}
 
-<KeyboardHelp open={helpOpen} onClose={() => (helpOpen = false)} />
+<KeyboardHelp
+  open={helpOpen}
+  asksConfidence
+  onClose={() => (helpOpen = false)}
+/>
 
 <style>
   .study-card {

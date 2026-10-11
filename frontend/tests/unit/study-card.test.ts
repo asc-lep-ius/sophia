@@ -62,7 +62,9 @@ function renderCard(submitted: string[] = [], card: StudyQuestion = question) {
     questions: [card],
     pacing,
     submit: async (submission) => {
-      submitted.push(`${submission.questionId}:${submission.selfRating}`);
+      submitted.push(
+        `${submission.questionId}:${submission.selfRating}:${submission.confidence}`,
+      );
     },
     // No cancel window here: this asserts the button reaches the store, not
     // the undo behaviour study-session-store.test.ts covers.
@@ -71,6 +73,12 @@ function renderCard(submitted: string[] = [], card: StudyQuestion = question) {
   });
   render(StudyCard, { store });
   return store;
+}
+
+/** Press Reveal, then say how sure: every reveal now takes both. */
+async function reveal(confidence = /^Somewhat sure/) {
+  await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+  await fireEvent.click(screen.getByRole("button", { name: confidence }));
 }
 
 describe("study card", () => {
@@ -105,7 +113,7 @@ describe("study card", () => {
     await fireEvent.input(screen.getByLabelText("Your answer"), {
       target: { value: "A cut is a partition whose removal disconnects them." },
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await reveal();
 
     for (const name of ["Again", "Hard", "Good", "Easy", "Undo", "Pause"]) {
       expect(
@@ -120,14 +128,14 @@ describe("study card", () => {
     await fireEvent.input(screen.getByLabelText("Your answer"), {
       target: { value: "A cut is a partition whose removal disconnects them." },
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await reveal();
     await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    expect(submitted).toEqual(["q-1:3"]);
+    expect(submitted).toEqual(["q-1:3:3"]);
   });
 
-  it("reveals with the space key but not while typing an answer", async () => {
+  it("asks with the space key but not while typing an answer", async () => {
     const store = renderCard();
     const answer = screen.getByLabelText("Your answer");
     await fireEvent.input(answer, {
@@ -135,10 +143,83 @@ describe("study card", () => {
     });
 
     await fireEvent.keyDown(answer, { key: " " });
-    expect(store.current?.revealed).toBe(false);
+    expect(store.askingConfidence).toBe(false);
 
     await fireEvent.keyDown(window, { key: " " });
+    expect(store.askingConfidence).toBe(true);
+    expect(store.current?.revealed).toBe(false);
+  });
+
+  it("asks how sure before the reveal, then shows the excerpts and grades", async () => {
+    const submitted: string[] = [];
+    renderCard(submitted, groundedQuestion);
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+
+    expect(
+      screen.getByRole("group", { name: "How sure are you of your answer?" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(EXCERPT)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Good/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Sure/ }));
+
+    expect(screen.getByText(EXCERPT)).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /How sure/ })).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Good/ }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(submitted).toEqual(["q-1:3:4"]);
+  });
+
+  it("takes the confidence from its own keys and leaves 1–4 to the grades", async () => {
+    const submitted: string[] = [];
+    const store = renderCard(submitted);
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+    await fireEvent.keyDown(window, { key: " " });
+
+    // A grade key out of habit is not taken as a confidence, nor as a grade.
+    await fireEvent.keyDown(window, { key: "1" });
+    expect(store.askingConfidence).toBe(true);
+    expect(store.current?.revealed).toBe(false);
+
+    await fireEvent.keyDown(window, { key: "t" });
     expect(store.current?.revealed).toBe(true);
+    expect(store.current?.confidence).toBe(5);
+
+    await fireEvent.keyDown(window, { key: "2" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(submitted).toEqual(["q-1:2:5"]);
+  });
+
+  it("ignores the confidence keys before Reveal is pressed", async () => {
+    const store = renderCard();
+    await fireEvent.input(screen.getByLabelText("Your answer"), {
+      target: { value: ANSWER },
+    });
+
+    await fireEvent.keyDown(window, { key: "r" });
+
+    expect(store.current?.revealed).toBe(false);
+    expect(store.askingConfidence).toBe(false);
+  });
+
+  it("lists the confidence keys among the shortcuts", async () => {
+    renderCard();
+
+    await fireEvent.keyDown(window, { key: "?" });
+
+    expect(screen.getByText("Q – T")).toBeTruthy();
+    expect(
+      screen.getByText("Say how sure you are, before the reveal"),
+    ).toBeTruthy();
   });
 
   it("reveals the material the question was generated from", async () => {
@@ -146,7 +227,7 @@ describe("study card", () => {
     await fireEvent.input(screen.getByLabelText("Your answer"), {
       target: { value: ANSWER },
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await reveal();
 
     expect(
       screen.getByRole("region", {
@@ -180,7 +261,7 @@ describe("study card", () => {
     await fireEvent.input(screen.getByLabelText("Your answer"), {
       target: { value: ANSWER },
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await reveal();
 
     expect(screen.getByText(EXCERPT)).toBeTruthy();
     expect(
@@ -201,7 +282,7 @@ describe("study card", () => {
     await fireEvent.input(screen.getByLabelText("Your answer"), {
       target: { value: ANSWER },
     });
-    await fireEvent.click(screen.getByRole("button", { name: "Reveal" }));
+    await reveal();
 
     expect(screen.getByText(/^Free recall: /)).toBeTruthy();
     expect(

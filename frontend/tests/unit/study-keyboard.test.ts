@@ -46,6 +46,28 @@ describe("study keyboard shortcuts", () => {
     });
   });
 
+  it("maps the row beneath the grade keys to how sure the learner is", () => {
+    expect(resolveShortcut(keydown("q"), { editing: false })).toEqual({
+      action: "confidence",
+      level: 1,
+    });
+    expect(
+      resolveShortcut(keydown("T", { shiftKey: true }), { editing: false }),
+    ).toEqual({ action: "confidence", level: 5 });
+    expect(resolveShortcut(keydown("q"), { editing: true })).toBeNull();
+  });
+
+  it("keeps Space and 1–4 meaning what they meant", () => {
+    expect(resolveShortcut(keydown(" "), { editing: false })).toEqual({
+      action: "reveal",
+    });
+    for (const rating of [1, 2, 3, 4] as const) {
+      expect(
+        resolveShortcut(keydown(String(rating)), { editing: false }),
+      ).toEqual({ action: "grade", rating });
+    }
+  });
+
   it("stays inert while the learner is writing an answer", () => {
     expect(resolveShortcut(keydown("1"), { editing: true })).toBeNull();
     expect(resolveShortcut(keydown(" "), { editing: true })).toBeNull();

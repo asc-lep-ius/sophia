@@ -1,5 +1,6 @@
 export type StudyShortcut =
   | { action: "reveal" }
+  | { action: "confidence"; level: 1 | 2 | 3 | 4 | 5 }
   | { action: "grade"; rating: 1 | 2 | 3 | 4 }
   | { action: "undo" }
   | { action: "pause" }
@@ -12,6 +13,14 @@ const GRADE_KEYS: Record<string, 1 | 2 | 3 | 4> = {
   "3": 3,
   "4": 4,
 };
+
+/**
+ * Guessing … Certain, on the row beneath the grade keys.
+ *
+ * Not the digits: Space and 1–4 keep their meaning, so a learner who presses
+ * Reveal and then a grade key out of habit is not taken to have been sure.
+ */
+export const CONFIDENCE_KEYS = ["q", "w", "e", "r", "t"] as const;
 
 /**
  * Map a keydown to a study action, or null when the key is not ours.
@@ -38,7 +47,18 @@ export function resolveShortcut(
     return { action: "grade", rating: grade };
   }
 
-  switch (event.key.toLowerCase()) {
+  const key = event.key.toLowerCase();
+  const confidence = CONFIDENCE_KEYS.indexOf(
+    key as (typeof CONFIDENCE_KEYS)[number],
+  );
+  if (confidence >= 0) {
+    return {
+      action: "confidence",
+      level: (confidence + 1) as 1 | 2 | 3 | 4 | 5,
+    };
+  }
+
+  switch (key) {
     case " ":
       return { action: "reveal" };
     case "u":

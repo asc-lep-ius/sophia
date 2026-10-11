@@ -93,6 +93,15 @@ test("a revealed German study card fits the 320px viewport", async ({
   await openHydratedAct(page, 402);
   await page.getByLabel("Deine Antwort").fill("Eine Antwort zum Aufdecken.");
   await page.getByRole("button", { name: "Aufdecken" }).click();
+  // The five German confidence levels are the longest labels on the card.
+  await expect(
+    page.getByRole("group", {
+      name: "Wie sicher bist du dir bei deiner Antwort?",
+    }),
+  ).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole("button", { name: /^Einigermaßen sicher/ }).click();
   await expect(
     page.getByRole("region", { name: "Woraus diese Frage erzeugt wurde" }),
   ).toBeVisible();

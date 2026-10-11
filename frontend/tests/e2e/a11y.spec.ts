@@ -73,8 +73,25 @@ test("a revealed study card has no axe violations", async ({ page }) => {
   await openHydratedAct(page, 401);
   await page.getByLabel("Your answer").fill("An answer long enough to reveal.");
   await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).click();
   await expect(
     page.getByRole("region", { name: "What this question was generated from" }),
+  ).toBeVisible();
+
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+    .analyze();
+
+  expect(results.violations).toEqual([]);
+});
+
+test("a study card asking how sure has no axe violations", async ({ page }) => {
+  await authenticateShell(page);
+  await openHydratedAct(page, 403);
+  await page.getByLabel("Your answer").fill("An answer long enough to reveal.");
+  await page.getByRole("button", { name: "Reveal" }).click();
+  await expect(
+    page.getByRole("group", { name: "How sure are you of your answer?" }),
   ).toBeVisible();
 
   const results = await new AxeBuilder({ page })

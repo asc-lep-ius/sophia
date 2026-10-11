@@ -107,6 +107,7 @@ test("results stay closed for the server's reflection floor", async ({
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).click();
   await page.getByRole("button", { name: "Good" }).click();
 
   const reflection = page.getByLabel(/Which part still feels unfinished/);
@@ -133,6 +134,7 @@ test("the reflection countdown is the server's number, not a client constant", a
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).click();
   await page.getByRole("button", { name: "Good" }).click();
 
   const countdown = page.getByText(/The results open in \d+ seconds/);
@@ -163,6 +165,7 @@ test("continue waits for the pre-test grade to reach the server", async ({
     timeout: 10_000,
   });
   await page.getByRole("button", { name: "Reveal" }).click();
+  await page.getByRole("button", { name: /^Somewhat sure/ }).click();
   await page.getByRole("button", { name: "Good" }).click();
 
   const start = page.getByRole("button", { name: "Start studying" });

@@ -135,7 +135,8 @@ describe("study session store drafts", () => {
     const drafts = sessionDrafts(7, "practice", memoryStorage());
     const store = storeWith(drafts);
     store.setAnswer(ANSWER);
-    store.reveal();
+    store.askConfidence();
+    store.reveal(3);
 
     store.grade(3);
     await settle();
@@ -149,7 +150,8 @@ describe("study session store drafts", () => {
       throw new TypeError("network down");
     });
     store.setAnswer(ANSWER);
-    store.reveal();
+    store.askConfidence();
+    store.reveal(3);
 
     store.grade(3);
     await settle();

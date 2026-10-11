@@ -16,6 +16,7 @@ export type StudyState =
   | "idle"
   | "loading"
   | "prompt"
+  | "confidence"
   | "revealed"
   | "grading"
   | "committed"
@@ -26,6 +27,8 @@ export type StudyCard = {
   question: StudyQuestion;
   answer: string;
   revealed: boolean;
+  /** How sure the learner said they were, asked before the reveal; null until then. */
+  confidence: Confidence | null;
   /** How many times the card has come back after an Again: 0 on first sight. */
   retry: number;
 };
@@ -47,7 +50,7 @@ export type GradeSubmission = {
   questionId: string;
   answerText: string;
   selfRating: number;
-  confidence: number | null;
+  confidence: Confidence | null;
   phase: StudyAttemptPhase;
   queuePosition: number;
   retry: number;
@@ -79,6 +82,17 @@ export type StudySessionStoreOptions = {
 export const GRADES = [1, 2, 3, 4] as const;
 export type Grade = (typeof GRADES)[number];
 const AGAIN: Grade = 1;
+
+/**
+ * Guessing … Certain, the 1–5 scale an attempt's confidence is stored on.
+ *
+ * Asked per card, after the answer is written and before it is revealed: a
+ * judgement made with the answer in view is inflated (Koriat & Bjork 2005),
+ * and one made before the correction is what lets a confident error be told
+ * apart from a guess (Butterfield & Metcalfe 2001).
+ */
+export const CONFIDENCES = [1, 2, 3, 4, 5] as const;
+export type Confidence = (typeof CONFIDENCES)[number];
 
 /**
  * How many times one practice card may come back after an Again in a session.
@@ -258,8 +272,23 @@ export class StudySessionStore {
    * way, and a client that lies here only earns a 412.
    */
   get canReveal(): boolean {
+    return this.#state === "prompt" && this.#floorsMet();
+  }
+
+  /** Whether the learner has asked to reveal and is being asked how sure they are. */
+  get askingConfidence(): boolean {
+    const state =
+      this.#state === "paused" ? this.#stateBeforePause : this.#state;
+    return state === "confidence";
+  }
+
+  /** Whether a confidence chosen now would reveal the card. */
+  get canChooseConfidence(): boolean {
+    return this.#state === "confidence" && this.#floorsMet();
+  }
+
+  #floorsMet(): boolean {
     return (
-      this.#state === "prompt" &&
       this.elaborationChars >= this.minElaborationChars &&
       this.dwellMs >= this.minPromptDwellMs
     );
@@ -321,14 +350,29 @@ export class StudySessionStore {
     });
   }
 
-  reveal(): boolean {
+  /**
+   * The learner pressed Reveal: ask how sure they are before showing anything.
+   *
+   * The reveal itself waits for `reveal(confidence)`, so no card is ever shown
+   * without a confidence committed first.
+   */
+  askConfidence(): boolean {
     if (!this.canReveal) {
+      return false;
+    }
+    this.#state = "confidence";
+    return true;
+  }
+
+  reveal(confidence: Confidence): boolean {
+    if (!this.canChooseConfidence) {
       return false;
     }
     const card = this.current;
     if (!card) {
       return false;
     }
+    card.confidence = confidence;
     card.revealed = true;
     this.#state = "revealed";
     // canReveal already required dwellMs to clear the policy's floor, so this
@@ -347,7 +391,7 @@ export class StudySessionStore {
     return true;
   }
 
-  grade(rating: Grade, confidence: number | null = null): boolean {
+  grade(rating: Grade): boolean {
     const card = this.current;
     if (!card || !this.canGrade) {
       return false;
@@ -358,7 +402,7 @@ export class StudySessionStore {
       questionId: card.question.id,
       answerText: card.answer,
       selfRating: rating,
-      confidence,
+      confidence: card.confidence,
       phase: this.#phase,
       queuePosition: position,
       retry: card.retry,
@@ -501,7 +545,7 @@ export class StudySessionStore {
     const draft = this.#options.drafts?.read(
       draftKey(card.question.id, card.retry),
     );
-    return { ...card, answer: draft ?? "", revealed: false };
+    return { ...card, answer: draft ?? "", revealed: false, confidence: null };
   }
 
   /**

@@ -5,7 +5,9 @@ import { sessionDrafts } from "../../src/lib/study/drafts";
 import {
   AGAIN_REASK_LIMIT,
   StudySessionStore,
+  type Confidence,
   type Grade,
+  type GradeSubmission,
 } from "../../src/lib/study/session.svelte";
 
 const pacing: StudyPacing = {
@@ -96,6 +98,12 @@ function elaborate(store: StudySessionStore): void {
   store.setAnswer("An answer long enough to satisfy the elaboration floor.");
 }
 
+/** Press Reveal and say how sure: the two steps every reveal now takes. */
+function reveal(store: StudySessionStore, confidence: Confidence = 3): boolean {
+  store.askConfidence();
+  return store.reveal(confidence);
+}
+
 describe("study session store", () => {
   it("starts in prompt and refuses to reveal before the elaboration floor", () => {
     const { store, advanceMs } = harness();
@@ -104,7 +112,8 @@ describe("study session store", () => {
     expect(store.state).toBe("prompt");
     store.setAnswer("short");
     expect(store.canReveal).toBe(false);
-    expect(store.reveal()).toBe(false);
+    expect(store.askConfidence()).toBe(false);
+    expect(store.reveal(3)).toBe(false);
     expect(store.state).toBe("prompt");
   });
 
@@ -146,7 +155,7 @@ describe("study session store", () => {
     const { store, submitted, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
 
     store.grade(3);
     await settle();
@@ -160,7 +169,7 @@ describe("study session store", () => {
     const { store, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
 
     store.grade(1);
 
@@ -171,7 +180,7 @@ describe("study session store", () => {
     const { store, advanceMs, failEvery } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     failEvery(new TypeError("network down"));
 
     store.grade(4);
@@ -187,7 +196,7 @@ describe("study session store", () => {
     const { store, advanceMs, failEvery } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     failEvery(new TypeError("network down"));
 
     store.grade(1);
@@ -211,7 +220,7 @@ describe("study session store", () => {
     now = 6000;
     store.tick();
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(4);
 
     expect(store.canUndo).toBe(true);
@@ -231,7 +240,7 @@ describe("study session store", () => {
     const { store, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
     await settle();
 
@@ -247,12 +256,12 @@ describe("study session store", () => {
     // where a later rollback could overwrite an earlier one's restoration.
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
 
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
 
     await settle();
@@ -273,7 +282,7 @@ describe("study session store", () => {
     failEvery(new TypeError("network down"));
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
     await settle();
     expect(store.failedCount).toBe(1);
@@ -293,7 +302,7 @@ describe("study session store", () => {
     failEvery(new TypeError("network down"));
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
     await settle();
 
@@ -304,14 +313,14 @@ describe("study session store", () => {
 
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
     await settle();
 
     failEvery(new TypeError("network down"));
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     store.grade(3);
     await settle();
 
@@ -323,7 +332,7 @@ describe("study session store", () => {
     const { store, advanceMs, failEvery } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
     failEvery(new TypeError("network down"));
     store.grade(4);
     await settle();
@@ -336,7 +345,7 @@ describe("study session store", () => {
     const { store, advanceMs } = harness();
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
 
     store.pause();
     expect(store.state).toBe("paused");
@@ -382,7 +391,7 @@ describe("study session store", () => {
     store.tick();
     store.recordPromptShown();
     elaborate(store);
-    store.reveal();
+    reveal(store);
 
     expect(record.mock.calls.map(([draft]) => draft.eventType)).toEqual([
       "prompt_shown",
@@ -396,7 +405,7 @@ describe("study session store", () => {
     const { store, advanceMs } = harness(1);
     advanceMs(6000);
     elaborate(store);
-    store.reveal();
+    reveal(store);
 
     store.grade(2);
     await settle();
@@ -404,6 +413,142 @@ describe("study session store", () => {
     expect(store.remaining).toBe(0);
     expect(store.current).toBeNull();
     expect(store.state).toBe("idle");
+  });
+});
+
+describe("confidence before the reveal", () => {
+  function recordingStore(record = vi.fn()) {
+    const sent: GradeSubmission[] = [];
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0"), question("q-1")],
+      pacing,
+      learningEvents: { record },
+      submit: async (submission) => {
+        sent.push(submission);
+      },
+      retry: { maxAttempts: 1, holdMs: 0, wait: async () => undefined },
+      now: () => now,
+    });
+    const advanceMs = (ms: number) => {
+      now += ms;
+      store.tick();
+    };
+    return {
+      store,
+      sent,
+      record,
+      advanceMs,
+      ready: () => {
+        advanceMs(6000);
+        elaborate(store);
+      },
+    };
+  }
+
+  it("asks how sure the learner is when they press Reveal, and shows nothing yet", () => {
+    const { store, record, ready } = recordingStore();
+    ready();
+
+    expect(store.askConfidence()).toBe(true);
+
+    expect(store.state).toBe("confidence");
+    expect(store.askingConfidence).toBe(true);
+    expect(store.current?.revealed).toBe(false);
+    expect(store.canGrade).toBe(false);
+    expect(record.mock.calls.map(([draft]) => draft.eventType)).not.toContain(
+      "answer_revealed",
+    );
+  });
+
+  it("never reveals a card it has not asked about", () => {
+    const { store, ready } = recordingStore();
+    ready();
+
+    expect(store.reveal(4)).toBe(false);
+    expect(store.current?.revealed).toBe(false);
+  });
+
+  it("reveals once a confidence is chosen and sends it as the attempt's", async () => {
+    const { store, sent, record, ready } = recordingStore();
+    ready();
+    store.askConfidence();
+
+    expect(store.reveal(4)).toBe(true);
+    expect(store.current?.confidence).toBe(4);
+    expect(record.mock.calls.at(-1)?.[0].eventType).toBe("answer_revealed");
+
+    store.grade(3);
+    await settle();
+
+    expect(sent.map((submission) => submission.confidence)).toEqual([4]);
+  });
+
+  it("asks again on every card, a re-ask included", async () => {
+    const { store, sent, ready } = recordingStore();
+    for (const confidence of [5, 2] as const) {
+      ready();
+      reveal(store, confidence);
+      store.grade(1);
+    }
+    ready();
+
+    expect(store.current?.question.id).toBe("q-0");
+    expect(store.current?.retry).toBe(1);
+    expect(store.current?.confidence).toBeNull();
+    expect(store.reveal(3)).toBe(false);
+
+    reveal(store, 3);
+    store.grade(3);
+    await settle();
+
+    expect(sent.map((submission) => submission.confidence)).toEqual([5, 2, 3]);
+  });
+
+  it("keeps the confidence through an undo, since the answer has been seen", async () => {
+    const sent: GradeSubmission[] = [];
+    let now = 0;
+    const store = new StudySessionStore({
+      questions: [question("q-0"), question("q-1")],
+      pacing,
+      submit: async (submission) => {
+        sent.push(submission);
+      },
+      retry: { maxAttempts: 1, holdMs: 5000, wait: async () => undefined },
+      now: () => now,
+    });
+    now = 6000;
+    store.tick();
+    elaborate(store);
+    reveal(store, 2);
+    store.grade(4);
+
+    expect(store.undo()).toBe(true);
+    expect(store.state).toBe("revealed");
+    store.grade(2);
+    store.flushGrades();
+    await settle();
+
+    expect(sent.map((submission) => submission.confidence)).toEqual([2]);
+  });
+
+  it("is still asking after a pause, once the dwell clock has run again", () => {
+    // The reveal's prompt_shown carries the dwell the server checks, and a
+    // resume restarts it: revealing straight after would earn a 412.
+    const { store, ready, advanceMs } = recordingStore();
+    ready();
+    store.askConfidence();
+
+    store.pause();
+    expect(store.askingConfidence).toBe(true);
+    expect(store.reveal(3)).toBe(false);
+
+    store.resume();
+    expect(store.state).toBe("confidence");
+    expect(store.canChooseConfidence).toBe(false);
+
+    advanceMs(6000);
+    expect(store.reveal(3)).toBe(true);
   });
 });
 
@@ -415,7 +560,7 @@ function work(
   const id = store.current?.question.id;
   advanceMs(6000);
   elaborate(store);
-  store.reveal();
+  reveal(store);
   store.grade(rating);
   return id;
 }
