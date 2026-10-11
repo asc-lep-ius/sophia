@@ -76,7 +76,7 @@
 <PageHeader heading={m.dashboard_heading()} summary={m.dashboard_summary()} />
 
 {#if data.learningPathId === null}
-  <NoLearningPathNotice />
+  <div class="notice-wrap"><NoLearningPathNotice /></div>
 {:else}
   <!--
     First, above everything: a dashboard that ranks nothing hands the ranking
@@ -129,8 +129,8 @@
     <ul class="topic-list">
       {#each dueReviews.slice(0, DUE_TOPIC_LIMIT) as review (`${review.learning_path_id}:${review.topic}`)}
         <li>
-          <span class="session-topic">{review.topic}</span>
-          <span class="session-state">
+          <span class="row-topic">{review.topic}</span>
+          <span class="row-meta">
             {courseLabel(data.courses, review.learning_path_id)}
           </span>
         </li>
@@ -208,8 +208,8 @@
       <ul class="session-list">
         {#each data.sessions.data.slice(0, DUE_TOPIC_LIMIT) as session (session.id)}
           <li>
-            <span class="session-topic">{session.topic}</span>
-            <span class="session-state">
+            <span class="row-topic">{session.topic}</span>
+            <span class="row-meta">
               {session.completed_at
                 ? m.study_session_completed()
                 : m.study_session_in_progress()}
@@ -222,6 +222,10 @@
 </div>
 
 <style>
+  .notice-wrap {
+    margin-bottom: 1rem;
+  }
+
   .next-action {
     display: grid;
     min-width: 0;
@@ -241,7 +245,6 @@
   }
 
   .next-action p,
-  .notice,
   .count,
   .empty-title,
   .empty-body {
@@ -249,9 +252,8 @@
     overflow-wrap: anywhere;
   }
 
-  .notice,
   .empty-body,
-  .session-state {
+  .row-meta {
     color: var(--muted);
     font-size: 0.9rem;
   }
@@ -300,7 +302,7 @@
     overflow-wrap: anywhere;
   }
 
-  .session-topic {
+  .row-topic {
     min-width: 0;
     overflow-wrap: anywhere;
   }

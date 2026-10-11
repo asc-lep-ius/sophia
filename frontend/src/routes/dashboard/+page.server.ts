@@ -23,53 +23,46 @@ export const load: PageServerLoad = async (event) => {
     redirect(303, "/app/login");
   }
 
-  // Review is not scoped by the course selection (#131, #161): a review due in
-  // a course that is not selected must still be seen, and it must be seen
-  // before any course has been picked, so these two panels never send a
-  // learning path and load whether or not one is selected.
-  const [due, upcoming, courses] = await Promise.all([
-    loadDueReviews(event),
-    loadUpcomingReviews(event),
-    loadCourseLabels(event),
-  ]);
-  // Bucketed here rather than in the component: the figure has to render the
-  // same on the server and after hydration, and two clocks a few hundred
-  // milliseconds apart can straddle midnight.
-  const pressure = reviewPressure(upcoming.data, {
-    days: PRESSURE_DAYS,
-    now: new Date(),
-  });
-
   // Straight from the session tenant, never from a query parameter: a
   // dashboard filter that could name a learning path would be a way to read
   // another one. The API refuses out-of-scope ids as well, and the surface
   // never gives anyone the chance to try.
   const learningPathId = selectedLearningPathId(event.locals.tenant);
-  if (learningPathId === null) {
-    return {
-      calibration: unavailablePanel<CalibrationRating[]>([]),
-      courses,
-      due,
-      learningPathId: null,
-      pressure,
-      sessions: unavailablePanel<StudySessionItem[]>([]),
-      upcoming,
-    };
-  }
 
-  // One failed panel must not take the page with it: each resolves to its own
+  // Review is not scoped by the course selection (#131, #161): a review due in
+  // a course that is not selected must still be seen, and before any course
+  // has been picked, so those two panels never send a learning path. One
+  // failed panel must not take the page with it: each resolves to its own
   // status.
-  const [calibration, sessions] = await Promise.all([
-    loadCalibration(event, learningPathId),
-    loadSessions(event, learningPathId),
+  const [due, upcoming, calibration, sessions] = await Promise.all([
+    loadDueReviews(event),
+    loadUpcomingReviews(event),
+    learningPathId === null
+      ? unavailablePanel<CalibrationRating[]>([])
+      : loadCalibration(event, learningPathId),
+    learningPathId === null
+      ? unavailablePanel<StudySessionItem[]>([])
+      : loadSessions(event, learningPathId),
   ]);
+
+  // Labels come from TUWEL, which the dashboard otherwise never contacts, so
+  // they are fetched only when a due row will show one.
+  const courses = due.data.some((review) => review.is_due)
+    ? await loadCourseLabels(event)
+    : {};
 
   return {
     calibration,
     courses,
     due,
     learningPathId,
-    pressure,
+    // Bucketed here rather than in the component: the figure has to render the
+    // same on the server and after hydration, and two clocks a few hundred
+    // milliseconds apart can straddle midnight.
+    pressure: reviewPressure(upcoming.data, {
+      days: PRESSURE_DAYS,
+      now: new Date(),
+    }),
     sessions,
     upcoming,
   };

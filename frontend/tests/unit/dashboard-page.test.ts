@@ -26,13 +26,30 @@ describe("dashboard server load", () => {
     await load(event as never);
 
     const requested = fetch.mock.calls.map((call) => String(call[0]));
-    expect(requested).toHaveLength(5);
+    expect(requested).toHaveLength(4);
     for (const url of requested) {
       expect(url).not.toContain("learning_path_id=99");
     }
     for (const url of requested.filter(isCourseScoped)) {
       expect(url).toContain(`learning_path_id=${TENANT_LEARNING_PATH}`);
     }
+  });
+
+  it("fetches course labels only when a review is due", async () => {
+    const labelRequests = async (reviews: ReviewItem[]) => {
+      const fetch = vi.fn(async (url: string) =>
+        url.startsWith("/api/review/")
+          ? jsonResponse({ learning_path_id: null, reviews })
+          : bodyFor(url),
+      );
+      await load(createEvent({ fetch }) as never);
+      return fetch.mock.calls
+        .map((call) => String(call[0]))
+        .filter((url) => url.startsWith("/api/learning-paths"));
+    };
+
+    expect(await labelRequests([])).toHaveLength(0);
+    expect(await labelRequests([dueReview("Graphs")])).toHaveLength(1);
   });
 
   it("asks for every course's reviews, not the selected one's (#161)", async () => {
