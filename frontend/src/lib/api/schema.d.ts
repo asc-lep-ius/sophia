@@ -89,6 +89,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/calibration/card-confidence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Card Confidence
+         * @description The signed-in learner's own answers: confidence is asked per card, per person.
+         */
+        get: operations["listCalibrationCardConfidence"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/calibration/ratings": {
         parameters: {
             query?: never;
@@ -1412,6 +1432,35 @@ export interface components {
         /** CalibrationRatingSavedResponse */
         CalibrationRatingSavedResponse: {
             rating: components["schemas"]["CalibrationRatingResponse"];
+        };
+        /**
+         * CardConfidenceResponse
+         * @description How often an answer the learner was sure of met Again, per topic.
+         *
+         *     ``unrated`` counts the answers given before cards asked for a confidence;
+         *     they are left out of every topic rather than read as unsure.
+         */
+        CardConfidenceResponse: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Topics */
+            topics: components["schemas"]["CardConfidenceTopicResponse"][];
+            /** Unrated */
+            unrated: number;
+        };
+        /**
+         * CardConfidenceTopicResponse
+         * @description One topic's answers that carry a confidence, asked before each reveal.
+         */
+        CardConfidenceTopicResponse: {
+            /** Rated */
+            rated: number;
+            /** Sure */
+            sure: number;
+            /** Sure Again */
+            sure_again: number;
+            /** Topic */
+            topic: string;
         };
         /**
          * ClozeQuestion
@@ -3479,6 +3528,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CalibrationRatingListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listCalibrationCardConfidence: {
+        parameters: {
+            query: {
+                learning_path_id: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["CardConfidenceResponse"];
                 };
             };
             /** @description Validation Error */

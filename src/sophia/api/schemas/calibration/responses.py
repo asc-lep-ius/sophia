@@ -31,3 +31,24 @@ class ActualScoreUpdateResponse(ApiModel):
     topic: str
     actual: float
     updated: bool
+
+
+class CardConfidenceTopicResponse(ApiModel):
+    """One topic's answers that carry a confidence, asked before each reveal."""
+
+    topic: str
+    rated: int
+    sure: int
+    sure_again: int
+
+
+class CardConfidenceResponse(ApiModel):
+    """How often an answer the learner was sure of met Again, per topic.
+
+    ``unrated`` counts the answers given before cards asked for a confidence;
+    they are left out of every topic rather than read as unsure.
+    """
+
+    learning_path_id: int
+    topics: list[CardConfidenceTopicResponse]
+    unrated: int

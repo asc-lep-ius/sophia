@@ -9,6 +9,8 @@ from sophia.api.schemas.calibration.responses import (
     CalibrationRatingListResponse,
     CalibrationRatingResponse,
     CalibrationRatingSavedResponse,
+    CardConfidenceResponse,
+    CardConfidenceTopicResponse,
 )
 
 __all__ = [
@@ -18,4 +20,6 @@ __all__ = [
     "CalibrationRatingRequest",
     "CalibrationRatingResponse",
     "CalibrationRatingSavedResponse",
+    "CardConfidenceResponse",
+    "CardConfidenceTopicResponse",
 ]

@@ -89,6 +89,20 @@ const CALIBRATION_RATINGS = [
   { topic: "Kombinatorik", predicted: 0.7, actual: null, legacy_scored: false },
 ];
 
+/**
+ * Per-card calibration: fixed, not counted from the attempts stored here, so
+ * the page's overflow and axe checks measure the same rows on every run —
+ * one topic with sure answers, one without, and answers from before cards
+ * asked for a confidence. tests/api/test_card_confidence.py pins the counting.
+ */
+const CARD_CONFIDENCE = {
+  topics: [
+    { topic: "Graphs", rated: 4, sure: 3, sure_again: 2 },
+    { topic: "Sorting", rated: 2, sure: 0, sure_again: 0 },
+  ],
+  unrated: 3,
+};
+
 const QUICKSTART_TOPICS = [
   "Graphs",
   "Sorting",
@@ -441,6 +455,7 @@ const routes = [
   ["GET", /^\/api\/review\/upcoming$/, upcomingReviews],
   ["POST", /^\/api\/review\/complete$/, completeReview],
   ["GET", /^\/api\/calibration\/ratings$/, calibrationRatings],
+  ["GET", /^\/api\/calibration\/card-confidence$/, cardConfidence],
   ["GET", /^\/api\/quickstart\/overview$/, quickstartOverview],
   ["POST", /^\/api\/quickstart\/manual-topics$/, saveManualTopics],
   ["POST", /^\/api\/quickstart\/confidence$/, saveConfidence],
@@ -839,6 +854,10 @@ function calibrationRatings() {
       difficulty_level: "transfer",
     })),
   };
+}
+
+function cardConfidence() {
+  return { learning_path_id: LEARNING_PATH_ID, ...CARD_CONFIDENCE };
 }
 
 function quickstartTopic(topic) {

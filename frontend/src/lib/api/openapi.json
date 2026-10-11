@@ -280,6 +280,62 @@
         "title": "CalibrationRatingSavedResponse",
         "type": "object"
       },
+      "CardConfidenceResponse": {
+        "description": "How often an answer the learner was sure of met Again, per topic.\n\n``unrated`` counts the answers given before cards asked for a confidence;\nthey are left out of every topic rather than read as unsure.",
+        "properties": {
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "topics": {
+            "items": {
+              "$ref": "#/components/schemas/CardConfidenceTopicResponse"
+            },
+            "title": "Topics",
+            "type": "array"
+          },
+          "unrated": {
+            "title": "Unrated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "topics",
+          "unrated"
+        ],
+        "title": "CardConfidenceResponse",
+        "type": "object"
+      },
+      "CardConfidenceTopicResponse": {
+        "description": "One topic's answers that carry a confidence, asked before each reveal.",
+        "properties": {
+          "rated": {
+            "title": "Rated",
+            "type": "integer"
+          },
+          "sure": {
+            "title": "Sure",
+            "type": "integer"
+          },
+          "sure_again": {
+            "title": "Sure Again",
+            "type": "integer"
+          },
+          "topic": {
+            "title": "Topic",
+            "type": "string"
+          }
+        },
+        "required": [
+          "topic",
+          "rated",
+          "sure",
+          "sure_again"
+        ],
+        "title": "CardConfidenceTopicResponse",
+        "type": "object"
+      },
       "ClozeQuestion": {
         "description": "Fill-in-the-blank question, rendered from ordered segments.",
         "properties": {
@@ -5665,6 +5721,66 @@
           }
         },
         "summary": "List Calibration Blind Spots",
+        "tags": [
+          "calibration"
+        ]
+      }
+    },
+    "/api/calibration/card-confidence": {
+      "get": {
+        "description": "The signed-in learner's own answers: confidence is asked per card, per person.",
+        "operationId": "listCalibrationCardConfidence",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "learning_path_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Learning Path Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardConfidenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Card Confidence",
         "tags": [
           "calibration"
         ]

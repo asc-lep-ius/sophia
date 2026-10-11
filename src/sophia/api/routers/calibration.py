@@ -18,6 +18,8 @@ from sophia.api.schemas.calibration import (
     CalibrationRatingRequest,
     CalibrationRatingResponse,
     CalibrationRatingSavedResponse,
+    CardConfidenceResponse,
+    CardConfidenceTopicResponse,
 )
 from sophia.api.schemas.errors import ErrorEnvelope
 from sophia.api.transactions import TransactionalRoute
@@ -28,6 +30,7 @@ from sophia.services.athena_confidence import (
     rate_confidence,
     update_actual_score,
 )
+from sophia.services.card_confidence import get_card_confidence
 
 if TYPE_CHECKING:
     from sophia.domain.models import ConfidenceRating
@@ -95,6 +98,35 @@ async def list_calibration_blind_spots(
     return CalibrationRatingListResponse(
         learning_path_id=learning_path_id,
         ratings=[_calibration_rating_response(rating) for rating in ratings],
+    )
+
+
+@router.get(
+    "/calibration/card-confidence",
+    response_model=CardConfidenceResponse,
+    operation_id="listCalibrationCardConfidence",
+)
+async def list_card_confidence(
+    learning_path_id: LearningPathIdQuery,
+    request: Request,
+) -> CardConfidenceResponse:
+    """The signed-in learner's own answers: confidence is asked per card, per person."""
+    session = await require_learning_path_scope(request, learning_path_id)
+    summary = await get_card_confidence(
+        await request_session(request), learning_path_id, session.user.id
+    )
+    return CardConfidenceResponse(
+        learning_path_id=learning_path_id,
+        topics=[
+            CardConfidenceTopicResponse(
+                topic=topic.topic,
+                rated=topic.rated,
+                sure=topic.sure,
+                sure_again=topic.sure_again,
+            )
+            for topic in summary.topics
+        ],
+        unrated=summary.unrated,
     )
 
 

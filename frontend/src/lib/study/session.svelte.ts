@@ -96,7 +96,11 @@ const HARD: Grade = 2;
 export const CONFIDENCES = [1, 2, 3, 4, 5] as const;
 export type Confidence = (typeof CONFIDENCES)[number];
 
-/** Sure or Certain: a card answered this sure and graded Again or Hard is flagged. */
+/**
+ * Sure or Certain: a card answered this sure and graded Again or Hard is
+ * flagged. Mirrors `SURE_CONFIDENCE` in `services/card_confidence.py`, which
+ * counts the same answers on /app/calibration.
+ */
 export const SURE_CONFIDENCE: Confidence = 4;
 
 /**

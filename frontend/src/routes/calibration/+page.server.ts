@@ -2,6 +2,11 @@ import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
 import { selectedLearningPathId } from "$lib/learningPath";
 import {
+  NO_CARD_CONFIDENCE,
+  readCardConfidence,
+  type CardConfidence,
+} from "$lib/calibration/cardConfidence";
+import {
   panelFromResponse,
   readCalibrationList,
   unavailablePanel,
@@ -20,10 +25,15 @@ export const load: PageServerLoad = async (event) => {
     return {
       learningPathId,
       ratings: unavailablePanel<CalibrationRating[]>([]),
+      cardConfidence: unavailablePanel(NO_CARD_CONFIDENCE),
     };
   }
 
-  return { learningPathId, ratings: await loadRatings(event, learningPathId) };
+  const [ratings, cardConfidence] = await Promise.all([
+    loadRatings(event, learningPathId),
+    loadCardConfidence(event, learningPathId),
+  ]);
+  return { learningPathId, ratings, cardConfidence };
 };
 
 /**
@@ -45,5 +55,24 @@ async function loadRatings(
     return await panelFromResponse(response, readCalibrationList, []);
   } catch {
     return unavailablePanel([]);
+  }
+}
+
+/** Per card rather than per topic: how often a sure answer met Again. */
+async function loadCardConfidence(
+  event: Parameters<typeof apiFetch>[0],
+  learningPathId: number,
+): Promise<Panel<CardConfidence>> {
+  try {
+    const response = await apiFetch(event, "/api/calibration/card-confidence", {
+      query: { learning_path_id: learningPathId },
+    });
+    return await panelFromResponse(
+      response,
+      readCardConfidence,
+      NO_CARD_CONFIDENCE,
+    );
+  } catch {
+    return unavailablePanel(NO_CARD_CONFIDENCE);
   }
 }

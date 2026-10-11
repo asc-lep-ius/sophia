@@ -67,6 +67,7 @@ EXPECTED_SURFACE_PATHS: dict[str, frozenset[str]] = {
             "/api/calibration/ratings",
             "/api/calibration/blind-spots",
             "/api/calibration/actual-score",
+            "/api/calibration/card-confidence",
         }
     ),
     "registration": frozenset(

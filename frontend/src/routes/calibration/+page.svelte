@@ -28,6 +28,15 @@
     }
     return notes;
   });
+
+  const cardConfidence = $derived(data.cardConfidence.data);
+  // Said whether or not anything is left out: a count of sure answers that
+  // did not say what it counts would read as covering every answer ever given.
+  const cardConfidenceScope = $derived(
+    cardConfidence.unrated > 0
+      ? m.calibration_sure_scope_unrated({ count: cardConfidence.unrated })
+      : m.calibration_sure_scope(),
+  );
 </script>
 
 <PageHeader
@@ -111,11 +120,39 @@
       {/each}
     </ul>
   </PanelSection>
+
+  <PanelSection
+    id="calibration-sure"
+    heading={m.calibration_sure_heading()}
+    status={data.cardConfidence.status}
+    isEmpty={cardConfidence.topics.length === 0}
+    note={cardConfidenceScope}
+  >
+    {#snippet empty()}
+      <p class="empty-body">{m.calibration_sure_empty()}</p>
+    {/snippet}
+
+    <p class="interpretation">{m.calibration_sure_interpretation()}</p>
+    <ul class="blind-spots" data-testid="sure-answers">
+      {#each cardConfidence.topics as row (row.topic)}
+        <li>
+          <span class="topic">{row.topic}</span>
+          <span class="gap">
+            {row.sure > 0
+              ? m.calibration_sure_row({
+                  again: row.sure_again,
+                  sure: row.sure,
+                })
+              : m.calibration_sure_row_none({ rated: row.rated })}
+          </span>
+        </li>
+      {/each}
+    </ul>
+  </PanelSection>
 {/if}
 
 <style>
   .interpretation,
-  .notice,
   .empty-body,
   .empty-title {
     margin: 0;
@@ -123,7 +160,6 @@
   }
 
   .interpretation,
-  .notice,
   .empty-body {
     color: var(--muted);
     font-size: 0.9rem;

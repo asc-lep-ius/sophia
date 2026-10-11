@@ -7,6 +7,7 @@ import {
   MIN_MEASURED_FOR_READING,
   calibrationView,
 } from "../../src/lib/calibration/insights";
+import type { CardConfidence } from "../../src/lib/calibration/cardConfidence";
 import type { CalibrationRating, Panel } from "../../src/lib/dashboard/panels";
 import {
   createLoadEvent,
@@ -82,14 +83,31 @@ describe("calibration view", () => {
 });
 
 describe("calibration server load", () => {
-  it("asks only for the ratings, so the page cannot contradict itself", async () => {
+  it("asks for the ratings once and never for blind spots, so the page cannot contradict itself", async () => {
     const fetch = vi.fn(fetchFixture());
 
     await load(createLoadEvent({ fetch, url: CALIBRATION_URL }) as never);
 
     expect(fetch.mock.calls.map((call) => String(call[0]))).toEqual([
       "/api/calibration/ratings?learning_path_id=12",
+      "/api/calibration/card-confidence?learning_path_id=12",
     ]);
+  });
+
+  it("reads the per-card counts the server returns", async () => {
+    const fetch = vi.fn(fetchFixture());
+
+    const data = (await load(
+      createLoadEvent({ fetch, url: CALIBRATION_URL }) as never,
+    )) as CalibrationData;
+
+    expect(data.cardConfidence).toEqual({
+      status: "ready",
+      data: {
+        topics: [{ topic: "Graphs", rated: 4, sure: 3, sure_again: 2 }],
+        unrated: 2,
+      },
+    });
   });
 
   it("scopes the request on the session tenant, not on the query string", async () => {
@@ -115,6 +133,7 @@ describe("calibration server load", () => {
     )) as CalibrationData;
 
     expect(data.ratings.status).toBe("error");
+    expect(data.cardConfidence.status).toBe("error");
   });
 
   it("sends an unauthenticated visitor to sign in", async () => {
@@ -127,6 +146,74 @@ describe("calibration server load", () => {
         }) as never,
       ),
     ).rejects.toMatchObject({ location: "/app/login", status: 303 });
+  });
+});
+
+describe("calibration page, per card", () => {
+  it("shows per topic how often a sure answer met Again", () => {
+    render(CalibrationPage, {
+      data: pageData({
+        cardConfidence: {
+          data: {
+            topics: [
+              { topic: "Graphs", rated: 4, sure: 3, sure_again: 2 },
+              { topic: "Trees", rated: 2, sure: 0, sure_again: 0 },
+            ],
+            unrated: 0,
+          },
+          status: "ready",
+        },
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "When you were sure" });
+    const rows = within(panel).getAllByRole("listitem");
+    expect(
+      rows.map((row) => row.textContent?.replace(/\s+/g, " ").trim()),
+    ).toEqual([
+      "Graphs 2 of 3 sure answers graded Again",
+      "Trees Not sure of any of 2 rated answers",
+    ]);
+    expect(
+      within(panel).getByText(
+        "Counts only answers rated for confidence before their reveal.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says how many earlier answers carry no confidence and are left out", () => {
+    render(CalibrationPage, {
+      data: pageData({
+        cardConfidence: {
+          data: {
+            topics: [{ topic: "Graphs", rated: 1, sure: 1, sure_again: 1 }],
+            unrated: 7,
+          },
+          status: "ready",
+        },
+      }),
+    });
+
+    expect(
+      screen.getByText(/7 earlier answers carry no rating and are left out/),
+    ).toBeTruthy();
+  });
+
+  it("says what will appear when no answer carries a confidence yet", () => {
+    render(CalibrationPage, {
+      data: pageData({
+        cardConfidence: {
+          data: { topics: [], unrated: 5 },
+          status: "ready",
+        },
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "When you were sure" });
+    expect(
+      within(panel).getByText(/No answer carries a confidence yet/),
+    ).toBeTruthy();
+    expect(within(panel).getByText(/5 earlier answers/)).toBeTruthy();
   });
 });
 
@@ -221,6 +308,7 @@ describe("calibration page", () => {
 type CalibrationData = {
   learningPathId: number | null;
   ratings: Panel<CalibrationRating[]>;
+  cardConfidence: Panel<CardConfidence>;
 };
 
 function pageData(overrides: Partial<CalibrationData>) {
@@ -228,6 +316,10 @@ function pageData(overrides: Partial<CalibrationData>) {
     ...layoutData,
     learningPathId: 12,
     ratings: { data: [], status: "ready" } as Panel<CalibrationRating[]>,
+    cardConfidence: {
+      data: { topics: [], unrated: 0 },
+      status: "ready",
+    } as Panel<CardConfidence>,
     ...overrides,
   };
 }
@@ -252,11 +344,19 @@ function rating(
 }
 
 function fetchFixture() {
-  return async (url: string | URL): Promise<Response> =>
-    String(url).includes("/api/calibration/ratings")
+  return async (url: string | URL): Promise<Response> => {
+    if (String(url).includes("/api/calibration/card-confidence")) {
+      return jsonResponse({
+        learning_path_id: 12,
+        topics: [{ topic: "Graphs", rated: 4, sure: 3, sure_again: 2 }],
+        unrated: 2,
+      });
+    }
+    return String(url).includes("/api/calibration/ratings")
       ? jsonResponse({
           learning_path_id: 12,
           ratings: [rating("Graphs", 0.9, 0.4)],
         })
       : jsonResponse({});
+  };
 }
