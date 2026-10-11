@@ -404,7 +404,7 @@
   "settings_theme_oled": "OLED-Schwarz",
   "skip_to_content": "Zum Inhalt springen",
   "study_act_heading": "Arbeiten",
-  "study_act_summary": "Antwort schreiben, aufdecken, bewerten. Tastatur: Leertaste deckt auf, 1 bis 4 bewerten.",
+  "study_act_summary": "Antwort schreiben, Sicherheit angeben, aufdecken, bewerten. Tastatur: Leertaste deckt auf, Q bis T für die Sicherheit, 1 bis 4 bewerten.",
   "study_again": "Nochmal",
   "study_again_later": "Spaeter nochmal: {count}",
   "study_answer_label": "Deine Antwort",

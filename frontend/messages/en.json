@@ -404,7 +404,7 @@
   "settings_theme_oled": "OLED",
   "skip_to_content": "Skip to content",
   "study_act_heading": "Work",
-  "study_act_summary": "Write your answer, reveal, and rate how it went. Keyboard: space reveals, 1 to 4 grade.",
+  "study_act_summary": "Write your answer, say how sure you are, reveal, and rate how it went. Keyboard: space reveals, Q to T say how sure, 1 to 4 grade.",
   "study_again": "Again",
   "study_again_later": "Again later: {count}",
   "study_answer_label": "Your answer",
