@@ -388,6 +388,26 @@ async def test_a_reason_before_any_prediction_is_refused(clean_engine: AsyncEngi
     assert response.status_code == 404
 
 
+async def test_another_session_on_the_topic_does_not_move_this_sessions_prediction(
+    clean_engine: AsyncEngine,
+) -> None:
+    """The band decides whether the session may close, so it is the session's own."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            first = await seed_session(session, post_test=AGAIN)
+            second = await seed_session(session, post_test=None)
+        await harness.login()
+        await predict(harness, first, VERY_WELL, reason="I did the lab.")
+        await predict(harness, second, NOT_AT_ALL)
+
+        body = await summary(harness, first)
+
+    assert body["predicted"] == pytest.approx(1.0)
+    assert body["prediction_reason"] == "I did the lab."
+    assert body["band"] == "overconfident"
+    assert body["reconciliation_required"] is True
+
+
 async def test_a_later_session_on_the_topic_reads_the_last_reconciliation_back(
     clean_engine: AsyncEngine,
 ) -> None:

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import case, func, insert, select, update
 
 from sophia.domain.errors import TopicExtractionError
 from sophia.domain.learning import AttemptPhase
@@ -266,12 +266,7 @@ async def summarize_study_session(
         )
     counts = await _phase_attempt_counts(session, session_id)
     practice_score = means.get(AttemptPhase.PRACTICE)
-    prediction = await _session_prediction(
-        session,
-        study_session.course_id,
-        study_session.topic,
-        user_id=user_id,
-    )
+    prediction = await _session_prediction(session, study_session, user_id=user_id)
     predicted = None if prediction is None else prediction.predicted
     measured = study_session.post_test_score
     if measured is None:
@@ -379,13 +374,16 @@ async def _phase_attempt_counts(
 
 async def _session_prediction(
     session: AsyncSession,
-    course_id: int,
-    topic: str,
+    study_session: StudySession,
     *,
     user_id: str,
 ) -> Row[tuple[float, str | None]] | None:
-    """The learner's own most recent confidence prediction for the topic, with its reason.
+    """The learner's prediction for this session, with its reason.
 
+    The session's own rating wins: the band it is compared into decides
+    whether the session may close (#167), so a prediction made in another
+    session on the topic must not move it. The topic's latest rating is only
+    the fallback for sessions from before predictions carried a session.
     Scoped to the learner: a shared learning path must not surface somebody
     else's prediction as this learner's disequilibrium moment.
     """
@@ -393,11 +391,14 @@ async def _session_prediction(
         await session.execute(
             select(confidence_ratings.c.predicted, confidence_ratings.c.reason)
             .where(
-                confidence_ratings.c.course_id == course_id,
-                confidence_ratings.c.topic == topic,
+                confidence_ratings.c.course_id == study_session.course_id,
+                confidence_ratings.c.topic == study_session.topic,
                 confidence_ratings.c.user_id == user_id,
             )
-            .order_by(confidence_ratings.c.id.desc())
+            .order_by(
+                case((confidence_ratings.c.session_id == study_session.id, 0), else_=1),
+                confidence_ratings.c.id.desc(),
+            )
             .limit(1)
         )
     ).one_or_none()
