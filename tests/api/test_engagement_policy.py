@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -83,13 +83,14 @@ def trace_event(
     user_id: str = "learner",
     question_id: str = QUESTION_ID,
     session_id: int | None = None,
+    occurred_at: datetime | None = None,
 ) -> LearningEvent:
     return LearningEvent(
         event_id=event_id,
         course_id=LEARNING_PATH_ID,
         user_id=user_id,
         event_type=event_type,
-        occurred_at=datetime.now(UTC),
+        occurred_at=occurred_at or datetime.now(UTC),
         session_id=session_id,
         question_id=question_id,
         payload=payload,
@@ -591,3 +592,164 @@ async def test_a_deck_drains_end_to_end_under_the_generated_policy(
     assert pre_test.status_code == 200, pre_test.json()
     assert [response.status_code for response in practice] == [200, 200, 200]
     assert answered == {ANCHOR_ID, *cards}
+
+
+# --- the prediction comes before the reveal (#169) ---------------------------
+#
+# A prediction made with the material in view is the inflated judgement the
+# predict step exists to expose (Koriat & Bjork 2005), so an attempt whose
+# answer was revealed before the session's prediction is refused like any other
+# missing step, when it lands.
+
+PREDICTED_AT = datetime(2026, 10, 11, 9, 0, tzinfo=UTC)
+
+
+def pre_test_trace(
+    *, revealed_at: datetime, session_id: int | None = 7, reveal_session_id: int | None = 7
+) -> list[LearningEvent]:
+    return [
+        trace_event("event-1", LearningEventType.PROMPT_SHOWN, PROMPT_DWELLED),
+        trace_event("event-2", LearningEventType.ELABORATION_WRITTEN, ELABORATED),
+        trace_event(
+            "event-3",
+            LearningEventType.ANSWER_REVEALED,
+            {},
+            session_id=reveal_session_id,
+            occurred_at=revealed_at,
+        ),
+        trace_event(
+            "event-4",
+            LearningEventType.PREDICTION_MADE,
+            {"rating": 4},
+            session_id=session_id,
+            occurred_at=PREDICTED_AT,
+        ),
+    ]
+
+
+def test_a_reveal_before_the_prediction_does_not_meet_the_policy() -> None:
+    trace = pre_test_trace(revealed_at=PREDICTED_AT - timedelta(seconds=30))
+
+    outcome = evaluate_elaboration_policy(POLICY, trace, session_id=7)
+
+    assert outcome.met is False
+    assert outcome.missing_event_types == ()
+    assert outcome.revealed_before_prediction is True
+    assert outcome.params["revealed_before_prediction"] is True
+
+
+def test_a_reveal_after_the_prediction_meets_the_policy() -> None:
+    trace = pre_test_trace(revealed_at=PREDICTED_AT + timedelta(seconds=30))
+
+    outcome = evaluate_elaboration_policy(POLICY, trace, session_id=7)
+
+    assert outcome.met is True
+    assert outcome.revealed_before_prediction is False
+
+
+@pytest.mark.parametrize(
+    ("second_prediction_offset", "met"),
+    [
+        pytest.param(timedelta(minutes=-5), True, id="predicted-before-the-reveal-too"),
+        pytest.param(timedelta(minutes=5), False, id="rating-changed-after-the-reveal"),
+    ],
+)
+def test_the_reveal_is_measured_against_the_first_prediction(
+    second_prediction_offset: timedelta,
+    met: bool,
+) -> None:
+    """Changing the rating after a reveal does not make the reveal any less early."""
+    trace = [
+        *pre_test_trace(revealed_at=PREDICTED_AT - timedelta(seconds=30)),
+        trace_event(
+            "event-5",
+            LearningEventType.PREDICTION_MADE,
+            {"rating": 2},
+            session_id=7,
+            occurred_at=PREDICTED_AT + second_prediction_offset,
+        ),
+    ]
+
+    outcome = evaluate_elaboration_policy(POLICY, trace, session_id=7)
+
+    assert outcome.met is met
+
+
+def test_a_reveal_in_another_session_is_not_held_against_this_one() -> None:
+    trace = pre_test_trace(
+        revealed_at=PREDICTED_AT - timedelta(days=3),
+        reveal_session_id=3,
+    )
+
+    outcome = evaluate_elaboration_policy(POLICY, trace, session_id=7)
+
+    assert outcome.revealed_before_prediction is False
+
+
+@pytest.mark.parametrize(
+    ("reveal_offset", "expected_status"),
+    [
+        pytest.param(timedelta(seconds=-20), 412, id="revealed-first"),
+        pytest.param(timedelta(seconds=20), 200, id="predicted-first"),
+    ],
+)
+async def test_an_attempt_revealed_before_the_sessions_prediction_is_refused(
+    clean_engine: AsyncEngine,
+    reveal_offset: timedelta,
+    expected_status: int,
+) -> None:
+    """The pre-test card used to be revealable before the rating: the server took
+    the grade once a prediction existed, however late it came."""
+    policy = default_elaboration_policy(min_elaboration_chars=80, min_prompt_dwell_ms=5000)
+    predicted_at = datetime.now(UTC) - timedelta(minutes=1)
+    revealed_at = predicted_at + reveal_offset
+
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session)
+            await seed_question(session, ANCHOR_ID, session_id=session_id, policy=policy)
+        await harness.login()
+
+        events = [
+            ("prompt_shown", PROMPT_DWELLED, revealed_at - timedelta(seconds=10)),
+            ("elaboration_written", ELABORATED, revealed_at - timedelta(seconds=5)),
+            ("answer_revealed", {}, revealed_at),
+            ("prediction_made", {"rating": 4}, predicted_at),
+        ]
+        ingested = await harness.client.post(
+            "/api/events/batch",
+            json={
+                "learning_path_id": LEARNING_PATH_ID,
+                "events": [
+                    {
+                        "event_id": f"{ANCHOR_ID}-{event_type}",
+                        "event_type": event_type,
+                        "occurred_at": at.isoformat(),
+                        "session_id": session_id,
+                        "question_id": ANCHOR_ID,
+                        "payload": payload,
+                    }
+                    for event_type, payload, at in events
+                ],
+            },
+            headers=harness.csrf_headers(),
+        )
+        assert ingested.status_code == 200, ingested.json()
+
+        response = await submit_answer(
+            harness,
+            session_id=session_id,
+            question_id=ANCHOR_ID,
+            phase="pre_test",
+        )
+        stored = await attempt_count(harness)
+
+    assert response.status_code == expected_status, response.json()
+    if expected_status == 412:
+        detail = response.json()["detail"]
+        assert detail["code"] == "engagement.policy_unmet"
+        assert detail["params"]["revealed_before_prediction"] is True
+        assert detail["params"]["missing_event_types"] == ""
+        assert stored == 0
+    else:
+        assert stored == 1

@@ -207,7 +207,7 @@ async def _enforce_engagement_policy(
     session_trace = await get_session_trace(
         db, question.course_id, session_id, user_id, SESSION_SCOPED_EVENT_TYPES
     )
-    outcome = evaluate_elaboration_policy(policy, trace, session_trace)
+    outcome = evaluate_elaboration_policy(policy, trace, session_trace, session_id=session_id)
     if not outcome.met:
         msg = "answer submitted without the required learning process"
         raise EngagementPolicyUnmet(msg, outcome.params)

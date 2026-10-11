@@ -15,6 +15,7 @@ from sophia.domain.learning import LearningEventType
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+    from datetime import datetime
 
     from sophia.domain.learning import ElaborationPolicy, EventPayloadValue, LearningEvent
 
@@ -38,6 +39,7 @@ class PolicyOutcome:
     missing_event_types: tuple[LearningEventType, ...] = ()
     elaboration_chars: int = 0
     prompt_dwell_ms: int = 0
+    revealed_before_prediction: bool = False
 
     @property
     def params(self) -> dict[str, str | int]:
@@ -48,6 +50,7 @@ class PolicyOutcome:
             ),
             "elaboration_chars": self.elaboration_chars,
             "prompt_dwell_ms": self.prompt_dwell_ms,
+            "revealed_before_prediction": self.revealed_before_prediction,
         }
 
 
@@ -55,12 +58,15 @@ def evaluate_elaboration_policy(
     policy: ElaborationPolicy,
     events: Sequence[LearningEvent],
     session_events: Sequence[LearningEvent] = (),
+    *,
+    session_id: int | None = None,
 ) -> PolicyOutcome:
     """Check a learner's trace for one question against an elaboration policy.
 
     ``events`` is the trace for the question itself. ``session_events`` is the
     trace for the study session the attempt belongs to, and counts only towards
-    the session-scoped requirements.
+    the session-scoped requirements. ``session_id`` names that session, so a
+    reveal of the same question in another session is not held against this one.
     """
     recorded_types = {event.event_type for event in events} | {
         event.event_type
@@ -82,8 +88,11 @@ def evaluate_elaboration_policy(
         DWELL_KEY,
     )
 
+    revealed_early = _revealed_before_prediction(events, session_events, session_id)
+
     met = (
         not missing
+        and not revealed_early
         and elaboration_chars >= policy.min_elaboration_chars
         and prompt_dwell_ms >= policy.min_prompt_dwell_ms
     )
@@ -92,6 +101,36 @@ def evaluate_elaboration_policy(
         missing_event_types=missing,
         elaboration_chars=elaboration_chars,
         prompt_dwell_ms=prompt_dwell_ms,
+        revealed_before_prediction=revealed_early,
+    )
+
+
+def _revealed_before_prediction(
+    events: Sequence[LearningEvent],
+    session_events: Sequence[LearningEvent],
+    session_id: int | None,
+) -> bool:
+    """Whether the answer was on screen before the session's first prediction.
+
+    A prediction made with the material in view is inflated in exactly the way
+    the predict step exists to expose (Koriat & Bjork 2005), so it does not
+    count as one. The first prediction is the one that matters: changing the
+    rating after a reveal does not make the earlier reveal any less early.
+    """
+    first_prediction = _earliest([*events, *session_events], LearningEventType.PREDICTION_MADE)
+    if first_prediction is None:
+        return False
+    reveals = [
+        event for event in events if session_id is None or event.session_id in (None, session_id)
+    ]
+    first_reveal = _earliest(reveals, LearningEventType.ANSWER_REVEALED)
+    return first_reveal is not None and first_reveal < first_prediction
+
+
+def _earliest(events: Sequence[LearningEvent], event_type: LearningEventType) -> datetime | None:
+    return min(
+        (event.occurred_at for event in events if event.event_type is event_type),
+        default=None,
     )
 
 
