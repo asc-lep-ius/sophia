@@ -14,7 +14,7 @@ import type {
 const TENANT_LEARNING_PATH = "12";
 
 describe("dashboard server load", () => {
-  it("scopes every panel to the session tenant, never to a request parameter", async () => {
+  it("scopes calibration and sessions to the session tenant, never to a request parameter", async () => {
     const fetch = vi.fn(async (url: string) => bodyFor(url));
     const event = createEvent({
       // A learner poking at the URL must not be able to point a panel at
@@ -26,11 +26,68 @@ describe("dashboard server load", () => {
     await load(event as never);
 
     const requested = fetch.mock.calls.map((call) => String(call[0]));
-    expect(requested).toHaveLength(4);
+    expect(requested).toHaveLength(5);
     for (const url of requested) {
-      expect(url).toContain(`learning_path_id=${TENANT_LEARNING_PATH}`);
       expect(url).not.toContain("learning_path_id=99");
     }
+    for (const url of requested.filter(isCourseScoped)) {
+      expect(url).toContain(`learning_path_id=${TENANT_LEARNING_PATH}`);
+    }
+  });
+
+  it("asks for every course's reviews, not the selected one's (#161)", async () => {
+    const fetch = vi.fn(async (url: string) => bodyFor(url));
+
+    await load(createEvent({ fetch }) as never);
+
+    const reviewRequests = fetch.mock.calls
+      .map((call) => String(call[0]))
+      .filter((url) => url.startsWith("/api/review/"));
+    expect(reviewRequests).toHaveLength(2);
+    for (const url of reviewRequests) {
+      expect(url).not.toContain("learning_path_id");
+    }
+  });
+
+  it("lists the other course's due and upcoming reviews with the selected course on GDS, labelled by course", async () => {
+    const ep1Review = {
+      ...dueReview("Pointers"),
+      learning_path_id: 7,
+      next_review_at: "2026-10-12T05:29:00Z",
+    };
+    const fetch = vi.fn(async (url: string) => {
+      if (url.startsWith("/api/review/")) {
+        return jsonResponse({ learning_path_id: null, reviews: [ep1Review] });
+      }
+      if (url.startsWith("/api/learning-paths")) {
+        return jsonResponse({
+          learning_paths: [
+            {
+              id: 7,
+              short_title: "EP1",
+              title: "Einführung in die Programmierung 1",
+              url: null,
+            },
+            {
+              id: 12,
+              short_title: "GDS",
+              title: "Grundlagen der Datenstrukturen",
+              url: null,
+            },
+          ],
+        });
+      }
+      return bodyFor(url);
+    });
+
+    const data = (await load(createEvent({ fetch }) as never)) as DashboardData;
+
+    expect(data.due.data).toEqual([ep1Review]);
+    expect(data.upcoming.data).toEqual([ep1Review]);
+    expect(data.courses).toEqual({ 7: "EP1", 12: "GDS" });
+    expect(
+      data.pressure.reduce((n, bucket) => n + bucket.count, 0),
+    ).toBeGreaterThan(0);
   });
 
   it("marks a refused panel unauthorized and leaves the others current", async () => {
@@ -74,13 +131,16 @@ describe("dashboard server load", () => {
   });
 
   it("says plainly when the workspace has no learning path selected", async () => {
-    const fetch = vi.fn();
+    const fetch = vi.fn(async (url: string) => bodyFor(url));
     const event = createEvent({ fetch, learningPathId: null });
 
     const data = (await load(event as never)) as DashboardData;
 
     expect(data.learningPathId).toBeNull();
-    expect(fetch).not.toHaveBeenCalled();
+    expect(data.due.status).toBe("ready");
+    expect(data.upcoming.status).toBe("ready");
+    const requested = fetch.mock.calls.map((call) => String(call[0]));
+    expect(requested.filter(isCourseScoped)).toEqual([]);
   });
 });
 
@@ -121,6 +181,40 @@ describe("dashboard page", () => {
         .getAttribute("href"),
     ).toBe("/app/study");
     expect(screen.queryByText(/numeric/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "Do this next" })).toBeNull();
+  });
+
+  it("labels each due review with its course, whichever course is selected", () => {
+    render(DashboardPage, {
+      data: pageData({
+        courses: { 7: "EP1", 12: "GDS" },
+        due: readyPanel([
+          { ...dueReview("Pointers"), learning_path_id: 7 },
+          dueReview("Graphs"),
+        ]),
+      }),
+    });
+
+    const panel = screen.getByRole("region", { name: "Due for review" });
+    const items = within(panel).getAllByRole("listitem");
+    expect(
+      items.map((item) => item.textContent?.replace(/\s+/g, " ").trim()),
+    ).toEqual(["Pointers EP1", "Graphs GDS"]);
+  });
+
+  it("shows the review panels, and only those, before a course is selected", () => {
+    render(DashboardPage, {
+      data: pageData({
+        courses: { 7: "EP1" },
+        due: readyPanel([{ ...dueReview("Pointers"), learning_path_id: 7 }]),
+        learningPathId: null,
+      }),
+    });
+
+    expect(screen.getByRole("link", { name: "Choose a course" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Due for review" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "The week ahead" })).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "Calibration" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Do this next" })).toBeNull();
   });
 
@@ -191,6 +285,7 @@ describe("dashboard page", () => {
 
 type DashboardData = {
   calibration: Panel<CalibrationRating[]>;
+  courses: Record<number, string>;
   due: Panel<ReviewItem[]>;
   learningPathId: number | null;
   pressure: { count: number; dayOffset: number }[];
@@ -220,6 +315,7 @@ function pageData(overrides: Partial<DashboardData>) {
   return {
     ...layoutData,
     calibration: readyPanel<CalibrationRating[]>([]),
+    courses: {} as Record<number, string>,
     due: readyPanel<ReviewItem[]>([]),
     learningPathId: 12,
     pressure: [],
@@ -264,7 +360,16 @@ function rating(
   };
 }
 
+function isCourseScoped(url: string): boolean {
+  return (
+    url.startsWith("/api/calibration/") || url.startsWith("/api/study/sessions")
+  );
+}
+
 function bodyFor(url: string): Response {
+  if (url.startsWith("/api/learning-paths")) {
+    return jsonResponse({ learning_paths: [] });
+  }
   if (
     url.startsWith("/api/review/due") ||
     url.startsWith("/api/review/upcoming")

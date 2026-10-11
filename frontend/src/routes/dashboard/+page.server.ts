@@ -1,6 +1,7 @@
 import { redirect } from "@sveltejs/kit";
 import { apiFetch } from "../../hooks.server";
 import { selectedLearningPathId } from "$lib/learningPath";
+import { loadCourseLabels } from "$lib/server/courseLabels";
 import {
   panelFromResponse,
   readCalibrationList,
@@ -12,11 +13,7 @@ import {
   type ReviewItem,
   type StudySessionItem,
 } from "$lib/dashboard/panels";
-import {
-  PRESSURE_DAYS,
-  reviewPressure,
-  type PressureBucket,
-} from "$lib/dashboard/reviewPressure";
+import { PRESSURE_DAYS, reviewPressure } from "$lib/dashboard/reviewPressure";
 import type { PageServerLoad } from "./$types";
 
 type ApiEvent = Parameters<typeof apiFetch>[0];
@@ -26,6 +23,23 @@ export const load: PageServerLoad = async (event) => {
     redirect(303, "/app/login");
   }
 
+  // Review is not scoped by the course selection (#131, #161): a review due in
+  // a course that is not selected must still be seen, and it must be seen
+  // before any course has been picked, so these two panels never send a
+  // learning path and load whether or not one is selected.
+  const [due, upcoming, courses] = await Promise.all([
+    loadDueReviews(event),
+    loadUpcomingReviews(event),
+    loadCourseLabels(event),
+  ]);
+  // Bucketed here rather than in the component: the figure has to render the
+  // same on the server and after hydration, and two clocks a few hundred
+  // milliseconds apart can straddle midnight.
+  const pressure = reviewPressure(upcoming.data, {
+    days: PRESSURE_DAYS,
+    now: new Date(),
+  });
+
   // Straight from the session tenant, never from a query parameter: a
   // dashboard filter that could name a learning path would be a way to read
   // another one. The API refuses out-of-scope ids as well, and the surface
@@ -34,61 +48,44 @@ export const load: PageServerLoad = async (event) => {
   if (learningPathId === null) {
     return {
       calibration: unavailablePanel<CalibrationRating[]>([]),
-      due: unavailablePanel<ReviewItem[]>([]),
+      courses,
+      due,
       learningPathId: null,
-      pressure: [] as PressureBucket[],
+      pressure,
       sessions: unavailablePanel<StudySessionItem[]>([]),
-      upcoming: unavailablePanel<ReviewItem[]>([]),
+      upcoming,
     };
   }
 
-  // One slow panel must not hold up the other three, and one failed panel must
-  // not take the page with it: each resolves to its own status.
-  const [due, upcoming, calibration, sessions] = await Promise.all([
-    loadDueReviews(event, learningPathId),
-    loadUpcomingReviews(event, learningPathId),
+  // One failed panel must not take the page with it: each resolves to its own
+  // status.
+  const [calibration, sessions] = await Promise.all([
     loadCalibration(event, learningPathId),
     loadSessions(event, learningPathId),
   ]);
 
   return {
     calibration,
+    courses,
     due,
     learningPathId,
-    // Bucketed here rather than in the component: the figure has to render the
-    // same on the server and after hydration, and two clocks a few hundred
-    // milliseconds apart can straddle midnight.
-    pressure: reviewPressure(upcoming.data, {
-      days: PRESSURE_DAYS,
-      now: new Date(),
-    }),
+    pressure,
     sessions,
     upcoming,
   };
 };
 
-async function loadDueReviews(
-  event: ApiEvent,
-  learningPathId: number,
-): Promise<Panel<ReviewItem[]>> {
-  return panel(
-    () =>
-      apiFetch(event, "/api/review/due", {
-        query: { learning_path_id: learningPathId },
-      }),
-    readReviewList,
-    [],
-  );
+async function loadDueReviews(event: ApiEvent): Promise<Panel<ReviewItem[]>> {
+  return panel(() => apiFetch(event, "/api/review/due"), readReviewList, []);
 }
 
 async function loadUpcomingReviews(
   event: ApiEvent,
-  learningPathId: number,
 ): Promise<Panel<ReviewItem[]>> {
   return panel(
     () =>
       apiFetch(event, "/api/review/upcoming", {
-        query: { days_ahead: PRESSURE_DAYS, learning_path_id: learningPathId },
+        query: { days_ahead: PRESSURE_DAYS },
       }),
     readReviewList,
     [],

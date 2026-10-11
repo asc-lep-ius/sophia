@@ -4,6 +4,7 @@
   import PageHeader from "$lib/components/PageHeader.svelte";
   import ReviewCard from "$lib/components/review/ReviewCard.svelte";
   import { completeReview } from "$lib/api/review";
+  import { courseLabel } from "$lib/courseLabel";
   import { formatDueDate } from "$lib/chronos/deadlines";
   import { m } from "$lib/paraglide/messages.js";
   import { ReviewQueueStore } from "$lib/review/queue.svelte";
@@ -13,18 +14,11 @@
 
   let { data }: Props = $props();
 
-  function courseLabel(learningPathId: number): string {
-    return (
-      data.courses[learningPathId] ??
-      m.review_course_fallback({ id: String(learningPathId) })
-    );
-  }
-
   const dueItems = $derived(
     data.due.data
       .filter((review) => review.is_due)
       .map((review) => ({
-        course: courseLabel(review.learning_path_id),
+        course: courseLabel(data.courses, review.learning_path_id),
         learningPathId: review.learning_path_id,
         topic: review.topic,
       })),
@@ -86,7 +80,7 @@
     {#if data.nextReview}
       <p>
         {m.review_next_due({
-          course: courseLabel(data.nextReview.learning_path_id),
+          course: courseLabel(data.courses, data.nextReview.learning_path_id),
           date: formatDueDate(data.nextReview.next_review_at, data.uiLocale),
           topic: data.nextReview.topic,
         })}

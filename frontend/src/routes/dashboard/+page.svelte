@@ -6,6 +6,7 @@
   import NoLearningPathNotice from "$lib/components/NoLearningPathNotice.svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import { barRow, splitCalibrationRows, type FigureDatum } from "$lib/dashboard/figures";
+  import { courseLabel } from "$lib/courseLabel";
   import { nextAction } from "$lib/dashboard/nextAction";
   import { m } from "$lib/paraglide/messages.js";
   import type { PageData } from "./$types";
@@ -104,52 +105,63 @@
       <a class="primary" href={resolve("/study", {})}>{m.dashboard_open_study()}</a>
     {/if}
   </section>
+{/if}
 
-  <div class="panel-grid">
-    <PanelSection
-      id="dashboard-due"
-      heading={m.dashboard_due_heading()}
-      status={data.due.status}
-      isEmpty={dueReviews.length === 0}
-    >
-      {#snippet empty()}
-        <div class="empty-state">
-          <p class="empty-title">{m.dashboard_due_empty_title()}</p>
-          <p class="empty-body">{m.dashboard_due_empty_body()}</p>
-          <a href={resolve("/study", {})}>{m.dashboard_open_study()}</a>
-        </div>
-      {/snippet}
-      <p class="count">{m.dashboard_due_count({ count: dueReviews.length })}</p>
-      <ul class="topic-list">
-        {#each dueReviews.slice(0, DUE_TOPIC_LIMIT) as review (review.topic)}
-          <li>{review.topic}</li>
-        {/each}
-      </ul>
-      <a class="primary" href={resolve("/review", {})}>{m.dashboard_open_review()}</a>
-    </PanelSection>
+<!--
+  Reviews follow no course selection, so these two panels render before one is
+  picked; calibration and sessions are per course and wait for it.
+-->
+<div class="panel-grid">
+  <PanelSection
+    id="dashboard-due"
+    heading={m.dashboard_due_heading()}
+    status={data.due.status}
+    isEmpty={dueReviews.length === 0}
+  >
+    {#snippet empty()}
+      <div class="empty-state">
+        <p class="empty-title">{m.dashboard_due_empty_title()}</p>
+        <p class="empty-body">{m.dashboard_due_empty_body()}</p>
+        <a href={resolve("/study", {})}>{m.dashboard_open_study()}</a>
+      </div>
+    {/snippet}
+    <p class="count">{m.dashboard_due_count({ count: dueReviews.length })}</p>
+    <ul class="topic-list">
+      {#each dueReviews.slice(0, DUE_TOPIC_LIMIT) as review (`${review.learning_path_id}:${review.topic}`)}
+        <li>
+          <span class="session-topic">{review.topic}</span>
+          <span class="session-state">
+            {courseLabel(data.courses, review.learning_path_id)}
+          </span>
+        </li>
+      {/each}
+    </ul>
+    <a class="primary" href={resolve("/review", {})}>{m.dashboard_open_review()}</a>
+  </PanelSection>
 
-    <PanelSection
-      id="dashboard-pressure"
-      heading={m.dashboard_pressure_heading()}
-      status={data.upcoming.status}
-      isEmpty={pressureTotal === 0}
-    >
-      {#snippet empty()}
-        <div class="empty-state">
-          <p class="empty-title">{m.dashboard_pressure_empty_title()}</p>
-          <p class="empty-body">{m.dashboard_pressure_empty_body()}</p>
-        </div>
-      {/snippet}
-      <BarFigure
-        id="dashboard-pressure-figure"
-        bars={pressureBars}
-        caption={m.dashboard_pressure_caption()}
-        labelHeading={m.dashboard_pressure_day()}
-        summary={m.dashboard_pressure_summary({ count: pressureTotal })}
-        valueHeading={m.dashboard_pressure_count()}
-      />
-    </PanelSection>
+  <PanelSection
+    id="dashboard-pressure"
+    heading={m.dashboard_pressure_heading()}
+    status={data.upcoming.status}
+    isEmpty={pressureTotal === 0}
+  >
+    {#snippet empty()}
+      <div class="empty-state">
+        <p class="empty-title">{m.dashboard_pressure_empty_title()}</p>
+        <p class="empty-body">{m.dashboard_pressure_empty_body()}</p>
+      </div>
+    {/snippet}
+    <BarFigure
+      id="dashboard-pressure-figure"
+      bars={pressureBars}
+      caption={m.dashboard_pressure_caption()}
+      labelHeading={m.dashboard_pressure_day()}
+      summary={m.dashboard_pressure_summary({ count: pressureTotal })}
+      valueHeading={m.dashboard_pressure_count()}
+    />
+  </PanelSection>
 
+  {#if data.learningPathId !== null}
     <PanelSection
       id="dashboard-calibration"
       heading={m.dashboard_calibration_heading()}
@@ -206,8 +218,8 @@
         {/each}
       </ul>
     </PanelSection>
-  </div>
-{/if}
+  {/if}
+</div>
 
 <style>
   .next-action {
