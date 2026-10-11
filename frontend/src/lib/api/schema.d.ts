@@ -1128,6 +1128,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/study/reconciliations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Reconciliation
+         * @description Record what explains the gap between the learner's prediction and score.
+         */
+        post: operations["saveStudyReconciliation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/study/reflections": {
         parameters: {
             query?: never;
@@ -1198,6 +1218,28 @@ export interface paths {
          *     improvement" heuristic could be recorded as fact (see issue #97).
          */
         post: operations["completeStudySession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/study/sessions/{session_id}/prediction/reason": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Study Prediction Reason
+         * @description Store the "because…" line with the prediction the session already holds.
+         *
+         *     A 404 until the learner has predicted: there is no rating to attach it to.
+         */
+        put: operations["saveStudyPredictionReason"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2643,19 +2685,35 @@ export interface components {
             predicted: number;
             /** Rated At */
             rated_at: string;
+            /** Reason */
+            reason: string | null;
             /** Topic */
             topic: string;
+        };
+        /**
+         * StudyPredictionReasonRequest
+         * @description The "because…" line for the prediction already recorded in a session.
+         *
+         *     Setting it again replaces it, and blank clears it.
+         */
+        StudyPredictionReasonRequest: {
+            /** Reason */
+            reason?: string | null;
         };
         /**
          * StudyPredictionRequest
          * @description A learner's pre-question confidence prediction for a topic, made during
          *     a live study session — idempotent on ``request_id``.
+         *
+         *     ``reason`` is the optional "because…" line; blank is stored as none.
          */
         StudyPredictionRequest: {
             /** Learning Path Id */
             learning_path_id: number;
             /** Rating */
             rating: number;
+            /** Reason */
+            reason?: string | null;
             /** Request Id */
             request_id: string;
             /** Session Id */
@@ -2700,6 +2758,45 @@ export interface components {
             session_id?: number | null;
             /** Topic */
             topic: string;
+        };
+        /**
+         * StudyReconciliationItemResponse
+         * @description A learner's explanation of a gap, with the figures it answered.
+         */
+        StudyReconciliationItemResponse: {
+            band: components["schemas"]["CalibrationBand"];
+            /** Created At */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Measured */
+            measured: number;
+            /** Predicted */
+            predicted: number;
+            /** Reconciliation Text */
+            reconciliation_text: string;
+            /** Session Id */
+            session_id: number;
+        };
+        /**
+         * StudyReconciliationRequest
+         * @description What the learner says explains the gap between prediction and score.
+         */
+        StudyReconciliationRequest: {
+            /** Learning Path Id */
+            learning_path_id: number;
+            /** Reconciliation Text */
+            reconciliation_text: string;
+            /** Request Id */
+            request_id: string;
+            /** Session Id */
+            session_id: number;
+        };
+        /** StudyReconciliationResponse */
+        StudyReconciliationResponse: {
+            reconciliation: components["schemas"]["StudyReconciliationItemResponse"];
         };
         /** StudyReflectionItemResponse */
         StudyReflectionItemResponse: {
@@ -2857,6 +2954,14 @@ export interface components {
          *
          *     ``band`` is the calibration judgement; the sentence that goes with it is
          *     the study surface's to write, in the learner's own language.
+         *
+         *     An open session is scored as completing it would score it, because the
+         *     results open before it closes. ``reconciliation_required`` says whether
+         *     completing it waits on the learner explaining the gap; ``reconciliation``
+         *     is the one they wrote here, and ``previous_reconciliation`` the last one
+         *     on the same topic from another session, which Predict shows back.
+         *     ``reflected`` is whether the reflection that opens the results is on
+         *     record.
          */
         StudySessionSummaryResponse: {
             attempts: components["schemas"]["StudyPhaseAttemptCounts"];
@@ -2871,6 +2976,14 @@ export interface components {
             practice_score: number | null;
             /** Predicted */
             predicted: number | null;
+            /** Prediction Reason */
+            prediction_reason: string | null;
+            previous_reconciliation: components["schemas"]["StudyReconciliationItemResponse"] | null;
+            reconciliation: components["schemas"]["StudyReconciliationItemResponse"] | null;
+            /** Reconciliation Required */
+            reconciliation_required: boolean;
+            /** Reflected */
+            reflected: boolean;
             session: components["schemas"]["StudySessionItemResponse"];
         };
         /**
@@ -5840,6 +5953,61 @@ export interface operations {
             };
         };
     };
+    saveStudyReconciliation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyReconciliationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyReconciliationResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
     saveStudyReflection: {
         parameters: {
             query?: never;
@@ -6042,6 +6210,53 @@ export interface operations {
             };
             /** @description Precondition Failed */
             412: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Content */
+            422: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    saveStudyPredictionReason: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StudyPredictionReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["StudyPredictionResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;

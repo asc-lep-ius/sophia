@@ -84,6 +84,7 @@ async def record_study_prediction(
     session_id: int,
     user_id: str,
     request_id: str,
+    reason: str | None = None,
 ) -> tuple[ConfidenceRating, bool]:
     """Idempotently record a confidence prediction made during a live study session.
 
@@ -104,6 +105,7 @@ async def record_study_prediction(
             "session_id": session_id,
             "user_id": user_id,
             "request_id": request_id,
+            "reason": reason or None,
         },
         conflict_columns=(
             confidence_ratings.c.org_id,
@@ -121,6 +123,40 @@ async def record_study_prediction(
         await log_confidence_prediction(session, course_id, topic, predicted)
         log.info("study_prediction_recorded", topic=topic, course_id=course_id, predicted=predicted)
     return _row_to_rating(row), is_new
+
+
+async def set_study_prediction_reason(
+    session: AsyncSession,
+    session_id: int,
+    reason: str | None,
+    *,
+    user_id: str,
+) -> ConfidenceRating | None:
+    """Attach the learner's "because…" line to their latest prediction in a session.
+
+    The rating is saved the moment it is chosen and the reason is typed after,
+    so the reason lands on the row already there. Recording the prediction
+    again would instead void the outcome the pre-test grade already wrote to
+    that row and to the metacognition log. ``None`` when the learner has not
+    predicted in this session yet.
+    """
+    latest = (
+        select(func.max(confidence_ratings.c.id))
+        .where(
+            confidence_ratings.c.session_id == session_id,
+            confidence_ratings.c.user_id == user_id,
+        )
+        .scalar_subquery()
+    )
+    row = (
+        await session.execute(
+            update(confidence_ratings)
+            .where(confidence_ratings.c.id == latest)
+            .values(reason=reason or None)
+            .returning(confidence_ratings)
+        )
+    ).one_or_none()
+    return None if row is None else _row_to_rating(row)
 
 
 async def get_confidence_ratings(
@@ -171,6 +207,7 @@ def _row_to_rating(row: Row[tuple[object, ...]]) -> ConfidenceRating:
         predicted=row.predicted,
         actual=row.actual,
         rated_at=row.rated_at.isoformat() if row.rated_at else "",
+        reason=row.reason,
         legacy_scored=bool(row.legacy_scored),
     )
 

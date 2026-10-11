@@ -219,15 +219,21 @@ class StudySessionSummary:
     on the client. ``measured`` prefers the post-test and falls back to
     practice attempts, because a learner who reflects before sitting the
     post-test still deserves a comparison rather than a blank.
+
+    ``prediction_reason`` is the "because…" line stored with that prediction,
+    and ``reflected`` whether the pre-results reflection is on record, which
+    is what opens the results.
     """
 
     session: StudySession
     attempts_by_phase: dict[AttemptPhase, int]
     practice_score: float | None
     predicted: float | None
+    prediction_reason: str | None
     measured: float | None
     band: CalibrationBand
     legacy_scored: bool
+    reflected: bool
 
 
 async def summarize_study_session(
@@ -236,7 +242,13 @@ async def summarize_study_session(
     *,
     user_id: str,
 ) -> StudySessionSummary | None:
-    """Score a session and compare it against the learner's own prediction."""
+    """Score a session and compare it against the learner's own prediction.
+
+    An open session is scored as :func:`finalize_study_session` would score
+    it: the results open before the session closes, because the learner has
+    to see the gap before they can explain it, and closing waits on that
+    explanation (#167).
+    """
     row = (
         await session.execute(select(study_sessions).where(study_sessions.c.id == session_id))
     ).one_or_none()
@@ -245,26 +257,37 @@ async def summarize_study_session(
 
     study_session = _row_to_study_session(row)
     means = await _phase_score_means(session, session_id)
+    if study_session.completed_at is None:
+        study_session = study_session.model_copy(
+            update={
+                "pre_test_score": means.get(AttemptPhase.PRE_TEST),
+                "post_test_score": means.get(AttemptPhase.POST_TEST),
+            }
+        )
     counts = await _phase_attempt_counts(session, session_id)
     practice_score = means.get(AttemptPhase.PRACTICE)
-    predicted = await _session_prediction(
+    prediction = await _session_prediction(
         session,
         study_session.course_id,
         study_session.topic,
         user_id=user_id,
     )
+    predicted = None if prediction is None else prediction.predicted
     measured = study_session.post_test_score
     if measured is None:
         measured = practice_score
+    pacing = await get_reflection_pacing(session, session_id)
 
     return StudySessionSummary(
         session=study_session,
         attempts_by_phase=counts,
         practice_score=practice_score,
         predicted=predicted,
+        prediction_reason=None if prediction is None else prediction.reason,
         measured=measured,
         band=calibration_band(predicted, measured),
         legacy_scored=bool(row.legacy_scored),
+        reflected=pacing is not None and pacing.reflected_at is not None,
     )
 
 
@@ -360,22 +383,24 @@ async def _session_prediction(
     topic: str,
     *,
     user_id: str,
-) -> float | None:
-    """The learner's own most recent confidence prediction for the topic.
+) -> Row[tuple[float, str | None]] | None:
+    """The learner's own most recent confidence prediction for the topic, with its reason.
 
     Scoped to the learner: a shared learning path must not surface somebody
     else's prediction as this learner's disequilibrium moment.
     """
-    return await session.scalar(
-        select(confidence_ratings.c.predicted)
-        .where(
-            confidence_ratings.c.course_id == course_id,
-            confidence_ratings.c.topic == topic,
-            confidence_ratings.c.user_id == user_id,
+    return (
+        await session.execute(
+            select(confidence_ratings.c.predicted, confidence_ratings.c.reason)
+            .where(
+                confidence_ratings.c.course_id == course_id,
+                confidence_ratings.c.topic == topic,
+                confidence_ratings.c.user_id == user_id,
+            )
+            .order_by(confidence_ratings.c.id.desc())
+            .limit(1)
         )
-        .order_by(confidence_ratings.c.id.desc())
-        .limit(1)
-    )
+    ).one_or_none()
 
 
 # ---------------------------------------------------------------------------

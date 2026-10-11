@@ -27,8 +27,12 @@ from sophia.api.schemas.study import (
     StudyPacingResponse,
     StudyPhaseAttemptCounts,
     StudyPredictionItemResponse,
+    StudyPredictionReasonRequest,
     StudyPredictionRequest,
     StudyPredictionResponse,
+    StudyReconciliationItemResponse,
+    StudyReconciliationRequest,
+    StudyReconciliationResponse,
     StudyReflectionItemResponse,
     StudyReflectionRequest,
     StudyReflectionResponse,
@@ -48,8 +52,8 @@ from sophia.api.transactions import TransactionalRoute
 from sophia.domain.errors import EngagementPolicyUnmet
 from sophia.domain.learning import AttemptPhase as DomainAttemptPhase
 from sophia.domain.learning import ContentKind
-from sophia.domain.models import FlashcardSource
-from sophia.services.athena_confidence import record_study_prediction
+from sophia.domain.models import FlashcardSource, reconciliation_required
+from sophia.services.athena_confidence import record_study_prediction, set_study_prediction_reason
 from sophia.services.athena_session import (
     finalize_study_session,
     get_flashcard_course_id,
@@ -71,6 +75,11 @@ from sophia.services.study_questions import (
     requeued_questions,
     source_titles,
 )
+from sophia.services.study_reconciliation import (
+    previous_reconciliation,
+    save_reconciliation,
+    session_reconciliation,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,6 +91,7 @@ if TYPE_CHECKING:
         ConfidenceRating,
         SelfExplanation,
         StudentFlashcard,
+        StudyReconciliation,
         StudyReflection,
         StudySession,
     )
@@ -230,6 +240,7 @@ async def mark_study_session_complete(
     db = await request_session(request)
     await _require_session_ownership_by_id(db, auth_session, session_id)
     await _require_reflection_pacing(db, session_id, get_settings(request))
+    await _require_reconciliation(db, session_id, auth_session.user.id)
     completed = await finalize_study_session(db, session_id)
     if completed is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -254,10 +265,15 @@ async def get_study_session_summary(
     auth_session = await current_session_record(request)
     db = await request_session(request)
     await _require_session_ownership_by_id(db, auth_session, session_id)
-    summary = await summarize_study_session(db, session_id, user_id=auth_session.user.id)
+    user_id = auth_session.user.id
+    summary = await summarize_study_session(db, session_id, user_id=user_id)
     if summary is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-    return _summary_response(summary)
+    return _summary_response(
+        summary,
+        reconciliation=await session_reconciliation(db, session_id, user_id=user_id),
+        previous=await previous_reconciliation(db, session_id, user_id=user_id),
+    )
 
 
 @router.get(
@@ -385,6 +401,7 @@ async def create_study_prediction(
         session_id=payload.session_id,
         user_id=auth_session.user.id,
         request_id=payload.request_id,
+        reason=payload.reason,
     )
     if is_new:
         await append_event(
@@ -399,6 +416,35 @@ async def create_study_prediction(
     return StudyPredictionResponse(
         prediction=_prediction_response(rating, payload.learning_path_id)
     )
+
+
+@router.put(
+    "/study/sessions/{session_id}/prediction/reason",
+    response_model=StudyPredictionResponse,
+    operation_id="saveStudyPredictionReason",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
+    },
+)
+async def save_study_prediction_reason(
+    session_id: SessionIdPath,
+    payload: StudyPredictionReasonRequest,
+    request: Request,
+) -> StudyPredictionResponse:
+    """Store the "because…" line with the prediction the session already holds.
+
+    A 404 until the learner has predicted: there is no rating to attach it to.
+    """
+    auth_session = await require_csrf(request)
+    db = await request_session(request)
+    scope = await _require_session_ownership_by_id(db, auth_session, session_id)
+    rating = await set_study_prediction_reason(
+        db, session_id, payload.reason, user_id=auth_session.user.id
+    )
+    if rating is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    return StudyPredictionResponse(prediction=_prediction_response(rating, scope.course_id))
 
 
 @router.post(
@@ -483,6 +529,46 @@ async def create_reflection(
     return StudyReflectionResponse(reflection=_reflection_response(reflection))
 
 
+@router.post(
+    "/study/reconciliations",
+    response_model=StudyReconciliationResponse,
+    operation_id="saveStudyReconciliation",
+    responses={
+        status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_412_PRECONDITION_FAILED: {"model": ErrorEnvelope},
+        status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
+    },
+)
+async def create_reconciliation(
+    payload: StudyReconciliationRequest,
+    request: Request,
+) -> StudyReconciliationResponse:
+    """Record what explains the gap between the learner's prediction and score."""
+    auth_session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
+    db = await request_session(request)
+    await _require_session_ownership(db, auth_session, payload.learning_path_id, payload.session_id)
+
+    reconciliation, is_new = await save_reconciliation(
+        db,
+        payload.session_id,
+        payload.learning_path_id,
+        auth_session.user.id,
+        payload.reconciliation_text,
+        request_id=payload.request_id,
+    )
+    if is_new:
+        await append_event(
+            db,
+            session_id=payload.session_id,
+            course_id=payload.learning_path_id,
+            actor_id=auth_session.user.id,
+            event_type="reconciliation_recorded",
+            payload={"band": reconciliation.band.value},
+            request_id=payload.request_id,
+        )
+    return StudyReconciliationResponse(reconciliation=_reconciliation_response(reconciliation))
+
+
 async def _require_session_ownership(
     db: AsyncSession,
     auth_session: SessionRecord,
@@ -549,7 +635,30 @@ async def _require_reflection_pacing(
         )
 
 
-def _summary_response(summary: StudySessionSummary) -> StudySessionSummaryResponse:
+async def _require_reconciliation(db: AsyncSession, session_id: int, user_id: str) -> None:
+    """Refuse to close a session whose prediction missed until the learner says why.
+
+    The same abuse case as the reflection: a client that never renders the
+    prompt can still POST here. The band is computed now, by the server, from
+    the same attempts the completion is about to score.
+    """
+    summary = await summarize_study_session(db, session_id, user_id=user_id)
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if not reconciliation_required(summary.band):
+        return
+    if await session_reconciliation(db, session_id, user_id=user_id) is not None:
+        return
+    msg = "session completed without reconciling the prediction with the result"
+    raise EngagementPolicyUnmet(msg, {"required": "reconciliation", "band": summary.band.value})
+
+
+def _summary_response(
+    summary: StudySessionSummary,
+    *,
+    reconciliation: StudyReconciliation | None,
+    previous: StudyReconciliation | None,
+) -> StudySessionSummaryResponse:
     predicted = summary.predicted
     measured = summary.measured
     return StudySessionSummaryResponse(
@@ -561,10 +670,15 @@ def _summary_response(summary: StudySessionSummary) -> StudySessionSummaryRespon
         ),
         practice_score=summary.practice_score,
         predicted=predicted,
+        prediction_reason=summary.prediction_reason,
         measured=measured,
         calibration_delta=(None if predicted is None or measured is None else measured - predicted),
         band=CalibrationBand(summary.band.value),
         legacy_scored=summary.legacy_scored,
+        reflected=summary.reflected,
+        reconciliation_required=reconciliation_required(summary.band),
+        reconciliation=None if reconciliation is None else _reconciliation_response(reconciliation),
+        previous_reconciliation=None if previous is None else _reconciliation_response(previous),
     )
 
 
@@ -605,6 +719,7 @@ def _prediction_response(
         learning_path_id=learning_path_id,
         topic=rating.topic,
         predicted=rating.predicted,
+        reason=rating.reason,
         rated_at=rating.rated_at,
     )
 
@@ -629,4 +744,19 @@ def _reflection_response(reflection: StudyReflection) -> StudyReflectionItemResp
         prompt=reflection.prompt,
         reflection_text=reflection.reflection_text,
         created_at=reflection.created_at,
+    )
+
+
+def _reconciliation_response(
+    reconciliation: StudyReconciliation,
+) -> StudyReconciliationItemResponse:
+    return StudyReconciliationItemResponse(
+        id=reconciliation.id,
+        session_id=reconciliation.session_id,
+        learning_path_id=reconciliation.course_id,
+        predicted=reconciliation.predicted,
+        measured=reconciliation.measured,
+        band=CalibrationBand(reconciliation.band.value),
+        reconciliation_text=reconciliation.reconciliation_text,
+        created_at=reconciliation.created_at,
     )

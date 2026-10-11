@@ -77,21 +77,51 @@ class StudyPhaseAttemptCounts(ApiModel):
     post_test: int
 
 
+class StudyReconciliationItemResponse(ApiModel):
+    """A learner's explanation of a gap, with the figures it answered."""
+
+    id: int
+    session_id: int
+    learning_path_id: int
+    predicted: float
+    measured: float
+    band: CalibrationBand
+    reconciliation_text: str
+    created_at: str
+
+
+class StudyReconciliationResponse(ApiModel):
+    reconciliation: StudyReconciliationItemResponse
+
+
 class StudySessionSummaryResponse(ApiModel):
     """Server-computed close of the cycle: what was predicted against what happened.
 
     ``band`` is the calibration judgement; the sentence that goes with it is
     the study surface's to write, in the learner's own language.
+
+    An open session is scored as completing it would score it, because the
+    results open before it closes. ``reconciliation_required`` says whether
+    completing it waits on the learner explaining the gap; ``reconciliation``
+    is the one they wrote here, and ``previous_reconciliation`` the last one
+    on the same topic from another session, which Predict shows back.
+    ``reflected`` is whether the reflection that opens the results is on
+    record.
     """
 
     session: StudySessionItemResponse
     attempts: StudyPhaseAttemptCounts
     practice_score: float | None
     predicted: float | None
+    prediction_reason: str | None
     measured: float | None
     calibration_delta: float | None
     band: CalibrationBand
     legacy_scored: bool
+    reflected: bool
+    reconciliation_required: bool
+    reconciliation: StudyReconciliationItemResponse | None
+    previous_reconciliation: StudyReconciliationItemResponse | None
 
 
 class StudyFlashcardItemResponse(ApiModel):
@@ -113,6 +143,7 @@ class StudyPredictionItemResponse(ApiModel):
     learning_path_id: int
     topic: str
     predicted: float
+    reason: str | None
     rated_at: str
 
 

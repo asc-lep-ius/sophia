@@ -660,6 +660,16 @@ def calibration_band(predicted: float | None, measured: float | None) -> Calibra
     return CalibrationBand.OVERCONFIDENT if error > 0 else CalibrationBand.UNDERCONFIDENT
 
 
+def reconciliation_required(band: CalibrationBand) -> bool:
+    """Whether a session may close only once the learner has explained the gap.
+
+    A displayed contradiction is ignored or patched unless the learner is made
+    to reconcile it (Limón 2001), so a missed prediction asks for an
+    explanation. A matched one does not, and an unmeasured one has no gap.
+    """
+    return band in {CalibrationBand.OVERCONFIDENT, CalibrationBand.UNDERCONFIDENT}
+
+
 class ConfidenceRating(BaseModel, frozen=True):
     """A student's self-assessed confidence vs actual performance for a topic."""
 
@@ -668,6 +678,8 @@ class ConfidenceRating(BaseModel, frozen=True):
     predicted: float  # 0.0 to 1.0 (from student's 1-5 rating mapped to 0-1)
     actual: float | None = None  # populated later from card recall or quiz score
     rated_at: str = ""  # ISO timestamp
+    reason: str | None = None
+    """The learner's optional "because…" line, stated before the result."""
     legacy_scored: bool = False
     """Whether ``actual`` came from the retired heuristic scorer.
 
@@ -753,6 +765,24 @@ class StudyReflection(BaseModel, frozen=True):
     user_id: str
     prompt: str
     reflection_text: str
+    created_at: str = ""
+
+
+class StudyReconciliation(BaseModel, frozen=True):
+    """What a learner wrote about the gap once the results opened.
+
+    ``predicted``, ``measured`` and ``band`` are the figures it answered, as
+    they stood when it was written.
+    """
+
+    id: int = 0
+    session_id: int
+    course_id: int
+    user_id: str
+    predicted: float
+    measured: float
+    band: CalibrationBand
+    reconciliation_text: str
     created_at: str = ""
 
 

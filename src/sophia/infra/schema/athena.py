@@ -120,6 +120,8 @@ confidence_ratings = Table(
     Column("session_id", Integer, ForeignKey("study_sessions.id")),
     Column("request_id", Text),
     Column("legacy_scored", Boolean(), nullable=False, server_default=text("false")),
+    # The learner's optional "because…" line, the conception a result can contradict.
+    Column("reason", Text),
     CheckConstraint("predicted BETWEEN 0.0 AND 1.0", name="predicted_ratio"),
     CheckConstraint("actual IS NULL OR actual BETWEEN 0.0 AND 1.0", name="actual_ratio"),
     UniqueConstraint(
@@ -250,6 +252,41 @@ study_reflections = Table(
         name="uq_study_reflections_session_request",
     ),
     Index("idx_study_reflections_session", "session_id"),
+)
+
+# What a learner wrote, once the results opened, about the gap between their
+# prediction and their score (#167). Not to be confused with
+# topic_reconciliations, which matches manual topics to TUWEL ones. The
+# prediction, score and band are copied in at the moment it was written, so it
+# can later be read against what it answered rather than a score that moved.
+study_reconciliations = Table(
+    "study_reconciliations",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("session_id", Integer, ForeignKey("study_sessions.id"), nullable=False),
+    Column("course_id", Integer, nullable=False),
+    Column("user_id", Text, nullable=False),
+    Column("predicted", Float(), nullable=False),
+    Column("measured", Float(), nullable=False),
+    Column("band", Text, nullable=False),
+    Column("reconciliation_text", Text, nullable=False),
+    Column("created_at", TIMESTAMP(timezone=True), server_default=_NOW),
+    org_id_column(),
+    Column("request_id", Text, nullable=False),
+    CheckConstraint("predicted BETWEEN 0.0 AND 1.0", name="predicted_ratio"),
+    CheckConstraint("measured BETWEEN 0.0 AND 1.0", name="measured_ratio"),
+    CheckConstraint(
+        "band IN ('well_calibrated', 'overconfident', 'underconfident')",
+        name="band_allowed",
+    ),
+    UniqueConstraint(
+        "org_id",
+        "session_id",
+        "user_id",
+        "request_id",
+        name="uq_study_reconciliations_session_request",
+    ),
+    Index("idx_study_reconciliations_session", "session_id"),
 )
 
 review_schedule = Table(

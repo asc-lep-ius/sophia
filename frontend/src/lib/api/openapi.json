@@ -3640,6 +3640,17 @@
             "title": "Rated At",
             "type": "string"
           },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
           "topic": {
             "title": "Topic",
             "type": "string"
@@ -3649,13 +3660,33 @@
           "learning_path_id",
           "topic",
           "predicted",
+          "reason",
           "rated_at"
         ],
         "title": "StudyPredictionItemResponse",
         "type": "object"
       },
+      "StudyPredictionReasonRequest": {
+        "description": "The \"because\u2026\" line for the prediction already recorded in a session.\n\nSetting it again replaces it, and blank clears it.",
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "StudyPredictionReasonRequest",
+        "type": "object"
+      },
       "StudyPredictionRequest": {
-        "description": "A learner's pre-question confidence prediction for a topic, made during\na live study session \u2014 idempotent on ``request_id``.",
+        "description": "A learner's pre-question confidence prediction for a topic, made during\na live study session \u2014 idempotent on ``request_id``.\n\n``reason`` is the optional \"because\u2026\" line; blank is stored as none.",
         "properties": {
           "learning_path_id": {
             "exclusiveMinimum": 0.0,
@@ -3667,6 +3698,18 @@
             "minimum": 1.0,
             "title": "Rating",
             "type": "integer"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           },
           "request_id": {
             "maxLength": 128,
@@ -3776,6 +3819,101 @@
           "topic"
         ],
         "title": "StudyQuestionRequest",
+        "type": "object"
+      },
+      "StudyReconciliationItemResponse": {
+        "description": "A learner's explanation of a gap, with the figures it answered.",
+        "properties": {
+          "band": {
+            "$ref": "#/components/schemas/CalibrationBand"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "learning_path_id": {
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "measured": {
+            "title": "Measured",
+            "type": "number"
+          },
+          "predicted": {
+            "title": "Predicted",
+            "type": "number"
+          },
+          "reconciliation_text": {
+            "title": "Reconciliation Text",
+            "type": "string"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "session_id",
+          "learning_path_id",
+          "predicted",
+          "measured",
+          "band",
+          "reconciliation_text",
+          "created_at"
+        ],
+        "title": "StudyReconciliationItemResponse",
+        "type": "object"
+      },
+      "StudyReconciliationRequest": {
+        "description": "What the learner says explains the gap between prediction and score.",
+        "properties": {
+          "learning_path_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Learning Path Id",
+            "type": "integer"
+          },
+          "reconciliation_text": {
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Reconciliation Text",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "session_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Session Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "learning_path_id",
+          "session_id",
+          "reconciliation_text",
+          "request_id"
+        ],
+        "title": "StudyReconciliationRequest",
+        "type": "object"
+      },
+      "StudyReconciliationResponse": {
+        "properties": {
+          "reconciliation": {
+            "$ref": "#/components/schemas/StudyReconciliationItemResponse"
+          }
+        },
+        "required": [
+          "reconciliation"
+        ],
+        "title": "StudyReconciliationResponse",
         "type": "object"
       },
       "StudyReflectionItemResponse": {
@@ -4173,7 +4311,7 @@
         "type": "object"
       },
       "StudySessionSummaryResponse": {
-        "description": "Server-computed close of the cycle: what was predicted against what happened.\n\n``band`` is the calibration judgement; the sentence that goes with it is\nthe study surface's to write, in the learner's own language.",
+        "description": "Server-computed close of the cycle: what was predicted against what happened.\n\n``band`` is the calibration judgement; the sentence that goes with it is\nthe study surface's to write, in the learner's own language.\n\nAn open session is scored as completing it would score it, because the\nresults open before it closes. ``reconciliation_required`` says whether\ncompleting it waits on the learner explaining the gap; ``reconciliation``\nis the one they wrote here, and ``previous_reconciliation`` the last one\non the same topic from another session, which Predict shows back.\n``reflected`` is whether the reflection that opens the results is on\nrecord.",
         "properties": {
           "attempts": {
             "$ref": "#/components/schemas/StudyPhaseAttemptCounts"
@@ -4229,6 +4367,45 @@
             ],
             "title": "Predicted"
           },
+          "prediction_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Reason"
+          },
+          "previous_reconciliation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyReconciliationItemResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reconciliation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StudyReconciliationItemResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reconciliation_required": {
+            "title": "Reconciliation Required",
+            "type": "boolean"
+          },
+          "reflected": {
+            "title": "Reflected",
+            "type": "boolean"
+          },
           "session": {
             "$ref": "#/components/schemas/StudySessionItemResponse"
           }
@@ -4238,10 +4415,15 @@
           "attempts",
           "practice_score",
           "predicted",
+          "prediction_reason",
           "measured",
           "calibration_delta",
           "band",
-          "legacy_scored"
+          "legacy_scored",
+          "reflected",
+          "reconciliation_required",
+          "reconciliation",
+          "previous_reconciliation"
         ],
         "title": "StudySessionSummaryResponse",
         "type": "object"
@@ -9976,6 +10158,100 @@
         ]
       }
     },
+    "/api/study/reconciliations": {
+      "post": {
+        "description": "Record what explains the gap between the learner's prediction and score.",
+        "operationId": "saveStudyReconciliation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyReconciliationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyReconciliationResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "412": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Precondition Failed",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create Reconciliation",
+        "tags": [
+          "study"
+        ]
+      }
+    },
     "/api/study/reflections": {
       "post": {
         "operationId": "saveStudyReflection",
@@ -10366,6 +10642,94 @@
           }
         },
         "summary": "Mark Study Session Complete",
+        "tags": [
+          "study"
+        ]
+      }
+    },
+    "/api/study/sessions/{session_id}/prediction/reason": {
+      "put": {
+        "description": "Store the \"because\u2026\" line with the prediction the session already holds.\n\nA 404 until the learner has predicted: there is no rating to attach it to.",
+        "operationId": "saveStudyPredictionReason",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StudyPredictionReasonRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudyPredictionResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Content",
+            "headers": {
+              "X-Request-ID": {
+                "description": "Request correlation identifier.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Save Study Prediction Reason",
         "tags": [
           "study"
         ]

@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Self
+from typing import Annotated, Self
 
-from pydantic import Field, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
 from sophia.api.schemas.common import ApiModel
+
+PREDICTION_REASON_MAX_CHARS = 200
+"""One short line: the "because…" beside a rating, not an essay."""
+
+RECONCILIATION_MAX_CHARS = 1000
+
+PredictionReason = Annotated[
+    str, StringConstraints(strip_whitespace=True, max_length=PREDICTION_REASON_MAX_CHARS)
+]
 
 
 class StudyFlashcardSource(StrEnum):
@@ -100,13 +109,26 @@ class StudyAttemptRequest(ApiModel):
 
 class StudyPredictionRequest(ApiModel):
     """A learner's pre-question confidence prediction for a topic, made during
-    a live study session — idempotent on ``request_id``."""
+    a live study session — idempotent on ``request_id``.
+
+    ``reason`` is the optional "because…" line; blank is stored as none.
+    """
 
     learning_path_id: int = Field(gt=0)
     session_id: int = Field(gt=0)
     topic: str = Field(min_length=1)
     rating: int = Field(ge=1, le=5)
     request_id: str = Field(min_length=1, max_length=128)
+    reason: PredictionReason | None = None
+
+
+class StudyPredictionReasonRequest(ApiModel):
+    """The "because…" line for the prediction already recorded in a session.
+
+    Setting it again replaces it, and blank clears it.
+    """
+
+    reason: PredictionReason | None = None
 
 
 class StudySelfExplanationRequest(ApiModel):
@@ -123,4 +145,20 @@ class StudyReflectionRequest(ApiModel):
     session_id: int = Field(gt=0)
     prompt: str = Field(min_length=1)
     reflection_text: str = Field(min_length=1)
+    request_id: str = Field(min_length=1, max_length=128)
+
+
+class StudyReconciliationRequest(ApiModel):
+    """What the learner says explains the gap between prediction and score."""
+
+    learning_path_id: int = Field(gt=0)
+    session_id: int = Field(gt=0)
+    reconciliation_text: Annotated[
+        str,
+        StringConstraints(
+            strip_whitespace=True,
+            min_length=1,
+            max_length=RECONCILIATION_MAX_CHARS,
+        ),
+    ]
     request_id: str = Field(min_length=1, max_length=128)

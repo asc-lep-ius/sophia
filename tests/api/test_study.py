@@ -10,8 +10,9 @@ import pytest
 from sophia.api.routers import study as study_router
 from sophia.api.sessions import SessionTenant
 from sophia.config import Settings
-from sophia.domain.models import FlashcardSource, StudentFlashcard, StudySession
-from sophia.services.athena_session import ReflectionPacing, SessionScope
+from sophia.domain.learning import AttemptPhase
+from sophia.domain.models import CalibrationBand, FlashcardSource, StudentFlashcard, StudySession
+from sophia.services.athena_session import ReflectionPacing, SessionScope, StudySessionSummary
 
 from ._session_helpers import FakeAppContainer, build_harness, csrf_headers, login
 
@@ -37,6 +38,28 @@ def _fake_reflection_pacing(
         return ReflectionPacing(started_at=started_at, reflected_at=reflected_at)
 
     monkeypatch.setattr(study_router, "get_reflection_pacing", fake_get_reflection_pacing)
+
+
+def _fake_unmeasured_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave nothing to reconcile; the reconciliation precondition has its own
+    tests against a live database in test_study_reconciliation.py."""
+
+    async def fake_summarize_study_session(
+        _db: object, session_id: int, *, user_id: str
+    ) -> StudySessionSummary:
+        return StudySessionSummary(
+            session=StudySession(id=session_id, course_id=12, topic="Graphs", user_id=user_id),
+            attempts_by_phase=dict.fromkeys(AttemptPhase, 0),
+            practice_score=None,
+            predicted=None,
+            prediction_reason=None,
+            measured=None,
+            band=CalibrationBand.UNKNOWN,
+            legacy_scored=False,
+            reflected=True,
+        )
+
+    monkeypatch.setattr(study_router, "summarize_study_session", fake_summarize_study_session)
 
 
 def _fake_session_owner(
@@ -260,6 +283,7 @@ def test_complete_study_session_returns_the_server_scored_session(
 
     _fake_session_owner(monkeypatch, course_id=12, user_id="learner")
     _fake_reflection_pacing(monkeypatch)
+    _fake_unmeasured_summary(monkeypatch)
     monkeypatch.setattr(study_router, "finalize_study_session", fake_finalize_study_session)
 
     response = harness.client.post(

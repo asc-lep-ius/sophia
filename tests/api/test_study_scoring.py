@@ -222,6 +222,7 @@ async def test_practice_attempts_do_not_count_towards_either_end(
 async def test_summary_holds_the_prediction_against_measured_performance(
     clean_engine: AsyncEngine,
 ) -> None:
+    """Read before completion: the results open first, and a miss must be explained to close."""
     async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
         async with harness.seed() as session:
             session_id = await seed_session(session)
@@ -246,10 +247,6 @@ async def test_summary_holds_the_prediction_against_measured_performance(
             await seed_reflection(session, session_id)
         await harness.login()
 
-        await harness.client.post(
-            f"/api/study/sessions/{session_id}/complete",
-            headers=harness.csrf_headers(),
-        )
         response = await harness.client.get(f"/api/study/sessions/{session_id}/summary")
 
     assert response.status_code == 200
