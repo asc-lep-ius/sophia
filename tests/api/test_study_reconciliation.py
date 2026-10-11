@@ -9,7 +9,7 @@ which the e2e fixture computes for itself.
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from sqlalchemy import func, select, update
@@ -173,7 +173,7 @@ async def complete(harness: DbHarness, session_id: int) -> Response:
     )
 
 
-async def summary(harness: DbHarness, session_id: int) -> dict[str, object]:
+async def summary(harness: DbHarness, session_id: int) -> dict[str, Any]:
     response = await harness.client.get(f"/api/study/sessions/{session_id}/summary")
     assert response.status_code == 200, response.text
     return response.json()
@@ -221,9 +221,7 @@ async def test_a_reconciliation_lets_a_miscalibrated_session_complete(
 
     assert saved.status_code == 200, saved.text
     assert completed.status_code == 200, completed.text
-    reconciliation = after["reconciliation"]
-    assert isinstance(reconciliation, dict)
-    assert reconciliation["reconciliation_text"] == GAP
+    assert after["reconciliation"]["reconciliation_text"] == GAP
 
 
 async def test_a_reconciliation_stores_the_prediction_score_and_band_it_answered(
@@ -407,7 +405,6 @@ async def test_a_later_session_on_the_topic_reads_the_last_reconciliation_back(
         own = await summary(harness, earlier)
 
     previous = body["previous_reconciliation"]
-    assert isinstance(previous, dict)
     assert previous["reconciliation_text"] == GAP
     assert previous["predicted"] == pytest.approx(1.0)
     assert previous["measured"] == pytest.approx(0.0)
