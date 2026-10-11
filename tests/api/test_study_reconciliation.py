@@ -56,7 +56,11 @@ async def seed_session(
     topic: str = TOPIC,
     user_id: str = "learner",
 ) -> int:
-    """A session with a paced reflection and, if given, a graded post-test."""
+    """A session with one question and, if given, a graded post-test.
+
+    No reflection yet: the prediction closes once the reflection opens the
+    results, so every test predicts first and then calls :func:`reflect`.
+    """
     study_session = await start_study_session(session, LEARNING_PATH_ID, topic, user_id=user_id)
     session_id = study_session.id
     question_id = f"q-{session_id}"
@@ -74,22 +78,27 @@ async def seed_session(
             self_rating=post_test,
             phase=AttemptPhase.POST_TEST,
         )
-    await save_reflection(
-        session,
-        session_id,
-        LEARNING_PATH_ID,
-        user_id,
-        "Which part still feels unfinished?",
-        "The cut argument took me a while.",
-        request_id=f"refl-{session_id}",
-    )
-    # Completion refuses a reflection inside the pacing floor.
-    await session.execute(
-        update(study_sessions)
-        .where(study_sessions.c.id == session_id)
-        .values(started_at=datetime.now(UTC) - timedelta(seconds=60))
-    )
     return session_id
+
+
+async def reflect(harness: DbHarness, session_id: int, *, user_id: str = "learner") -> None:
+    """Write the reflection that opens the results, paced past the floor."""
+    async with harness.seed() as session:
+        await save_reflection(
+            session,
+            session_id,
+            LEARNING_PATH_ID,
+            user_id,
+            "Which part still feels unfinished?",
+            "The cut argument took me a while.",
+            request_id=f"refl-{session_id}",
+        )
+        # Completion refuses a reflection inside the pacing floor.
+        await session.execute(
+            update(study_sessions)
+            .where(study_sessions.c.id == session_id)
+            .values(started_at=datetime.now(UTC) - timedelta(seconds=60))
+        )
 
 
 async def _seed_question(
@@ -195,6 +204,7 @@ async def test_completion_refuses_a_miscalibrated_session_without_a_reconciliati
             session_id = await seed_session(session, post_test=post_test)
         await harness.login()
         await predict(harness, session_id, rating)
+        await reflect(harness, session_id)
 
         response = await complete(harness, session_id)
         after = await summary(harness, session_id)
@@ -214,6 +224,7 @@ async def test_a_reconciliation_lets_a_miscalibrated_session_complete(
             session_id = await seed_session(session, post_test=AGAIN)
         await harness.login()
         await predict(harness, session_id, VERY_WELL)
+        await reflect(harness, session_id)
 
         saved = await reconcile(harness, session_id)
         completed = await complete(harness, session_id)
@@ -251,6 +262,7 @@ async def test_a_well_calibrated_session_completes_without_a_reconciliation(
             session_id = await seed_session(session, post_test=EASY)
         await harness.login()
         await predict(harness, session_id, VERY_WELL)
+        await reflect(harness, session_id)
         before = await summary(harness, session_id)
 
         response = await complete(harness, session_id)
@@ -321,9 +333,12 @@ async def test_the_results_open_before_the_session_closes(clean_engine: AsyncEng
         async with harness.seed() as session:
             session_id = await seed_session(session, post_test=EASY)
         await harness.login()
+        before = await summary(harness, session_id)
+        await reflect(harness, session_id)
 
         body = await summary(harness, session_id)
 
+    assert before["reflected"] is False
     assert body["session"]["completed_at"] is None
     assert body["session"]["post_test_score"] == pytest.approx(1.0)
     assert body["measured"] == pytest.approx(1.0)
@@ -388,6 +403,48 @@ async def test_a_reason_before_any_prediction_is_refused(clean_engine: AsyncEngi
     assert response.status_code == 404
 
 
+async def test_a_reason_on_another_learners_session_is_refused(clean_engine: AsyncEngine) -> None:
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session, post_test=None, user_id="somebody-else")
+        await harness.login("learner")
+
+        response = await harness.client.put(
+            f"/api/study/sessions/{session_id}/prediction/reason",
+            json={"reason": "I did the lab."},
+            headers=harness.csrf_headers(),
+        )
+
+    assert response.status_code == 404
+
+
+async def test_the_prediction_is_closed_once_the_results_open(clean_engine: AsyncEngine) -> None:
+    """Re-predicting after seeing the score would move the band and lift the gate."""
+    async with db_harness(clean_engine, tenant=learning_path_tenant(LEARNING_PATH_ID)) as harness:
+        async with harness.seed() as session:
+            session_id = await seed_session(session, post_test=AGAIN)
+        await harness.login()
+        await predict(harness, session_id, VERY_WELL)
+        await reflect(harness, session_id)
+
+        repredicted = await predict(harness, session_id, NOT_AT_ALL)
+        reason = await harness.client.put(
+            f"/api/study/sessions/{session_id}/prediction/reason",
+            json={"reason": "Never mind."},
+            headers=harness.csrf_headers(),
+        )
+        completed = await complete(harness, session_id)
+        body = await summary(harness, session_id)
+
+    assert repredicted.status_code == 412
+    assert repredicted.json()["detail"]["params"] == {"required": "prediction_open"}
+    assert reason.status_code == 412
+    assert completed.status_code == 412
+    assert completed.json()["detail"]["params"]["required"] == "reconciliation"
+    assert body["predicted"] == pytest.approx(1.0)
+    assert body["band"] == "overconfident"
+
+
 async def test_another_session_on_the_topic_does_not_move_this_sessions_prediction(
     clean_engine: AsyncEngine,
 ) -> None:
@@ -416,14 +473,16 @@ async def test_a_later_session_on_the_topic_reads_the_last_reconciliation_back(
             earlier = await seed_session(session, post_test=AGAIN)
         await harness.login()
         await predict(harness, earlier, VERY_WELL)
+        await reflect(harness, earlier)
         await reconcile(harness, earlier)
-        await complete(harness, earlier)
+        completed = await complete(harness, earlier)
         async with harness.seed() as session:
             later = await seed_session(session, post_test=None)
 
         body = await summary(harness, later)
         own = await summary(harness, earlier)
 
+    assert completed.status_code == 200, completed.text
     previous = body["previous_reconciliation"]
     assert previous["reconciliation_text"] == GAP
     assert previous["predicted"] == pytest.approx(1.0)

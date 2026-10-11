@@ -1021,7 +1021,20 @@ function submitAttempt(_match, body) {
   return { attempt };
 }
 
+/** Mirrors the server: the prediction closes once the reflection opens the results. */
+function predictionClosed(sessionId) {
+  return state.reflected.has(Number(sessionId))
+    ? new Refusal(412, "engagement.policy_unmet", {
+        required: "prediction_open",
+      })
+    : null;
+}
+
 function recordPrediction(_match, body) {
+  const closed = predictionClosed(body.session_id);
+  if (closed) {
+    return closed;
+  }
   state.predictions.set(body.session_id, (body.rating - 1) / 4);
   state.reasons.set(body.session_id, body.reason?.trim() || null);
   return predictionResponse(body.session_id);
@@ -1031,6 +1044,10 @@ function savePredictionReason(match, body) {
   const sessionId = Number(match[1]);
   if (!state.predictions.has(sessionId)) {
     return null;
+  }
+  const closed = predictionClosed(sessionId);
+  if (closed) {
+    return closed;
   }
   state.reasons.set(sessionId, body.reason?.trim() || null);
   return predictionResponse(sessionId);
@@ -1051,6 +1068,9 @@ function predictionResponse(sessionId) {
 /** Mirrors the server: the figures stored are its own, read when it is written. */
 function recordReconciliation(_match, body) {
   const sessionId = Number(body.session_id);
+  if (!body.reconciliation_text?.trim()) {
+    return new Refusal(422, "request.validation_failed", {});
+  }
   const summary = sessionSummary([null, String(sessionId)]);
   if (summary?.predicted == null || summary.measured == null) {
     return new Refusal(412, "engagement.policy_unmet", {
@@ -1103,6 +1123,14 @@ function completeSession(match) {
   const session = state.sessions.get(sessionId);
   if (!session) {
     return null;
+  }
+  // The pacing floor is not mirrored: nothing here records when a session
+  // started, so only a missing reflection is refused.
+  if (!state.reflected.has(sessionId)) {
+    return new Refusal(412, "engagement.policy_unmet", {
+      required: "reflection",
+      reflection_seconds: 0,
+    });
   }
   const { band: verdict } = sessionSummary(match);
   if (MISCALIBRATED.has(verdict) && !state.reconciliations.has(sessionId)) {

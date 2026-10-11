@@ -5904,6 +5904,16 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
+            /** @description Precondition Failed */
+            412: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
             /** @description Unprocessable Content */
             422: {
                 headers: {
@@ -6257,6 +6267,16 @@ export interface operations {
             };
             /** @description Not Found */
             404: {
+                headers: {
+                    /** @description Request correlation identifier. */
+                    "X-Request-ID"?: string;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Precondition Failed */
+            412: {
                 headers: {
                     /** @description Request correlation identifier. */
                     "X-Request-ID"?: string;

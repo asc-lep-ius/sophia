@@ -462,6 +462,7 @@
   "study_predict_required": "Record a prediction and a pre-test answer before studying.",
   "study_predict_summary": "Commit to how well you think you know this topic, then answer one question before studying. Both are needed later to tell you what actually changed.",
   "study_predicted_label": "You predicted",
+  "study_prediction_closed": "Your results are open, so this prediction stays as you made it.",
   "study_prediction_reason_label": "Because… (optional, one line)",
   "study_prediction_reason_shown": "Your reason: {reason}",
   "study_pretest_heading": "Pre-test",

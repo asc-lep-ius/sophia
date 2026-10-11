@@ -382,6 +382,7 @@ async def create_study_flashcard(
     operation_id="recordStudyPrediction",
     responses={
         status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_412_PRECONDITION_FAILED: {"model": ErrorEnvelope},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
     },
 )
@@ -392,6 +393,7 @@ async def create_study_prediction(
     auth_session = await require_csrf_learning_path_scope(request, payload.learning_path_id)
     db = await request_session(request)
     await _require_session_ownership(db, auth_session, payload.learning_path_id, payload.session_id)
+    await _require_prediction_open(db, payload.session_id)
 
     rating, is_new = await record_study_prediction(
         db,
@@ -424,6 +426,7 @@ async def create_study_prediction(
     operation_id="saveStudyPredictionReason",
     responses={
         status.HTTP_404_NOT_FOUND: {"model": ErrorEnvelope},
+        status.HTTP_412_PRECONDITION_FAILED: {"model": ErrorEnvelope},
         status.HTTP_422_UNPROCESSABLE_CONTENT: {"model": ErrorEnvelope},
     },
 )
@@ -439,6 +442,7 @@ async def save_study_prediction_reason(
     auth_session = await require_csrf(request)
     db = await request_session(request)
     scope = await _require_session_ownership_by_id(db, auth_session, session_id)
+    await _require_prediction_open(db, session_id)
     rating = await set_study_prediction_reason(
         db, session_id, payload.reason, user_id=auth_session.user.id
     )
@@ -633,6 +637,22 @@ async def _require_reflection_pacing(
                 "reflection_min_seconds": floor,
             },
         )
+
+
+async def _require_prediction_open(db: AsyncSession, session_id: int) -> None:
+    """Refuse a prediction, or its reason, once the results have opened.
+
+    The reflection is what opens them, and the session stays open after that
+    until the gap is explained. A rating made then is a prediction of an
+    outcome already seen: it would move the band the completion gate reads,
+    and lift the gate without the explanation it exists to ask for.
+    """
+    pacing = await get_reflection_pacing(db, session_id)
+    if pacing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+    if pacing.reflected_at is not None:
+        msg = "prediction is closed once the results open"
+        raise EngagementPolicyUnmet(msg, {"required": "prediction_open"})
 
 
 async def _require_reconciliation(db: AsyncSession, session_id: int, user_id: str) -> None:

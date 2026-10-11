@@ -163,9 +163,13 @@ function openReflect(sessionSummary: StudySessionSummary) {
   });
 }
 
-function openPredict(sessionSummary: StudySessionSummary) {
+/** Predict before the reflection, the only time it takes a rating. */
+function openPredict(overrides: Partial<StudySessionSummary> = {}) {
   return render(PredictPage, {
-    props: { data: pageData(sessionSummary, []), form: null },
+    props: {
+      data: pageData(summary({ reflected: false, ...overrides }), []),
+      form: null,
+    },
   });
 }
 
@@ -300,7 +304,7 @@ describe("Reflect once the results open", () => {
 
 describe("Predict after a reconciled session", () => {
   it("shows the last reconciliation above the rating", () => {
-    openPredict(summary({ previous_reconciliation: reconciliation() }));
+    openPredict({ previous_reconciliation: reconciliation() });
 
     const previous = screen.getByTestId("previous-reconciliation");
     const scale = screen.getByRole("radio", { name: "Very well" });
@@ -317,13 +321,13 @@ describe("Predict after a reconciled session", () => {
   });
 
   it("shows nothing to read back on a first session", () => {
-    openPredict(summary());
+    openPredict();
 
     expect(screen.queryByTestId("previous-reconciliation")).toBeNull();
   });
 
   it("sends a reason written first along with the rating", async () => {
-    openPredict(summary());
+    openPredict();
     await fireEvent.input(screen.getByLabelText(/Because/), {
       target: { value: "I did the lab last week." },
     });
@@ -341,7 +345,7 @@ describe("Predict after a reconciled session", () => {
   });
 
   it("puts a reason written after the rating on the saved prediction", async () => {
-    openPredict(summary());
+    openPredict();
     await fireEvent.click(screen.getByRole("radio", { name: "Very well" }));
     await vi.advanceTimersByTimeAsync(0);
     const field = screen.getByLabelText(/Because/);
@@ -357,5 +361,32 @@ describe("Predict after a reconciled session", () => {
       expect.objectContaining({ sessionId: SESSION_ID }),
       "I did the lab last week.",
     );
+  });
+
+  it("keeps the prediction as made once the results are open", async () => {
+    openPredict({ reflected: true, prediction_reason: "I did the lab." });
+
+    const scale = screen.getByRole("radio", {
+      name: "Very well",
+    }) as HTMLInputElement;
+    // Disabled by the fieldset, which `.disabled` does not reflect.
+    expect(scale.checked).toBe(true);
+    expect(scale.matches(":disabled")).toBe(true);
+    expect(
+      screen.getByRole("radio", { name: "Not at all" }).matches(":disabled"),
+    ).toBe(true);
+    const reason = screen.getByLabelText(/Because/) as HTMLInputElement;
+    expect(reason.value).toBe("I did the lab.");
+    expect(reason.matches(":disabled")).toBe(true);
+    expect(
+      screen.getByText(
+        "Your results are open, so this prediction stays as you made it.",
+      ),
+    ).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("radio", { name: "Not at all" }));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(study.recordPrediction).not.toHaveBeenCalled();
   });
 });

@@ -75,15 +75,24 @@
   const predictionDraft = untrack(() =>
     sessionDrafts(data.sessionId, "predict"),
   );
+  // The reflection opened the results, and the server takes no prediction
+  // after that: one made with the score in view would move the band the
+  // completion waits on. What it holds is shown instead of a draft.
+  const predictionClosed = $derived(data.summary.reflected === true);
+  const closed = untrack(() =>
+    data.summary.reflected === true ? data.summary : null,
+  );
   const keptRating =
     RATINGS.find(
       (option) => String(option.value) === predictionDraft.read("rating"),
-    )?.value ?? null;
+    )?.value ??
+    (closed?.predicted == null ? null : Math.round(closed.predicted * 4) + 1);
   let rating = $state<number | null>(keptRating);
   let predictionSaved = $state(keptRating !== null);
   let predictionError = $state(false);
   // Kept the same way as the rating: only once the server has it.
-  let savedReason = predictionDraft.read("reason") ?? "";
+  let savedReason =
+    predictionDraft.read("reason") ?? closed?.prediction_reason ?? "";
   let reason = $state(savedReason);
   let reasonError = $state(false);
 
@@ -133,6 +142,9 @@
   });
 
   async function choose(value: number) {
+    if (predictionClosed) {
+      return;
+    }
     rating = value;
     predictionError = false;
     runtime?.events.record({
@@ -167,7 +179,7 @@
    */
   async function saveReason() {
     const typed = reason.trim();
-    if (!predictionSaved || typed === savedReason) {
+    if (predictionClosed || !predictionSaved || typed === savedReason) {
       return;
     }
     try {
@@ -218,7 +230,7 @@
       </blockquote>
     </aside>
   {/if}
-  <fieldset>
+  <fieldset disabled={predictionClosed}>
     <legend id="study-prediction-legend">
       {m.study_predict_legend({ topic: data.summary.session.topic })}
     </legend>
@@ -246,6 +258,9 @@
       bind:value={reason}
       onchange={() => void saveReason()}
     />
+    {#if predictionClosed}
+      <p class="closed">{m.study_prediction_closed()}</p>
+    {/if}
   </fieldset>
   {#if predictionError || reasonError}
     <p class="error" role="alert">{m.study_not_available()}</p>
@@ -426,6 +441,13 @@
   .error,
   .done {
     margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .closed {
+    margin: 0.6rem 0 0;
+    color: var(--muted);
+    font-size: 0.9rem;
     overflow-wrap: anywhere;
   }
 

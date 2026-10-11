@@ -462,6 +462,7 @@
   "study_predict_required": "Erfasse Vorhersage und Vortest-Antwort, bevor du lernst.",
   "study_predict_summary": "Lege fest, wie gut du das Thema zu kennen glaubst, und beantworte eine Frage vor dem Lernen. Beides braucht es spaeter, um zu zeigen, was sich wirklich geaendert hat.",
   "study_predicted_label": "Vorhergesagt",
+  "study_prediction_closed": "Deine Auswertung ist offen, deshalb bleibt diese Vorhersage so, wie du sie abgegeben hast.",
   "study_prediction_reason_label": "Weil… (optional, eine Zeile)",
   "study_prediction_reason_shown": "Deine Begruendung: {reason}",
   "study_pretest_heading": "Vortest",
