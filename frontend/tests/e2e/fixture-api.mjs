@@ -293,8 +293,24 @@ const state = {
   questions: new Map(),
   attempts: new Map(),
   predictions: new Map(),
+  reasons: new Map(),
+  reflected: new Set(),
+  reconciliations: new Map(),
   nextSessionId: 900,
 };
+
+/**
+ * A handler's way of answering with the server's refusal instead of a 200.
+ *
+ * Without one the fixture could only agree or 404, which is how it came to
+ * accept attempts the real server refused (#98).
+ */
+class Refusal {
+  constructor(status, code, params) {
+    this.status = status;
+    this.detail = { code, params };
+  }
+}
 
 /**
  * Sessions appear on first use, so every test can own one.
@@ -413,7 +429,13 @@ const routes = [
   ["POST", /^\/api\/study\/questions$/, generateQuestions],
   ["POST", /^\/api\/study\/attempts$/, submitAttempt],
   ["POST", /^\/api\/study\/predictions$/, recordPrediction],
+  [
+    "PUT",
+    /^\/api\/study\/sessions\/(\d+)\/prediction\/reason$/,
+    savePredictionReason,
+  ],
   ["POST", /^\/api\/study\/reflections$/, recordReflection],
+  ["POST", /^\/api\/study\/reconciliations$/, recordReconciliation],
   ["POST", /^\/api\/events\/batch$/, ingestEvents],
   ["GET", /^\/api\/review\/due$/, dueReviews],
   ["GET", /^\/api\/review\/upcoming$/, upcomingReviews],
@@ -1001,17 +1023,56 @@ function submitAttempt(_match, body) {
 
 function recordPrediction(_match, body) {
   state.predictions.set(body.session_id, (body.rating - 1) / 4);
+  state.reasons.set(body.session_id, body.reason?.trim() || null);
+  return predictionResponse(body.session_id);
+}
+
+function savePredictionReason(match, body) {
+  const sessionId = Number(match[1]);
+  if (!state.predictions.has(sessionId)) {
+    return null;
+  }
+  state.reasons.set(sessionId, body.reason?.trim() || null);
+  return predictionResponse(sessionId);
+}
+
+function predictionResponse(sessionId) {
   return {
     prediction: {
       learning_path_id: LEARNING_PATH_ID,
-      topic: body.topic,
-      predicted: (body.rating - 1) / 4,
+      topic: state.sessions.get(sessionId)?.topic ?? "Graphs",
+      predicted: state.predictions.get(sessionId),
+      reason: state.reasons.get(sessionId) ?? null,
       rated_at: "2026-09-04T10:01:00Z",
     },
   };
 }
 
+/** Mirrors the server: the figures stored are its own, read when it is written. */
+function recordReconciliation(_match, body) {
+  const sessionId = Number(body.session_id);
+  const summary = sessionSummary([null, String(sessionId)]);
+  if (summary?.predicted == null || summary.measured == null) {
+    return new Refusal(412, "engagement.policy_unmet", {
+      required: "calibration",
+    });
+  }
+  const reconciliation = {
+    id: state.reconciliations.size + 1,
+    session_id: sessionId,
+    learning_path_id: LEARNING_PATH_ID,
+    predicted: summary.predicted,
+    measured: summary.measured,
+    band: summary.band,
+    reconciliation_text: body.reconciliation_text.trim(),
+    created_at: "2026-09-04T10:44:00Z",
+  };
+  state.reconciliations.set(sessionId, reconciliation);
+  return { reconciliation };
+}
+
 function recordReflection(_match, body) {
+  state.reflected.add(Number(body.session_id));
   return {
     reflection: {
       id: 1,
@@ -1043,6 +1104,13 @@ function completeSession(match) {
   if (!session) {
     return null;
   }
+  const { band: verdict } = sessionSummary(match);
+  if (MISCALIBRATED.has(verdict) && !state.reconciliations.has(sessionId)) {
+    return new Refusal(412, "engagement.policy_unmet", {
+      required: "reconciliation",
+      band: verdict,
+    });
+  }
   session.pre_test_score = phaseMean(sessionId, "pre_test");
   session.post_test_score = phaseMean(sessionId, "post_test");
   session.completed_at = "2026-09-04T10:45:00Z";
@@ -1053,16 +1121,31 @@ function completeSession(match) {
   return { session_id: sessionId, completed: true, session };
 }
 
+const MISCALIBRATED = new Set(["overconfident", "underconfident"]);
+
+/**
+ * Mirrors the server: an open session is scored as completing it would score
+ * it, because the results open before it closes.
+ */
 function sessionSummary(match) {
   const sessionId = Number(match[1]);
   ensureSession(sessionId);
-  const session = state.sessions.get(sessionId);
-  if (!session) {
+  const stored = state.sessions.get(sessionId);
+  if (!stored) {
     return null;
   }
+  const session =
+    stored.completed_at === null
+      ? {
+          ...stored,
+          pre_test_score: phaseMean(sessionId, "pre_test"),
+          post_test_score: phaseMean(sessionId, "post_test"),
+        }
+      : stored;
   const predicted = state.predictions.get(sessionId) ?? null;
   const practice = phaseMean(sessionId, "practice");
   const measured = session.post_test_score ?? practice;
+  const verdict = band(predicted, measured);
   return {
     session,
     attempts: {
@@ -1075,9 +1158,23 @@ function sessionSummary(match) {
     measured,
     calibration_delta:
       predicted === null || measured === null ? null : measured - predicted,
-    band: band(predicted, measured),
+    band: verdict,
     legacy_scored: false,
+    prediction_reason: state.reasons.get(sessionId) ?? null,
+    reflected: state.reflected.has(sessionId),
+    reconciliation_required: MISCALIBRATED.has(verdict),
+    reconciliation: state.reconciliations.get(sessionId) ?? null,
+    previous_reconciliation: previousReconciliation(sessionId, session.topic),
   };
+}
+
+function previousReconciliation(sessionId, topic) {
+  const earlier = [...state.reconciliations.values()].filter(
+    (entry) =>
+      entry.session_id !== sessionId &&
+      state.sessions.get(entry.session_id)?.topic === topic,
+  );
+  return earlier.at(-1) ?? null;
 }
 
 function band(predicted, measured) {
@@ -1208,6 +1305,10 @@ const server = createServer((request, response) => {
       const match = pattern.exec(url.pathname);
       if (request.method === method && match) {
         const payload = handler(match, body, url);
+        if (payload instanceof Refusal) {
+          send(response, payload.status, { detail: payload.detail });
+          return;
+        }
         send(response, payload === null ? 404 : 200, payload ?? notFound());
         return;
       }

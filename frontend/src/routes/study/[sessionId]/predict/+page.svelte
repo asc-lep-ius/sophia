@@ -5,10 +5,11 @@
   import { resolve } from "$app/paths";
   import PageHeader from "$lib/components/PageHeader.svelte";
   import StudyCard from "$lib/components/study/StudyCard.svelte";
-  import { recordPrediction } from "$lib/api/study";
+  import { recordPrediction, savePredictionReason } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard, preTestAnswered, remainingCards } from "$lib/study/deck";
   import { sessionDrafts } from "$lib/study/drafts";
+  import { percent } from "$lib/study/percent";
   import { STUDY_PROGRESS } from "$lib/study/progress";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { ActionData, PageData } from "./$types";
@@ -24,6 +25,17 @@
     { value: 4, label: () => m.study_predict_4() },
     { value: 5, label: () => m.study_predict_5() },
   ];
+  // The server's PREDICTION_REASON_MAX_CHARS: one line, not an essay.
+  const REASON_MAX_CHARS = 200;
+
+  const context = $derived({
+    csrfToken: data.csrfToken ?? "",
+    learningPathId: data.learningPathId,
+    sessionId: data.sessionId,
+  });
+  // What the learner wrote the last time a session on this topic missed its
+  // prediction, shown before they commit to a new one.
+  const previous = $derived(data.summary.previous_reconciliation);
 
   const anchorQuestion = $derived(anchorCard(data.questions));
   // Already answered on a previous visit: the pre-test is done, and asking
@@ -70,6 +82,10 @@
   let rating = $state<number | null>(keptRating);
   let predictionSaved = $state(keptRating !== null);
   let predictionError = $state(false);
+  // Kept the same way as the rating: only once the server has it.
+  let savedReason = predictionDraft.read("reason") ?? "";
+  let reason = $state(savedReason);
+  let reasonError = $state(false);
 
   const preTestDone = $derived(
     answeredEarlier || (runtime !== null && runtime.store.remaining === 0),
@@ -125,31 +141,54 @@
       payload: { rating: value },
     });
 
+    // What was sent, not what the field holds by the time the answer lands:
+    // a reason typed meanwhile still has to go out on its own.
+    const sentReason = reason.trim();
     try {
-      await recordPrediction(
-        {
-          csrfToken: data.csrfToken ?? "",
-          learningPathId: data.learningPathId,
-          sessionId: data.sessionId,
-        },
-        {
-          topic: data.summary.session.topic,
-          rating: value,
-          requestId: crypto.randomUUID(),
-        },
-      );
+      await recordPrediction(context, {
+        topic: data.summary.session.topic,
+        rating: value,
+        requestId: crypto.randomUUID(),
+        reason: sentReason,
+      });
       predictionSaved = true;
       predictionDraft.write("rating", String(value));
+      keepReason(sentReason);
     } catch {
       predictionSaved = false;
       predictionError = true;
     }
   }
 
+  /**
+   * A learner rates first and explains second, so a reason typed after the
+   * rating lands on the prediction already saved. One typed before it goes
+   * out with the rating instead.
+   */
+  async function saveReason() {
+    const typed = reason.trim();
+    if (!predictionSaved || typed === savedReason) {
+      return;
+    }
+    try {
+      await savePredictionReason(context, typed);
+      keepReason(typed);
+    } catch {
+      reasonError = true;
+    }
+  }
+
+  function keepReason(saved: string) {
+    savedReason = saved;
+    reasonError = false;
+    predictionDraft.write("reason", saved);
+  }
+
   async function continueToStudy() {
     if (!canContinue) {
       return;
     }
+    await saveReason();
     await runtime?.events.flushNow().catch(() => undefined);
     await goto(
       resolve("/study/[sessionId]/act", { sessionId: String(data.sessionId) }),
@@ -163,6 +202,22 @@
 />
 
 <section class="prediction" aria-labelledby="study-prediction-legend">
+  {#if previous}
+    <aside class="previous" aria-labelledby="study-previous-heading">
+      <h2 id="study-previous-heading">
+        {m.study_previous_reconciliation_heading()}
+      </h2>
+      <p>
+        {m.study_previous_reconciliation_figures({
+          predicted: percent(previous.predicted),
+          measured: percent(previous.measured),
+        })}
+      </p>
+      <blockquote data-testid="previous-reconciliation">
+        {previous.reconciliation_text}
+      </blockquote>
+    </aside>
+  {/if}
   <fieldset>
     <legend id="study-prediction-legend">
       {m.study_predict_legend({ topic: data.summary.session.topic })}
@@ -181,8 +236,18 @@
         </label>
       {/each}
     </div>
+    <label class="reason" for="study-prediction-reason">
+      {m.study_prediction_reason_label()}
+    </label>
+    <input
+      id="study-prediction-reason"
+      type="text"
+      maxlength={REASON_MAX_CHARS}
+      bind:value={reason}
+      onchange={() => void saveReason()}
+    />
   </fieldset>
-  {#if predictionError}
+  {#if predictionError || reasonError}
     <p class="error" role="alert">{m.study_not_available()}</p>
   {/if}
 </section>
@@ -241,6 +306,47 @@
     max-width: 52rem;
     gap: 0.75rem;
     margin-bottom: 1rem;
+  }
+
+  .previous {
+    display: grid;
+    min-width: 0;
+    gap: 0.4rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    padding: 0.9rem;
+  }
+
+  .previous p,
+  .previous blockquote {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .previous blockquote {
+    border-left: 3px solid var(--border-strong);
+    padding-left: 0.7rem;
+  }
+
+  .reason {
+    display: block;
+    margin-top: 0.75rem;
+    margin-bottom: 0.35rem;
+    overflow-wrap: anywhere;
+  }
+
+  input[type="text"] {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 2.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface-raised);
+    color: var(--text);
+    padding: 0.55rem 0.7rem;
+    font: inherit;
   }
 
   fieldset {

@@ -15,6 +15,8 @@ export type StudyAttemptPhase = components["schemas"]["StudyAttemptPhase"];
 export type StudyRequeuedQuestion =
   components["schemas"]["StudyRequeuedQuestion"];
 export type CalibrationBand = components["schemas"]["CalibrationBand"];
+export type StudyReconciliation =
+  components["schemas"]["StudyReconciliationItemResponse"];
 export type ElaborationPolicy = components["schemas"]["ElaborationPolicy"];
 export type LearningEventInput = components["schemas"]["LearningEventInput"];
 
@@ -58,7 +60,12 @@ export function studyMutationHeaders(
 
 export async function recordPrediction(
   context: StudyRequestContext,
-  input: { topic: string; rating: number; requestId: string },
+  input: {
+    topic: string;
+    rating: number;
+    requestId: string;
+    reason?: string | null;
+  },
 ): Promise<void> {
   const client = createApiClient();
   await unwrapApiResponse(
@@ -69,7 +76,28 @@ export async function recordPrediction(
         topic: input.topic,
         rating: input.rating,
         request_id: input.requestId,
+        reason: input.reason || null,
       },
+      headers: studyMutationHeaders(context.csrfToken),
+    }),
+  );
+}
+
+/**
+ * Attach the "because…" line to the prediction the session already holds.
+ *
+ * Not a second prediction: recording the rating again would void the outcome
+ * the pre-test grade already wrote against it.
+ */
+export async function savePredictionReason(
+  context: StudyRequestContext,
+  reason: string | null,
+): Promise<void> {
+  const client = createApiClient();
+  await unwrapApiResponse(
+    client.PUT("/api/study/sessions/{session_id}/prediction/reason", {
+      params: { path: { session_id: context.sessionId } },
+      body: { reason: reason || null },
       headers: studyMutationHeaders(context.csrfToken),
     }),
   );
@@ -129,6 +157,24 @@ export async function saveReflection(
         session_id: context.sessionId,
         prompt: input.prompt,
         reflection_text: input.reflectionText,
+        request_id: input.requestId,
+      },
+      headers: studyMutationHeaders(context.csrfToken),
+    }),
+  );
+}
+
+export async function saveReconciliation(
+  context: StudyRequestContext,
+  input: { reconciliationText: string; requestId: string },
+): Promise<void> {
+  const client = createApiClient();
+  await unwrapApiResponse(
+    client.POST("/api/study/reconciliations", {
+      body: {
+        learning_path_id: context.learningPathId,
+        session_id: context.sessionId,
+        reconciliation_text: input.reconciliationText,
         request_id: input.requestId,
       },
       headers: studyMutationHeaders(context.csrfToken),

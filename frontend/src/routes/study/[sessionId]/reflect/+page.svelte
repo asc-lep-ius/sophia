@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invalidate } from "$app/navigation";
+  import { goto } from "$app/navigation";
   import { resolve } from "$app/paths";
   import { untrack } from "svelte";
   import PageHeader from "$lib/components/PageHeader.svelte";
@@ -8,17 +8,19 @@
   import {
     completeSession,
     loadSessionSummary,
+    saveReconciliation,
     saveReflection,
     type StudySessionSummary,
   } from "$lib/api/study";
   import { m } from "$lib/paraglide/messages.js";
   import { anchorCard } from "$lib/study/deck";
   import { sessionDrafts } from "$lib/study/drafts";
-  import { STUDY_PROGRESS } from "$lib/study/progress";
+  import { percent } from "$lib/study/percent";
   import { createStudyRuntime } from "$lib/study/runtime";
   import type { PageData } from "./$types";
 
   type Props = { data: PageData };
+  type Refusal = "reconciliation" | "pacing" | "unavailable";
 
   let { data }: Props = $props();
 
@@ -64,9 +66,23 @@
   );
   let reflection = $state(reflectionDraft.read("text") ?? "");
   let elapsedSeconds = $state(0);
-  let summary = $state<StudySessionSummary | null>(null);
+  // The results open on a reflection the server holds, so a reload after
+  // opening them comes back to them instead of asking for a second one.
+  let summary = $state<StudySessionSummary | null>(
+    untrack(() => (data.summary.reflected ? data.summary : null)),
+  );
   let submitting = $state(false);
-  let failure = $state<"none" | "pacing" | "unavailable">("none");
+  let revealFailed = $state(false);
+
+  // The server's RECONCILIATION_MAX_CHARS.
+  const RECONCILIATION_MAX_CHARS = 1000;
+  const reconciliationDraft = untrack(() =>
+    sessionDrafts(data.sessionId, "reconciliation"),
+  );
+  let reconciliation = $state(reconciliationDraft.read("text") ?? "");
+  let reconciliationSaved = false;
+  let finishing = $state(false);
+  let finishFailure = $state<Refusal | null>(null);
 
   const secondsLeft = $derived(
     Math.max(data.pacing.reflection_min_seconds - elapsedSeconds, 0),
@@ -76,6 +92,16 @@
   );
   const reflectionWritten = $derived(reflection.trim().length > 0);
   const canReveal = $derived(postTestDone && reflectionWritten && secondsLeft <= 0);
+  const finished = $derived(summary?.session.completed_at != null);
+  const reconciliationWritten = $derived(
+    reconciliation.trim().length > 0 || summary?.reconciliation != null,
+  );
+  // The server refuses to close a missed prediction without this; the button
+  // only says so first.
+  const canFinish = $derived(
+    summary !== null &&
+      (!summary.reconciliation_required || reconciliationWritten),
+  );
 
   $effect(() => {
     const current = runtime;
@@ -118,7 +144,7 @@
       return;
     }
     submitting = true;
-    failure = "none";
+    revealFailed = false;
     try {
       runtime?.events.record({
         eventType: "reflection_written",
@@ -131,28 +157,75 @@
         reflectionText: reflection.trim(),
         requestId: crypto.randomUUID(),
       });
-      await completeSession(context);
       reflectionDraft.clear("text");
+      // The session stays open: it closes on Finish, once the learner has
+      // seen the gap and, where the prediction missed, explained it.
       summary = await loadSessionSummary(data.sessionId);
-      // The session closed without a navigation; the stepper marks Reflect
-      // done only once the layout has reloaded.
-      void invalidate(STUDY_PROGRESS);
-    } catch (error) {
-      // A 412 is the server holding the pacing floor, not an outage: telling
-      // the learner to "try again shortly" would be both wrong and rude.
-      failure =
-        error instanceof SophiaApiError && error.status === 412
-          ? "pacing"
-          : "unavailable";
+    } catch {
+      revealFailed = true;
     } finally {
       submitting = false;
     }
   }
 
-  function percent(value: number | null | undefined): string {
-    return value === null || value === undefined
-      ? "—"
-      : `${Math.round(value * 100)}%`;
+  async function finish() {
+    if (summary === null || !canFinish || finishing) {
+      return;
+    }
+    finishing = true;
+    finishFailure = null;
+    try {
+      const text = reconciliation.trim();
+      if (text && summary.reconciliation === null && !reconciliationSaved) {
+        await saveReconciliation(context, {
+          reconciliationText: text,
+          requestId: crypto.randomUUID(),
+        });
+        // A retry after the completion failed must not write it twice.
+        reconciliationSaved = true;
+      }
+      await completeSession(context);
+      reconciliationDraft.clear("text");
+      await goto(resolve("/study", {}));
+    } catch (error) {
+      finishFailure = refusal(error);
+    } finally {
+      finishing = false;
+    }
+  }
+
+  /**
+   * A 412 is the server holding a precondition, not an outage: telling the
+   * learner to "try again shortly" would be both wrong and rude.
+   */
+  function refusal(error: unknown): Refusal {
+    if (!(error instanceof SophiaApiError) || error.status !== 412) {
+      return "unavailable";
+    }
+    return error.detail.params.required === "reconciliation"
+      ? "reconciliation"
+      : "pacing";
+  }
+
+  function refusalMessage(reason: Refusal): string {
+    switch (reason) {
+      case "reconciliation":
+        return m.study_reconcile_refused();
+      case "pacing":
+        return m.study_reflection_too_soon();
+      default:
+        return m.study_not_available();
+    }
+  }
+
+  function reconcilePrompt(current: StudySessionSummary): string {
+    const figures = {
+      predicted: percent(current.predicted),
+      measured: percent(current.measured),
+    };
+    return current.reconciliation_required
+      ? m.study_reconcile_prompt(figures)
+      : m.study_reconcile_prompt_optional(figures);
   }
 
   function bandMessage(band: StudySessionSummary["band"]): string {
@@ -174,7 +247,7 @@
   summary={m.study_reflect_summary()}
 />
 
-{#if runtime && !postTestDone}
+{#if runtime && !postTestDone && !summary}
   <section class="posttest" aria-labelledby="study-posttest-heading">
     <h2 id="study-posttest-heading">{m.study_posttest_heading()}</h2>
     <StudyCard
@@ -209,12 +282,8 @@
     <button type="button" disabled={!canReveal || submitting} onclick={() => void revealResults()}>
       {m.study_reflection_ready()}
     </button>
-    {#if failure !== "none"}
-      <p class="error" role="alert">
-        {failure === "pacing"
-          ? m.study_reflection_too_soon()
-          : m.study_not_available()}
-      </p>
+    {#if revealFailed}
+      <p class="error" role="alert">{m.study_not_available()}</p>
     {/if}
   </section>
 {/if}
@@ -226,6 +295,13 @@
       <div>
         <dt>{m.study_predicted_label()}</dt>
         <dd data-testid="predicted">{percent(summary.predicted)}</dd>
+        {#if summary.prediction_reason}
+          <dd class="reason" data-testid="prediction-reason">
+            {m.study_prediction_reason_shown({
+              reason: summary.prediction_reason,
+            })}
+          </dd>
+        {/if}
       </div>
       <div>
         <dt>{m.study_measured_label()}</dt>
@@ -244,14 +320,64 @@
     {#if summary.legacy_scored}
       <p class="legacy">{m.study_legacy_scored()}</p>
     {/if}
-    <a href={resolve("/study", {})}>{m.study_finish()}</a>
   </section>
+
+  {#if summary.band !== "unknown" && (summary.reconciliation || !finished)}
+    <section class="reconcile" aria-labelledby="study-reconcile-heading">
+      <h2 id="study-reconcile-heading">{m.study_reconcile_heading()}</h2>
+      {#if summary.reconciliation}
+        <p class="prompt">{m.study_reconcile_yours()}</p>
+        <blockquote data-testid="reconciliation">
+          {summary.reconciliation.reconciliation_text}
+        </blockquote>
+      {:else if !finished}
+        <label class="prompt" for="study-reconciliation">
+          {reconcilePrompt(summary)}
+        </label>
+        <textarea
+          id="study-reconciliation"
+          rows="3"
+          maxlength={RECONCILIATION_MAX_CHARS}
+          bind:value={reconciliation}
+          oninput={(event) =>
+            reconciliationDraft.write("text", event.currentTarget.value)}
+          aria-describedby="study-reconcile-status"
+        ></textarea>
+        <p id="study-reconcile-status" class="status" aria-live="polite">
+          {#if !summary.reconciliation_required}
+            {m.study_reconcile_optional()}
+          {:else if !reconciliationWritten}
+            {m.study_reconcile_required()}
+          {/if}
+        </p>
+      {/if}
+    </section>
+  {/if}
+
+  <div class="finish">
+    {#if finished}
+      <a href={resolve("/study", {})}>{m.study_finish()}</a>
+    {:else}
+      <button
+        type="button"
+        disabled={!canFinish || finishing}
+        onclick={() => void finish()}
+      >
+        {m.study_finish()}
+      </button>
+      {#if finishFailure}
+        <p class="error" role="alert">{refusalMessage(finishFailure)}</p>
+      {/if}
+    {/if}
+  </div>
 {/if}
 
 <style>
   .posttest,
   .reflection,
-  .results {
+  .results,
+  .reconcile,
+  .finish {
     display: grid;
     max-width: 52rem;
     gap: 0.7rem;
@@ -259,7 +385,8 @@
   }
 
   .reflection,
-  .results {
+  .results,
+  .reconcile {
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--surface);
@@ -287,9 +414,15 @@
   .status,
   .band,
   .legacy,
-  .error {
+  .error,
+  blockquote {
     margin: 0;
     overflow-wrap: anywhere;
+  }
+
+  blockquote {
+    border-left: 3px solid var(--border-strong);
+    padding-left: 0.7rem;
   }
 
   .prompt {
@@ -358,6 +491,16 @@
   .legacy {
     color: var(--muted);
     font-size: 0.85rem;
+  }
+
+  dd.reason {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 400;
+  }
+
+  .error {
+    color: var(--danger);
   }
 
 </style>
